@@ -1114,8 +1114,11 @@ What it means today:
 
 ## 15. Environments and testing
 
-- **Local development (Proposed):** the reference Compose file with seeded test
-  workspaces, fake webhooks and a local mail catcher. Not a deployment.
+- **Local development (Proposed):** a development Compose file
+  (`deploy/compose.dev.yml`) with PostgreSQL and a local mail catcher, later
+  joined by seeded test workspaces and fake webhooks. Not a deployment. The
+  reference Compose file for self-hosting ([section 12](#12-self-hosting)) is
+  separate.
 - **Automated tests (Proposed):** unit tests, database tests against real
   PostgreSQL, the catalog round-trip test, export-then-import tests (same
   catalog content and tasks), workspace-isolation tests, webhook

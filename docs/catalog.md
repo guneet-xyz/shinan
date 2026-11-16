@@ -309,11 +309,9 @@ facts:
     source: Azure instance metadata (non-sensitive fields), infra/musashi#93
     observed:
       disk.data.size:
-        {
-          value: 64 GB,
-          via: instance-metadata,
-          note: Metadata lags after a resize,
-        }
+        value: 64 GB
+        via: instance-metadata
+        note: Metadata lags after a resize
   - unknown:
       network.public_ipv6: Reachability not tested
       recovery.tested: The rebuild runbook has not been run
@@ -909,11 +907,9 @@ catalog records **where a secret lives**, not the secret.
   ```yaml
   observed:
     secrets-in:
-      - {
-          to: service/obscuro,
-          item: musashi/dockyard/registry-admin,
-          note: Registry admin password,
-        }
+      - to: service/obscuro
+        item: musashi/dockyard/registry-admin
+        note: Registry admin password
   ```
 
   Reason: agents then know where to look (and whom to ask) without the value
