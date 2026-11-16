@@ -45,8 +45,11 @@ types between server, web app, plugin and CLI, one CI.
 - **Prettier** exactly as the owner's
   [Prettier decision](https://git.guneet.dev/guneet/workspace/src/branch/main/decisions/prettier-configuration.md)
   sets out; **ESLint** for code rules.
-- **Vitest** for tests; database tests run against a real PostgreSQL started by
-  the test setup.
+- **Vitest** for tests; database tests run against a real PostgreSQL (a
+  service container in CI, the development Compose file locally), and the test
+  setup creates a fresh database for each run. Reason: no test touches
+  development data, and tests do not depend on Docker being reachable from
+  the test process.
 - **GitHub Actions** on every PR: format, lint, type check, tests with
   PostgreSQL. Image builds come in M1's deployment package.
 - **Releases** with release-please and Conventional Commits, starting at
