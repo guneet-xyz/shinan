@@ -69,7 +69,9 @@ External facts were checked against primary sources on **2026-11-16**; see
    **Decided** that both exist (plan, Integration points). The method is
    [section 7](#7-reconciliation) (**proposed**).
 4. **Shinan never acts on a git host for a person, and writes only on
-   GitHub.** Shinan stores no per-person git host tokens. On GitHub it writes
+   GitHub.** Shinan stores no GitHub token of any person; on Forgejo it holds
+   only each connection's read token, from the connecting member (O-53). On
+   GitHub it writes
    only as its app, with the installation token. On Forgejo it makes no writes
    at all: Forgejo connections are read-only. Anything a person wants done on a
    git host (opening an issue, commenting, closing) is done by an agent running
@@ -957,7 +959,7 @@ From [issue #25][o]:
 
 | Answer | Effect here |
 |---|---|
-| O-1, N-3 | No per-person git host tokens; Shinan never acts for a person; person-requested host actions reach the person's own agents as queued nudges ([principle 4](#1-principles), [section 9](#9-what-shinan-writes-back)). |
+| O-1, N-3 | No person's GitHub token is stored (Forgejo keeps one read token per connection); Shinan never acts for a person; person-requested host actions reach the person's own agents as queued nudges ([principle 4](#1-principles), [section 9](#9-what-shinan-writes-back)). |
 | N-4 | No writes on Forgejo; Forgejo connections are read-only; on GitHub, writes only as the app ([principle 4](#1-principles), [section 4](#the-connections-account), [section 9](#9-what-shinan-writes-back)). |
 | O-6 | Per-workspace task ID prefixes; markers name their workspace ([section 6](#connector-rules)). |
 | O-21, N-1 | Subtasks (any depth) replace `Completes` / `Part of`; marker rules deferred to Tasks ([section 6](#6-detecting-task-markers)). |
