@@ -112,27 +112,27 @@ two Forgejo servers have separate accounts, tokens and webhooks.
 A git host connection is one workspace's authorised link to one git host. It
 holds (**proposed**, extending the domain model's attributes):
 
-| Attribute | Purpose |
-|---|---|
-| Git host and host type | Which connector handles it. |
-| Method and account | GitHub App installation; or, on Forgejo, the connecting member's account and token (section 4). |
-| Covered repositories | The repositories Shinan reads through this connection, by the host's stable repository ID. |
-| Backlink setting | GitHub only: whether backlinks are on, per repository ([section 9](#9-what-shinan-writes-back)). Forgejo connections have none. |
-| Counting branches | Per repository, the branches whose merges count as "merged" for [Tasks and work](tasks.md#62-markers); the default branch unless set. |
-| Automated accounts | Per repository, git host accounts such as dependency update tools whose issues and PRs skip triage or are ignored. Tasks and work defines what the setting does ([Tasks §5.1](tasks.md#51-which-issues-become-tasks)); it lives here because it names git host accounts per repository. |
+| Attribute                  | Purpose                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Git host and host type     | Which connector handles it.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| Method and account         | GitHub App installation; or, on Forgejo, the connecting member's account and token (section 4).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| Covered repositories       | The repositories Shinan reads through this connection, by the host's stable repository ID.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| Backlink setting           | GitHub only: whether backlinks are on, per repository ([section 9](#9-what-shinan-writes-back)). Forgejo connections have none.                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| Counting branches          | Per repository, the branches whose merges count as "merged" for [Tasks and work](tasks.md#62-markers); the default branch unless set.                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| Automated accounts         | Per repository, git host accounts such as dependency update tools whose issues and PRs skip triage or are ignored. Tasks and work defines what the setting does ([Tasks §5.1](tasks.md#51-which-issues-become-tasks)); it lives here because it names git host accounts per repository.                                                                                                                                                                                                                                                                                                         |
 | Turn new issues into tasks | Per repository, on by default; turned off for shared repositories where most issues are unrelated (for the trial: `infra/musashi`, `infra/anzen`, `guneet/terraform` and the `workspace` repository, [Roadmap §4.4](roadmap.md#44-tasks-during-the-trial)). **Decided** (owner, NO-2, [#26](https://github.com/guneet-xyz/shinan/issues/26); [D-051](decisions/D-051-new-issues-setting.md), amending D-003). This document holds the setting; [Tasks and work](tasks.md#51-which-issues-become-tasks) defines what it does. Markers and members' mentions in such repositories are still read. |
-| Set up by | The member who made the connection, and whose credential it depends on (Forgejo). |
-| Webhook state | Last delivery received, signature failures, failed deliveries seen. |
-| Reconciliation state | Per repository: last successful run of each layer, the watermark, last error. |
-| Health | `working`, `degraded` or `failing`, defined below. |
+| Set up by                  | The member who made the connection, and whose credential it depends on (Forgejo).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| Webhook state              | Last delivery received, signature failures, failed deliveries seen.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| Reconciliation state       | Per repository: last successful run of each layer, the watermark, last error.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| Health                     | `working`, `degraded` or `failing`, defined below.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 
 **Health** (**proposed**):
 
-| State | Detected when |
-|---|---|
-| `working` | Webhooks arrive and reconciliation finds nothing they missed. |
+| State      | Detected when                                                                                                                                                                                                                                                                             |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `working`  | Webhooks arrive and reconciliation finds nothing they missed.                                                                                                                                                                                                                             |
 | `degraded` | GitHub: the deliveries API shows failed deliveries since the last sweep, or signatures fail. Forgejo: reconciliation finds changes newer than the last delivery that no webhook reported, or no delivery has arrived for 24 hours while reconciliation sees changes. Reading still works. |
-| `failing` | Shinan cannot read the host: the token is rejected or revoked, the app is uninstalled or suspended, or every covered repository returns an error. |
+| `failing`  | Shinan cannot read the host: the token is rejected or revoked, the app is uninstalled or suspended, or every covered repository returns an error.                                                                                                                                         |
 
 A Forgejo connection depends on one member's account (O-53). When that member
 leaves the workspace or revokes the token, the connection becomes `failing`,
@@ -196,16 +196,16 @@ designed.
 
 Facts checked 2026-11-16 against GitHub's documentation (see [sources](#sources)).
 
-| | GitHub App (installation token) | GitHub App (user access token) | OAuth app | Fine-grained personal access token | Classic personal access token |
-|---|---|---|---|---|---|
-| Acts as | The app itself | A person, shown with the app's badge | A person, with no sign of the app | A person | A person |
-| Repository choice | The installer picks all or selected repositories | Repositories both the person and the installation can reach | Every repository the person can reach | Selected repositories of one user or organization | Broad scopes |
-| Permissions | Fine-grained, per area, read or write | Same, limited further by the person's own rights | Broad scopes (for example `repo` gives full repository write) | Fine-grained | Broad scopes |
-| Webhooks | One built-in webhook for every repository in the installation | (same app) | Must be created on each repository or organization | Must be created on each repository | Must be created on each repository |
-| Token life | 1 hour, minted from the app's private key | 8 hours, refresh token 6 months (when expiry is on, the default) | Until revoked | Set by the person; can be unlimited | Set by the person |
-| Rate limit (REST, not Enterprise Cloud) | Own budget: 5,000 per hour, plus 50 per repository above 20, up to 12,500 | Shares the person's 5,000 per hour | Shares the person's 5,000 per hour | Shares the person's 5,000 per hour | Shares the person's 5,000 per hour |
-| Can create check runs | Yes (the check runs API is only available to GitHub Apps) | Not checked | No | No | No |
-| Survives the person leaving | Yes, when installed on an organization | No | No | No | No |
+|                                         | GitHub App (installation token)                                           | GitHub App (user access token)                                   | OAuth app                                                     | Fine-grained personal access token                | Classic personal access token      |
+| --------------------------------------- | ------------------------------------------------------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------- | ------------------------------------------------- | ---------------------------------- |
+| Acts as                                 | The app itself                                                            | A person, shown with the app's badge                             | A person, with no sign of the app                             | A person                                          | A person                           |
+| Repository choice                       | The installer picks all or selected repositories                          | Repositories both the person and the installation can reach      | Every repository the person can reach                         | Selected repositories of one user or organization | Broad scopes                       |
+| Permissions                             | Fine-grained, per area, read or write                                     | Same, limited further by the person's own rights                 | Broad scopes (for example `repo` gives full repository write) | Fine-grained                                      | Broad scopes                       |
+| Webhooks                                | One built-in webhook for every repository in the installation             | (same app)                                                       | Must be created on each repository or organization            | Must be created on each repository                | Must be created on each repository |
+| Token life                              | 1 hour, minted from the app's private key                                 | 8 hours, refresh token 6 months (when expiry is on, the default) | Until revoked                                                 | Set by the person; can be unlimited               | Set by the person                  |
+| Rate limit (REST, not Enterprise Cloud) | Own budget: 5,000 per hour, plus 50 per repository above 20, up to 12,500 | Shares the person's 5,000 per hour                               | Shares the person's 5,000 per hour                            | Shares the person's 5,000 per hour                | Shares the person's 5,000 per hour |
+| Can create check runs                   | Yes (the check runs API is only available to GitHub Apps)                 | Not checked                                                      | No                                                            | No                                                | No                                 |
+| Survives the person leaving             | Yes, when installed on an organization                                    | No                                                               | No                                                            | No                                                | No                                 |
 
 Two facts decided the choice:
 
@@ -242,14 +242,14 @@ separate sign-in-only app. **Open**.
 
 **Permissions requested** (**proposed**; read unless stated):
 
-| Permission | Why |
-|---|---|
-| Metadata | Required by GitHub for every app; repository list and `repository` events. |
-| Contents | `push`, `create`, `delete` and `release` events; commit messages for markers. Read only: Shinan never pushes code. |
-| Pull requests: read and write | PR events and reviews; write only to post or edit backlinks. |
-| Issues | Issue and comment events. Read only: no first-version write-back touches issues ([section 9](#9-what-shinan-writes-back)). |
-| Checks | CI check results (`check_suite`, `check_run`). |
-| Commit statuses | CI results reported as commit statuses (`status`). |
+| Permission                    | Why                                                                                                                        |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Metadata                      | Required by GitHub for every app; repository list and `repository` events.                                                 |
+| Contents                      | `push`, `create`, `delete` and `release` events; commit messages for markers. Read only: Shinan never pushes code.         |
+| Pull requests: read and write | PR events and reviews; write only to post or edit backlinks.                                                               |
+| Issues                        | Issue and comment events. Read only: no first-version write-back touches issues ([section 9](#9-what-shinan-writes-back)). |
+| Checks                        | CI check results (`check_suite`, `check_run`).                                                                             |
+| Commit statuses               | CI results reported as commit statuses (`status`).                                                                         |
 
 Not requested: Administration. So Shinan does not set up GitHub custom
 autolinks for task IDs. Configuring autolinks needs repository administration
@@ -307,11 +307,11 @@ Facts about `https://git.guneet.dev`, checked 2026-11-16 unless stated:
 Facts checked 2026-11-16 against Forgejo's documentation and the v16.0.5
 source and API schema (see [sources](#sources)).
 
-| | Scoped access token, "All" repositories | Scoped access token, "Specific repositories" | OAuth2 token |
-|---|---|---|---|
-| Scope | Chosen read/write scopes, plus all the owner's admin powers. From a site admin this includes `write:repository` on every repository and acting as any user with `?sudo=` | Only repository and issue scopes, only the chosen repositories; admin powers removed | **No scopes: full rights of the user**, including admin for a site admin |
-| Life | No expiry | No expiry; cannot be edited through the API, so adding a repository means a new token | Access token 1 hour, refresh 730 hours (defaults) |
-| Can create webhooks | With the matching scope and admin rights on the owner (not tested) | No: user and organization webhooks need scopes it cannot have, and repository webhooks are an admin operation it is barred from | Yes |
+|                     | Scoped access token, "All" repositories                                                                                                                                  | Scoped access token, "Specific repositories"                                                                                    | OAuth2 token                                                             |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| Scope               | Chosen read/write scopes, plus all the owner's admin powers. From a site admin this includes `write:repository` on every repository and acting as any user with `?sudo=` | Only repository and issue scopes, only the chosen repositories; admin powers removed                                            | **No scopes: full rights of the user**, including admin for a site admin |
+| Life                | No expiry                                                                                                                                                                | No expiry; cannot be edited through the API, so adding a repository means a new token                                           | Access token 1 hour, refresh 730 hours (defaults)                        |
+| Can create webhooks | With the matching scope and admin rights on the owner (not tested)                                                                                                       | No: user and organization webhooks need scopes it cannot have, and repository webhooks are an admin operation it is barred from | Yes                                                                      |
 
 Forgejo has no equivalent of a GitHub App: there is no installation with its
 own identity and its own webhook. Everything acts as some user.
@@ -390,12 +390,12 @@ or GitHub. Forgejo is used only to connect accounts and repositories, and
 anyone can enter any Forgejo address to connect. **Decided** (owner, N-7,
 [#25][o]). For a connection, Shinan needs from each instance only:
 
-| Need | Detail |
-|---|---|
-| The instance's address | Entered by the member; Shinan checks `/api/v1/version` to confirm it is Forgejo and which version, since API details differ between versions. |
-| A token | From the member's account on that instance ([the connection token](#the-connection-token)). No OAuth2 application has to be registered on the instance. |
-| A webhook | Added by the member ([webhooks](#webhooks)). |
-| Network reach both ways | Shinan's server must reach the instance's API, and the instance must be allowed to deliver to Shinan (its `ALLOWED_HOST_LIST`). |
+| Need                    | Detail                                                                                                                                                  |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The instance's address  | Entered by the member; Shinan checks `/api/v1/version` to confirm it is Forgejo and which version, since API details differ between versions.           |
+| A token                 | From the member's account on that instance ([the connection token](#the-connection-token)). No OAuth2 application has to be registered on the instance. |
+| A webhook               | Added by the member ([webhooks](#webhooks)).                                                                                                            |
+| Network reach both ways | Shinan's server must reach the instance's API, and the instance must be allowed to deliver to Shinan (its `ALLOWED_HOST_LIST`).                         |
 
 **Proposed** unless marked:
 
@@ -432,21 +432,21 @@ values are listed below. The `X-Forgejo-Event` header merges several of them
 `pull_request_review_approved` as `pull_request_approved`), so it is not
 precise enough (v16.0.5 source, checked 2026-11-16).
 
-| What happened | GitHub event: actions | Forgejo event type (v16) | Used for |
-|---|---|---|---|
-| PR opened, edited, closed, merged, reopened | `pull_request`: `opened`, `edited`, `closed` (with `merged`), `reopened` | `pull_request` | Work item state; markers. |
-| PR draft state changed | `pull_request`: `converted_to_draft`, `ready_for_review` | `pull_request` (`edited`); a draft is a `WIP:`-style title prefix, exposed as the PR's `draft` field | Task status, owned by [Tasks and work](tasks.md#7-calculated-status). |
-| New commits on a PR | `pull_request`: `synchronize` | `pull_request_sync` | Timeline; trigger a CI re-read on Forgejo. |
-| Review submitted or dismissed | `pull_request_review`: `submitted`, `dismissed` | `pull_request_review_approved`, `pull_request_review_rejected`, `pull_request_review_comment` | Timeline; mentions in the review's summary text. |
-| Review requested | `pull_request`: `review_requested` | `pull_request_review_request` | Timeline. |
-| Issue opened, edited, closed, reopened, transferred, deleted | `issues`: those actions | `issues` | Outside issues become tasks (D-003); state of linked issues; markers. |
-| Comment on an issue or PR | `issue_comment`: `created`, `edited`, `deleted` | `issue_comment`, `pull_request_comment` | Timeline (linked, not copied); [mentions](#mentions-in-comments). |
-| Branch created or deleted | `create`, `delete` (`ref_type` branch) | `create`, `delete` | Markers in branch names; branches without a PR. |
-| Commits pushed | `push` | `push` | Markers in commit messages; timeline. |
-| CI result | `check_suite`: `completed`; `status` | `action_run_success`, `action_run_failure`, `action_run_recover` (Forgejo Actions only). v16 has **no webhook for commit statuses**, so other CI is read by polling ([section 7](#7-reconciliation)). | CI check events. |
-| Repository renamed, transferred, made public or private, deleted | `repository` | `repository` | Repository records and visibility. |
-| Release published | `release`: `published` | `release` | An event on the repository, not a work item, as the domain model proposes. Tags without a release are not recorded. |
-| Repositories added to or removed from the connection | `installation`, `installation_repositories` (always sent to apps) | None; Shinan sees changes on the next reconciliation | Covered repositories. |
+| What happened                                                    | GitHub event: actions                                                    | Forgejo event type (v16)                                                                                                                                                                              | Used for                                                                                                            |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| PR opened, edited, closed, merged, reopened                      | `pull_request`: `opened`, `edited`, `closed` (with `merged`), `reopened` | `pull_request`                                                                                                                                                                                        | Work item state; markers.                                                                                           |
+| PR draft state changed                                           | `pull_request`: `converted_to_draft`, `ready_for_review`                 | `pull_request` (`edited`); a draft is a `WIP:`-style title prefix, exposed as the PR's `draft` field                                                                                                  | Task status, owned by [Tasks and work](tasks.md#7-calculated-status).                                               |
+| New commits on a PR                                              | `pull_request`: `synchronize`                                            | `pull_request_sync`                                                                                                                                                                                   | Timeline; trigger a CI re-read on Forgejo.                                                                          |
+| Review submitted or dismissed                                    | `pull_request_review`: `submitted`, `dismissed`                          | `pull_request_review_approved`, `pull_request_review_rejected`, `pull_request_review_comment`                                                                                                         | Timeline; mentions in the review's summary text.                                                                    |
+| Review requested                                                 | `pull_request`: `review_requested`                                       | `pull_request_review_request`                                                                                                                                                                         | Timeline.                                                                                                           |
+| Issue opened, edited, closed, reopened, transferred, deleted     | `issues`: those actions                                                  | `issues`                                                                                                                                                                                              | Outside issues become tasks (D-003); state of linked issues; markers.                                               |
+| Comment on an issue or PR                                        | `issue_comment`: `created`, `edited`, `deleted`                          | `issue_comment`, `pull_request_comment`                                                                                                                                                               | Timeline (linked, not copied); [mentions](#mentions-in-comments).                                                   |
+| Branch created or deleted                                        | `create`, `delete` (`ref_type` branch)                                   | `create`, `delete`                                                                                                                                                                                    | Markers in branch names; branches without a PR.                                                                     |
+| Commits pushed                                                   | `push`                                                                   | `push`                                                                                                                                                                                                | Markers in commit messages; timeline.                                                                               |
+| CI result                                                        | `check_suite`: `completed`; `status`                                     | `action_run_success`, `action_run_failure`, `action_run_recover` (Forgejo Actions only). v16 has **no webhook for commit statuses**, so other CI is read by polling ([section 7](#7-reconciliation)). | CI check events.                                                                                                    |
+| Repository renamed, transferred, made public or private, deleted | `repository`                                                             | `repository`                                                                                                                                                                                          | Repository records and visibility.                                                                                  |
+| Release published                                                | `release`: `published`                                                   | `release`                                                                                                                                                                                             | An event on the repository, not a work item, as the domain model proposes. Tags without a release are not recorded. |
+| Repositories added to or removed from the connection             | `installation`, `installation_repositories` (always sent to apps)        | None; Shinan sees changes on the next reconciliation                                                                                                                                                  | Covered repositories.                                                                                               |
 
 Not subscribed in the first version (**proposed**; reason: volume without a
 first-version use): line comments on diffs (`pull_request_review_comment` on
@@ -525,14 +525,14 @@ text comes from, when it is read again, and the connector's own rules.
 
 ### Where Shinan looks
 
-| Text | Read from (webhook) | Read again by |
-|---|---|---|
-| Branch names | `create`, `push`; the head branch of each PR | Reconciliation layer 3 (branches) |
-| PR titles and descriptions | `pull_request` (`opened`, `edited`) | Layer 2 |
-| Issue bodies | `issues` (`opened`, `edited`) | Layer 2 |
-| Comments on issues and PRs, and review summaries | `issue_comment`, `pull_request_comment`, `pull_request_review` (`created`, `edited`, `deleted`, `submitted`) | Layer 2, and layer 4 for reviews on linked PRs |
-| Host closing references (`Closes #42` and each host's other keywords) in PR descriptions | `pull_request` (`opened`, `edited`) | Layer 2 |
-| Commit messages | `push` | Layer 3 (default-branch commits); PR commit lists for agent session markers |
+| Text                                                                                     | Read from (webhook)                                                                                          | Read again by                                                               |
+| ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------- |
+| Branch names                                                                             | `create`, `push`; the head branch of each PR                                                                 | Reconciliation layer 3 (branches)                                           |
+| PR titles and descriptions                                                               | `pull_request` (`opened`, `edited`)                                                                          | Layer 2                                                                     |
+| Issue bodies                                                                             | `issues` (`opened`, `edited`)                                                                                | Layer 2                                                                     |
+| Comments on issues and PRs, and review summaries                                         | `issue_comment`, `pull_request_comment`, `pull_request_review` (`created`, `edited`, `deleted`, `submitted`) | Layer 2, and layer 4 for reviews on linked PRs                              |
+| Host closing references (`Closes #42` and each host's other keywords) in PR descriptions | `pull_request` (`opened`, `edited`)                                                                          | Layer 2                                                                     |
+| Commit messages                                                                          | `push`                                                                                                       | Layer 3 (default-branch commits); PR commit lists for agent session markers |
 
 Tasks and work counts commit trailers only on commits that reach a counting
 branch by a direct push, not on commits that belong to a PR, including ones a
@@ -630,14 +630,14 @@ An **active repository** is one with a work item linked to a task that is not
 `done` or `cancelled`, or with an agent session attached to a task in it.
 **Proposed**.
 
-| Layer | GitHub | Forgejo | Interval (proposed) |
-|---|---|---|---|
-| 1. Redeliver failures | List the app's webhook deliveries since the last run and ask GitHub to redeliver failed ones, with their original delivery IDs. | Not available through the API. | 10 minutes |
-| 2. Item changes since the watermark | Per repository: `issues?since=` (GitHub's issue list includes PRs) and `issues/comments?since=`. | Per repository: `issues?type=issues&since=`, `issues?type=pulls&since=` and `issues/comments?since=`. | 15 minutes for active repositories; hourly for the rest |
-| 3. Repository refresh | Metadata (name, visibility) for every covered repository; branches, recent default-branch commits and releases for active repositories. | Same. | Metadata hourly; the rest 15 minutes |
-| 4. Linked open work | For each open work item linked to a task that is not done: state, head commit, reviews and CI results. | Same, plus **commit statuses** for PR heads, because v16 has no status webhook. | 15 minutes, and on each PR update |
-| 5. Full sweep | Repository list, all branches, open PRs and issues; compares with what Shinan holds. | Same. | Daily, and when a connection or its repositories change |
-| 6. On demand | A "refresh" action on a task, work item or connection. | Same. | When asked |
+| Layer                               | GitHub                                                                                                                                  | Forgejo                                                                                               | Interval (proposed)                                     |
+| ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| 1. Redeliver failures               | List the app's webhook deliveries since the last run and ask GitHub to redeliver failed ones, with their original delivery IDs.         | Not available through the API.                                                                        | 10 minutes                                              |
+| 2. Item changes since the watermark | Per repository: `issues?since=` (GitHub's issue list includes PRs) and `issues/comments?since=`.                                        | Per repository: `issues?type=issues&since=`, `issues?type=pulls&since=` and `issues/comments?since=`. | 15 minutes for active repositories; hourly for the rest |
+| 3. Repository refresh               | Metadata (name, visibility) for every covered repository; branches, recent default-branch commits and releases for active repositories. | Same.                                                                                                 | Metadata hourly; the rest 15 minutes                    |
+| 4. Linked open work                 | For each open work item linked to a task that is not done: state, head commit, reviews and CI results.                                  | Same, plus **commit statuses** for PR heads, because v16 has no status webhook.                       | 15 minutes, and on each PR update                       |
+| 5. Full sweep                       | Repository list, all branches, open PRs and issues; compares with what Shinan holds.                                                    | Same.                                                                                                 | Daily, and when a connection or its repositories change |
+| 6. On demand                        | A "refresh" action on a task, work item or connection.                                                                                  | Same.                                                                                                 | When asked                                              |
 
 Layer 3 exists because branch creation and deletion, direct pushes, releases,
 renames and visibility changes do not change any issue's or PR's update time,
@@ -664,14 +664,14 @@ so layer 2 never sees them.
 If a webhook is missed, the change is still recorded within (**proposed**,
 from the intervals above):
 
-| Change | GitHub | Forgejo |
-|---|---|---|
-| PR, issue or comment, in an active repository | 10 minutes (redelivery), else 15 minutes | 15 minutes |
-| The same, in other repositories | 10 minutes, else 1 hour | 1 hour |
-| CI result on a linked open PR | 10 minutes, else 15 minutes | 15 minutes (always polled for non-Actions CI) |
-| Branch, direct push or release, in an active repository | 10 minutes, else 15 minutes | 15 minutes |
-| The same, in other repositories | 10 minutes, else 24 hours | 24 hours |
-| Rename or visibility change | 10 minutes, else 1 hour | 1 hour |
+| Change                                                  | GitHub                                   | Forgejo                                       |
+| ------------------------------------------------------- | ---------------------------------------- | --------------------------------------------- |
+| PR, issue or comment, in an active repository           | 10 minutes (redelivery), else 15 minutes | 15 minutes                                    |
+| The same, in other repositories                         | 10 minutes, else 1 hour                  | 1 hour                                        |
+| CI result on a linked open PR                           | 10 minutes, else 15 minutes              | 15 minutes (always polled for non-Actions CI) |
+| Branch, direct push or release, in an active repository | 10 minutes, else 15 minutes              | 15 minutes                                    |
+| The same, in other repositories                         | 10 minutes, else 24 hours                | 24 hours                                      |
+| Rename or visibility change                             | 10 minutes, else 1 hour                  | 1 hour                                        |
 
 Issues, PRs, merges and reviews are therefore recorded within an hour even when
 every webhook is lost, inside the trial's 24-hour event-capture requirement (R2
@@ -772,15 +772,15 @@ applications sharing the machine.
 repositories, 5 of them active, and 10 linked open work items, assuming each
 list fits in one page:
 
-| Layer | Requests per run | Runs per hour | Per hour |
-|---|---|---|---|
-| 2, active repositories | 3 × 5 | 4 | 60 |
-| 2, other repositories | 3 × 5 | 1 | 15 |
-| 3, metadata | 10 | 1 | 10 |
-| 3, branches and commits, active | 2 × 5 | 4 | 40 |
-| 4, linked work (PR and statuses) | 2 × 10 | 4 | 80 |
-| 5, daily sweep (about 6 × 10, spread) | — | — | about 3 |
-| **Total** | | | **about 210** |
+| Layer                                 | Requests per run | Runs per hour | Per hour      |
+| ------------------------------------- | ---------------- | ------------- | ------------- |
+| 2, active repositories                | 3 × 5            | 4             | 60            |
+| 2, other repositories                 | 3 × 5            | 1             | 15            |
+| 3, metadata                           | 10               | 1             | 10            |
+| 3, branches and commits, active       | 2 × 5            | 4             | 40            |
+| 4, linked work (PR and statuses)      | 2 × 10           | 4             | 80            |
+| 5, daily sweep (about 6 × 10, spread) | —                | —             | about 3       |
+| **Total**                             |                  |               | **about 210** |
 
 That is about a fifth of the ceiling; each extra page of 50 items adds one
 request. **When the ceiling is reached**, Shinan stretches intervals, serving
@@ -792,16 +792,16 @@ less current rather than hiding it. **Proposed**.
 
 ### Summary
 
-| Write-back | First version | Status |
-|---|---|---|
-| One **backlink** on a GitHub PR linked to a task, edited in place as links change, only when the PR description lacks the task's address, and never in public repositories | Yes, GitHub only | **Decided** (owner, O-56 and N-4, [#25][o]) |
-| Any write on Forgejo, including backlinks | Never: Forgejo connections are read-only | **Decided** (owner, N-4, [#25][o]) |
-| Outcome on origin issues and issues made for people when the task finishes | No: whoever finishes the task closes or comments with their own tools, prompted by a reminder on the task | **Decided** (owner, O-57, [#25][o]) |
-| Anything a person asks for on a git host: creating an issue, commenting, closing | Never by Shinan; the request reaches the person's own agent sessions as a queued nudge, and an agent on the person's hardware does it | **Decided** (owner, O-1 and N-3, [#25][o]) |
-| Commit status or check run naming the task | No | **Decided** (owner, O-58, [#25][o]) |
-| Backlinks or comments on outside issues | No | **Proposed** |
-| Labels, assignees, milestones, closing or reopening issues, editing PR or issue text, merging, reviewing | Never | **Proposed** |
-| Project boards | Never | **Proposed**; also impossible on Forgejo v16 (no API) |
+| Write-back                                                                                                                                                                 | First version                                                                                                                         | Status                                                |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| One **backlink** on a GitHub PR linked to a task, edited in place as links change, only when the PR description lacks the task's address, and never in public repositories | Yes, GitHub only                                                                                                                      | **Decided** (owner, O-56 and N-4, [#25][o])           |
+| Any write on Forgejo, including backlinks                                                                                                                                  | Never: Forgejo connections are read-only                                                                                              | **Decided** (owner, N-4, [#25][o])                    |
+| Outcome on origin issues and issues made for people when the task finishes                                                                                                 | No: whoever finishes the task closes or comments with their own tools, prompted by a reminder on the task                             | **Decided** (owner, O-57, [#25][o])                   |
+| Anything a person asks for on a git host: creating an issue, commenting, closing                                                                                           | Never by Shinan; the request reaches the person's own agent sessions as a queued nudge, and an agent on the person's hardware does it | **Decided** (owner, O-1 and N-3, [#25][o])            |
+| Commit status or check run naming the task                                                                                                                                 | No                                                                                                                                    | **Decided** (owner, O-58, [#25][o])                   |
+| Backlinks or comments on outside issues                                                                                                                                    | No                                                                                                                                    | **Proposed**                                          |
+| Labels, assignees, milestones, closing or reopening issues, editing PR or issue text, merging, reviewing                                                                   | Never                                                                                                                                 | **Proposed**                                          |
+| Project boards                                                                                                                                                             | Never                                                                                                                                 | **Proposed**; also impossible on Forgejo v16 (no API) |
 
 Shinan's only write in the first version is therefore the backlink on GitHub,
 written as the GitHub App (O-1, O-51, N-4). It needs Pull requests write; a
@@ -898,16 +898,16 @@ model, "words to avoid"). No GitLab facts were checked for this document.
 
 ## Dependencies on other documents
 
-| Document | What this document needs from it |
-|---|---|
-| [Domain model and glossary](domain-model.md) | Terms used throughout; the [git host](domain-model.md#git-host) and [git host connection](domain-model.md#git-host-connection) attributes, extended in [section 2](#2-git-hosts-connections-and-repositories); the "backlink" term (a comment on a GitHub PR only); "automated account". |
-| [Tasks and work](tasks.md) | Marker syntax and every rule about which text makes which link ([§6](tasks.md#6-linking-work)); the written form of task IDs in comments (O-25); unconfirmed links and who confirms them ([§6.4](tasks.md#64-unconfirmed-links)); task status from linked work; the meaning of the automated-accounts, counting-branches and "turn new issues into tasks" settings, which live on the connection here (NO-2); the reminder for open origin issues (O-57). |
-| [Identity, agents and permissions](identity.md) | Linking members' GitHub and Forgejo accounts ([§3.5](identity.md#35-linking-git-host-accounts)), needed for mention links and outside-actor markers; the private-address rule (N-12); who may manage connections ([§9.3](identity.md#93-git-host-connections)); turning connector evidence into an actor and attribution confidence (plan question 2); token age and replacement policy. |
-| [Agent integrations](agent-integrations.md) | Agent session marker syntax; delivering a person's git host requests to their own agent sessions as queued nudges (O-1, N-3). |
-| [Human experience](human-experience.md) | How work item and connection freshness, connection health, broad-token warnings, unconfirmed links, mention links and open origin issues are shown; the connection setup screens. |
-| [Architecture and operations](architecture.md) | Webhook endpoint, queueing, storage and retention of deliveries; encrypted credential storage (O-54); the mechanism for refusing private addresses (N-12); whether Forgejo on Musashi can deliver to Shinan on Musashi; any reverse-proxy rate limits; the task address used in backlinks ([§3.6](architecture.md#36-task-address)). |
-| [Roadmap and migration](roadmap.md) | Which repositories the trial covers (O-70) and which have "turn new issues into tasks" off (NO-2); the event-capture requirement R2. |
-| [Decision log](decisions/README.md) | Records for the owner's answers cited here (D-021 to D-053). |
+| Document                                        | What this document needs from it                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [Domain model and glossary](domain-model.md)    | Terms used throughout; the [git host](domain-model.md#git-host) and [git host connection](domain-model.md#git-host-connection) attributes, extended in [section 2](#2-git-hosts-connections-and-repositories); the "backlink" term (a comment on a GitHub PR only); "automated account".                                                                                                                                                                  |
+| [Tasks and work](tasks.md)                      | Marker syntax and every rule about which text makes which link ([§6](tasks.md#6-linking-work)); the written form of task IDs in comments (O-25); unconfirmed links and who confirms them ([§6.4](tasks.md#64-unconfirmed-links)); task status from linked work; the meaning of the automated-accounts, counting-branches and "turn new issues into tasks" settings, which live on the connection here (NO-2); the reminder for open origin issues (O-57). |
+| [Identity, agents and permissions](identity.md) | Linking members' GitHub and Forgejo accounts ([§3.5](identity.md#35-linking-git-host-accounts)), needed for mention links and outside-actor markers; the private-address rule (N-12); who may manage connections ([§9.3](identity.md#93-git-host-connections)); turning connector evidence into an actor and attribution confidence (plan question 2); token age and replacement policy.                                                                  |
+| [Agent integrations](agent-integrations.md)     | Agent session marker syntax; delivering a person's git host requests to their own agent sessions as queued nudges (O-1, N-3).                                                                                                                                                                                                                                                                                                                             |
+| [Human experience](human-experience.md)         | How work item and connection freshness, connection health, broad-token warnings, unconfirmed links, mention links and open origin issues are shown; the connection setup screens.                                                                                                                                                                                                                                                                         |
+| [Architecture and operations](architecture.md)  | Webhook endpoint, queueing, storage and retention of deliveries; encrypted credential storage (O-54); the mechanism for refusing private addresses (N-12); whether Forgejo on Musashi can deliver to Shinan on Musashi; any reverse-proxy rate limits; the task address used in backlinks ([§3.6](architecture.md#36-task-address)).                                                                                                                      |
+| [Roadmap and migration](roadmap.md)             | Which repositories the trial covers (O-70) and which have "turn new issues into tasks" off (NO-2); the event-capture requirement R2.                                                                                                                                                                                                                                                                                                                      |
+| [Decision log](decisions/README.md)             | Records for the owner's answers cited here (D-021 to D-053).                                                                                                                                                                                                                                                                                                                                                                                              |
 
 ## Proposed in this document
 
@@ -949,27 +949,27 @@ Still proposed:
 
 From [issue #25][o] and [#26](https://github.com/guneet-xyz/shinan/issues/26):
 
-| Answer | Effect here |
-|---|---|
-| O-1, N-3 | No person's GitHub token is stored (Forgejo keeps one read token per connection); Shinan never acts for a person; person-requested host actions reach the person's own agents as queued nudges ([principle 4](#1-principles), [section 9](#9-what-shinan-writes-back)). |
-| N-4 | No writes on Forgejo; Forgejo connections are read-only; on GitHub, writes only as the app ([principle 4](#1-principles), [section 4](#the-connections-account), [section 9](#9-what-shinan-writes-back)). |
-| O-6 | Per-workspace task ID prefixes; markers name their workspace ([section 6](#connector-rules)). |
-| O-21, N-1 | Subtasks (any depth) replace `Completes` / `Part of`; marker rules deferred to Tasks ([section 6](#6-detecting-task-markers)). |
-| O-24 | Outside actors' markers make unconfirmed links ([section 6](#connector-rules)). |
-| O-25 | Members' mentions in host comments make `related` links ([section 6](#mentions-in-comments)). |
-| O-41, N-7 | Sign-in by email magic link or GitHub only; Forgejo only for connecting, at any address ([section 3](#one-github-app-installation-token-only), [section 4](#connecting-any-forgejo-instance)). |
-| O-43 | Every member sees everything; visibility only governs GitHub backlinks ([section 2](#repository)). |
-| O-50 | Only workspace owners purge stored deliveries ([section 5](#handling-a-delivery)). |
-| O-51, O-52 | GitHub App, installation token only, private and owned by `guneet-xyz` ([section 3](#3-connecting-to-github)). |
-| O-53 | The connecting member's Forgejo account, for reading only (N-4) ([section 4](#the-connections-account)). |
-| O-54 | Any Forgejo token accepted, stored encrypted, residual risk stated ([section 4](#the-connection-token)). |
-| O-55 | Owner-level webhooks for the owner's accounts, per-repository elsewhere ([section 4](#webhooks)). |
-| O-56 | GitHub backlinks only when the description lacks the address, never in public repositories ([section 9](#backlinks)). |
-| O-57 | No outcome comments; reminders instead ([section 9](#no-outcome-comments)). |
-| O-58 | No commit statuses or check runs ([section 9](#why-the-rest-is-never-written)). |
-| O-59 | One workspace per repository ([section 2](#one-workspace-per-repository-at-first)). |
-| N-12 | Forgejo addresses on private, loopback or link-local networks refused by default ([section 4](#connecting-any-forgejo-instance)). |
-| NO-2 | Per-repository "turn new issues into tasks" setting, on by default, held here and defined by Tasks ([section 2](#git-host-connection)). |
+| Answer     | Effect here                                                                                                                                                                                                                                                             |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| O-1, N-3   | No person's GitHub token is stored (Forgejo keeps one read token per connection); Shinan never acts for a person; person-requested host actions reach the person's own agents as queued nudges ([principle 4](#1-principles), [section 9](#9-what-shinan-writes-back)). |
+| N-4        | No writes on Forgejo; Forgejo connections are read-only; on GitHub, writes only as the app ([principle 4](#1-principles), [section 4](#the-connections-account), [section 9](#9-what-shinan-writes-back)).                                                              |
+| O-6        | Per-workspace task ID prefixes; markers name their workspace ([section 6](#connector-rules)).                                                                                                                                                                           |
+| O-21, N-1  | Subtasks (any depth) replace `Completes` / `Part of`; marker rules deferred to Tasks ([section 6](#6-detecting-task-markers)).                                                                                                                                          |
+| O-24       | Outside actors' markers make unconfirmed links ([section 6](#connector-rules)).                                                                                                                                                                                         |
+| O-25       | Members' mentions in host comments make `related` links ([section 6](#mentions-in-comments)).                                                                                                                                                                           |
+| O-41, N-7  | Sign-in by email magic link or GitHub only; Forgejo only for connecting, at any address ([section 3](#one-github-app-installation-token-only), [section 4](#connecting-any-forgejo-instance)).                                                                          |
+| O-43       | Every member sees everything; visibility only governs GitHub backlinks ([section 2](#repository)).                                                                                                                                                                      |
+| O-50       | Only workspace owners purge stored deliveries ([section 5](#handling-a-delivery)).                                                                                                                                                                                      |
+| O-51, O-52 | GitHub App, installation token only, private and owned by `guneet-xyz` ([section 3](#3-connecting-to-github)).                                                                                                                                                          |
+| O-53       | The connecting member's Forgejo account, for reading only (N-4) ([section 4](#the-connections-account)).                                                                                                                                                                |
+| O-54       | Any Forgejo token accepted, stored encrypted, residual risk stated ([section 4](#the-connection-token)).                                                                                                                                                                |
+| O-55       | Owner-level webhooks for the owner's accounts, per-repository elsewhere ([section 4](#webhooks)).                                                                                                                                                                       |
+| O-56       | GitHub backlinks only when the description lacks the address, never in public repositories ([section 9](#backlinks)).                                                                                                                                                   |
+| O-57       | No outcome comments; reminders instead ([section 9](#no-outcome-comments)).                                                                                                                                                                                             |
+| O-58       | No commit statuses or check runs ([section 9](#why-the-rest-is-never-written)).                                                                                                                                                                                         |
+| O-59       | One workspace per repository ([section 2](#one-workspace-per-repository-at-first)).                                                                                                                                                                                     |
+| N-12       | Forgejo addresses on private, loopback or link-local networks refused by default ([section 4](#connecting-any-forgejo-instance)).                                                                                                                                       |
+| NO-2       | Per-repository "turn new issues into tasks" setting, on by default, held here and defined by Tasks ([section 2](#git-host-connection)).                                                                                                                                 |
 
 ## Open questions
 

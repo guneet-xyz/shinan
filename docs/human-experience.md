@@ -37,14 +37,14 @@ depends on it.
 
 This document owns (plan, section 8):
 
-| Area | Covered in |
-|---|---|
-| Wiki | [The wiki](#the-wiki) |
-| Onboarding path | [Start here and onboarding](#start-here-and-onboarding) |
-| Task pages | [Task page](#task-page) |
-| Timeline | [Timelines](#timelines) |
-| Board | [Task list and board](#task-list-and-board) |
-| Nudges (the person's side) | [Comments and nudges](#comments-and-nudges) |
+| Area                            | Covered in                                                          |
+| ------------------------------- | ------------------------------------------------------------------- |
+| Wiki                            | [The wiki](#the-wiki)                                               |
+| Onboarding path                 | [Start here and onboarding](#start-here-and-onboarding)             |
+| Task pages                      | [Task page](#task-page)                                             |
+| Timeline                        | [Timelines](#timelines)                                             |
+| Board                           | [Task list and board](#task-list-and-board)                         |
+| Nudges (the person's side)      | [Comments and nudges](#comments-and-nudges)                         |
 | Workspace and member management | [Workspace and member management](#workspace-and-member-management) |
 
 It also covers the screens that pull these together: the
@@ -137,19 +137,19 @@ details (D-015), so a hard boundary is the simplest to keep safe. Inside a
 workspace every member sees everything, including work from private
 repositories. **Decided** (owner, O-43, [#25]).
 
-| Place | What it is for | Phase |
-|---|---|---|
-| [Now](#the-now-screen) | What needs me, what is being worked on, what changed | 1 |
-| [Tasks](#task-list-and-board) | Task list (phase 1) and board (phase 2) | 1 and 2 |
-| [Task page](#task-page) | The story of one task, and steering it | 1 |
-| [Timeline](#timelines) | Everything that happened in the workspace | 1 |
-| [Wiki](#the-wiki) | The catalog for people, including [start here](#start-here-and-onboarding) | 1 |
-| [Catalog review](#reviewing-catalog-changes) | Catalog changes waiting for approval, and recent changes | 1 |
-| [Agents](#agents-view) | Agent sessions and their presence | 1 |
-| [Triage](#triage) | A filtered task list in phase 1; the full triage inbox in phase 2 | 1 and 2 |
-| [Unlinked work](#unlinked-work) | Branches and PRs with no task ID | 1 |
-| [Workspace settings](#workspace-and-member-management) | Members, invitations, agents, git host connections, task flags, catalog settings, security log, data (export, import, purge) | 1 |
-| [Your account](#your-account) | Sign-in, git host accounts, your agents, your machines (phase 3), workspaces, notification settings (phase 2) | 1 |
+| Place                                                  | What it is for                                                                                                               | Phase   |
+| ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- | ------- |
+| [Now](#the-now-screen)                                 | What needs me, what is being worked on, what changed                                                                         | 1       |
+| [Tasks](#task-list-and-board)                          | Task list (phase 1) and board (phase 2)                                                                                      | 1 and 2 |
+| [Task page](#task-page)                                | The story of one task, and steering it                                                                                       | 1       |
+| [Timeline](#timelines)                                 | Everything that happened in the workspace                                                                                    | 1       |
+| [Wiki](#the-wiki)                                      | The catalog for people, including [start here](#start-here-and-onboarding)                                                   | 1       |
+| [Catalog review](#reviewing-catalog-changes)           | Catalog changes waiting for approval, and recent changes                                                                     | 1       |
+| [Agents](#agents-view)                                 | Agent sessions and their presence                                                                                            | 1       |
+| [Triage](#triage)                                      | A filtered task list in phase 1; the full triage inbox in phase 2                                                            | 1 and 2 |
+| [Unlinked work](#unlinked-work)                        | Branches and PRs with no task ID                                                                                             | 1       |
+| [Workspace settings](#workspace-and-member-management) | Members, invitations, agents, git host connections, task flags, catalog settings, security log, data (export, import, purge) | 1       |
+| [Your account](#your-account)                          | Sign-in, git host accounts, your agents, your machines (phase 3), workspaces, notification settings (phase 2)                | 1       |
 
 Phases follow the plan (section 10): the board, nudges, the triage inbox and
 notifications are phase 2; starting agents from the website is phase 3.
@@ -183,19 +183,19 @@ line what is needed and opens the place to act. Items for you come first; a
 second group shows items waiting on any person in the workspace, so nothing is
 missed when nobody is assigned.
 
-| Item | Shown when | One-step action | Phase |
-|---|---|---|---|
-| Deployment approval | A task has `awaiting deployment approval` | Opens the task's [deployment approval panel](#deployment-approval-panel) | 1 |
-| Task needs a person | A task has `needs a person`, or a [workspace flag](#task-flags) set to appear here | Opens the task's [needs a person panel](#needs-a-person-panel), or the task | 1 |
-| Agent session `waiting` | A plugin-reported agent session is waiting for a person, with its reason (`permission` or `question`) and short label | Opens the agent session, which says on which machine and coding tool to answer | 1 |
-| Agent session silent on a task | An attached agent session is `unresponsive`, or sends no heartbeats and is [overdue](#when-an-agent-session-goes-quiet) | Opens the task with options to [start a new agent session](#when-no-agent-session-is-attached) | 1 |
-| Work link to confirm | An unconfirmed work link is waiting: from an outside actor's marker (only a person can confirm it), or from a member's closing reference to an `origin` issue that no agent session has confirmed | Opens the task's [work](#work) with **Confirm** and **Dismiss** | 1 |
-| Tasks in triage | One or more tasks are in `triage` | Phase 1: the task list filtered to `triage`. Phase 2: the [triage inbox](#triage) | 1 |
-| Catalog change waiting for approval | A `pending` catalog proposal in a gated class | Opens [catalog review](#reviewing-catalog-changes) | 1 |
-| Git host connection failing | A connection's health is failing | Opens the connection's settings | 1 |
-| Invitation for you | You have a pending invitation to another workspace | Accept or decline | 1 |
-| Workspace setup checklist | The workspace is new and setup is not finished | Opens the [setup checklist](#first-run-for-a-new-workspace) | 1 |
-| Nudge not received | A delivery of your nudge is `undeliverable`, or still `pending` to an agent session that has gone silent | Opens the comment with delivery options | 2 |
+| Item                                | Shown when                                                                                                                                                                                        | One-step action                                                                                | Phase |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | ----- |
+| Deployment approval                 | A task has `awaiting deployment approval`                                                                                                                                                         | Opens the task's [deployment approval panel](#deployment-approval-panel)                       | 1     |
+| Task needs a person                 | A task has `needs a person`, or a [workspace flag](#task-flags) set to appear here                                                                                                                | Opens the task's [needs a person panel](#needs-a-person-panel), or the task                    | 1     |
+| Agent session `waiting`             | A plugin-reported agent session is waiting for a person, with its reason (`permission` or `question`) and short label                                                                             | Opens the agent session, which says on which machine and coding tool to answer                 | 1     |
+| Agent session silent on a task      | An attached agent session is `unresponsive`, or sends no heartbeats and is [overdue](#when-an-agent-session-goes-quiet)                                                                           | Opens the task with options to [start a new agent session](#when-no-agent-session-is-attached) | 1     |
+| Work link to confirm                | An unconfirmed work link is waiting: from an outside actor's marker (only a person can confirm it), or from a member's closing reference to an `origin` issue that no agent session has confirmed | Opens the task's [work](#work) with **Confirm** and **Dismiss**                                | 1     |
+| Tasks in triage                     | One or more tasks are in `triage`                                                                                                                                                                 | Phase 1: the task list filtered to `triage`. Phase 2: the [triage inbox](#triage)              | 1     |
+| Catalog change waiting for approval | A `pending` catalog proposal in a gated class                                                                                                                                                     | Opens [catalog review](#reviewing-catalog-changes)                                             | 1     |
+| Git host connection failing         | A connection's health is failing                                                                                                                                                                  | Opens the connection's settings                                                                | 1     |
+| Invitation for you                  | You have a pending invitation to another workspace                                                                                                                                                | Accept or decline                                                                              | 1     |
+| Workspace setup checklist           | The workspace is new and setup is not finished                                                                                                                                                    | Opens the [setup checklist](#first-run-for-a-new-workspace)                                    | 1     |
+| Nudge not received                  | A delivery of your nudge is `undeliverable`, or still `pending` to an agent session that has gone silent                                                                                          | Opens the comment with delivery options                                                        | 2     |
 
 **Proposed.** Reasons: deployment approval comes first because it is the only
 workflow-level approval gate in the `workspace` repository's practice, and each
@@ -494,18 +494,18 @@ reachable in one step from anywhere on the page. **Proposed.**
 
 ### Steering actions
 
-| Action | Notes | Status |
-|---|---|---|
-| Comment | Tells attached agent sessions unless marked "note only" (phase 2) | Decided (plan, Nudges pillar; owner, O-26, [#25]) |
-| Give or decline deployment approval | See [deployment approval panel](#deployment-approval-panel) | Decided where approval is given (owner, O-20, [#25]); panel proposed |
+| Action                                                                                                         | Notes                                                                                                           | Status                                                                                                                             |
+| -------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Comment                                                                                                        | Tells attached agent sessions unless marked "note only" (phase 2)                                               | Decided (plan, Nudges pillar; owner, O-26, [#25])                                                                                  |
+| Give or decline deployment approval                                                                            | See [deployment approval panel](#deployment-approval-panel)                                                     | Decided where approval is given (owner, O-20, [#25]); panel proposed                                                               |
 | Accept or cancel a task in `triage`; set or clear `on hold`, `cancelled`, `needs a person` and workspace flags | Asks for a short reason. Setting `on hold` and clearing `needs a person` tell attached agent sessions (phase 2) | Decided that some states are set by hand (plan, Tasks pillar; owner, O-7, O-8, [#25]); who may set each is owned by Tasks and work |
-| Edit intent and acceptance criteria | Tells attached agent sessions (phase 2) | Proposed |
-| Add or remove subtasks | | Decided (owner, O-21, [#25]) |
-| Rank in `to do` | See [ranking](#ranking) | Decided (owner, O-28, [#25]) |
-| Assign or unassign members | Assignment is not a lock | Proposed (glossary, Assignee) |
-| Start a new agent session for this task | See [below](#when-no-agent-session-is-attached) | Decided (plan, Nudges pillar) |
-| Release an agent session | Releases the agent session from the task and tells it by a nudge from the person (phase 2) | Proposed, following [Tasks and work](tasks.md) section 10 (releasing by hand). Reason: the owner must be able to redirect work |
-| Ask my agent to act on a git host | See [below](#asking-your-agent-to-act-on-a-git-host) | Decided (owner, O-1, N-3, [#25]) |
+| Edit intent and acceptance criteria                                                                            | Tells attached agent sessions (phase 2)                                                                         | Proposed                                                                                                                           |
+| Add or remove subtasks                                                                                         |                                                                                                                 | Decided (owner, O-21, [#25])                                                                                                       |
+| Rank in `to do`                                                                                                | See [ranking](#ranking)                                                                                         | Decided (owner, O-28, [#25])                                                                                                       |
+| Assign or unassign members                                                                                     | Assignment is not a lock                                                                                        | Proposed (glossary, Assignee)                                                                                                      |
+| Start a new agent session for this task                                                                        | See [below](#when-no-agent-session-is-attached)                                                                 | Decided (plan, Nudges pillar)                                                                                                      |
+| Release an agent session                                                                                       | Releases the agent session from the task and tells it by a nudge from the person (phase 2)                      | Proposed, following [Tasks and work](tasks.md) section 10 (releasing by hand). Reason: the owner must be able to redirect work     |
+| Ask my agent to act on a git host                                                                              | See [below](#asking-your-agent-to-act-on-a-git-host)                                                            | Decided (owner, O-1, N-3, [#25])                                                                                                   |
 
 ### Asking your agent to act on a git host
 
@@ -548,16 +548,16 @@ found on subtasks also show which subtask they work on. **Decided** that a
 nudge waits only when nothing in the tree reaches an agent session (owner,
 O-27, [#25]); the descendant rule is Tasks and work's.
 
-| Situation | What the box says |
-|---|---|
-| A plugin-reported agent session (presence source `plugin-reported`) with live delivery is running and not `unresponsive` | "Guneet's OpenCode on Daedalus will get this at its next step." |
-| A recipient without live delivery (self-reported, or a plugin without live delivery), seen recently | "Guneet's Codex on Musashi will see this when it next calls Shinan. Last seen 12 minutes ago." |
-| A recipient is `offline` | "Guneet's OpenCode on Daedalus is offline. This will reach it when it resumes, or the next agent session that claims this task." |
-| A recipient is `unresponsive`, or [overdue](#when-an-agent-session-goes-quiet) | "This agent session has not been seen for 2 hours. It may never pick this up." with **Start a new agent session** |
-| No agent session is attached to the task or any of its subtasks | "No agent is working on this task. This will wait for the next agent session that claims it." with **Start a new agent session** |
-| Recipients come from subtasks | "No agent session is on this task itself. This goes to the agent sessions on its subtasks:" followed by one line per recipient |
-| Several recipients | One line per agent session, each with a tick box, all ticked |
-| A recipient's member has turned off nudges from other members (built before a second member joins) | "Alex's OpenCode does not accept nudges from other members." That recipient is left out |
+| Situation                                                                                                                | What the box says                                                                                                                |
+| ------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- |
+| A plugin-reported agent session (presence source `plugin-reported`) with live delivery is running and not `unresponsive` | "Guneet's OpenCode on Daedalus will get this at its next step."                                                                  |
+| A recipient without live delivery (self-reported, or a plugin without live delivery), seen recently                      | "Guneet's Codex on Musashi will see this when it next calls Shinan. Last seen 12 minutes ago."                                   |
+| A recipient is `offline`                                                                                                 | "Guneet's OpenCode on Daedalus is offline. This will reach it when it resumes, or the next agent session that claims this task." |
+| A recipient is `unresponsive`, or [overdue](#when-an-agent-session-goes-quiet)                                           | "This agent session has not been seen for 2 hours. It may never pick this up." with **Start a new agent session**                |
+| No agent session is attached to the task or any of its subtasks                                                          | "No agent is working on this task. This will wait for the next agent session that claims it." with **Start a new agent session** |
+| Recipients come from subtasks                                                                                            | "No agent session is on this task itself. This goes to the agent sessions on its subtasks:" followed by one line per recipient   |
+| Several recipients                                                                                                       | One line per agent session, each with a tick box, all ticked                                                                     |
+| A recipient's member has turned off nudges from other members (built before a second member joins)                       | "Alex's OpenCode does not accept nudges from other members." That recipient is left out                                          |
 
 **Proposed** wording. Reason: the person must know, before they send, whether
 their words will reach an agent now, later, or not at all.
@@ -578,17 +578,17 @@ Options in the box:
 The comment shows the state of each delivery and updates while the page is
 open:
 
-| Delivery (per target agent session) | Shown as |
-|---|---|
-| `pending`, offered to the plugin | "Sending to Guneet's OpenCode on Daedalus" |
-| `pending`, accepted by the coding tool | "Queued in Guneet's OpenCode; it will see this at its next step" |
-| `pending`, available at check-in | "Waiting for Guneet's Codex to acknowledge (sent 10:42; last seen 10:30)" |
-| `pending`, agent session `offline` | "Waiting for Guneet's OpenCode to resume" |
-| `delivered`, live | "Delivered live to Guneet's OpenCode on Daedalus at 10:42" |
-| `delivered`, at check-in | "Acknowledged by Guneet's Codex at 10:55" |
-| `undeliverable` | "Not received: the agent session ended first. It will go to the next agent session that claims this task." |
-| `withdrawn` | "Withdrawn by Guneet at 10:44" |
-| `cancelled` in the coding tool | "Removed in the coding tool by the person at Daedalus; not sent another way" |
+| Delivery (per target agent session)    | Shown as                                                                                                   |
+| -------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `pending`, offered to the plugin       | "Sending to Guneet's OpenCode on Daedalus"                                                                 |
+| `pending`, accepted by the coding tool | "Queued in Guneet's OpenCode; it will see this at its next step"                                           |
+| `pending`, available at check-in       | "Waiting for Guneet's Codex to acknowledge (sent 10:42; last seen 10:30)"                                  |
+| `pending`, agent session `offline`     | "Waiting for Guneet's OpenCode to resume"                                                                  |
+| `delivered`, live                      | "Delivered live to Guneet's OpenCode on Daedalus at 10:42"                                                 |
+| `delivered`, at check-in               | "Acknowledged by Guneet's Codex at 10:55"                                                                  |
+| `undeliverable`                        | "Not received: the agent session ended first. It will go to the next agent session that claims this task." |
+| `withdrawn`                            | "Withdrawn by Guneet at 10:44"                                                                             |
+| `cancelled` in the coding tool         | "Removed in the coding tool by the person at Daedalus; not sent another way"                               |
 
 When a nudge had no target at all (no agent session anywhere in the task's
 tree), the comment shows "Waiting for an agent session to claim this task" with
@@ -691,11 +691,11 @@ exists and that human activity stands out while agent activity is compact
 
 ### Three levels of prominence
 
-| Level | Which events | How shown | Status |
-|---|---|---|---|
-| **Full** | Anything a person did in Shinan: comments, intent and criteria changes, manual state and flag changes, deployment approvals, task creation, subtask changes, ranking, triage decisions, catalog approvals and reverts, link confirmations, assignments. Text events on a git host by a person or with an [unsure credit](#showing-who-did-what): comments, reviews, issue and PR descriptions. Comments by outside actors on an `origin` issue. | Never collapsed, with the person's name and a clear marker that a person did it. Comments written in Shinan are shown in full. Git host text is shown as the event's short summary with a link to the original. | Decided that human activity stands out; which events count is proposed |
-| **Milestone** | Agent or automatic events a person usually cares about: task status changes, `needs a person` set or cleared by an agent, a deployment approval requested or recorded from a conversation, a verification recorded, a pull request opened, ready for review, merged or closed, a CI check failing or recovering, an agent session `waiting`, going quiet, released after timing out, or ending, an agent's reply to a nudge, a catalog proposal made. | One line each, not collapsed, with the actor. | Proposed. Reason: these change what the person should do next |
-| **Compact** | All other agent and automatic activity: commits, pushes, branch creation, progress updates, catalog reads and routine catalog changes, presence changes, CI checks passing, routine work link creation including `related` links from mentions, [task notices](#task-notices) (labelled "from Shinan"), and activity from automated accounts. | Grouped by agent session into one line per run of activity, for example "OpenCode session on Daedalus, acting for Guneet: 3 commits, 2 progress updates, CI passed (10:12 to 10:40)". Subagent runs are grouped under their parent's run. Expands to the individual events. A full or milestone event always ends a run, so cause and effect stay in order. | Decided that agent activity is compact; grouping proposed |
+| Level         | Which events                                                                                                                                                                                                                                                                                                                                                                                                                                          | How shown                                                                                                                                                                                                                                                                                                                                                   | Status                                                                 |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| **Full**      | Anything a person did in Shinan: comments, intent and criteria changes, manual state and flag changes, deployment approvals, task creation, subtask changes, ranking, triage decisions, catalog approvals and reverts, link confirmations, assignments. Text events on a git host by a person or with an [unsure credit](#showing-who-did-what): comments, reviews, issue and PR descriptions. Comments by outside actors on an `origin` issue.       | Never collapsed, with the person's name and a clear marker that a person did it. Comments written in Shinan are shown in full. Git host text is shown as the event's short summary with a link to the original.                                                                                                                                             | Decided that human activity stands out; which events count is proposed |
+| **Milestone** | Agent or automatic events a person usually cares about: task status changes, `needs a person` set or cleared by an agent, a deployment approval requested or recorded from a conversation, a verification recorded, a pull request opened, ready for review, merged or closed, a CI check failing or recovering, an agent session `waiting`, going quiet, released after timing out, or ending, an agent's reply to a nudge, a catalog proposal made. | One line each, not collapsed, with the actor.                                                                                                                                                                                                                                                                                                               | Proposed. Reason: these change what the person should do next          |
+| **Compact**   | All other agent and automatic activity: commits, pushes, branch creation, progress updates, catalog reads and routine catalog changes, presence changes, CI checks passing, routine work link creation including `related` links from mentions, [task notices](#task-notices) (labelled "from Shinan"), and activity from automated accounts.                                                                                                         | Grouped by agent session into one line per run of activity, for example "OpenCode session on Daedalus, acting for Guneet: 3 commits, 2 progress updates, CI passed (10:12 to 10:40)". Subagent runs are grouped under their parent's run. Expands to the individual events. A full or milestone event always ends a run, so cause and effect stay in order. | Decided that agent activity is compact; grouping proposed              |
 
 Git host text is shown as a summary and link, not copied (glossary, Event;
 D-001). If more text is wanted later, that depends on
@@ -1108,17 +1108,17 @@ details (D-015).
 
 For workspace owners.
 
-| Screen | Shows | Actions |
-|---|---|---|
-| General | Name, task ID prefix and any earlier prefixes, creation date, workspace owners, the setting "contributors may give deployment approval" (off by default) | Rename; change the task ID prefix; turn the deployment approval setting on or off; delete workspace (typed confirmation, consequences listed first) |
-| Members | Each member: name, role (workspace owner or contributor), joined, invited by, linked git host accounts, their agents, last active | Change role; remove member. The last workspace owner cannot be removed or made a contributor |
-| Invitations | Pending, expired and declined invitations with role and who invited | Invite; resend; withdraw |
-| Agents | Every agent: name (person, coding tool and machine), member it acts for, state, last agent session seen, its token (created, last used, full or read-only) | Disable an agent; revoke its token |
-| Git host connections | Each connection: git host, account used, repositories covered, each repository's "turn new issues into tasks" setting, who set it up, health, last successful contact | Add; reconnect; change repositories covered; turn new issues into tasks on or off per repository; import existing issues into triage; remove |
-| Task flags | Built-in and workspace-defined flags, each with its description, whether it shows in Needs you, and how many tasks have it | Add; edit; remove |
-| Catalog settings | The strict setting (off: only gated classes need approval; on: every change except rechecks needs approval), with links to the type schema documents and to catalog review | Turn the strict setting on or off (rules owned by the [Catalog](catalog.md) document) |
-| Security log | Security-relevant events, kept forever and never purged | Read only |
-| Data | The time of the last export; what can be purged, including operational records about this workspace | Export the workspace; import an export into an empty workspace; purge (typed confirmation). Security-log entries are never offered for purge |
+| Screen               | Shows                                                                                                                                                                      | Actions                                                                                                                                             |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| General              | Name, task ID prefix and any earlier prefixes, creation date, workspace owners, the setting "contributors may give deployment approval" (off by default)                   | Rename; change the task ID prefix; turn the deployment approval setting on or off; delete workspace (typed confirmation, consequences listed first) |
+| Members              | Each member: name, role (workspace owner or contributor), joined, invited by, linked git host accounts, their agents, last active                                          | Change role; remove member. The last workspace owner cannot be removed or made a contributor                                                        |
+| Invitations          | Pending, expired and declined invitations with role and who invited                                                                                                        | Invite; resend; withdraw                                                                                                                            |
+| Agents               | Every agent: name (person, coding tool and machine), member it acts for, state, last agent session seen, its token (created, last used, full or read-only)                 | Disable an agent; revoke its token                                                                                                                  |
+| Git host connections | Each connection: git host, account used, repositories covered, each repository's "turn new issues into tasks" setting, who set it up, health, last successful contact      | Add; reconnect; change repositories covered; turn new issues into tasks on or off per repository; import existing issues into triage; remove        |
+| Task flags           | Built-in and workspace-defined flags, each with its description, whether it shows in Needs you, and how many tasks have it                                                 | Add; edit; remove                                                                                                                                   |
+| Catalog settings     | The strict setting (off: only gated classes need approval; on: every change except rechecks needs approval), with links to the type schema documents and to catalog review | Turn the strict setting on or off (rules owned by the [Catalog](catalog.md) document)                                                               |
+| Security log         | Security-relevant events, kept forever and never purged                                                                                                                    | Read only                                                                                                                                           |
+| Data                 | The time of the last export; what can be purged, including operational records about this workspace                                                                        | Export the workspace; import an export into an empty workspace; purge (typed confirmation). Security-log entries are never offered for purge        |
 
 **Proposed** screen set, based on these answers: task flags managed per
 workspace (owner, O-8, [#25]); the strict setting (O-3); the security log is
@@ -1284,12 +1284,12 @@ How this document's screens map to the plan's phases (plan, section 10). The
 [Roadmap](roadmap.md) decides the exact first release; it splits phase 2 into
 2a (collaboration) and 2b (migration).
 
-| Phase | Screens | Status |
-|---|---|---|
-| 1 | Now screen; task list with ranking and the `triage` filter; task page with comments, panels, subtasks and steering actions (changes are events agents see when they next read the task); timelines; agents view; wiki with start here; catalog review and recent changes; unlinked work; workspace settings for one owner, including export and import; security emails; your account and agents | Decided that the wiki, tasks, timeline and presence are phase 1 (plan, section 10), and export and import (owner, O-75, [#25]); the rest proposed |
-| Before a second member joins | Invitations, the contributor role in screens, member removal | Decided (owner, O-49, [#25]: D-019 read as "design now, build before the second member") |
-| 2 | Board; nudges (recipients, delivery states, waiting comments, "nudge not received", asking your agent to act on a git host); task notices; triage inbox; notifications | Decided (plan, section 10). Board and triage inbox are required before migration (owner, O-78, [#25]) |
-| 3 | Your machines; starting agent sessions from the task page through a launcher | Decided (plan, section 10; D-014; owner, O-1, [#25]) |
+| Phase                        | Screens                                                                                                                                                                                                                                                                                                                                                                                          | Status                                                                                                                                            |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1                            | Now screen; task list with ranking and the `triage` filter; task page with comments, panels, subtasks and steering actions (changes are events agents see when they next read the task); timelines; agents view; wiki with start here; catalog review and recent changes; unlinked work; workspace settings for one owner, including export and import; security emails; your account and agents | Decided that the wiki, tasks, timeline and presence are phase 1 (plan, section 10), and export and import (owner, O-75, [#25]); the rest proposed |
+| Before a second member joins | Invitations, the contributor role in screens, member removal                                                                                                                                                                                                                                                                                                                                     | Decided (owner, O-49, [#25]: D-019 read as "design now, build before the second member")                                                          |
+| 2                            | Board; nudges (recipients, delivery states, waiting comments, "nudge not received", asking your agent to act on a git host); task notices; triage inbox; notifications                                                                                                                                                                                                                           | Decided (plan, section 10). Board and triage inbox are required before migration (owner, O-78, [#25])                                             |
+| 3                            | Your machines; starting agent sessions from the task page through a launcher                                                                                                                                                                                                                                                                                                                     | Decided (plan, section 10; D-014; owner, O-1, [#25])                                                                                              |
 
 ## How today's practice maps to these screens
 
@@ -1297,29 +1297,29 @@ For reference. Coordination for trial projects moves into Shinan during the
 trial (owner, O-73, [#25]); otherwise the `workspace` repository stays the
 source of truth until migration (D-018).
 
-| Today, in the `workspace` repository | In Shinan |
-|---|---|
-| `human-effort` label and TL;DR comment | `needs a person` task flag and its [panel](#needs-a-person-panel); listed in [Needs you](#1-needs-you) |
-| Asking for deployment approval in the conversation or issue | The [deployment approval panel](#deployment-approval-panel), first in Needs you; approval in the conversation is still recorded |
-| Forgejo Project board for workflow | [Board](#board-phase-2) with columns by task status |
-| `last_verified`, `verification_scope`, `verification_source` per catalog entry | Last checked, check scope and source per fact, shown as [freshness](#how-freshness-is-shown) |
-| `docs/agent-entrypoint.md` | [Start here for agents](#start-here-for-agents) |
-| Announcing an agent's identity in an issue comment when agents share an account | Presence and "acting for" on every agent event |
+| Today, in the `workspace` repository                                            | In Shinan                                                                                                                       |
+| ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `human-effort` label and TL;DR comment                                          | `needs a person` task flag and its [panel](#needs-a-person-panel); listed in [Needs you](#1-needs-you)                          |
+| Asking for deployment approval in the conversation or issue                     | The [deployment approval panel](#deployment-approval-panel), first in Needs you; approval in the conversation is still recorded |
+| Forgejo Project board for workflow                                              | [Board](#board-phase-2) with columns by task status                                                                             |
+| `last_verified`, `verification_scope`, `verification_source` per catalog entry  | Last checked, check scope and source per fact, shown as [freshness](#how-freshness-is-shown)                                    |
+| `docs/agent-entrypoint.md`                                                      | [Start here for agents](#start-here-for-agents)                                                                                 |
+| Announcing an agent's identity in an issue comment when agents share an account | Presence and "acting for" on every agent event                                                                                  |
 
 ## Dependencies on other documents
 
 What this document relies on other documents for.
 
-| Document | What this document needs from it |
-|---|---|
-| [Domain model and glossary](domain-model.md) | All terms, including task notices. |
-| [Tasks and work](tasks.md) | Status rules behind each explanation; required fields for `needs a person` and deployment approval requests, what makes an approval stale, and the "contributors may give deployment approval" setting; when nudges and task notices are created and where they go; batching of waiting nudges; releasing an agent session by hand; triage actions and the "turn new issues into tasks" setting; unlinked work; unconfirmed links; rules for workspace-defined flags, including "show in Needs you"; task ID prefixes and their aliases; which git host actions a person can ask for. |
-| [Agent integrations](agent-integrations.md) | Presence thresholds (`unresponsive`, the 30-minute display threshold, the 24-hour release, the 30-day end); waiting reasons; delivery holders and outcomes for nudges and task notices; the "reply to nudge" tool; delivering git host action requests; the ready-made start prompt; connect instructions per coding tool; the device setup guide's content and the launcher (phase 3); whether an agent session can be stopped from Shinan. |
-| [Identity, agents and permissions](identity.md) | What each role may do, including who may give deployment approval and which actions need re-authentication; the token approval flow and read-only tokens; removal effects; who may create workspaces; the email allowlist and invitations; nudges from other members and the per-agent opt-out; who may export, import and purge. |
-| [Catalog](catalog.md) | Gated classes and the strict setting; validation results shown in the editor; rechecks as catalog proposals; recheck intervals; type schema documents; the start-here document; workspace-wide lists; revert; comparing revisions. |
-| [Git host integrations](git-hosts.md) | Connection health and reconciliation thresholds; how unconfirmed links and mentions are detected; where the list of automated accounts lives; the "turn new issues into tasks" setting; the origin-issue reminder. |
-| [Architecture and operations](architecture.md) | How screens update while open; the task address (section 3.6); sending notifications and security emails; export and import (section 5.5); purge of operational records. |
-| [Roadmap and migration](roadmap.md) | Which phase 1 screens are in the first release. |
+| Document                                        | What this document needs from it                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [Domain model and glossary](domain-model.md)    | All terms, including task notices.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| [Tasks and work](tasks.md)                      | Status rules behind each explanation; required fields for `needs a person` and deployment approval requests, what makes an approval stale, and the "contributors may give deployment approval" setting; when nudges and task notices are created and where they go; batching of waiting nudges; releasing an agent session by hand; triage actions and the "turn new issues into tasks" setting; unlinked work; unconfirmed links; rules for workspace-defined flags, including "show in Needs you"; task ID prefixes and their aliases; which git host actions a person can ask for. |
+| [Agent integrations](agent-integrations.md)     | Presence thresholds (`unresponsive`, the 30-minute display threshold, the 24-hour release, the 30-day end); waiting reasons; delivery holders and outcomes for nudges and task notices; the "reply to nudge" tool; delivering git host action requests; the ready-made start prompt; connect instructions per coding tool; the device setup guide's content and the launcher (phase 3); whether an agent session can be stopped from Shinan.                                                                                                                                          |
+| [Identity, agents and permissions](identity.md) | What each role may do, including who may give deployment approval and which actions need re-authentication; the token approval flow and read-only tokens; removal effects; who may create workspaces; the email allowlist and invitations; nudges from other members and the per-agent opt-out; who may export, import and purge.                                                                                                                                                                                                                                                     |
+| [Catalog](catalog.md)                           | Gated classes and the strict setting; validation results shown in the editor; rechecks as catalog proposals; recheck intervals; type schema documents; the start-here document; workspace-wide lists; revert; comparing revisions.                                                                                                                                                                                                                                                                                                                                                    |
+| [Git host integrations](git-hosts.md)           | Connection health and reconciliation thresholds; how unconfirmed links and mentions are detected; where the list of automated accounts lives; the "turn new issues into tasks" setting; the origin-issue reminder.                                                                                                                                                                                                                                                                                                                                                                    |
+| [Architecture and operations](architecture.md)  | How screens update while open; the task address (section 3.6); sending notifications and security emails; export and import (section 5.5); purge of operational records.                                                                                                                                                                                                                                                                                                                                                                                                              |
+| [Roadmap and migration](roadmap.md)             | Which phase 1 screens are in the first release.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 
 ## Open questions
 

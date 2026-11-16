@@ -1,0 +1,55 @@
+name: Release
+
+# Maintains the release-please release PR. Merging that PR is the approval to
+# release: it tags vX.Y.Z and creates the GitHub Release. Nothing is built,
+# published or deployed here yet.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: shinan-release
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    if: github.repository == 'guneet-xyz/shinan'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      actions: write
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      sha: ${{ steps.release.outputs.sha }}
+    steps:
+      - id: release
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+      # Pull requests created with GITHUB_TOKEN do not trigger workflows, so
+      # run CI on the release PR's branch explicitly.
+      - name: Run CI on the release PR
+        if: steps.release.outputs.prs_created == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_PRS: ${{ steps.release.outputs.prs }}
+        run: |
+          branch=$(node -e 'const prs = JSON.parse(process.env.RELEASE_PRS); if (prs.length !== 1 || !prs[0].headBranchName) throw new Error("Expected one release PR"); console.log(prs[0].headBranchName)')
+          gh workflow run ci.yml --ref "$branch"
+
+  # Full CI on the exact release commit. Anything published for a release must
+  # depend on this job.
+  checks:
+    needs: release-please
+    if: needs.release-please.outputs.release_created == 'true'
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ needs.release-please.outputs.sha }}

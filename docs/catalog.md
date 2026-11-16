@@ -60,16 +60,16 @@ reason says so. A full mapping is in
 
 ## 1. Principles
 
-| # | Principle | Status and reason |
-|---|---|---|
-| P1 | The Markdown documents are the source of truth. Every applied catalog revision is a set of Markdown documents; the wiki, the agent index, exports and all query tables are derived and rebuildable from them alone, and never edited directly. | **Decided** (D-006: people must be able to read it), and the "rebuildable from Markdown alone" reading confirmed (owner, O-11, [#25]). |
-| P2 | Every fact records its state, source and last-checked time. | **Decided** (D-007: trust is the main differentiator). |
-| P3 | Link, don't copy. A fact owned by another system is linked, not copied. | **Decided** (plan, "What Shinan does not do"). |
-| P4 | `unknown` is a valid answer. Missing, unreachable and not checked are recorded, never filled with guesses. | **Proposed**. Reason: the `workspace` repository's rule; a guessed fact is worse than a known gap because nobody rechecks it. |
-| P5 | Intended and observed facts are kept apart, and disagreements are recorded, not resolved by default. | **Proposed** (glossary discrepancy rule). Reason: hiding drift is how catalogs lose trust. |
-| P6 | Catalog content is context, not authorization. A runbook, a fact or an approval rule never by itself permits an agent to deploy, connect to a machine or change anything outside the catalog. An incomplete catalog does not permit scanning machines to fill it. | **Proposed**. Reason: the `workspace` repository's access policy says the same; Backstage gives the same warning for its ownership relation ("not to be used by automated processes to for example assign authorization", [Backstage well-known relations](https://backstage.io/docs/features/software-catalog/well-known-relations), checked 2026-11-16). |
-| P7 | Nothing is lost. Changes create new revisions; retired entities stay readable. | **Proposed**. Reason: history explains why things are the way they are; see [section 9](#9-history-and-purge). |
-| P8 | The catalog never holds secret values or task status. It records where a secret lives. | **Decided** for secrets (owner, O-2, [#25]): managing secrets is the team's job with a secrets manager such as Obscuro or Infisical. **Proposed** for task status. Reason: task status is derived on tasks (D-005) and would go stale if copied. |
+| #   | Principle                                                                                                                                                                                                                                                         | Status and reason                                                                                                                                                                                                                                                                                                                                          |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P1  | The Markdown documents are the source of truth. Every applied catalog revision is a set of Markdown documents; the wiki, the agent index, exports and all query tables are derived and rebuildable from them alone, and never edited directly.                    | **Decided** (D-006: people must be able to read it), and the "rebuildable from Markdown alone" reading confirmed (owner, O-11, [#25]).                                                                                                                                                                                                                     |
+| P2  | Every fact records its state, source and last-checked time.                                                                                                                                                                                                       | **Decided** (D-007: trust is the main differentiator).                                                                                                                                                                                                                                                                                                     |
+| P3  | Link, don't copy. A fact owned by another system is linked, not copied.                                                                                                                                                                                           | **Decided** (plan, "What Shinan does not do").                                                                                                                                                                                                                                                                                                             |
+| P4  | `unknown` is a valid answer. Missing, unreachable and not checked are recorded, never filled with guesses.                                                                                                                                                        | **Proposed**. Reason: the `workspace` repository's rule; a guessed fact is worse than a known gap because nobody rechecks it.                                                                                                                                                                                                                              |
+| P5  | Intended and observed facts are kept apart, and disagreements are recorded, not resolved by default.                                                                                                                                                              | **Proposed** (glossary discrepancy rule). Reason: hiding drift is how catalogs lose trust.                                                                                                                                                                                                                                                                 |
+| P6  | Catalog content is context, not authorization. A runbook, a fact or an approval rule never by itself permits an agent to deploy, connect to a machine or change anything outside the catalog. An incomplete catalog does not permit scanning machines to fill it. | **Proposed**. Reason: the `workspace` repository's access policy says the same; Backstage gives the same warning for its ownership relation ("not to be used by automated processes to for example assign authorization", [Backstage well-known relations](https://backstage.io/docs/features/software-catalog/well-known-relations), checked 2026-11-16). |
+| P7  | Nothing is lost. Changes create new revisions; retired entities stay readable.                                                                                                                                                                                    | **Proposed**. Reason: history explains why things are the way they are; see [section 9](#9-history-and-purge).                                                                                                                                                                                                                                             |
+| P8  | The catalog never holds secret values or task status. It records where a secret lives.                                                                                                                                                                            | **Decided** for secrets (owner, O-2, [#25]): managing secrets is the team's job with a secrets manager such as Obscuro or Infisical. **Proposed** for task status. Reason: task status is derived on tasks (D-005) and would go stale if copied.                                                                                                           |
 
 ## 2. Entity documents
 
@@ -95,6 +95,7 @@ lines, then a Markdown body.
   Reason: D-006 rejected "a structured-data-first catalog, with pages
   generated from a database"; these three rules keep the Markdown the real
   record even though it is stored in a database.
+
 - **Decided (owner, O-11 as changed by N-5 and N-9, [#25]):** revisions are
   stored in **PostgreSQL only**. There is **no Git mirror for now**; it is left
   for later. How revisions are stored is owned by
@@ -125,13 +126,13 @@ owner starts it and downloads it ([architecture §5.5](architecture.md#55-export
 [architecture](architecture.md); the catalog's part of it is **proposed**
 here:
 
-| Path in the export | Content |
-|---|---|
-| `catalog/README.md` | Generated: what the export is, the workspace, the catalog revision it was taken at, and that changes are made only through catalog proposals in Shinan. |
-| `catalog/start-here.md` | The [start-here document](#11-start-here). |
-| `catalog/schemas/<type>.md` | One [type schema document](#39-custom-types-and-type-schema-documents) per custom type, and per built-in type the workspace has extended. |
-| `catalog/<type>/<slug>.md` | One file per entity, so the entity ID `machine/musashi` is the path `catalog/machine/musashi.md`. |
-| `catalog/history.jsonl` | Every catalog revision: the document's ID, its full Markdown, the time, the author, the approver (if any) and the catalog proposal it came from. |
+| Path in the export          | Content                                                                                                                                                 |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `catalog/README.md`         | Generated: what the export is, the workspace, the catalog revision it was taken at, and that changes are made only through catalog proposals in Shinan. |
+| `catalog/start-here.md`     | The [start-here document](#11-start-here).                                                                                                              |
+| `catalog/schemas/<type>.md` | One [type schema document](#39-custom-types-and-type-schema-documents) per custom type, and per built-in type the workspace has extended.               |
+| `catalog/<type>/<slug>.md`  | One file per entity, so the entity ID `machine/musashi` is the path `catalog/machine/musashi.md`.                                                       |
+| `catalog/history.jsonl`     | Every catalog revision: the document's ID, its full Markdown, the time, the author, the approver (if any) and the catalog proposal it came from.        |
 
 - The Markdown files are exactly the latest revision's text, so they read like
   the `workspace` repository's catalog does today. **Proposed.** Reason: the
@@ -158,18 +159,18 @@ here:
 These fields are about the page itself and the catalog's own bookkeeping. They
 are not facts about the world, so they carry no fact state.
 
-| Field | Required | Meaning |
-|---|---|---|
-| `id` | yes | Entity ID, see [2.4](#24-ids-and-references). |
-| `type` | yes | A built-in or custom [entity type](#3-entity-types). |
-| `title` | yes | Display name. Can change freely. |
-| `summary` | yes | One sentence used in index pages and search results. |
-| `status` | yes | Entity status: `active`, `deprecated` or `retired`. Describes the thing, not the page's accuracy. |
-| `owner` | yes | The entity owner: a reference to the `person` entity of the responsible member, or `unknown`. |
-| `replaced_by` | when retired, if any | Reference to the replacing entity. |
-| `aliases` | no | Former IDs, kept so old links still resolve. |
+| Field           | Required              | Meaning                                                                                                                                                                                                                         |
+| --------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`            | yes                   | Entity ID, see [2.4](#24-ids-and-references).                                                                                                                                                                                   |
+| `type`          | yes                   | A built-in or custom [entity type](#3-entity-types).                                                                                                                                                                            |
+| `title`         | yes                   | Display name. Can change freely.                                                                                                                                                                                                |
+| `summary`       | yes                   | One sentence used in index pages and search results.                                                                                                                                                                            |
+| `status`        | yes                   | Entity status: `active`, `deprecated` or `retired`. Describes the thing, not the page's accuracy.                                                                                                                               |
+| `owner`         | yes                   | The entity owner: a reference to the `person` entity of the responsible member, or `unknown`.                                                                                                                                   |
+| `replaced_by`   | when retired, if any  | Reference to the replacing entity.                                                                                                                                                                                              |
+| `aliases`       | no                    | Former IDs, kept so old links still resolve.                                                                                                                                                                                    |
 | `imported_from` | set only by an import | Where the document came from in the source repository: a file path, with a section anchor when only part of a file was imported, and the revision, for example `catalog/machines/musashi.md@86bba32`. Never changed afterwards. |
-| `facts` | no | Facts grouped by fact check, see [section 4](#4-facts). |
+| `facts`         | no                    | Facts grouped by fact check, see [section 4](#4-facts).                                                                                                                                                                         |
 
 - **Proposed.** Reason: these are the `workspace` repository's required fields
   (`id`, `status`, `owner`) plus what the wiki and index need (`type`, `title`,
@@ -269,9 +270,9 @@ facts:
     limits: The Daedalus infrastructure checkout's submodule was not initialized, so it was not read
     observed:
       checkout-on:
-        - {to: machine/daedalus, path: /root/dockyard}
-        - {to: machine/musashi, path: /mnt/musashi/stacks/dockyard}
-        - {to: machine/musashi, path: /mnt/musashi/stacks/dockyard/dockyard}
+        - { to: machine/daedalus, path: /root/dockyard }
+        - { to: machine/musashi, path: /mnt/musashi/stacks/dockyard }
+        - { to: machine/musashi, path: /mnt/musashi/stacks/dockyard/dockyard }
       provides: service/container-registry
 ---
 
@@ -300,14 +301,17 @@ facts:
     scope: Online data-disk grow; partition, filesystem and fstab after the change
     source: https://git.guneet.dev/infra/musashi/issues/93
     observed:
-      disk.data.size: {value: 128 GiB, via: filesystem}
+      disk.data.size: { value: 128 GiB, via: filesystem }
       disk.data.free: 74 GiB
   - checked: 2026-11-14
     by: guneet via opencode-daedalus
     scope: Azure instance metadata right after the resize
     source: Azure instance metadata (non-sensitive fields), infra/musashi#93
     observed:
-      disk.data.size: {value: 64 GB, via: instance-metadata, note: Metadata lags after a resize}
+      disk.data.size:
+        value: 64 GB
+        via: instance-metadata
+        note: Metadata lags after a resize
   - unknown:
       network.public_ipv6: Reachability not tested
       recovery.tested: The rebuild runbook has not been run
@@ -517,10 +521,10 @@ status: active
 owner: person/guneet
 keys:
   registrar: {}
-  expires_on: {recheck: 30d}
-  nameservers: {many: true, recheck: 90d}
-  served-by: {relation: [service], many: true, inverse: domains}
-  configured-by: {relation: [project], inverse: domains}
+  expires_on: { recheck: 30d }
+  nameservers: { many: true, recheck: 90d }
+  served-by: { relation: [service], many: true, inverse: domains }
+  configured-by: { relation: [project], inverse: domains }
 required: [registrar, served-by]
 sections: [Role, Cautions]
 ---
@@ -593,11 +597,11 @@ Relations are multi-valued unless the schema says otherwise.
 
 **Identity: which written facts are "the same fact".**
 
-| Kind of key | A fact is identified by |
-|---|---|
-| Single-valued key | key + fact state + `via` (if given) |
-| Multi-valued key | key + value |
-| Relation | relation + target + the attributes the schema names as identifying (for `checkout-on`, the `path`) |
+| Kind of key       | A fact is identified by                                                                            |
+| ----------------- | -------------------------------------------------------------------------------------------------- |
+| Single-valued key | key + fact state + `via` (if given)                                                                |
+| Multi-valued key  | key + value                                                                                        |
+| Relation          | relation + target + the attributes the schema names as identifying (for `checkout-on`, the `path`) |
 
 `via` is an optional short label for the means of observation, such as
 `filesystem` or `instance-metadata`. It is only needed when two different
@@ -628,16 +632,16 @@ with the facts it covers, or a list of facts that have no fact check.
 
 ```yaml
 facts:
-  - checked: 2026-11-13            # a fact check group
+  - checked: 2026-11-13 # a fact check group
     by: guneet via opencode-daedalus
     scope: Read-only check of the VM platform
     source: Read-only SSH and Azure instance metadata (workspace issue 101)
     limits: Public IPs and network security group not inspected
-    observed:                      # facts by state
+    observed: # facts by state
       platform.vm_size: Standard_D2ps_v6
       disk.root.used: 93%
-  - planned:                       # facts with no fact check
-      endpoint: {value: https://shinan.guneet.dev, task: T-12}
+  - planned: # facts with no fact check
+      endpoint: { value: https://shinan.guneet.dev, task: T-12 }
   - unknown:
       backup.freshness: Backups are paused; no restore test
 ```
@@ -668,12 +672,12 @@ declares something now, it is `intended`, even if not yet applied; if it is
 agreed but not yet in the owning source, it is `planned`. The rules for each
 are **proposed**:
 
-| State | Means | Fact check | Source must be |
-|---|---|---|---|
-| `intended` | The owning source currently declares this should be true. | Required | The owning source, pinned to a revision where possible, or a `decision` or `policy` entity. |
-| `observed` | Someone saw this when they checked. | Required | A description of the observation (what, how, from where), optionally linking the task or event. |
-| `planned` | An accepted change that the owning source does not yet declare. | None | The `task` (or accepted `decision` entity) behind it, on the fact. |
-| `unknown` | Not known. | Optional: in a check group it means "looked and could not tell"; in an `unknown` list without a check, "never looked". | As for `observed`, if in a check group. |
+| State      | Means                                                           | Fact check                                                                                                             | Source must be                                                                                  |
+| ---------- | --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `intended` | The owning source currently declares this should be true.       | Required                                                                                                               | The owning source, pinned to a revision where possible, or a `decision` or `policy` entity.     |
+| `observed` | Someone saw this when they checked.                             | Required                                                                                                               | A description of the observation (what, how, from where), optionally linking the task or event. |
+| `planned`  | An accepted change that the owning source does not yet declare. | None                                                                                                                   | The `task` (or accepted `decision` entity) behind it, on the fact.                              |
+| `unknown`  | Not known.                                                      | Optional: in a check group it means "looked and could not tell"; in an `unknown` list without a check, "never looked". | As for `observed`, if in a check group.                                                         |
 
 Rules:
 
@@ -700,13 +704,13 @@ Rules:
 A **fact check** records one act of checking. Several facts can share one
 check when they were checked together.
 
-| Field | Required | Meaning |
-|---|---|---|
-| `checked` | yes | When the check actually happened: a date, or date and time. Not when the page was edited or the proposal applied. `null` only for [imported facts](#131-provenance-of-imported-facts) whose origin is known but that were never checked. |
-| `by` | yes | The actor who checked: a person, or an agent session acting for a person, written as the [identity](identity.md) document defines; Shinan for automatic fact checks. `unknown` is allowed only for imported checks. |
-| `scope` | yes | What exactly was checked, in one line. |
-| `source` | yes | Where the evidence is: a URL (pinned where possible), a repository revision, or a short description of the observation. No raw logs or sensitive output. |
-| `limits` | no | What was deliberately or necessarily **not** checked, in one line. |
+| Field     | Required | Meaning                                                                                                                                                                                                                                  |
+| --------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `checked` | yes      | When the check actually happened: a date, or date and time. Not when the page was edited or the proposal applied. `null` only for [imported facts](#131-provenance-of-imported-facts) whose origin is known but that were never checked. |
+| `by`      | yes      | The actor who checked: a person, or an agent session acting for a person, written as the [identity](identity.md) document defines; Shinan for automatic fact checks. `unknown` is allowed only for imported checks.                      |
+| `scope`   | yes      | What exactly was checked, in one line.                                                                                                                                                                                                   |
+| `source`  | yes      | Where the evidence is: a URL (pinned where possible), a repository revision, or a short description of the observation. No raw logs or sensitive output.                                                                                 |
+| `limits`  | no       | What was deliberately or necessarily **not** checked, in one line.                                                                                                                                                                       |
 
 - **Decided** that each fact records source and last-checked time (D-007).
 - **Proposed:** the fact check record and these fields. Reason: they are the
@@ -816,24 +820,25 @@ example of a fact) is the `runs-on` relation of `service/container-registry`.
   meaningless without its path, and making it a separate entity would be heavy.
 - **Proposed:** the built-in relations, which custom type schemas can extend:
 
-| Relation | From | To | Inverse shown on target |
-|---|---|---|---|
-| `checkout-on` (identified by `path`) | project | machine | checkouts |
-| `provides` | project | service | provided by |
-| `runs-on` | service | machine | services |
-| `configured-by` | machine, service | project | configures |
-| `depends-on` | project, service | service | dependents |
-| `on-network` | machine | service | members |
-| `secrets-in` (identified by `item`) | project, machine, service | service | secrets kept for |
-| `applies-to` | runbook, policy, decision | any entity or type | runbooks, policies, decisions |
-| `see-also` | policy | runbook | policies |
-| `supersedes` | decision | decision | superseded by |
-| `from-task` | decision | task | decisions |
-| `on-machine` (single-valued) | agent | machine | agents |
+| Relation                             | From                      | To                 | Inverse shown on target       |
+| ------------------------------------ | ------------------------- | ------------------ | ----------------------------- |
+| `checkout-on` (identified by `path`) | project                   | machine            | checkouts                     |
+| `provides`                           | project                   | service            | provided by                   |
+| `runs-on`                            | service                   | machine            | services                      |
+| `configured-by`                      | machine, service          | project            | configures                    |
+| `depends-on`                         | project, service          | service            | dependents                    |
+| `on-network`                         | machine                   | service            | members                       |
+| `secrets-in` (identified by `item`)  | project, machine, service | service            | secrets kept for              |
+| `applies-to`                         | runbook, policy, decision | any entity or type | runbooks, policies, decisions |
+| `see-also`                           | policy                    | runbook            | policies                      |
+| `supersedes`                         | decision                  | decision           | superseded by                 |
+| `from-task`                          | decision                  | task               | decisions                     |
+| `on-machine` (single-valued)         | agent                     | machine            | agents                        |
 
-  Reason: a small fixed set keeps generated inverses readable and queryable;
-  the [glossary](domain-model.md) asks this document to settle how
-  relationships are expressed (plan question 5).
+Reason: a small fixed set keeps generated inverses readable and queryable;
+the [glossary](domain-model.md) asks this document to settle how
+relationships are expressed (plan question 5).
+
 - `owner` and `replaced_by` are entity fields, not relations, but the wiki
   shows their inverses too ("owns", "replaces"). **Proposed.**
 - Links between catalog entities and tasks ("this task touched this entity")
@@ -849,21 +854,21 @@ The catalog holds three kinds of information and links to everything else.
 **Decided** in principle (P3); the split below is **proposed**, from the
 `workspace` repository's ownership table.
 
-| The catalog holds | Example |
-|---|---|
-| Identity and routing: what exists, where, who owns it, what depends on what, where its secrets live. | Dockyard has a checkout at `/root/dockyard` on Daedalus. |
-| Observations no other system records. | Musashi's Docker address pools were exhausted on 2026-11-14. |
-| Cross-project knowledge: runbooks, decisions and policies. | Every deployment change needs the owner's approval. |
+| The catalog holds                                                                                    | Example                                                      |
+| ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| Identity and routing: what exists, where, who owns it, what depends on what, where its secrets live. | Dockyard has a checkout at `/root/dockyard` on Daedalus.     |
+| Observations no other system records.                                                                | Musashi's Docker address pools were exhausted on 2026-11-14. |
+| Cross-project knowledge: runbooks, decisions and policies.                                           | Every deployment change needs the owner's approval.          |
 
-| The catalog links to | Owner |
-|---|---|
-| Setup, architecture, tests, deployment commands | The project's repository |
-| Infrastructure configuration | The infrastructure repository |
-| Task intent, progress, acceptance criteria | [Tasks](tasks.md) |
-| Pull requests, issues, CI results | Git hosts ([git hosts](git-hosts.md)) |
-| Live health and metrics | The monitoring system |
-| Sign-in, roles, tokens, git host accounts | [Identity](identity.md) |
-| Secret values | A secrets manager, such as Obscuro or Infisical (owner, O-2, [#25]) |
+| The catalog links to                            | Owner                                                               |
+| ----------------------------------------------- | ------------------------------------------------------------------- |
+| Setup, architecture, tests, deployment commands | The project's repository                                            |
+| Infrastructure configuration                    | The infrastructure repository                                       |
+| Task intent, progress, acceptance criteria      | [Tasks](tasks.md)                                                   |
+| Pull requests, issues, CI results               | Git hosts ([git hosts](git-hosts.md))                               |
+| Live health and metrics                         | The monitoring system                                               |
+| Sign-in, roles, tokens, git host accounts       | [Identity](identity.md)                                             |
+| Secret values                                   | A secrets manager, such as Obscuro or Infisical (owner, O-2, [#25]) |
 
 An `intended` fact may repeat a single value from its owning source (for
 example the port a configuration file sets) when readers need it for routing.
@@ -902,7 +907,9 @@ catalog records **where a secret lives**, not the secret.
   ```yaml
   observed:
     secrets-in:
-      - {to: service/obscuro, item: musashi/dockyard/registry-admin, note: Registry admin password}
+      - to: service/obscuro
+        item: musashi/dockyard/registry-admin
+        note: Registry admin password
   ```
 
   Reason: agents then know where to look (and whom to ask) without the value
@@ -991,17 +998,17 @@ identity. From the `workspace` repository's history (49 changes to the
 13 trial entries in ten days, none in a gated class), strict approval would
 have meant 4 to 5 approvals a day; gated approval meant close to none.
 
-| Class | Examples | Default | Strict setting |
-|---|---|---|---|
-| Recheck | New fact check, value unchanged | Applies on its own | Applies on its own |
-| Observed or unknown facts | Add, change or remove an `observed`/`unknown` fact or relation | Applies on its own | Catalog approval |
-| Intended facts | From an owning source pinned to a revision | Applies on its own | Catalog approval |
-| Planned changes | Add or remove a `planned` fact | Applies on its own | Catalog approval |
-| Body and bookkeeping | Body text, title, summary, new entity of any type | Applies on its own | Catalog approval |
-| Rules (gated) | Create or change a `policy`; change a `decision` to `accepted`, `rejected` or `superseded`; create, change or retire a type schema document; change the start-here document | Catalog approval | Catalog approval |
-| Lifecycle (gated) | Deprecate, retire, change ID, change owner | Catalog approval | Catalog approval |
-| People and agents (gated) | Any change to `person` or `agent` entities | Catalog approval | Catalog approval |
-| Doubtful (gated) | A recheck or change whose fact check is older than the current one; accepting a discrepancy; a warning from validation, including a secret-looking value | Catalog approval | Catalog approval |
+| Class                     | Examples                                                                                                                                                                    | Default            | Strict setting     |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ | ------------------ |
+| Recheck                   | New fact check, value unchanged                                                                                                                                             | Applies on its own | Applies on its own |
+| Observed or unknown facts | Add, change or remove an `observed`/`unknown` fact or relation                                                                                                              | Applies on its own | Catalog approval   |
+| Intended facts            | From an owning source pinned to a revision                                                                                                                                  | Applies on its own | Catalog approval   |
+| Planned changes           | Add or remove a `planned` fact                                                                                                                                              | Applies on its own | Catalog approval   |
+| Body and bookkeeping      | Body text, title, summary, new entity of any type                                                                                                                           | Applies on its own | Catalog approval   |
+| Rules (gated)             | Create or change a `policy`; change a `decision` to `accepted`, `rejected` or `superseded`; create, change or retire a type schema document; change the start-here document | Catalog approval   | Catalog approval   |
+| Lifecycle (gated)         | Deprecate, retire, change ID, change owner                                                                                                                                  | Catalog approval   | Catalog approval   |
+| People and agents (gated) | Any change to `person` or `agent` entities                                                                                                                                  | Catalog approval   | Catalog approval   |
+| Doubtful (gated)          | A recheck or change whose fact check is older than the current one; accepting a discrepancy; a warning from validation, including a secret-looking value                    | Catalog approval   | Catalog approval   |
 
 - **Proposed:** the strict setting is one workspace setting, switched on by a
   workspace owner when catalog accuracy slips (for example when roadmap
@@ -1186,6 +1193,7 @@ same catalog pages and changed only with catalog approval. Details
   Reason: the `workspace` repository has the same split today: its README
   "Start here" for people and `AGENTS.md` plus `docs/agent-entrypoint.md` for
   agents.
+
 - It links and does not copy: each step is a reference to an entity (usually a
   policy or runbook) or a generated list. Validation warns when a step points
   to a retired entity or to one with discrepancies. Reason: P3; onboarding
@@ -1310,31 +1318,31 @@ checked when only one fact was verified", and D-007):
 
 ### 13.2 What maps where
 
-| `workspace` repository | Shinan catalog |
-|---|---|
-| Entry file `catalog/machines/musashi.md`, `id: musashi` | Entity `machine/musashi`; the old ID `musashi` is kept as an alias where it is unique across types |
-| `status: active / deprecated / retired` | Entity status, same values |
-| `owner: guneet` / `unknown` | `owner: person/guneet` / `unknown` |
-| `last_verified`, `verification_scope`, `verification_source` | Fact checks, as in [13.1](#131-provenance-of-imported-facts) |
-| `last_verified: null` | Facts with `checked: null` ("not checked") |
-| Values written `unknown`; "Known unknowns" sections | `unknown` facts |
-| "Verification limits" sections | `limits` on fact checks |
-| "Locations" tables | `checkout-on` relations with `path` |
-| "Authoritative sources" lists | Keyed facts (`repository`, `docs.*`, `issue_tracker`) |
-| Mentions of where credentials are kept (for example Obscuro paths) | `secrets-in` relations |
-| Deployment details on project entries | Facts on the `service` the project `provides`; a service entity is created where none exists |
-| Discrepancies written in prose | Paired facts on single-valued keys, detected as discrepancies |
-| Dated history in prose | Stays in the body |
-| `templates/*.md` | Built-in type schemas; not imported |
-| `runbooks/`, `decisions/` | `runbook` and `decision` entities (decision `status` becomes `decision_state`) |
-| `docs/maintenance.md`, `docs/access-and-safety.md`, policy parts of `docs/collaboration.md` | `policy` entities |
-| `docs/forgejo-setup.md` | Its setup checklist becomes facts on `service/forgejo`: items the owner reported become `observed` facts with the owner's statement as source; pending items become `unknown` facts, or `planned` facts if a task exists. Its "verified CLI usage" section becomes a `runbook` if agents still need it after Shinan's git host connections exist; otherwise it is left in the archived repository. |
-| `README.md` "Start here", `AGENTS.md`, `docs/agent-entrypoint.md` | The start-here document; product-wide parts move to the skill ([agent integrations](agent-integrations.md)) |
-| `docs/skills.md`, `.opencode/skills/*` (workspace-navigate, -maintain, -task, -audit) | Not imported. Replaced by Shinan's skill ([agent integrations](agent-integrations.md)); any workspace-specific rule they contain becomes a `policy` |
-| `integrations/opencode/*` | Not imported. Replaced by setup instructions for Shinan's MCP server, skill and plugin ([agent integrations](agent-integrations.md)) |
-| `scripts/check.py`, tests | Replaced by validation on every catalog proposal; not imported |
-| Pull requests changing catalog files; `CHANGELOG.md` | Catalog proposals; revisions and events. The changelog and Git history stay in the archived repository. |
-| Forgejo issues | Tasks ([tasks](tasks.md)) |
+| `workspace` repository                                                                      | Shinan catalog                                                                                                                                                                                                                                                                                                                                                                                     |
+| ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Entry file `catalog/machines/musashi.md`, `id: musashi`                                     | Entity `machine/musashi`; the old ID `musashi` is kept as an alias where it is unique across types                                                                                                                                                                                                                                                                                                 |
+| `status: active / deprecated / retired`                                                     | Entity status, same values                                                                                                                                                                                                                                                                                                                                                                         |
+| `owner: guneet` / `unknown`                                                                 | `owner: person/guneet` / `unknown`                                                                                                                                                                                                                                                                                                                                                                 |
+| `last_verified`, `verification_scope`, `verification_source`                                | Fact checks, as in [13.1](#131-provenance-of-imported-facts)                                                                                                                                                                                                                                                                                                                                       |
+| `last_verified: null`                                                                       | Facts with `checked: null` ("not checked")                                                                                                                                                                                                                                                                                                                                                         |
+| Values written `unknown`; "Known unknowns" sections                                         | `unknown` facts                                                                                                                                                                                                                                                                                                                                                                                    |
+| "Verification limits" sections                                                              | `limits` on fact checks                                                                                                                                                                                                                                                                                                                                                                            |
+| "Locations" tables                                                                          | `checkout-on` relations with `path`                                                                                                                                                                                                                                                                                                                                                                |
+| "Authoritative sources" lists                                                               | Keyed facts (`repository`, `docs.*`, `issue_tracker`)                                                                                                                                                                                                                                                                                                                                              |
+| Mentions of where credentials are kept (for example Obscuro paths)                          | `secrets-in` relations                                                                                                                                                                                                                                                                                                                                                                             |
+| Deployment details on project entries                                                       | Facts on the `service` the project `provides`; a service entity is created where none exists                                                                                                                                                                                                                                                                                                       |
+| Discrepancies written in prose                                                              | Paired facts on single-valued keys, detected as discrepancies                                                                                                                                                                                                                                                                                                                                      |
+| Dated history in prose                                                                      | Stays in the body                                                                                                                                                                                                                                                                                                                                                                                  |
+| `templates/*.md`                                                                            | Built-in type schemas; not imported                                                                                                                                                                                                                                                                                                                                                                |
+| `runbooks/`, `decisions/`                                                                   | `runbook` and `decision` entities (decision `status` becomes `decision_state`)                                                                                                                                                                                                                                                                                                                     |
+| `docs/maintenance.md`, `docs/access-and-safety.md`, policy parts of `docs/collaboration.md` | `policy` entities                                                                                                                                                                                                                                                                                                                                                                                  |
+| `docs/forgejo-setup.md`                                                                     | Its setup checklist becomes facts on `service/forgejo`: items the owner reported become `observed` facts with the owner's statement as source; pending items become `unknown` facts, or `planned` facts if a task exists. Its "verified CLI usage" section becomes a `runbook` if agents still need it after Shinan's git host connections exist; otherwise it is left in the archived repository. |
+| `README.md` "Start here", `AGENTS.md`, `docs/agent-entrypoint.md`                           | The start-here document; product-wide parts move to the skill ([agent integrations](agent-integrations.md))                                                                                                                                                                                                                                                                                        |
+| `docs/skills.md`, `.opencode/skills/*` (workspace-navigate, -maintain, -task, -audit)       | Not imported. Replaced by Shinan's skill ([agent integrations](agent-integrations.md)); any workspace-specific rule they contain becomes a `policy`                                                                                                                                                                                                                                                |
+| `integrations/opencode/*`                                                                   | Not imported. Replaced by setup instructions for Shinan's MCP server, skill and plugin ([agent integrations](agent-integrations.md))                                                                                                                                                                                                                                                               |
+| `scripts/check.py`, tests                                                                   | Replaced by validation on every catalog proposal; not imported                                                                                                                                                                                                                                                                                                                                     |
+| Pull requests changing catalog files; `CHANGELOG.md`                                        | Catalog proposals; revisions and events. The changelog and Git history stay in the archived repository.                                                                                                                                                                                                                                                                                            |
+| Forgejo issues                                                                              | Tasks ([tasks](tasks.md))                                                                                                                                                                                                                                                                                                                                                                          |
 
 Extracting facts from prose cannot be fully automatic. **Proposed:** import
 each entry with its prose as body and the facts that can be extracted
@@ -1377,13 +1385,13 @@ frontmatter with `id` equal to the file name, `status` of `active`,
    - a document created after cutover goes to its type's folder below, using
      its slug as the file name.
 
-| Export | Old path |
-|---|---|
-| `catalog/project/<slug>.md` | `catalog/projects/<slug>.md` |
-| `catalog/machine/<slug>.md` | `catalog/machines/<slug>.md` |
-| `catalog/service/<slug>.md` | `catalog/services/<slug>.md` |
-| `catalog/runbook/<slug>.md` | `runbooks/<slug>.md` |
-| `catalog/decision/<slug>.md` | `decisions/<slug>.md` |
+| Export                       | Old path                     |
+| ---------------------------- | ---------------------------- |
+| `catalog/project/<slug>.md`  | `catalog/projects/<slug>.md` |
+| `catalog/machine/<slug>.md`  | `catalog/machines/<slug>.md` |
+| `catalog/service/<slug>.md`  | `catalog/services/<slug>.md` |
+| `catalog/runbook/<slug>.md`  | `runbooks/<slug>.md`         |
+| `catalog/decision/<slug>.md` | `decisions/<slug>.md`        |
 
 3. **Documents with no old place are not converted:** `policy`, `person` and
    `agent` entities; entities of custom types; type schema documents; the
@@ -1395,24 +1403,24 @@ frontmatter with `id` equal to the file name, `status` of `active`,
 
 #### How a converted document is written
 
-| Shinan | `workspace` repository |
-|---|---|
-| `id: machine/musashi` | `id: musashi` (the slug, which the import kept unchanged) |
-| `status` | `status`, same value |
-| `owner: person/guneet`, `owner: unknown` | `owner: guneet`, `owner: unknown` |
-| `decision_state`, `decided_on` (decisions) | `status`, `date`, as in the `workspace` decision template |
-| `title` | The page's first heading, if the body has none |
-| `summary` | Not written; the body's first paragraph already says what the thing is |
-| Fact checks | `last_verified`, `verification_scope` and `verification_source` describe **only the newest fact check** on the page: its date, its scope and its source, on one line each. With no dated fact check: `last_verified: null`, `verification_scope: Not yet verified`, `verification_source: unknown` (the template values) |
-| Facts | A generated section at the end of the body, `## Facts recorded in Shinan`, with one row per fact: key, value, fact state, date checked (or "not checked") and the fact check's source and scope. This is where every other fact keeps its own check date, as the `workspace` maintenance policy allows ("per-fact notes can preserve different verification times") |
-| Discrepancies | Both facts in that table, each with its own check, marked "discrepancy" |
-| `checkout-on` relations | A `### Locations` table inside that section, in the template's form: machine, checkout path, evidence and date |
-| `unknown` facts; `limits` | `### Known unknowns` and `### Verification limits` inside that section |
-| `secrets-in` relations | A row naming the secrets manager and the item; never a value |
-| The body | Kept as written in Shinan |
-| References to converted documents, such as `[Musashi](machine/musashi)` | Relative links to their old paths, such as `[Musashi](../machines/musashi.md)` |
-| References to documents that are not converted | Plain text: the title with the ID in code, so no link is broken |
-| `catalog/history.jsonl` and the export file | Not committed. Kept with the export archive, which the PR description names, so the history since cutover is not lost |
+| Shinan                                                                  | `workspace` repository                                                                                                                                                                                                                                                                                                                                              |
+| ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id: machine/musashi`                                                   | `id: musashi` (the slug, which the import kept unchanged)                                                                                                                                                                                                                                                                                                           |
+| `status`                                                                | `status`, same value                                                                                                                                                                                                                                                                                                                                                |
+| `owner: person/guneet`, `owner: unknown`                                | `owner: guneet`, `owner: unknown`                                                                                                                                                                                                                                                                                                                                   |
+| `decision_state`, `decided_on` (decisions)                              | `status`, `date`, as in the `workspace` decision template                                                                                                                                                                                                                                                                                                           |
+| `title`                                                                 | The page's first heading, if the body has none                                                                                                                                                                                                                                                                                                                      |
+| `summary`                                                               | Not written; the body's first paragraph already says what the thing is                                                                                                                                                                                                                                                                                              |
+| Fact checks                                                             | `last_verified`, `verification_scope` and `verification_source` describe **only the newest fact check** on the page: its date, its scope and its source, on one line each. With no dated fact check: `last_verified: null`, `verification_scope: Not yet verified`, `verification_source: unknown` (the template values)                                            |
+| Facts                                                                   | A generated section at the end of the body, `## Facts recorded in Shinan`, with one row per fact: key, value, fact state, date checked (or "not checked") and the fact check's source and scope. This is where every other fact keeps its own check date, as the `workspace` maintenance policy allows ("per-fact notes can preserve different verification times") |
+| Discrepancies                                                           | Both facts in that table, each with its own check, marked "discrepancy"                                                                                                                                                                                                                                                                                             |
+| `checkout-on` relations                                                 | A `### Locations` table inside that section, in the template's form: machine, checkout path, evidence and date                                                                                                                                                                                                                                                      |
+| `unknown` facts; `limits`                                               | `### Known unknowns` and `### Verification limits` inside that section                                                                                                                                                                                                                                                                                              |
+| `secrets-in` relations                                                  | A row naming the secrets manager and the item; never a value                                                                                                                                                                                                                                                                                                        |
+| The body                                                                | Kept as written in Shinan                                                                                                                                                                                                                                                                                                                                           |
+| References to converted documents, such as `[Musashi](machine/musashi)` | Relative links to their old paths, such as `[Musashi](../machines/musashi.md)`                                                                                                                                                                                                                                                                                      |
+| References to documents that are not converted                          | Plain text: the title with the ID in code, so no link is broken                                                                                                                                                                                                                                                                                                     |
+| `catalog/history.jsonl` and the export file                             | Not committed. Kept with the export archive, which the PR description names, so the history since cutover is not lost                                                                                                                                                                                                                                               |
 
 - The page fields never claim a whole-page check: they describe one fact
   check, and every other fact carries its own date in the generated section.
@@ -1446,16 +1454,16 @@ and that the unchanged entity produces no diff.
 
 What this document still needs from other documents:
 
-| Document | What this document needs |
-|---|---|
-| [Domain model and glossary](domain-model.md) | The terms used here, including workspace export, recent changes feed and strict setting. |
-| [Architecture and operations](architecture.md) | Revisions stored as Markdown text and the index built from it (the D-006 invariant); per-operation conflicts; purge; the check for secret-looking values; type schema documents in the parser and index. Its workspace export ([§5.5](architecture.md#55-export-and-import)) writes the catalog in the layout of [2.2](#22-export-the-exit-path), including `history.jsonl`. |
-| [Identity, agents and permissions](identity.md) | Who may approve and switch the strict setting; workspace owners only for export and purge; the written form of an actor in a fact check's `by` ([identity §8.7](identity.md#87-how-an-actor-is-written-in-text)); Shinan's token prefixes for the secret check. |
-| [Agent integrations](agent-integrations.md) | MCP and CLI tools to read the index and type schemas, send catalog proposals and rechecks, and comment on proposals; delivering the agents' start-here path; the recheck-before-acting and documentation-impact conventions. |
-| [Human experience](human-experience.md) | Wiki pages, freshness, discrepancies, the editor, review list and recent changes feed, start-here presentation, pages for custom types and their schema documents, and the workspace export link for owners. |
-| [Tasks and work](tasks.md) | Links between tasks and catalog entities; promoting task decisions to `decision` entities; telling the catalog when a task behind a `planned` fact is cancelled ([4.4](#44-fact-states)); whether the documentation-impact obligation is part of "done" ([8.4](#84-agents-documentation-impact-obligation)). |
-| [Git host integrations](git-hosts.md) | Repository identity for `project` facts; which facts Shinan can check automatically, by reading only (owner, N-4, [#25]). |
-| [Roadmap and migration](roadmap.md) | The rollback process, which uses the converter in [13.3](#133-mapping-back-for-a-rollback), and the rehearsal run of it (R14). |
+| Document                                        | What this document needs                                                                                                                                                                                                                                                                                                                                                     |
+| ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [Domain model and glossary](domain-model.md)    | The terms used here, including workspace export, recent changes feed and strict setting.                                                                                                                                                                                                                                                                                     |
+| [Architecture and operations](architecture.md)  | Revisions stored as Markdown text and the index built from it (the D-006 invariant); per-operation conflicts; purge; the check for secret-looking values; type schema documents in the parser and index. Its workspace export ([§5.5](architecture.md#55-export-and-import)) writes the catalog in the layout of [2.2](#22-export-the-exit-path), including `history.jsonl`. |
+| [Identity, agents and permissions](identity.md) | Who may approve and switch the strict setting; workspace owners only for export and purge; the written form of an actor in a fact check's `by` ([identity §8.7](identity.md#87-how-an-actor-is-written-in-text)); Shinan's token prefixes for the secret check.                                                                                                              |
+| [Agent integrations](agent-integrations.md)     | MCP and CLI tools to read the index and type schemas, send catalog proposals and rechecks, and comment on proposals; delivering the agents' start-here path; the recheck-before-acting and documentation-impact conventions.                                                                                                                                                 |
+| [Human experience](human-experience.md)         | Wiki pages, freshness, discrepancies, the editor, review list and recent changes feed, start-here presentation, pages for custom types and their schema documents, and the workspace export link for owners.                                                                                                                                                                 |
+| [Tasks and work](tasks.md)                      | Links between tasks and catalog entities; promoting task decisions to `decision` entities; telling the catalog when a task behind a `planned` fact is cancelled ([4.4](#44-fact-states)); whether the documentation-impact obligation is part of "done" ([8.4](#84-agents-documentation-impact-obligation)).                                                                 |
+| [Git host integrations](git-hosts.md)           | Repository identity for `project` facts; which facts Shinan can check automatically, by reading only (owner, N-4, [#25]).                                                                                                                                                                                                                                                    |
+| [Roadmap and migration](roadmap.md)             | The rollback process, which uses the converter in [13.3](#133-mapping-back-for-a-rollback), and the rehearsal run of it (R14).                                                                                                                                                                                                                                               |
 
 ## Proposed in this document
 
