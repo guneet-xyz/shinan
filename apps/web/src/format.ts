@@ -21,10 +21,21 @@ export function formatTime(iso: string): string {
 
 /**
  * Only same-site paths are followed after sign-in, so a crafted link cannot
- * send someone to another site.
+ * send someone to another site. The value is parsed the way a browser would
+ * (which drops tabs and newlines and reads `\` as `/`), then kept only if it
+ * stays on this origin.
  */
-export function safeNextPath(next: string | null): string {
-  if (!next || !next.startsWith("/") || next.startsWith("//")) return "/"
-  if (next.startsWith("/\\")) return "/"
-  return next
+export function safeNextPath(
+  next: string | null,
+  origin: string = window.location.origin,
+): string {
+  if (!next) return "/"
+  let url: URL
+  try {
+    url = new URL(next, origin)
+  } catch {
+    return "/"
+  }
+  if (url.origin !== origin) return "/"
+  return url.pathname + url.search + url.hash
 }

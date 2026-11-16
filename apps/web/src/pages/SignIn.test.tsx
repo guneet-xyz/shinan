@@ -75,15 +75,18 @@ describe("the sign-in page", () => {
   })
 
   it("only returns to addresses on this site", async () => {
-    const api = signedOutApi({
-      startGitHubSignIn: () => Promise.resolve({ url: "https://github.com" }),
-    })
-    renderApp("/sign-in?next=%2F%2Fevil.example", api)
+    for (const next of ["%2F%2Fevil.example", "%2F%09%2Fevil.example"]) {
+      const api = signedOutApi({
+        startGitHubSignIn: () => Promise.resolve({ url: "https://github.com" }),
+      })
+      const { unmount } = renderApp(`/sign-in?next=${next}`, api)
 
-    await userEvent.click(
-      await screen.findByRole("button", { name: "Sign in with GitHub" }),
-    )
-    expect(api.startGitHubSignIn).toHaveBeenCalledWith({ callbackURL: "/" })
+      await userEvent.click(
+        await screen.findByRole("button", { name: "Sign in with GitHub" }),
+      )
+      expect(api.startGitHubSignIn).toHaveBeenCalledWith({ callbackURL: "/" })
+      unmount()
+    }
   })
 
   it("explains a sign-in link that did not work", async () => {

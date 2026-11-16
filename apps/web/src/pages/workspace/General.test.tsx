@@ -4,8 +4,10 @@ import { describe, expect, it } from "vitest"
 
 import {
   apiError,
+  contributorMember,
   currentPath,
   fakeApi,
+  ownerMember,
   renderApp,
   workspace,
   workspaceId,
@@ -53,7 +55,10 @@ describe("the general settings screen", () => {
   })
 
   it("lets a member leave after confirming", async () => {
-    const api = fakeApi({ leaveWorkspace: () => Promise.resolve(undefined) })
+    const api = fakeApi({
+      workspace: () => Promise.resolve({ ...workspace, role: "contributor" }),
+      leaveWorkspace: () => Promise.resolve(undefined),
+    })
     renderApp(path, api)
 
     await userEvent.click(
@@ -69,8 +74,25 @@ describe("the general settings screen", () => {
     expect(currentPath()).toBe("/account")
   })
 
-  it("explains why the last owner cannot leave", async () => {
+  it("does not offer Leave to the last workspace owner", async () => {
+    renderApp(path)
+
+    expect(
+      await screen.findByText(/You are the only workspace owner/),
+    ).toBeTruthy()
+    expect(
+      screen.queryByRole("button", { name: "Leave workspace…" }),
+    ).toBeNull()
+  })
+
+  it("shows why leaving was refused", async () => {
     const api = fakeApi({
+      // Another owner, who may have left meanwhile.
+      members: () =>
+        Promise.resolve([
+          ownerMember,
+          { ...contributorMember, role: "owner" as const },
+        ]),
       leaveWorkspace: () =>
         Promise.reject(
           apiError(409, {

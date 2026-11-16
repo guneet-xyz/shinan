@@ -42,7 +42,11 @@ export function General() {
           </dd>
         </dl>
       </section>
-      <LeaveWorkspace />
+      {owners && (
+        <LeaveWorkspace
+          onlyOwner={workspace.role === "owner" && owners.length === 1}
+        />
+      )}
     </>
   )
 }
@@ -94,8 +98,11 @@ function RenameForm() {
   )
 }
 
-/** Any member may leave (identity §5.3). */
-function LeaveWorkspace() {
+/**
+ * Any member may leave (identity §5.3), except the last workspace owner
+ * (identity §4), who is told why instead of being offered the action.
+ */
+function LeaveWorkspace(props: { onlyOwner: boolean }) {
   const api = useApi()
   const navigate = useNavigate()
   const account = useAccount()
@@ -118,7 +125,12 @@ function LeaveWorkspace() {
   return (
     <section aria-labelledby="leave-heading" className="danger-zone">
       <h2 id="leave-heading">Leave this workspace</h2>
-      {confirming ? (
+      {props.onlyOwner ? (
+        <p className="muted">
+          You are the only workspace owner, and a workspace always has at least
+          one. Make another member a workspace owner before you leave.
+        </p>
+      ) : confirming ? (
         <div className="confirm">
           <p>
             You will lose access to {workspace.name} at once. Your past activity
