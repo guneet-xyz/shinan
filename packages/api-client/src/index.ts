@@ -1,3 +1,5 @@
+export { sameSitePath } from "./paths.js"
+
 // The REST API's contract, shared by the web app, CLI and plugin. Times are
 // ISO 8601 strings; IDs of records are UUIDs, except event and security-log
 // IDs, which are numbers used as page cursors.
@@ -201,6 +203,7 @@ export interface PageRequest {
  * - `not-found` (404): it does not exist, or the requester may not know it does;
  * - `conflict` (409): it breaks a rule given the current state (`rule`);
  * - `invalid-input` (422): the input itself is malformed (`rule`);
+ * - `too-many-requests` (429): too many attempts; wait and try again;
  * - `not-implemented` (501): the server does not offer this;
  * - `internal` (500): anything else; details are only in the server's log.
  */
@@ -211,6 +214,7 @@ export type ErrorCode =
   | "not-found"
   | "conflict"
   | "invalid-input"
+  | "too-many-requests"
   | "not-implemented"
   | "internal"
 
