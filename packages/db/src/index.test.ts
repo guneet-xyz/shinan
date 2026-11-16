@@ -1,10 +1,10 @@
 import { sql } from "drizzle-orm"
-import { afterAll, describe, expect, inject, it } from "vitest"
+import { afterAll, describe, expect, it } from "vitest"
 
-import { createDatabase } from "./index.js"
+import { connectTestDatabase } from "./testing.js"
 
 describe("database", () => {
-  const { db, pool } = createDatabase(inject("databaseUrl"))
+  const { db, pool } = connectTestDatabase()
 
   afterAll(async () => {
     await pool.end()
