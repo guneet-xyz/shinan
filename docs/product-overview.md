@@ -13,9 +13,13 @@ Every statement is marked:
 
 - **Decided**: follows from an accepted decision or from approved plan content
   (pillars, integration points, phases, non-goals) in the [plan](plan.md),
-  which is cited and carries the reason. **Decided (owner, O-n, #25)** marks an
-  answer the owner gave in the consolidated decision checklist, issue
-  [#25](https://github.com/guneet-xyz/shinan/issues/25). The decision log maps these to decision records.
+  which is cited and carries the reason. **Decided (owner, O-n or N-n, #25)**
+  marks an answer the owner gave in the consolidated decision checklist, issue
+  [#25](https://github.com/guneet-xyz/shinan/issues/25), and **Decided (owner,
+  NO-n, #26)** one given during the integration review, issue
+  [#26](https://github.com/guneet-xyz/shinan/issues/26). The
+  [decision log](decisions/README.md) maps these to decision records where they
+  have one.
 - **Proposed**: suggested here, with a reason. The owner confirms or changes it.
 - **Open**: not settled. Listed under [open questions](#open-questions) or
   [decisions needed from the owner](#decisions-needed-from-the-owner).
@@ -118,7 +122,7 @@ Each persona maps to glossary terms. The roles named are the
 | **An agent** working for a person, for example "Guneet's OpenCode on Daedalus" | Agent (one per person, coding tool and machine, **Decided (owner, O-40, [#25](https://github.com/guneet-xyz/shinan/issues/25))**), agent session, acting for | Read the relevant part of the catalog through the agent index at the start of a task; find or create the task; report progress and link work; propose catalog changes from what it observed; receive nudges. | **Decided** that agents are users through MCP, a skill and plugins (D-014). The interface belongs to [Agent integrations](agent-integrations.md). |
 | **A team member** | Member with the contributor role | Pick up tasks, comment, nudge agent sessions, register their own agents, read and propose catalog changes. Every member sees everything in the workspace, including work from private repositories. | **Decided** that members exist (D-019); roles are workspace owner and contributor only, with no viewer role (**Decided (owner, N-11, [#25](https://github.com/guneet-xyz/shinan/issues/25))**); every member sees everything (**Decided (owner, O-43, [#25](https://github.com/guneet-xyz/shinan/issues/25))**). |
 | **A newcomer, person or agent** | Start here path | Get from zero to useful in one reading path. A new person joins as a contributor; there is no read-only role. | **Decided** (plan, Wiki and onboarding pillar; N-11). |
-| **An outside contributor** | Outside actor; outside issue | Nothing in Shinan directly; they open issues on a git host, and Shinan turns those into tasks. | **Decided** (D-003) that outside issues become tasks; the `triage` status they start in is **proposed** in the [domain model](domain-model.md#outside-issue). |
+| **An outside contributor** | Outside actor; outside issue | Nothing in Shinan directly; they open issues on a git host, and Shinan turns those into tasks, except in repositories where that is turned off. | **Decided** (D-003) that outside issues become tasks, amended so that each repository has a "turn new issues into tasks" setting, on by default and turned off for shared repositories (**Decided (owner, NO-2, [#26](https://github.com/guneet-xyz/shinan/issues/26))**). The setting is defined in [Tasks and work](tasks.md) and held by [Git host integrations](git-hosts.md). |
 | **A later adopter**: agency, consultancy or small infrastructure team | Several workspaces per person | Keep each client's or system's catalog and tasks apart; hand over a readable catalog when an engagement ends; run Shinan themselves. | **Proposed** needs. Reason: these teams work across many separate estates, which is the workspace boundary (D-019) and the self-hosting decision (D-012). Whether clients ever sign in is **open** (question 3); because every member sees everything in a workspace (O-43) and every member is at least a contributor (N-11), a client could only be given a whole workspace with write access. |
 
 ### Who Shinan is not for
@@ -562,42 +566,20 @@ owner's use.
 
 ## Dependencies on other documents
 
-Links use each document's planned path; until it merges, its issue holds the
-work. The sibling drafts were read on 2026-11-16 after they applied the
-owner's answers O-1 to O-98 in [#25](https://github.com/guneet-xyz/shinan/issues/25) but before the follow-up answers
-N-1 to N-11, so the mismatches listed below are expected to close when they
-apply those.
+| Document | What this document relies on it for |
+|---|---|
+| [Domain model and glossary](domain-model.md) | All terms. Its roles (workspace owner and contributor, [D-045](decisions/D-045-no-viewer-role.md)) underlie the personas. |
+| [Catalog](catalog.md) | Whether the catalog can deliver differentiators 1 to 3: entity types (including custom ones, O-17), fact states, catalog proposals and gated approval (O-3), the agent index, PostgreSQL storage with no Git mirror for now ([D-043](decisions/D-043-no-git-mirror-for-now.md)). |
+| [Tasks and work](tasks.md) | The task story, calculated status, subtasks, per-workspace task flags, nudges, and the per-repository "turn new issues into tasks" setting (NO-2). |
+| [Identity, agents and permissions](identity.md) | Roles behind the personas, whether people outside a team (for example a client) can be members, and how Shinan holds its own credentials. Its question on how security and self-hosting are positioned for later adopters is answered by [differentiator 4](#differentiators) and [fit for later adopters](#fit-for-later-adopters). |
+| [Git host integrations](git-hosts.md) | That GitHub and several Forgejo servers can be read alike, that Shinan writes only on GitHub and only as its app ([D-032](decisions/D-032-no-writes-as-a-person-on-github.md), [D-042](decisions/D-042-no-writes-on-forgejo.md)), and how a person's request for a git host action reaches their agent sessions (N-3). |
+| [Agent integrations](agent-integrations.md) | That plugin-based presence and nudges work for agent sessions a person starts (differentiator 5). |
+| [Human experience](human-experience.md) | The wiki and start here path that make the catalog readable by people. Its "steer, don't operate" matches the principle [people set direction; agents do the work](#product-principles). |
+| [Architecture and operations](architecture.md) | That a single person can self-host an installation (differentiator 4), that the public app is safe for infrastructure details (D-015), and what happens to secrets pasted by mistake. |
+| [Roadmap and migration](roadmap.md) | Phases, trial projects and the measurable readiness criteria behind [what success looks like](#what-success-looks-like) (its R7 cites success sign 2, whose numbering is kept). |
+| [Decision log](decisions/README.md) | [D-041](decisions/D-041-no-outside-tracker-integrations.md) records O-88 and O-97 (no tracker integrations, amending D-010). O-84 to O-87, O-89 and O-90 are decided in this document and have no record, as the decision log's rules allow (O-98). |
 
-| Document | Issue | What this document relies on it for |
-|---|---|---|
-| [Domain model and glossary](domain-model.md) | [#3](https://github.com/guneet-xyz/shinan/issues/3) | All terms. Its roles underlie the personas. |
-| [Catalog](catalog.md) | [#5](https://github.com/guneet-xyz/shinan/issues/5) | Whether the catalog can deliver differentiators 1 to 3: entity types (including custom ones, O-17), fact states, catalog proposals and gated approval (O-3), the agent index, PostgreSQL storage with no Git mirror for now (O-11, N-5, N-9). |
-| [Tasks and work](tasks.md) | [#6](https://github.com/guneet-xyz/shinan/issues/6) | The task story, calculated status, subtasks (O-21), per-workspace task flags (O-8) and nudges. |
-| [Identity, agents and permissions](identity.md) | [#7](https://github.com/guneet-xyz/shinan/issues/7) | Roles behind the personas (owner and contributor, N-11), whether people outside a team (for example a client) can be members, and how Shinan holds its own credentials. It asks this document how security and self-hosting are positioned for later adopters: see [differentiator 4](#differentiators) and [fit for later adopters](#fit-for-later-adopters). |
-| [Git host integrations](git-hosts.md) | [#8](https://github.com/guneet-xyz/shinan/issues/8) | That GitHub and several Forgejo servers can be read alike, that Shinan writes only on GitHub and only as its app (O-1, N-4), and how a person's request for a git host action reaches their agent sessions (N-3). |
-| [Agent integrations](agent-integrations.md) | [#9](https://github.com/guneet-xyz/shinan/issues/9) | That plugin-based presence and nudges work for agent sessions a person starts (differentiator 5). |
-| [Human experience](human-experience.md) | [#10](https://github.com/guneet-xyz/shinan/issues/10) | The wiki and start here path that make the catalog readable by people. It asks whether "steer, don't operate" matches the positioning: it does, as the principle [people set direction; agents do the work](#product-principles). |
-| [Architecture and operations](architecture.md) | [#11](https://github.com/guneet-xyz/shinan/issues/11) | That a single person can self-host an installation (differentiator 4), that the public app is safe for infrastructure details (D-015), and what happens to secrets pasted by mistake. |
-| [Roadmap and migration](roadmap.md) | [#12](https://github.com/guneet-xyz/shinan/issues/12) | Phases, trial projects and the measurable readiness criteria behind [what success looks like](#what-success-looks-like) (its R7 cites success sign 2, whose numbering is kept). |
-| [Decision log](decisions/) | [#13](https://github.com/guneet-xyz/shinan/issues/13) | D-041 records O-88 and O-97 (no tracker integrations, amending D-010); see the mismatch below for O-84 to O-90. |
-
-Mismatches for the integration review, as of the drafts read:
-
-- **Viewer role.** The domain model and Identity still define a viewer role,
-  and Roadmap still plans a viewer test account. N-11 removes both; this
-  document's personas no longer use a viewer.
-- **Git mirror.** Catalog, Architecture, Roadmap and the decision log
-  (D-022) still describe an always-on read-only Git mirror, and Roadmap says
-  the mirror covers the catalog until export exists. N-5 and N-9 drop the
-  mirror for now; this document relies on the full workspace export (O-75)
-  instead.
-- **Forgejo writes.** Git host integrations and the decision log (D-033)
-  still describe Shinan writing on Forgejo through the connecting person's
-  account. N-4 makes Forgejo connections read-only; this document says Shinan
-  writes only on GitHub, as its app.
-- **Product decisions without records.** The decision log draft records O-88
-  and O-97 as D-041 but has no record for O-84 to O-87, O-89 and O-90. Whether
-  they need one is for the decision log (O-98).
+No known mismatches with other documents.
 
 ## Open questions
 
