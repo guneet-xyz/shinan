@@ -47,8 +47,10 @@ export async function recordSecurityEntry(
 /**
  * Only a valid IP address is stored. Anything else is dropped rather than
  * failing the insert, which would turn every refusal and sensitive action
- * into a database error.
+ * into a database error. An IPv6 zone ID (`fe80::1%eth0`) is removed,
+ * because PostgreSQL's `inet` type does not accept one.
  */
-function networkAddress(value: string | undefined): string | null {
-  return value !== undefined && isIP(value) !== 0 ? value : null
+export function networkAddress(value: string | undefined): string | null {
+  if (value === undefined || isIP(value) === 0) return null
+  return value.replace(/%.*$/, "")
 }

@@ -524,7 +524,7 @@ describe("the security log", () => {
     ).toMatchObject({ networkAddress: "192.0.2.10" })
   })
 
-  it("drops a network address that is not an IP address", async () => {
+  it("drops invalid network addresses and IPv6 zone IDs", async () => {
     const ctx = asPerson(db, owner)
     ctx.request = { networkAddress: "not-an-address", client: "test" }
     await changeRole(ctx, {
@@ -536,6 +536,18 @@ describe("the security log", () => {
     expect(entry).toMatchObject({
       action: "member.role-changed",
       networkAddress: null,
+    })
+
+    ctx.request = { networkAddress: "fe80::1%eth0" }
+    await changeRole(ctx, {
+      workspaceId,
+      memberId: contributorMemberId,
+      role: "contributor",
+    })
+    const [zoned] = await listSecurityLog(asPerson(db, owner), workspaceId)
+    expect(zoned).toMatchObject({
+      action: "member.role-changed",
+      networkAddress: "fe80::1",
     })
 
     const stranger = await newPerson(db)
