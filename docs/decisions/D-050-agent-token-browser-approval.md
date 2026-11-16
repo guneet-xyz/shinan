@@ -68,6 +68,7 @@ Owner's choice; no reason recorded.
 - [Architecture and operations](../architecture.md): the approval mechanism and
   endpoints.
 - [Agent integrations](../agent-integrations.md): plugin and CLI setup.
+- [Human experience](../human-experience.md): the "Your agents" screen.
 
 ## Related open questions
 
@@ -78,3 +79,4 @@ None.
 - 2026-11-16: accepted by the owner on issue #26 (integration review). Recorded
   in the decision log's integration-fix pull request (see
   [README, history](README.md#history)).
+- 2026-11-16: added Human experience to the owning documents (integration review I-77, [issue #26](https://github.com/guneet-xyz/shinan/issues/26#issuecomment-6918785395)).

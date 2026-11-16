@@ -41,8 +41,8 @@ Owner's choice; no reason recorded.
 
 ## Consequences
 
-- **Decided:** the plan's section 8 gets a note naming these owners (owner's
-  answer). That change belongs to the plan's own pull request.
+- **Decided:** the plan's [section 8](../plan.md#8-documents-to-write-next)
+  names these owners (owner's answer; added on the plan).
 - Details: see [architecture and operations](../architecture.md) and
   [human experience](../human-experience.md).
 
@@ -64,3 +64,4 @@ None.
 - 2026-11-16: accepted by the owner on issue #26 (integration review). Recorded
   in the decision log's integration-fix pull request (see
   [README, history](README.md#history)).
+- 2026-11-16: noted that plan section 8 now names the notification owners (integration review I-78, [issue #26](https://github.com/guneet-xyz/shinan/issues/26#issuecomment-6918785395)).

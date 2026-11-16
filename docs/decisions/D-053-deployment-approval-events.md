@@ -56,6 +56,10 @@ Owner's choice; no reason recorded.
 - [Tasks and work](../tasks.md): task flags and events.
 - [Agent integrations](../agent-integrations.md): recording an approval given
   in the conversation.
+- [Identity, agents and permissions](../identity.md): who may give approval.
+- [Human experience](../human-experience.md): the deployment approval panel.
+- [Domain model and glossary](../domain-model.md#deployment-approval): the
+  term.
 
 ## Related open questions
 
@@ -66,3 +70,4 @@ None.
 - 2026-11-16: accepted by the owner on issue #26 (integration review). Recorded
   in the decision log's integration-fix pull request (see
   [README, history](README.md#history)).
+- 2026-11-16: added Identity, Human experience and the domain model to the owning documents (integration review I-77, [issue #26](https://github.com/guneet-xyz/shinan/issues/26#issuecomment-6918785395)).
