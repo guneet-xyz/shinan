@@ -24,6 +24,7 @@ now in its build phase.
 | `apps/web`            | The React single-page app (Vite), served by `apps/server` in production        |
 | `packages/core`       | Application modules, permissions and rules                                     |
 | `packages/db`         | Drizzle schema and migrations                                                  |
+| `packages/email`      | The email sender interface, the SES sender and an SMTP sender for development  |
 | `packages/api-client` | Typed client for the REST API                                                  |
 | `deploy/`             | Local development services; later the image and reference Compose file         |
 
@@ -42,24 +43,43 @@ pnpm dev           # API on http://localhost:3000, web app on http://localhost:5
 
 `pnpm services:down` stops the services. If a port is taken, set
 `SHINAN_DB_PORT`, `SHINAN_SMTP_PORT` or `SHINAN_MAILPIT_PORT` before
-`pnpm services:up`, and point `DATABASE_URL` at the new port.
+`pnpm services:up`, then point `DATABASE_URL`, `SMTP_PORT` and (for tests)
+`MAILPIT_URL` at the new ports.
 
-The server reads its settings from environment variables:
+The server reads its settings from environment variables. A secret can
+instead be read from a file: set `NAME_FILE` to its path rather than `NAME`
+(for example `DATABASE_URL_FILE`, `SES_SECRET_ACCESS_KEY_FILE`).
 
-| Variable       | Default                            | Meaning                                 |
-| -------------- | ---------------------------------- | --------------------------------------- |
-| `DATABASE_URL` | none (tests use the local service) | PostgreSQL connection string            |
-| `HOST`         | `127.0.0.1`                        | Address the `web` role listens on       |
-| `PORT`         | `3000`                             | Port the `web` role listens on          |
-| `NODE_ENV`     | unset                              | `production` serves the built web app   |
-| `WEB_DIST_DIR` | `apps/web/dist` in production      | Directory of the built web app to serve |
+| Variable                | Default                             | Meaning                                                         |
+| ----------------------- | ----------------------------------- | --------------------------------------------------------------- |
+| `DATABASE_URL`          | none (tests use the local service)  | PostgreSQL connection string (secret)                           |
+| `HOST`                  | `127.0.0.1`                         | Address the `web` role listens on                               |
+| `PORT`                  | `3000`                              | Port the `web` role listens on                                  |
+| `NODE_ENV`              | unset                               | `production` serves the built web app and requires SES          |
+| `WEB_DIST_DIR`          | `apps/web/dist` in production       | Directory of the built web app to serve                         |
+| `EMAIL_TRANSPORT`       | `smtp`, except in production (none) | `ses`, or `smtp` for the local mail catcher (not in production) |
+| `EMAIL_FROM`            | `shinan@localhost` for `smtp`       | From address; required for `ses`                                |
+| `EMAIL_FROM_NAME`       | `Shinan`                            | From display name                                               |
+| `SES_REGION`            | none                                | AWS region of the SES identity, such as `us-east-1`             |
+| `SES_ACCESS_KEY_ID`     | none (the AWS SDK's default chain)  | Access key of the send-only IAM user (secret)                   |
+| `SES_SECRET_ACCESS_KEY` | none (the AWS SDK's default chain)  | Its secret key (secret)                                         |
+| `SES_CONFIGURATION_SET` | none                                | SES configuration set, such as `guneet-dev`                     |
+| `SMTP_HOST`             | `127.0.0.1`                         | Mail catcher host, for `smtp`                                   |
+| `SMTP_PORT`             | `1025`                              | Mail catcher port, for `smtp`                                   |
+
+In development the worker sends email to Mailpit; open http://localhost:8025
+to read it. Email is queued as a job in the same transaction as the change
+that sends it, and the worker sends it, retrying temporary errors for up to
+an hour ([architecture 9.2](docs/architecture.md#92-how-shinan-sends)). The
+`email_deliveries` table records each email's outcome; the message itself is
+removed once the email is sent or given up.
 
 The server's commands, from `apps/server`:
 
 ```sh
 export DATABASE_URL=postgres://shinan@localhost:5432/shinan
 pnpm migrate   # prepare the database: migrations, job queue tables, installation record (overlapping runs take turns)
-pnpm worker    # worker role: background jobs (pg-boss); needs migrate first
+pnpm worker    # worker role: background jobs (pg-boss), including email; needs migrate first
 pnpm dev       # web role, restarting on changes
 ```
 
@@ -85,6 +105,12 @@ on the server in `DATABASE_URL` (default
 drops it afterwards. Tests connect to it with `connectTestDatabase()` from
 `@shinan/db/testing`. Run one package's tests with, for example,
 `pnpm test --project db`.
+
+Email tests (`email` and `core`) also need Mailpit, which `pnpm services:up`
+starts too; CI runs it as a service container. They send to `SMTP_HOST` and
+`SMTP_PORT` and read what arrived through Mailpit's API at `MAILPIT_URL`
+(default `http://127.0.0.1:8025`), using `@shinan/email/testing`. The SES
+sender is tested with a mocked client; tests never call AWS.
 
 Workspace packages are resolved to their TypeScript source during development,
 type checking and tests (through the `@shinan/source` export condition), so
