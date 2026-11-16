@@ -861,7 +861,9 @@ credentials.
 - **Agent tokens** and magic-link tokens are stored as hashes only; there are no
   passwords (N-7).
 - **Logs** never contain tokens, cookies, magic links, webhook bodies or
-  Authorization headers.
+  Authorization headers. The one exception is the first-start setup link
+  ([section 12](#12-self-hosting)), printed once on purpose, single-use and
+  short-lived.
 - **People type secrets** (for example a Forgejo token) into Shinan's settings
   pages; agents never handle them. Reason: the `workspace` repository's rule
   that secrets never pass through agents, issues or files.
@@ -1007,12 +1009,26 @@ licensing (D-013); this section makes sure nothing blocks it. All **proposed**:
 - **Configuration:** environment variables, with `*_FILE` variants for secrets.
 - **Reconciliation-only mode:** an installation git hosts cannot reach still
   works, with freshness limited to the reconciliation intervals.
-- **First start:** the installation's configuration names the operators and
-  the first addresses on the email allowlist, as [identity](identity.md) §3.2
-  and §12 propose; the first operator then signs in with an email magic link
-  (so SES must be configured before first use) or with GitHub followed by an
-  email link. Reason: only someone who controls the configuration can claim a
-  fresh installation, and one rule is kept in identity.
+- **First start:** the rule is [identity](identity.md)'s (§3.2): the
+  installation's configuration names the operators' email addresses, which seed
+  the email allowlist, and the first operator account is claimed through a
+  one-time setup link printed to the installation's log, confirmed by an email
+  magic link sent to one of the configured operator addresses. **Proposed**
+  mechanism:
+  - On start, if no operator account exists, the `web` process creates a random
+    setup token, stores only its hash, and prints the setup link (installation
+    address plus token) once to its own log. Nothing else shows it.
+  - The link works once and expires after 24 hours; an expired or lost link is
+    replaced by restarting the process, which invalidates the old one. Reason:
+    only someone with access to the server's log can start the claim.
+  - Opening the link asks which configured operator address to use and sends a
+    magic link there ([section 9](#9-email-and-notifications)), so SES must be
+    configured before first use. Opening that magic link creates the operator
+    account and disables the setup link for good. Reason: identity requires
+    both server access and control of an operator's mailbox.
+  - Both steps are recorded in the installation-level security log. Later
+    operators and everyone else get accounts through the normal email allowlist
+    flow.
 - **Deployment approval:** D-016's rule that every deployment needs the
   owner's approval covers only `shinan.guneet.dev`. Self-hosters set their own
   rules. **Proposed.** Reason: D-016 is about the owner's installation on
@@ -1098,15 +1114,15 @@ What it means today:
 
 | Document | What this document needs from it |
 |---|---|
-| [Domain model and glossary](domain-model.md) | Terms used throughout, including Shinan installation, installation operator and purge. Entries for **task address** ([3.6](#36-task-address)), **trust label** ([8.1](#81-mcp-server)) and **workspace export** ([5.5](#55-export-and-import)) (I-9 in [#26](https://github.com/guneet-xyz/shinan/issues/26)). |
+| [Domain model and glossary](domain-model.md) | Terms used throughout, including Shinan installation, installation operator, purge, task address ([3.6](#36-task-address)), trust label ([8.1](#81-mcp-server)) and workspace export ([5.5](#55-export-and-import)). |
 | [Catalog](catalog.md) | Operations applied as text edits ([5.2](#52-the-invariant)); per-operation conflicts and the check for secret-looking values; type schema documents for custom types (O-17). |
 | [Tasks and work](tasks.md) | Status rules including subtasks at any depth; nudge sources; task ID prefixes unique within an installation ([3.6](#36-task-address)). |
-| [Identity, agents and permissions](identity.md) | Sign-in methods and the email allowlist; the agent token flow (NO-1); who may export, import and purge; the security alerts it asks for ([9.1](#91-what-shinan-sends)); the private-address rule (N-12); operators and the allowlist named in configuration ([section 12](#12-self-hosting)). |
+| [Identity, agents and permissions](identity.md) | Sign-in methods and the email allowlist; the agent token flow (D-050); who may export, import and purge; the security alerts it asks for ([9.1](#91-what-shinan-sends)); the private-address rule (N-12); the first-start rule, whose mechanism is in [section 12](#12-self-hosting). |
 | [Git host integrations](git-hosts.md) | GitHub App and installation token; read-only Forgejo connections; webhook setup; reconciliation layers and intervals; use of the task address in backlinks. |
 | [Agent integrations](agent-integrations.md) | Stream offers and answers ([8.3](#83-plugins)); trust label field names and skill wording; the plugin starting the token approval and writing MCP configuration. |
 | [Human experience](human-experience.md) | Pages behind the task address; notification rules and personal settings ([9.3](#93-notifications-phase-2)); export and import screens; how freshness and connection health are shown. |
 | [Roadmap and migration](roadmap.md) | The no-backup risk before migration (O-62); export and import (O-75); the security checklist gate; notifications in phase 2. |
-| [Decision log](decisions/README.md) | Records for the answers cited here, including NO-1 and NO-3. |
+| [Decision log](decisions/README.md) | Records for the answers cited here, for example [D-050](decisions/D-050-agent-token-browser-approval.md) (agent tokens, NO-1) and [D-052](decisions/D-052-notification-ownership.md) (notifications, NO-3). |
 
 ## Open questions
 
