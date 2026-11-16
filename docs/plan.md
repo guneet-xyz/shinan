@@ -79,6 +79,10 @@ Building a business is not a goal of this phase (D-013).
 
 ## 6. Decisions so far
 
+This table is the approved snapshot from 2026-11-16. Later decisions (D-021
+onwards) and amendments to these are in the [decision log](decisions/README.md),
+which is the current source for every decision.
+
 Each decision becomes a decision record with its reasoning. "Accepted" means
 agreed with the owner. "Proposed" means the owning document must confirm or
 change it.
@@ -124,21 +128,55 @@ These are for the in-depth documents to answer:
 ## 8. Documents to write next
 
 Each document has one owning agent. Documents go under `docs/` and decision
-records under `docs/decisions/`.
+records under `docs/decisions/`. All of them are now written and merged; the
+links below go to them.
 
 | Document | Owns |
 |---|---|
-| Product overview | Vision, users, scope, non-goals, positioning against competitors (Multica, Linear, Port, Chartroom, OpsLevel and others) |
-| Domain model and glossary | Shared vocabulary and the core objects (workspace, member, task, work link, catalog entity, fact, actor, agent, agent session, event). Every other document uses these terms. It must keep a Shinan workspace distinct from the existing `workspace` repository. |
-| Catalog | Entity types, fact states, provenance, editing and approval, the human view and the agent index |
-| Tasks and work | Task lifecycle, IDs and linking conventions, calculated status, nudges, triage of outside issues |
-| Identity, agents and permissions | Sign-in, workspaces, members and invitations, agents acting for people, tokens, attribution when agents share a person's git host account, access rules |
-| Git host integrations | GitHub and Forgejo: events, API use, reconciliation, rate limits, what is written back |
-| Agent integrations | MCP tools, the skill and the CLI; agent sessions and presence; plugins for each coding tool (OpenCode first); nudge delivery; the conventions agents must follow |
-| Human experience | Wiki, onboarding path, task pages, timeline, board, nudges, workspace and member management |
-| Architecture and operations | Technology stack options with trade-offs, system design, storage, sync, deployment on Musashi at `shinan.guneet.dev`, self-hosting, security for a public sign-in app, backups |
-| Roadmap and migration | Phases, first version scope, proof-of-concept projects and readiness criteria, moving the `workspace` repository into Shinan |
-| Decision log | One record per decision in section 6 and any new ones |
+| [Product overview](product-overview.md) | Vision, users, scope, non-goals, positioning against competitors (Multica, Linear, Port, Chartroom, OpsLevel and others) |
+| [Domain model and glossary](domain-model.md) | Shared vocabulary and the core objects (workspace, member, task, work link, catalog entity, fact, actor, agent, agent session, event). Every other document uses these terms. It must keep a Shinan workspace distinct from the existing `workspace` repository. |
+| [Catalog](catalog.md) | Entity types, fact states, provenance, editing and approval, the human view and the agent index |
+| [Tasks and work](tasks.md) | Task lifecycle, IDs and linking conventions, calculated status, nudges, triage of outside issues |
+| [Identity, agents and permissions](identity.md) | Sign-in, workspaces, members and invitations, agents acting for people, tokens, attribution when agents share a person's git host account, access rules |
+| [Git host integrations](git-hosts.md) | GitHub and Forgejo: events, API use, reconciliation, rate limits, what is written back |
+| [Agent integrations](agent-integrations.md) | MCP tools, the skill and the CLI; agent sessions and presence; plugins for each coding tool (OpenCode first); nudge delivery; the conventions agents must follow |
+| [Human experience](human-experience.md) | Wiki, onboarding path, task pages, timeline, board, nudges, workspace and member management, what notifications are sent and personal notification settings |
+| [Architecture and operations](architecture.md) | Technology stack options with trade-offs, system design, storage, sync, deployment on Musashi at `shinan.guneet.dev`, self-hosting, security for a public sign-in app, backups, sending notifications (email first) |
+| [Roadmap and migration](roadmap.md) | Phases, first version scope, proof-of-concept projects and readiness criteria, moving the `workspace` repository into Shinan |
+| [Decision log](decisions/README.md) | One record per decision in section 6 and any new ones |
+
+### Later changes to this plan's text
+
+The plan is kept as approved. These parts of it were later changed by decisions;
+the linked records and documents are current:
+
+- §1: during the trial, cross-project coordination for trial projects moves into
+  Shinan ([D-040](decisions/D-040-trial-coordination-in-shinan.md)).
+- §4: the fact state `proposed` is now `planned`
+  ([D-025](decisions/D-025-fact-state-planned.md)); agents may set `needs a person`
+  and task flags are managed per workspace
+  ([D-028](decisions/D-028-task-flags.md)); task ID prefixes are per workspace
+  ([D-027](decisions/D-027-workspace-task-id-prefix.md)).
+- §5: Shinan writes back only on GitHub, as its app; Forgejo connections are
+  read-only ([D-032](decisions/D-032-no-writes-as-a-person-on-github.md),
+  [D-042](decisions/D-042-no-writes-on-forgejo.md)). Agents "complete" tasks by
+  recording verification ([D-021](decisions/D-021-status-from-work-and-events.md)).
+  Email is sent from the first version for sign-in
+  ([D-044](decisions/D-044-sign-in-magic-link-or-github.md)); notifications are
+  still later.
+- §7: questions 1, 3 and 7 are answered
+  ([D-037](decisions/D-037-typescript-node-react.md),
+  [D-043](decisions/D-043-no-git-mirror-for-now.md),
+  [D-023](decisions/D-023-workspace-wide-visibility-no-secrets.md),
+  [D-044](decisions/D-044-sign-in-magic-link-or-github.md)); question 8 is
+  answered in the [roadmap](roadmap.md).
+- §8: there are no built-in backups for now
+  ([D-038](decisions/D-038-no-built-in-backups.md)); notifications are owned as
+  shown in the table above (owner, NO-3,
+  [#26](https://github.com/guneet-xyz/shinan/issues/26)).
+- §9: the documents were written in parallel rather than glossary first; shared
+  terms were kept aligned by re-reading the glossary draft and by the integration
+  review ([#26](https://github.com/guneet-xyz/shinan/issues/26)).
 
 ## 9. How the documents are produced
 
