@@ -1,6 +1,6 @@
 # Git host integrations
 
-Status: **draft for review** ([issue #8](https://github.com/guneet-xyz/shinan/issues/8)).
+Status: **approved by the owner on 2026-11-16** ([issue #8](https://github.com/guneet-xyz/shinan/issues/8); integrated in [#26](https://github.com/guneet-xyz/shinan/issues/26)).
 Updated with the owner's answers in [issue #25][o] (O-1 to O-98, and the
 follow-up answers N-1 to N-13) and the answers to the integration review in
 [#26](https://github.com/guneet-xyz/shinan/issues/26) (NO-1 to NO-4).

@@ -1,6 +1,6 @@
 # Product overview
 
-Status: **draft for review** ([issue #4](https://github.com/guneet-xyz/shinan/issues/4)).
+Status: **approved by the owner on 2026-11-16** ([issue #4](https://github.com/guneet-xyz/shinan/issues/4); integrated in [#26](https://github.com/guneet-xyz/shinan/issues/26)).
 
 This document owns Shinan's vision, users, scope, non-goals and positioning
 against competitors. It does not specify how anything works; each pillar links
