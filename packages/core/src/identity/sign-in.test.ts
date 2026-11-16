@@ -1,5 +1,5 @@
 import type { PgBoss } from "pg-boss"
-import { afterAll, beforeAll, describe, expect, it } from "vitest"
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest"
 
 import { and, createDatabase, eq, schema, sql } from "@shinan/db"
 import { createTestDatabase } from "@shinan/db/testing"
@@ -32,6 +32,7 @@ import {
   maySignIn,
   openSignInLink,
   prepareSetupLink,
+  pruneSignInRecords,
   recordGitHubAdded,
   recordSignIn,
   removeGitHub,
@@ -44,7 +45,7 @@ import {
 // get a database of their own.
 let database: TestDatabase
 let db: Context["db"]
-let pool: { end(): Promise<void> }
+let pool: ReturnType<typeof createDatabase>["pool"]
 let boss: PgBoss
 let counter = 0
 
@@ -152,6 +153,10 @@ describe("first start", () => {
     ).rejects.toMatchObject({ rule: "not-operator" })
 
     await startSetup(asShinan(), { token, email: "ROOT@example.com" })
+    // The setup link works once.
+    await expect(
+      startSetup(asShinan(), { token, email: "root@example.com" }),
+    ).rejects.toBeInstanceOf(NotFoundError)
     await sendSignInLink(asShinan(), {
       email: "root@example.com",
       link,
@@ -247,6 +252,70 @@ describe("after the first start", () => {
         email: "ada.lovelace@example.com",
       })
       expect(again).toMatchObject({ allowed: true, accountCreated: false })
+    })
+
+    it("never gives a handle reserved for other actors' written forms", async () => {
+      await db
+        .insert(schema.emailAllowlist)
+        .values([
+          { email: "shinan@other.example" },
+          { email: "unknown@other.example" },
+        ])
+      const handles = []
+      for (const email of ["shinan@other.example", "unknown@other.example"]) {
+        const opened = await openSignInLink(asShinan(), { email })
+        if (!opened.allowed) throw new Error("refused")
+        handles.push(
+          (await getAccount(asPerson(opened.personId))).person.handle,
+        )
+      }
+      expect(handles).toEqual(["shinan-2", "unknown-2"])
+    })
+
+    it("takes the next handle when a concurrent sign-in takes it first", async () => {
+      await db
+        .insert(schema.emailAllowlist)
+        .values({ email: "race@example.com" })
+      // Another connection creates "race" but has not committed, so the
+      // handle looks free; the insert then waits on it and clashes.
+      const holder = await pool.connect()
+      try {
+        await holder.query("begin")
+        await holder.query(
+          "insert into people (handle, name, email) values ('race', 'race', 'race@other.example')",
+        )
+        const { rows } = await holder.query<{ pid: number }>(
+          "select pg_backend_pid() as pid",
+        )
+        const opening = openSignInLink(asShinan(), {
+          email: "race@example.com",
+        })
+        // Wait until the insert is blocked behind the holder's row.
+        await vi.waitFor(
+          async () => {
+            const waiting = await db.execute<{ count: number }>(
+              sql`select count(*)::int as count from pg_stat_activity
+                  where ${rows[0]!.pid}::int = any(pg_blocking_pids(pid))`,
+            )
+            expect(waiting.rows[0]!.count).toBe(1)
+          },
+          { timeout: 3_000, interval: 20 },
+        )
+        await holder.query("commit")
+        const opened = await opening
+        if (!opened.allowed) throw new Error("refused")
+        expect(
+          (await getAccount(asPerson(opened.personId))).person.handle,
+        ).toBe("race-2")
+      } finally {
+        holder.release()
+      }
+    })
+
+    it("refuses an address a sign-in link could not go to", async () => {
+      await expect(
+        openSignInLink(asShinan(), { email: "you@localhost" }),
+      ).rejects.toMatchObject({ rule: "email-format" })
     })
 
     it("refuses an address not on the allowlist, and records it", async () => {
@@ -579,6 +648,43 @@ describe("after the first start", () => {
         true,
       )
     })
+  })
+})
+
+describe("pruneSignInRecords", () => {
+  it("deletes expired sign-in sessions and GitHub sign-ins, and nothing else", async () => {
+    const { personId } = await newAccount()
+    const live = hashToken(crypto.randomUUID())
+    await db.insert(schema.signInSessions).values([
+      {
+        personId,
+        tokenHash: live,
+        expiresAt: new Date(Date.now() + 3_600_000),
+      },
+      {
+        personId,
+        tokenHash: hashToken(crypto.randomUUID()),
+        expiresAt: new Date(Date.now() - 1000),
+      },
+    ])
+    await startGitHubSignIn(asShinan(), { githubAccountId: "1" })
+    await db.insert(schema.pendingGitHubSignIns).values({
+      tokenHash: hashToken(crypto.randomUUID()),
+      githubAccountId: "2",
+      expiresAt: new Date(Date.now() - 1000),
+    })
+    const pruned = await pruneSignInRecords(asShinan())
+    expect(pruned.signInSessions).toBeGreaterThanOrEqual(1)
+    expect(pruned.pendingGitHubSignIns).toBeGreaterThanOrEqual(1)
+    const sessions = await db
+      .select()
+      .from(schema.signInSessions)
+      .where(eq(schema.signInSessions.personId, personId))
+    expect(sessions.map((row) => row.tokenHash)).toEqual([live])
+    const pending = await db.select().from(schema.pendingGitHubSignIns)
+    expect(pending.every((row) => row.expiresAt.getTime() > Date.now())).toBe(
+      true,
+    )
   })
 })
 

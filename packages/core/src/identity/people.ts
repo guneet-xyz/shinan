@@ -7,7 +7,12 @@ import type { Context, RequestInfo } from "../context.js"
 import { violatedUniqueConstraint } from "../database-errors.js"
 import { RuleViolationError } from "../errors.js"
 import { recordSecurityEntry } from "../security-log.js"
-import { checkHandle, checkName, normalizeEmail } from "../validation.js"
+import {
+  checkHandle,
+  checkName,
+  normalizeEmail,
+  reservedHandles,
+} from "../validation.js"
 
 export type Person = typeof schema.people.$inferSelect
 
@@ -39,8 +44,9 @@ export async function createPerson(
 /**
  * Creates the account for an email address that has just been confirmed by
  * a magic link (identity §3.2). The handle is made from the address's local
- * part, with a number added if it is taken; the name starts as the handle
- * and the person can change it. Handles never change (identity §8.7).
+ * part, with a number added if it is taken or is a written form reserved for
+ * other actors (`shinan`, `unknown`); the name starts as the handle and the
+ * person can change it. Handles never change (identity §8.7).
  */
 export async function createAccount(
   scope: {
@@ -52,14 +58,40 @@ export async function createAccount(
 ): Promise<Person> {
   const email = normalizeEmail(input.email)
   const base = handleFrom(email)
-  const taken = await scope.tx
+  // A concurrent sign-in can take the handle first; then try the next one.
+  for (let attempt = 0; ; attempt++) {
+    const handle = await freeHandle(scope.tx, base)
+    try {
+      // A savepoint, so a clash does not abort the whole transaction.
+      return await scope.tx.transaction((savepoint) =>
+        insertPerson(
+          { ...scope, tx: savepoint },
+          { handle, name: handle, email },
+        ),
+      )
+    } catch (error) {
+      if (
+        attempt < 5 &&
+        error instanceof RuleViolationError &&
+        error.rule === "handle-taken"
+      ) {
+        continue
+      }
+      throw error
+    }
+  }
+}
+
+/** The first of `base`, `base-2`, `base-3`, … that is free and not reserved. */
+async function freeHandle(tx: Transaction, base: string): Promise<string> {
+  const taken = await tx
     .select({ handle: schema.people.handle })
     .from(schema.people)
     .where(sql`${schema.people.handle} ~ ${`^${base}(-[0-9]+)?$`}`)
-  const used = new Set(taken.map((row) => row.handle))
+  const used = new Set([...taken.map((row) => row.handle), ...reservedHandles])
   let handle = base
   for (let n = 2; used.has(handle); n++) handle = `${base}-${n}`
-  return insertPerson(scope, { handle, name: handle, email })
+  return handle
 }
 
 /** Lowercase letters, digits and single hyphens from the local part. */

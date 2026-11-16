@@ -1,4 +1,4 @@
-import { eq, schema, sql } from "@shinan/db"
+import { and, eq, schema, sql } from "@shinan/db"
 import type { Transaction } from "@shinan/db"
 
 import { atInstallation } from "../authorize.js"
@@ -37,9 +37,15 @@ export async function endSessionsOf(
 
 /**
  * Recovery for a person who lost their email account (identity §3.4): the
- * operator changes their address with a server command. The new address
- * is added to the allowlist, and their sign-in sessions end, so the next
- * sign-in goes through the new address.
+ * operator changes their address with a server command. In one transaction:
+ * the new address is added to the allowlist; the old one is removed from it
+ * (unless the configuration names it as an operator's), so whoever holds the
+ * lost mailbox cannot sign in with it or create a new account with it; its
+ * pending invitations are withdrawn, so nobody can accept them with it; and
+ * the person's sign-in sessions end, so the next sign-in goes through the new
+ * address. Withdrawn invitations are not moved to the new address: they were
+ * sent to a mailbox that may be in someone else's hands, so a workspace
+ * owner invites the new address again.
  */
 export async function changeEmailOf(
   ctx: Context,
@@ -68,6 +74,30 @@ export async function changeEmailOf(
       .values({ email })
       .onConflictDoNothing()
       .returning()
+    const [operator] = await scope.tx
+      .select()
+      .from(schema.installationOperators)
+      .where(eq(schema.installationOperators.email, person.email))
+    const removed = operator
+      ? []
+      : await scope.tx
+          .delete(schema.emailAllowlist)
+          .where(eq(schema.emailAllowlist.email, person.email))
+          .returning()
+    const withdrawn = await scope.tx
+      .update(schema.invitations)
+      .set({ state: "withdrawn", decidedAt: sql`now()` })
+      .where(
+        and(
+          eq(schema.invitations.email, person.email),
+          eq(schema.invitations.state, "pending"),
+        ),
+      )
+      .returning()
+    // A GitHub sign-in waiting for the old address must not complete either.
+    await scope.tx
+      .delete(schema.pendingGitHubSignIns)
+      .where(eq(schema.pendingGitHubSignIns.email, person.email))
     const ended = await scope.tx
       .delete(schema.signInSessions)
       .where(eq(schema.signInSessions.personId, person.id))
@@ -86,6 +116,27 @@ export async function changeEmailOf(
         details: { email, by: "operator command" },
       })
     }
+    if (removed.length > 0) {
+      await recordSecurityEntry(scope.tx, {
+        ...entry,
+        action: "allowlist.removed",
+        details: { email: person.email, by: "operator command" },
+      })
+    }
+    for (const invitation of withdrawn) {
+      await recordSecurityEntry(scope.tx, {
+        ...entry,
+        workspaceId: invitation.workspaceId,
+        action: "invitation.withdrawn",
+        details: {
+          invitationId: invitation.id,
+          email: invitation.email,
+          role: invitation.role,
+          reason: "email-changed",
+          by: "operator command",
+        },
+      })
+    }
     await recordSecurityEntry(scope.tx, {
       ...entry,
       action: "account.email-changed",
@@ -93,6 +144,7 @@ export async function changeEmailOf(
         from: person.email,
         to: email,
         sessionsEnded: ended.length,
+        invitationsWithdrawn: withdrawn.length,
         by: "operator command",
       },
     })

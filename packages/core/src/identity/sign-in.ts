@@ -1,4 +1,4 @@
-import { and, desc, eq, gt, schema, sql } from "@shinan/db"
+import { and, desc, eq, gt, lt, schema, sql } from "@shinan/db"
 import type { Transaction } from "@shinan/db"
 
 import type { ResolvedActor } from "../actor.js"
@@ -74,9 +74,9 @@ export async function prepareSetupLink(ctx: Context): Promise<string | null> {
 
 /**
  * Someone opened the setup link and chose a configured operator address. The
- * link is bound to that address; the sign-in link sent there then creates
- * the first operator account (`openSignInLink`). An unknown, used or expired
- * setup link answers not found.
+ * link is bound to that address and cannot be used again; the sign-in link
+ * sent there then creates the first operator account (`openSignInLink`). An
+ * unknown, used or expired setup link answers not found.
  */
 export async function startSetup(
   ctx: Context,
@@ -84,7 +84,9 @@ export async function startSetup(
 ): Promise<void> {
   await atInstallation(ctx, "sign-in", async (scope) => {
     const setup = await currentSetup(scope.tx)
-    if (!setup || setup.tokenHash !== hashToken(input.token)) {
+    // The link works once (architecture §12): once an address was chosen,
+    // a new link needs a restart.
+    if (!setup || setup.tokenHash !== hashToken(input.token) || setup.email) {
       throw new NotFoundError()
     }
     const email = normalizeEmail(input.email)
@@ -185,9 +187,9 @@ export async function openSignInLink(
 ): Promise<OpenedSignInLink> {
   return atInstallation(ctx, "sign-in", async (scope) => {
     const email = normalizeEmail(input.email)
-    const personId = await personWith(scope.tx, email)
 
     if (!(await isClaimed(scope.tx))) {
+      const personId = await personWith(scope.tx, email)
       const setup = await currentSetup(scope.tx)
       if (
         !setup ||
@@ -208,22 +210,23 @@ export async function openSignInLink(
           ),
         )
         .returning()
-      if (!claimed) {
-        await recordFailure(scope, "email", "not-allowed", personId)
-        return { allowed: false }
+      if (claimed) {
+        await scope.tx.delete(schema.setupLinks)
+        await scope.tx
+          .insert(schema.emailAllowlist)
+          .values({ email })
+          .onConflictDoNothing()
+        const person = personId
+          ? { id: personId }
+          : await createAccount(scope, { email })
+        await record(scope, "installation.claimed", person.id, { email })
+        return { allowed: true, personId: person.id, accountCreated: !personId }
       }
-      await scope.tx.delete(schema.setupLinks)
-      await scope.tx
-        .insert(schema.emailAllowlist)
-        .values({ email })
-        .onConflictDoNothing()
-      const person = personId
-        ? { id: personId }
-        : await createAccount(scope, { email })
-      await record(scope, "installation.claimed", person.id, { email })
-      return { allowed: true, personId: person.id, accountCreated: !personId }
+      // A concurrent opening (a double click) claimed it first and has
+      // committed: carry on as after the first start.
     }
 
+    const personId = await personWith(scope.tx, email)
     if (!(await isAllowlisted(scope.tx, email))) {
       await recordFailure(scope, "email", "not-allowed", personId)
       return { allowed: false }
@@ -398,6 +401,31 @@ export async function findPendingGitHubSignIn(
         ),
       )
     return pending ?? null
+  })
+}
+
+/**
+ * Deletes sign-in records that can no longer be used: GitHub sign-ins that
+ * waited too long for an email address, and sign-in sessions past their
+ * expiry, which hold network addresses and user agents. Run hourly by the
+ * worker.
+ */
+export async function pruneSignInRecords(
+  ctx: Context,
+): Promise<{ pendingGitHubSignIns: number; signInSessions: number }> {
+  return atInstallation(ctx, "sign-in", async (scope) => {
+    const pending = await scope.tx
+      .delete(schema.pendingGitHubSignIns)
+      .where(lt(schema.pendingGitHubSignIns.expiresAt, sql`now()`))
+      .returning({ id: schema.pendingGitHubSignIns.id })
+    const sessions = await scope.tx
+      .delete(schema.signInSessions)
+      .where(lt(schema.signInSessions.expiresAt, sql`now()`))
+      .returning({ id: schema.signInSessions.id })
+    return {
+      pendingGitHubSignIns: pending.length,
+      signInSessions: sessions.length,
+    }
   })
 }
 
