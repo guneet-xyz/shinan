@@ -32,6 +32,7 @@ export type {
   EmailStatus,
   EventOrigin,
   EventSubject,
+  InvitationState,
   Role,
   SecurityOutcome,
 } from "./schema.js"
