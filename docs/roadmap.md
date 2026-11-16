@@ -531,7 +531,7 @@ Two scopes are used:
 | R11 | Must-pass | Security | Sign-in protections from [identity](identity.md) and the security checklist from [architecture](architecture.md) in place, with no open high-severity finding; only allowlisted emails can create accounts (O-48); a person without an invitation sees no workspace; a secret scan of all catalog content and events finds nothing | D-015: a public app holding infrastructure details. |
 | R12 | Judged | Useful to the owner | For the last three weekly checks, the owner answers from Shinan alone: what is in progress across the trial projects; which tasks need a person; which agent sessions are running and on what; where and how a trial project is deployed; what happened on a given task this week. Zero recorded fall-backs in the last two weeks | The point of Shinan is that people can follow the work. |
 | R13 | Judged | Useful to agents | In an agent-prepared sample of 20 agent sessions on trial projects, at least 18 took their project-specific context (locations, deployment, owning sources) from Shinan's MCP server or skill rather than from `workspace` repository entries | Agents still read the `workspace` repository's general instructions, because the bootstrap is unchanged during the trial. |
-| R14 | Must-pass | Migration rehearsal | A full import of the `workspace` repository into a rehearsal workspace ([section 6.3](#63-cutover-steps)) succeeds: every entry imported, no broken links, all verification fields preserved, owner spot-checks 10 entities. The rehearsal runs on a temporary local-only installation on Daedalus, set up from Shinan's own documentation. **Proposed addition:** converting the rehearsal workspace back with the rollback converter ([6.7](#67-rollback-and-emergency-access)) gives files that pass the `workspace` repository's checks and differ from the frozen revision only in ways the converter reports | The migration, and a rollback, must be boring by the time they are real. Setting up from the documentation also proves self-hosting (D-012). Daedalus follows the owner's choice for temporary test installations (O-65). |
+| R14 | Must-pass | Migration rehearsal | A full import of the `workspace` repository into a rehearsal workspace ([section 6.3](#63-cutover-steps)) succeeds: every entry imported, no broken links, all verification fields preserved, owner spot-checks 10 entities. The rehearsal runs on a temporary local-only installation on Daedalus, set up from Shinan's own documentation. **Proposed addition:** converting the rehearsal workspace back, as a rollback would ([6.7](#67-rollback-and-emergency-access), [catalog §13.3](catalog.md#133-mapping-back-for-a-rollback)), gives files that pass the `workspace` repository's checks (`scripts/check.py`) | The migration, and a rollback, must be boring by the time they are real. Setting up from the documentation also proves self-hosting (D-012). Daedalus follows the owner's choice for temporary test installations (O-65). |
 | R15 | Must-pass | Exit path | A full export of the trial workspace, imported into an empty workspace, produces the same catalog content and tasks | Leaving Shinan, and the rollback, depend on the export being complete. |
 | R16 | Must-pass | Phase 2 features needed for migration | The board and the triage inbox are deployed and used during the trial (decided, owner, O-78) | They replace the Forgejo Project board and the manual sorting of incoming issues. Nudges and notifications are new abilities, not replacements, so they are not prerequisites. |
 
@@ -711,39 +711,24 @@ PRs as the record of how work was done before Shinan.
 
 **Proposed:**
 
-- **Rollback.** If the owner decides to roll back during the window, the
-  catalog is exported from Shinan and converted back into the `workspace`
-  repository's layout (below) in a `workspace` repository PR, open tasks are
-  recreated as issues there by an agent, the freeze is lifted, and agent
-  instructions are switched back. Reason: a rollback must not lose the work
-  done since cutover. This needs Shinan to be readable: with no Git mirror
-  (N-5) and no backups (O-62), if Musashi's data is lost during the window,
-  the rollback can only start from the frozen cutover revision of the
-  `workspace` repository, and work recorded only in Shinan since cutover is
-  lost.
-- **Converting back.** The export's catalog layout
-  ([catalog](catalog.md) 2.2: `catalog/<type>/<slug>.md` and
-  `catalog/history.jsonl`) is not the `workspace` repository's layout
-  (`catalog/machines/*.md`, `runbooks/`, `decisions/`, policy files in `docs/`,
-  frontmatter checked by `scripts/check.py`). A small rollback converter,
-  built with the importer, runs the import mapping ([6.2](#62-what-moves-where))
-  in reverse:
-  - the importer records each document's original path, and the converter
-    writes the document back there; documents created after cutover go to the
-    folder for their type, using the old ID form (aliases, O-15);
-  - `id`, `status` and `owner` come from the entity's fields;
-  - fact checks collapse to the page: `last_verified`, `verification_scope`
-    and `verification_source` come from the most recent fact check on the
-    page and describe only what it covered; other facts' checks are written
-    as per-fact notes in the body, which the `workspace` repository's
-    maintenance policy allows. The page never claims more than was checked;
-  - custom-type entities (O-17) and changes to the start-here document have no
-    place in the old layout and are listed in the PR for a person to place.
-  
-  If some documents cannot be converted cleanly, the PR commits them in the
-  export's format in a clearly marked folder and adapts `scripts/check.py` in
-  the same PR. The converter is tested in the rehearsal (R14). Reason: without
-  a defined reverse path, the rollback window would exist only on paper.
+- **Rollback.** If the owner decides to roll back during the window:
+  1. a workspace owner takes a workspace export from Shinan;
+  2. its catalog is converted back into the `workspace` repository's layout,
+     following the [catalog's reverse conversion](catalog.md#133-mapping-back-for-a-rollback)
+     (catalog §13.3), and opened as a `workspace` repository PR together with
+     the conversion's rollback report;
+  3. an agent recreates open tasks as issues in the `workspace` repository;
+  4. the freeze is lifted and agent instructions are switched back.
+
+  The conversion is tested once in the migration rehearsal (R14). Reason: a
+  rollback must not lose the work done since cutover, and an untested
+  rollback path would exist only on paper. The mapping rules belong to the
+  [catalog](catalog.md), not to this document.
+
+  This needs Shinan to be readable: with no Git mirror (N-5) and no backups
+  (O-62), if Musashi's data is lost during the window, the rollback can only
+  start from the frozen cutover revision of the `workspace` repository, and
+  work recorded only in Shinan since cutover is lost.
 - **Emergency copy.** Keep the archived `workspace` repository's checkout on
   each development machine, marked as frozen at the cutover revision. Reason:
   Shinan, Forgejo and mon all run on Musashi; if Musashi is down, the
@@ -772,7 +757,7 @@ PRs as the record of how work was done before Shinan.
 |---|---|
 | [Domain model and glossary](domain-model.md) | The terms used here, including trial, migration, task flags, subtasks and agent session. |
 | [Product overview](product-overview.md) | The signs of success that R7, R12 and R13 measure; the competitor survey rechecked at each phase boundary (O-90). |
-| [Catalog](catalog.md) | The import mapping (its section 13) and the export layout (its 2.2), which the rollback converter reverses ([6.7](#67-rollback-and-emergency-access)); gated catalog approval and the switch to strict that R6 can trigger (O-3); the trial catalog's checking rules (O-71). |
+| [Catalog](catalog.md) | The import mapping (its 13.2), the export layout (its 2.2) and the reverse conversion a rollback uses (its 13.3, [6.7](#67-rollback-and-emergency-access)); gated catalog approval and the switch to strict that R6 can trigger (O-3); the trial catalog's checking rules (O-71). |
 | [Tasks and work](tasks.md) | Task conventions in the trial (O-6 to O-8, O-21, O-25, NO-4); what the "turn new issues into tasks" setting does (NO-2); trial rules (its section 15); how open issues become tasks at migration. |
 | [Identity, agents and permissions](identity.md) | Sign-in, the email allowlist and invitations, for R11; the agent approval flow and token used in 3.4 (NO-1). |
 | [Git host integrations](git-hosts.md) | The "turn new issues into tasks" setting (NO-2); reconciliation within R2's limits; the GitHub App (O-51, O-52) and the read-only Forgejo connection (O-53, O-54, N-4); webhooks (O-55). |
@@ -800,7 +785,7 @@ PRs as the record of how work was done before Shinan.
 | — | Backup and emergency-access review before migration | Proposed | [5](#backups-before-migration) |
 | — | The `workspace` repository connected at trial start; "turn new issues into tasks" off for shared repositories | Decided (owner, NO-2); its use for the trial proposed | [4.4](#44-tasks-during-the-trial) |
 | — | Screens shipped with their milestone | Proposed | [3.3](#33-build-milestones) |
-| — | Rollback converter back to the `workspace` repository's layout, tested in the rehearsal | Proposed | [6.7](#67-rollback-and-emergency-access) |
+| — | Rollback process, using the catalog's reverse conversion and tested in the rehearsal | Proposed | [6.7](#67-rollback-and-emergency-access) |
 | — | Claude Code plugin in phase 2a | Decided (owner, O-82) | [2](#2-phases) |
 
 ## Open questions
