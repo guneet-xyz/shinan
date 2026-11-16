@@ -1,6 +1,6 @@
 # Domain model and glossary
 
-Status: **draft for review** ([issue #3](https://github.com/guneet-xyz/shinan/issues/3)).
+Status: **approved by the owner on 2026-11-16** ([issue #3](https://github.com/guneet-xyz/shinan/issues/3); integrated in [#26](https://github.com/guneet-xyz/shinan/issues/26)).
 
 This document defines the words Shinan's documents use and the core objects
 behind them. Every other document uses these terms exactly. It stays

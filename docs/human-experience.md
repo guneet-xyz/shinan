@@ -1,6 +1,6 @@
 # Human experience
 
-Status: **draft for review** ([issue #10](https://github.com/guneet-xyz/shinan/issues/10)).
+Status: **approved by the owner on 2026-11-16** ([issue #10](https://github.com/guneet-xyz/shinan/issues/10); integrated in [#26](https://github.com/guneet-xyz/shinan/issues/26)).
 The owner's answers in [#25] (O-1 to O-98 and follow-ups N-1 to N-13) and on
 the integration review [#26] (NO-1 to NO-4) are applied.
 

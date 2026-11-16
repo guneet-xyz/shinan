@@ -1,6 +1,6 @@
 # Tasks and work
 
-Status: **draft for review** ([issue #6](https://github.com/guneet-xyz/shinan/issues/6)).
+Status: **approved by the owner on 2026-11-16** ([issue #6](https://github.com/guneet-xyz/shinan/issues/6); integrated in [#26](https://github.com/guneet-xyz/shinan/issues/26)).
 Updated with the owner's answers in [#25], including batch 12 (2026-11-16).
 
 This document says how a task lives in Shinan: how it is created, identified

@@ -1,6 +1,6 @@
 # Agent integrations
 
-Status: **draft for review** ([issue #9](https://github.com/guneet-xyz/shinan/issues/9)).
+Status: **approved by the owner on 2026-11-16** ([issue #9](https://github.com/guneet-xyz/shinan/issues/9); integrated in [#26](https://github.com/guneet-xyz/shinan/issues/26)).
 
 This document covers how coding agents connect to Shinan. It owns:
 

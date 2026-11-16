@@ -1,6 +1,6 @@
 # Decision log
 
-Status: **draft for review** ([issue #13](https://github.com/guneet-xyz/shinan/issues/13)).
+Status: **approved by the owner on 2026-11-16** ([issue #13](https://github.com/guneet-xyz/shinan/issues/13); integrated in [#26](https://github.com/guneet-xyz/shinan/issues/26)).
 
 This folder holds Shinan's decision records: one file per decision about how
 Shinan is designed and built, with its context, reasons, consequences and the

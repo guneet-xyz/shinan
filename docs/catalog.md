@@ -1,6 +1,6 @@
 # Catalog
 
-Status: **draft for review** ([issue #5](https://github.com/guneet-xyz/shinan/issues/5)).
+Status: **approved by the owner on 2026-11-16** ([issue #5](https://github.com/guneet-xyz/shinan/issues/5); integrated in [#26](https://github.com/guneet-xyz/shinan/issues/26)).
 The owner's answers in [#25] and the integration review findings in [#26] are applied.
 
 This document owns the catalog: entity types and type schemas, facts and fact

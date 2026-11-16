@@ -1,6 +1,6 @@
 # Roadmap and migration
 
-Status: **draft for review** ([issue #12](https://github.com/guneet-xyz/shinan/issues/12)).
+Status: **approved by the owner on 2026-11-16** ([issue #12](https://github.com/guneet-xyz/shinan/issues/12); integrated in [#26](https://github.com/guneet-xyz/shinan/issues/26)).
 Updated with the owner's answers in [issue #25][o].
 
 This document owns Shinan's phases, the scope of the first version, the proof

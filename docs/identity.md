@@ -1,6 +1,6 @@
 # Identity, agents and permissions
 
-Status: **draft for review** ([issue #7](https://github.com/guneet-xyz/shinan/issues/7)).
+Status: **approved by the owner on 2026-11-16** ([issue #7](https://github.com/guneet-xyz/shinan/issues/7); integrated in [#26](https://github.com/guneet-xyz/shinan/issues/26)).
 Updated with the owner's answers in
 [issue #25](https://github.com/guneet-xyz/shinan/issues/25) and the
 integration review in [issue #26](https://github.com/guneet-xyz/shinan/issues/26).
