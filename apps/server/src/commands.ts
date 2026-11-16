@@ -3,8 +3,10 @@ import { serve } from "@hono/node-server"
 import {
   changeEmailOf,
   endSessionsOf,
+  NotFoundError,
   prepareSetupLink,
   productName,
+  RuleViolationError,
   setUpInstallation,
   setupLinkHours,
   shinan,
@@ -170,6 +172,17 @@ async function runAccountCommand(args: string[], env: Env): Promise<number> {
       )
     }
     return 0
+  } catch (error) {
+    // A refusal says what to do, such as changing SHINAN_OPERATORS first.
+    if (error instanceof RuleViolationError) {
+      console.error(error.message)
+      return 1
+    }
+    if (error instanceof NotFoundError) {
+      console.error(`No person has the handle ${handle}`)
+      return 1
+    }
+    throw error
   } finally {
     await pool.end()
   }

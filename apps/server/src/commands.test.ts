@@ -1,4 +1,8 @@
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { randomBytes } from "node:crypto"
+import { afterEach, describe, expect, inject, it, vi } from "vitest"
+
+import { schema } from "@shinan/db"
+import { connectTestDatabase } from "@shinan/db/testing"
 
 import { closeWeb, createEmailSender, runCommand, usage } from "./commands.js"
 
@@ -64,6 +68,29 @@ describe("runCommand", () => {
   it("requires SES settings to run the worker in production", async () => {
     const env = { DATABASE_URL: "postgres://unused", NODE_ENV: "production" }
     await expect(runCommand(["worker"], env)).rejects.toThrow(/EMAIL_TRANSPORT/)
+  })
+})
+
+describe("account change-email", () => {
+  it("refuses a configured operator address with what to do instead", async () => {
+    const { db, pool } = connectTestDatabase()
+    try {
+      const handle = `op-${randomBytes(4).toString("hex")}`
+      const email = `${handle}@example.com`
+      await db.insert(schema.people).values({ handle, name: handle, email })
+      await db.insert(schema.installationOperators).values({ email })
+      const error = vi.spyOn(console, "error").mockImplementation(() => {})
+      const code = await runCommand(
+        ["account", "change-email", handle, "new@example.com"],
+        { DATABASE_URL: inject("databaseUrl") },
+      )
+      expect(code).toBe(1)
+      expect(error).toHaveBeenCalledWith(
+        `${email} is an operator address in SHINAN_OPERATORS. Replace it there with new@example.com and restart Shinan, then run this command again.`,
+      )
+    } finally {
+      await pool.end()
+    }
   })
 })
 
