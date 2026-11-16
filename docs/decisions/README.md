@@ -46,9 +46,9 @@ document, it is listed under
 
 D-001 to D-020 were accepted with the plan
 ([issue #1](https://github.com/guneet-xyz/shinan/issues/1),
-[PR #2](https://github.com/guneet-xyz/shinan/pull/2)). D-021 to D-047 record
+[PR #2](https://github.com/guneet-xyz/shinan/pull/2)). D-021 to D-049 record
 the owner's answers on [issue #25](https://github.com/guneet-xyz/shinan/issues/25):
-O-numbers (batches 1 to 11) and N-numbers (batch 12, follow-up questions).
+O-numbers (batches 1 to 11) and N-numbers (batches 12 and 13, follow-up questions).
 The numbers are in each record's `evidence` field and in the
 [mapping](#owner-answers-on-issue-25).
 
@@ -88,7 +88,7 @@ The numbers are in each record's `evidence` field and in the
 | [D-032](D-032-no-writes-as-a-person-on-github.md) | Shinan never writes to GitHub as a person; person-requested git host actions are done by the person's own agents | Accepted | 2026-11-16 | Amends D-017 | Git host integrations; Identity, agents and permissions |
 | [D-033](D-033-forgejo-connection.md) | On Forgejo, Shinan uses the connecting person's own account and accepts any token | Accepted | 2026-11-16 | Amended by D-042 | Git host integrations |
 | [D-034](D-034-sign-in-and-accounts.md) | Sign-in by GitHub, Forgejo, email magic link or password; an email allowlist decides who can have an account | Accepted | 2026-11-16 | Amended by D-044 | Identity, agents and permissions |
-| [D-035](D-035-tokens-security-log-purge.md) | Agent tokens last until revoked; the security log is kept forever; only workspace owners can purge | Accepted | 2026-11-16 | Amended by D-047 | Identity, agents and permissions; Architecture and operations |
+| [D-035](D-035-tokens-security-log-purge.md) | Agent tokens last until revoked; the security log is kept forever; only workspace owners can purge | Accepted | 2026-11-16 | Amended by D-047, D-049 | Identity, agents and permissions; Architecture and operations |
 | [D-036](D-036-design-now-build-before-second-member.md) | D-019 means design now, build before the second member | Accepted | 2026-11-16 | Amends D-019 | Identity, agents and permissions |
 | [D-037](D-037-typescript-node-react.md) | The stack is TypeScript, a plain Node.js server and a React single-page app | Accepted | 2026-11-16 | | Architecture and operations |
 | [D-038](D-038-no-built-in-backups.md) | No built-in backups for now; relying on host-level backups is an accepted risk | Accepted | 2026-11-16 | | Architecture and operations; Roadmap and migration |
@@ -97,10 +97,12 @@ The numbers are in each record's `evidence` field and in the
 | [D-041](D-041-no-outside-tracker-integrations.md) | No integrations with outside trackers are planned; the Multica trial is skipped | Accepted | 2026-11-16 | Amends D-010 | Product overview |
 | [D-042](D-042-no-writes-on-forgejo.md) | Shinan makes no writes on Forgejo; on GitHub it writes only as its app | Accepted | 2026-11-16 | Amends D-033 | Git host integrations |
 | [D-043](D-043-no-git-mirror-for-now.md) | No Git mirror of the catalog for now; revisions live in PostgreSQL only | Accepted | 2026-11-16 | Amends D-022 | Catalog; Architecture and operations |
-| [D-044](D-044-sign-in-magic-link-or-github.md) | Sign-in by email magic link or GitHub only; Forgejo only for connecting; email through the AWS SES API | Accepted | 2026-11-16 | Amends D-034 | Identity, agents and permissions; Architecture and operations |
+| [D-044](D-044-sign-in-magic-link-or-github.md) | Sign-in by email magic link or GitHub only; Forgejo only for connecting; email through the AWS SES API | Accepted | 2026-11-16 | Amends D-034; amended by D-048 | Identity, agents and permissions; Architecture and operations |
 | [D-045](D-045-no-viewer-role.md) | Workspace roles are workspace owner and contributor only; no viewer role | Accepted | 2026-11-16 | | Identity, agents and permissions; Roadmap and migration |
 | [D-046](D-046-subtasks-any-depth.md) | Subtasks can nest to any depth | Accepted | 2026-11-16 | Amends D-029 | Tasks and work |
-| [D-047](D-047-installation-security-log-not-purgeable.md) | Installation-level security-log entries cannot be purged by anyone, for now | Accepted | 2026-11-16 | Amends D-035 | Identity, agents and permissions |
+| [D-047](D-047-installation-security-log-not-purgeable.md) | Installation-level security-log entries cannot be purged by anyone, for now | Accepted | 2026-11-16 | Amends D-035; amended by D-049 | Identity, agents and permissions |
+| [D-048](D-048-refuse-private-forgejo-addresses.md) | Shinan refuses Forgejo addresses on private, loopback or link-local networks by default | Accepted | 2026-11-16 | Amends D-044 | Identity, agents and permissions; Git host integrations; Architecture and operations |
+| [D-049](D-049-security-log-never-purged.md) | No security-log entry can ever be purged | Accepted | 2026-11-16 | Amends D-035, D-047 | Identity, agents and permissions; Architecture and operations |
 
 The full list of owning documents, with planned paths, is in each record.
 
@@ -148,6 +150,8 @@ which cite the O-number or N-number.
 | N-11 | [D-045](D-045-no-viewer-role.md) |
 | N-1 | [D-046](D-046-subtasks-any-depth.md) |
 | N-8 | [D-047](D-047-installation-security-log-not-purgeable.md) |
+| N-12 | [D-048](D-048-refuse-private-forgejo-addresses.md) |
+| N-13 | [D-049](D-049-security-log-never-purged.md) |
 | N-2, N-3, N-10 | No record; decided in the owning document |
 
 ## Record format
@@ -421,3 +425,6 @@ None.
   (batch 12, N-numbers) on issue #25, in this pull request for the same
   reason. Amended records (D-022, D-029, D-033, D-034, D-035) got `amended_by`
   and a History line. N-4 answered this log's only open owner decision.
+- 2026-11-16: records D-048 and D-049 added for the owner's batch 13 answers
+  (N-12, N-13) on issue #25, in this pull request for the same reason.
+  Amended records (D-035, D-044, D-047) got `amended_by` and a History line.

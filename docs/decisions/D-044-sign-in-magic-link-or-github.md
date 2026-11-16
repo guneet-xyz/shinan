@@ -8,7 +8,7 @@ evidence: "https://github.com/guneet-xyz/shinan/issues/25 (N-7, N-6)"
 supersedes: []
 superseded_by: []
 amends: [D-034]
-amended_by: []
+amended_by: [D-048]
 ---
 
 # D-044: Sign-in is by email magic link or GitHub only; Forgejo is only for connecting; email is sent through the AWS SES API
@@ -16,6 +16,7 @@ amended_by: []
 Status: **Accepted** by the owner on 2026-11-16
 ([issue #25, batch 12](https://github.com/guneet-xyz/shinan/issues/25#issuecomment-6913152214):
 N-7 and N-6).
+Amended by [D-048](D-048-refuse-private-forgejo-addresses.md).
 
 ## Context
 
@@ -41,6 +42,9 @@ Owner's choice; no reason recorded.
 ## Consequences
 
 - **Decided:** password sign-in and Forgejo sign-in are not built.
+- **Decided (owner, [D-048](D-048-refuse-private-forgejo-addresses.md)):**
+  Forgejo addresses on private, loopback or link-local networks are refused by
+  default; an installation operator may allow specific hosts.
 - **Decided:** Shinan still sends email from the first version (magic links),
   now through the AWS SES API.
 - Details: see [identity, agents and permissions](../identity.md),
@@ -72,3 +76,4 @@ Owner's choice; no reason recorded.
 - 2026-11-16: accepted by the owner on issue #25 (batch 12). Recorded in the
   decision log's pull request with the rest of the issue #25 answers (see
   [README, history](README.md#history)).
+- 2026-11-16: amended by [D-048](D-048-refuse-private-forgejo-addresses.md) (owner answers, batch 13, on [issue #25](https://github.com/guneet-xyz/shinan/issues/25#issuecomment-6913301590)). Decision and Reasons unchanged; maintained sections updated.
