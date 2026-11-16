@@ -49,6 +49,8 @@ On first start, the `web` role prints a one-time **setup link** to its log
 (`http://localhost:5173/setup#…`). Open it, enter the address from
 `SHINAN_OPERATORS`, and open the sign-in link that arrives in Mailpit: that
 creates the first operator account ([architecture 12](docs/architecture.md#12-self-hosting)).
+Create a workspace from the start page. Sign-in links open a confirm page
+(`/sign-in/link#…`); the token is used only when you click.
 After that, operators add addresses to the email allowlist under Your
 account, Installation settings, and anyone allowlisted signs in with an email
 link. GitHub sign-in appears only when `GITHUB_CLIENT_ID` and
@@ -111,7 +113,8 @@ recorded in the security log:
 
 ```sh
 node dist/cli.js account end-sessions <handle>           # end all of a person's sign-in sessions
-node dist/cli.js account change-email <handle> <email>   # change their address, allowlist it, end their sessions
+node dist/cli.js account change-email <handle> <email>   # change their address and allowlist it; remove the old one from the allowlist,
+                                                         # withdraw invitations pending for it, end their sessions
 ```
 
 ### Web app and API

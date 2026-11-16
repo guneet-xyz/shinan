@@ -1103,6 +1103,9 @@ details (D-015).
   O-6, [#25]); the prefix rules are [Tasks and work](tasks.md)'s (section 3). It makes the person its workspace owner, then
   opens the [setup checklist](#first-run-for-a-new-workspace). Whether any
   signed-in person may create a workspace is owned by [Identity](identity.md).
+  **Proposed (M1-4):** until tasks exist, it asks only for a name, offered
+  on the start page to someone with no workspace and under Your account,
+  Workspaces; the prefix and the setup checklist come with tasks (M2, M3).
 
 ### Workspace settings
 

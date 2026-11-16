@@ -170,7 +170,14 @@ How each method works, **proposed** unless marked:
   short life and single use limit a link read from a mailbox or a log. Whoever
   controls the email account can sign in (T1); NIST SP 800-63B-4 does not
   accept email as an authentication channel, which is the residual risk the
-  owner accepted.
+  owner accepted. **Proposed (M1-4):** the emailed link opens a page that
+  signs in only when the person clicks, with the token in the link's
+  fragment. Reason: mail scanners that fetch links would otherwise use the
+  link up (or sign in themselves), and the token stays out of server and
+  proxy logs. The reply to a request for a link is sent before Shinan
+  decides whether the address may have one, so it takes the same time either
+  way (§10); the deciding work still uses the database, which a determined
+  observer of the server's load might notice.
 - **GitHub.** Sign-in uses the same GitHub App that git host connections use
   ([git host integrations](git-hosts.md)). The person is identified by GitHub's
   stable account number, never by username or email. Shinan uses the
@@ -274,6 +281,15 @@ allowlist. Otherwise the installation operator can end the person's sign-in
 sessions and change their email address with a server command, which is
 recorded. Reason: email is the root of every account (O-41, N-7), and the
 operator command saves a sole owner whose email account is lost.
+
+**Proposed (M1-4):** the operator's command also, in the same step, removes
+the old address from the email allowlist (unless the configuration names it
+as an operator's) and withdraws the invitations still pending for it; it
+adds the new address to the allowlist. Withdrawn invitations are not moved
+to the new address; a workspace owner invites it again. Reason: the lost
+mailbox may be in someone else's hands, and otherwise they could open a link
+to the old address, get a new account with it, and accept the person's
+invitations.
 
 ### 3.5 Linking git host accounts
 
@@ -897,7 +913,9 @@ written forms:
 
 - A person's handle is chosen when their account is created: lowercase
   letters, digits and hyphens, unique in the installation, and not changeable
-  in the first version.
+  in the first version. **Proposed (M1-4):** never `shinan` or `unknown`,
+  the written forms of other actors below. Reason: a person writing as
+  `shinan` could not be told apart from Shinan itself.
 - An agent's handle is `<coding tool>-<machine>`, set when the agent is
   created on the approval page ([6.2](#62-registering-an-agent)), unique among
   the person's agents in the workspace, and not changeable.
