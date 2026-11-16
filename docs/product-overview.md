@@ -15,6 +15,8 @@ Every statement is marked:
   (pillars, integration points, phases, non-goals) in the [plan](plan.md),
   which is cited and carries the reason.
 - **Proposed**: suggested here, with a reason. The owner confirms or changes it.
+  Items that set direction for other documents or go beyond the plan are also
+  listed under [decisions needed from the owner](#decisions-needed-from-the-owner).
 - **Open**: not settled. Listed under [open questions](#open-questions) or
   [decisions needed from the owner](#decisions-needed-from-the-owner).
 
@@ -63,15 +65,15 @@ practice; the reading of what hurts is **proposed**, with the evidence given.
 | Forgejo issues for cross-project work, with branches and pull requests linked by URL. | Work spans GitHub and Forgejo (Shinan itself lives on GitHub; the `workspace` repository's coordination issues live on Forgejo). Issue numbers only mean something inside one repository, so links need full URLs and there is no single story. | [collaboration](https://git.guneet.dev/guneet/workspace/src/branch/main/docs/collaboration.md): "Issue numbers are repository-scoped; use qualified references or full URLs". |
 | A `human-effort` label with a TL;DR comment for work only a person can do. | It is a label convention per issue, with no overview across repositories and hosts. | [collaboration](https://git.guneet.dev/guneet/workspace/src/branch/main/docs/collaboration.md), "Work only a person can do". |
 | Agents use the owner's git host account. | Who did what is only known if the agent announces its agent session in a comment. | [collaboration](https://git.guneet.dev/guneet/workspace/src/branch/main/docs/collaboration.md): "Announce the agent/session identity in a comment if agents share an account." |
-| Several agent sessions work in parallel in separate worktrees. | Nothing shows which agent sessions are running, on what, and whether they are stuck; a person's comment does not reach a running agent session. | Plan, Agent presence and Nudges pillars. |
+| Several agent sessions work in parallel, each in its own worktree. | Nothing shows which agent sessions are running, on what, and whether they are stuck; a person's comment does not reach a running agent session. (Reported by the owner; the `workspace` repository has no mechanism for either.) | [collaboration](https://git.guneet.dev/guneet/workspace/src/branch/main/docs/collaboration.md), step 4: "Never share a writable directory between independent agents." |
 
 The links above point into the private `workspace` repository on Forgejo
 (sign-in needed); they are evidence, not part of Shinan.
 
 ### The vision
 
-**Proposed** vision statement. Reason: it restates plan section 1 as an outcome
-a user can check.
+**Proposed** vision statement (owner decision 1). Reason: it restates plan
+section 1 as an outcome a user can check.
 
 > A person who opens Shinan, or an agent that connects to it, can answer three
 > questions without asking anyone: *what do we run and how sure are we*, *what
@@ -89,10 +91,10 @@ These guide trade-offs in every other document.
 | **Link, don't copy.** Facts owned elsewhere are linked; git host discussions stay on the git host. | **Decided** (plan section 3; D-001). |
 | **Host-neutral.** A task and its timeline span any git host; no git host is privileged. | **Decided** (D-001, D-002, D-009). |
 | **Bring your own agent.** People keep their coding tools and pay for their own models. | **Decided** (D-008). |
-| **People set direction; agents do the work.** Agents make catalog proposals and report progress; people approve where needed and set manual states such as the `needs a person` task flag. | **Decided** that agents propose and people approve (plan, Catalog pillar). Who may set each manual state is owned by [Tasks and work](tasks.md); the [domain model](domain-model.md#task-status-task-flags-and-manual-states) proposes that agents may also set `needs a person`, pending the owner's decision. |
-| **Derive, don't maintain.** Task status comes from linked work, not from hand-kept fields. | **Decided** (D-005). |
+| **People set direction; agents do the work.** Agents make catalog proposals and report progress; people make the decisions, for example approving catalog proposals, accepting or cancelling a task, and giving deployment approval. | **Decided** that agents propose and people approve where needed (plan, Catalog pillar). Who may set each manual state, including the `needs a person` task flag, is owned by [Tasks and work](tasks.md) and pending an owner decision in the [domain model](domain-model.md#task-status-task-flags-and-manual-states). |
+| **Calculate, don't maintain.** Task status is calculated from linked work, not kept by hand. | **Decided** (D-005). How far "linked work" includes recorded events is a pending owner decision in the [domain model](domain-model.md#task-status-task-flags-and-manual-states). |
 | **Self-hostable.** One installation can be run by anyone on their own machines. | **Decided** (D-012). |
-| **Small and legible over configurable.** Prefer a fixed, well-explained model (entity types, fact states, task states) to custom fields and workflows. | **Proposed**. Reason: the target users are small teams; Chartroom makes the same bet for teams of 2 to 25, and configurable tools such as Port need a platform team to model them (see [Port](#port)). |
+| **Small and legible over configurable.** Prefer a fixed, well-explained model (entity types, fact states, task states) to custom fields and workflows. | **Proposed** (owner decision 3). Reason: the target users are small teams; Chartroom makes the same bet for teams of 2 to 25, and configurable tools such as Port need a platform team to model them (see [Port](#port)). It constrains the catalog schema (plan question 5) and workspace settings, so the owning documents may argue for exceptions. |
 
 ## Users
 
@@ -117,12 +119,12 @@ Each persona maps to glossary terms. The roles named are the
 | **A team member** | Member with the contributor role | Pick up tasks, comment, nudge agent sessions, register their own agents, read and propose catalog changes. | **Decided** that members exist (D-019). |
 | **A reader** | Viewer | Read the wiki, follow tasks and timelines, without changing anything. Examples: a new hire on day one, a stakeholder. | **Proposed**. Reason: onboarding (plan, Wiki and onboarding pillar) needs a read-only path. |
 | **A newcomer, person or agent** | Start here path | Get from zero to useful in one reading path. | **Decided** (plan, Wiki and onboarding pillar). |
-| **An outside contributor** | Outside actor; outside issue | Nothing in Shinan directly; they open issues on a git host. Shinan turns those into tasks in `triage`. | **Decided** (D-003). |
+| **An outside contributor** | Outside actor; outside issue | Nothing in Shinan directly; they open issues on a git host, and Shinan turns those into tasks. | **Decided** (D-003) that outside issues become tasks; the `triage` status they start in is **proposed** in the [domain model](domain-model.md#outside-issue). |
 | **A later adopter**: agency, consultancy or small infrastructure team | Several workspaces per person | Keep each client's or system's catalog and tasks apart; hand over a readable catalog when an engagement ends; run Shinan themselves. | **Proposed** needs. Reason: these teams work across many separate estates, which is the workspace boundary (D-019) and the self-hosting decision (D-012). Whether clients ever sign in is **open** (question 3). |
 
 ### Who Shinan is not for
 
-**Proposed**, each with its reason:
+**Proposed** (owner decision 4), each with its reason:
 
 - **Large engineering organisations that want an internal developer portal**
   with scorecards, self-service actions and hundreds of integrations. Port and
@@ -177,7 +179,7 @@ what "ready" means and how the move works belong to
 2. Stale and unknown facts are visible at a glance, and agents fix some of them
    as a side effect of task work, through catalog proposals.
 3. Every piece of agent work on the trial projects, on GitHub or Forgejo, has
-   one task with a correct derived status and one timeline.
+   one task with a correct calculated status and one timeline.
 4. The owner can tell what each running agent session is doing, and which tasks
    need a person, without opening terminals or searching repositories.
 
@@ -188,13 +190,13 @@ what "ready" means and how the move works belong to
 | Replace git hosts: no code review, CI, pull request interface or per-repository issue tracker. | **Decided** (D-001, plan section 3). |
 | Run models or host agents, at least until a later phase. | **Decided** (D-008). A launcher that starts agent sessions on the user's own machines is a phase 3 option (D-014). |
 | Copy facts that another system owns. | **Decided** (plan section 3). |
-| Sell human-versus-agent attribution as a feature. It is necessary, but every competitor has it. | **Decided** (plan section 3); confirmed by the [competitor survey](#table-stakes). |
+| Sell human-versus-agent attribution as a feature. It is necessary, but every competitor has it. | **Decided** (plan section 3). The survey confirms it for every agent board checked (see [table stakes](#table-stakes)). |
 | Embed other products such as Multica, Linear or Plane. It integrates with them through their APIs. | **Decided** (D-010). |
-| Act as an internal developer portal: no scorecards, maturity rubrics, self-service actions or provisioning workflows. | **Proposed**. Reason: Port and OpsLevel own this space for organisations with platform teams; it is outside the owner's need and would pull the catalog towards ingesting everything instead of recording checked facts. |
-| Index everything: no search across chat, email or third-party document tools. | **Proposed**. Reason: Glean and Unblocked do this at scale; a curated, checked catalog is a different product, and indexing would copy facts owned elsewhere. |
-| Act as a live inventory or monitoring system. Facts are checked observations with a time, not live metrics. | **Proposed**. Reason: the `workspace` repository already states "the catalog is not a live inventory", and monitoring is owned by monitoring tools. |
-| Store secrets. Credentials never go into the catalog, tasks or comments. | **Proposed**. Reason: the web app is public behind sign-in and holds infrastructure details (D-015); the `workspace` repository's practice forbids credentials in the record. Details belong to [Identity, agents and permissions](identity.md) and [Architecture and operations](architecture.md). |
-| Become a general work tracker with custom fields and configurable workflows. | **Proposed**. Reason: the [small and legible](#product-principles) principle; tools that do this well already exist. |
+| Act as an internal developer portal: no scorecards, maturity rubrics, self-service actions or provisioning workflows. | **Proposed** (owner decision 4). Reason: Port and OpsLevel own this space for organisations with platform teams; it is outside the owner's need and would pull the catalog towards ingesting everything instead of recording checked facts. The phase 3 launcher, which starts agent sessions on a member's own machines (D-014), is not a self-service action in this sense. |
+| Index everything: no search across chat, email or third-party document tools. | **Proposed** (owner decision 4). Reason: Glean and Unblocked do this at scale; a curated, checked catalog is a different product, and indexing would copy facts owned elsewhere. |
+| Act as a live inventory or monitoring system for what the catalog describes. Catalog facts are checked observations with a time, not live metrics. Agent presence, which is live, is in scope. | **Proposed** (owner decision 4). Reason: the `workspace` repository already states "the catalog is not a live inventory", and monitoring is owned by monitoring tools. |
+| Act as a secrets manager. The catalog records where a credential lives and who holds it, never its value. | **Proposed** (owner decision 4). Reason: the web app is public behind sign-in and holds infrastructure details (D-015), and the `workspace` repository's rule is "Document credential sources and required roles, not credential values" ([access and safety](https://git.guneet.dev/guneet/workspace/src/branch/main/docs/access-and-safety.md)). How Shinan holds the credentials it needs itself (git host connection and agent tokens), and what happens to a secret pasted by mistake, belong to [Identity, agents and permissions](identity.md) and [Architecture and operations](architecture.md). |
+| Become a general work tracker with custom fields and configurable workflows. | **Proposed** (owner decision 4). Reason: the [small and legible](#product-principles) principle; tools that do this well already exist. |
 
 ## Positioning against competitors
 
@@ -225,20 +227,27 @@ Products where agents take work from a shared board or tracker.
   issue, CI status is shown, and the issue moves to a chosen status when all
   linked pull requests merge.
 - **License and price.** Apache 2.0 text with extra conditions. Use inside your
-  own organisation is free, including self-hosting. Letting people outside your
-  organisation sign in, or running instances for clients as a managed service,
-  needs a commercial license. Cloud prices are not shown on its pages (the
-  pricing page rendered no prices when fetched); a third-party review reports
-  the cloud plan is billed per human seat, which we could not confirm.
+  own organisation is free, including self-hosting, and so is deploying it for
+  a client who then owns and uses it internally. A commercial license is needed
+  when people outside your organisation sign in, when you run instances for
+  clients as a managed service, or when you embed it in a product you sell.
+  Cloud prices are not shown on its pages (the pricing page rendered no prices
+  when fetched); a third-party review reports the cloud plan is billed per
+  human seat, which we could not confirm.
 - **Overlap with Shinan.** Strong on tasks: host-neutral pull request linking
-  by identifier in the branch name, derived status on merge, Forgejo support,
-  self-hosting, agents as named actors.
+  by identifier in the branch name, status calculated on merge, Forgejo support,
+  self-hosting, agents as named actors. Also close to Shinan's Nudges pillar:
+  @-mentioning an agent in a comment starts a run on the issue, and **issue
+  wakeups** bring an agent back to an issue at a set time or after an event
+  such as a reply, a status change or a linked pull request merging.
 - **Differences.** No catalog of what a team runs, and no fact states,
   provenance or freshness; its context is "projects" with attached repositories
-  and documents, plus skills. Work starts when Multica dispatches a run to the
-  daemon; Shinan's first version instead follows agent sessions a person
-  already started in their own coding tool (D-014). Its license blocks the
-  agency case of hosting an installation that clients sign in to.
+  and documents, plus skills. Every way of reaching an agent, including
+  mentions and wakeups, starts a new run through the daemon; Shinan's first
+  version instead follows, and delivers nudges into, agent sessions a person
+  already has open in their own coding tool (D-014). Its license blocks the
+  agency case of running an installation that clients sign in to, or running
+  it for them as a managed service.
 
 #### Linear
 
@@ -282,7 +291,7 @@ Products where agents take work from a shared board or tracker.
 - **Status.** Private beta; sign-up and payment not open. The vendor lists it as
   proprietary and "not offered for sale, licence or download".
 - **Overlap.** Very close to Shinan's task half and its principles (no model
-  inside, agents act for a person, key in branch name, derived status).
+  inside, agents act for a person, key in branch name, calculated status).
 - **Differences.** Only GitHub is named as a git host; not self-hostable; its
   documents are product specs, not a catalog of running infrastructure with
   provenance.
@@ -315,7 +324,8 @@ Products that give agents organisational knowledge.
   uses a Claude agent to write and refresh a repository wiki through pull
   requests. Documents are an add-on to the catalog, not its source of truth.
 - **Hosting and price.** Multi-tenant SaaS with no full self-hosted option;
-  Enterprise can get a dedicated, Port-managed tenant. Free up to 5 seats;
+  Enterprise customers can ask for a single-tenant deployment ("dedicated
+  tenancy"). Free up to 5 seats;
   Basic $30 per seat per month billed yearly; Standard $48 per seat per month;
   Enterprise custom. Every authenticated user, including read-only users,
   counts as a seat.
@@ -410,7 +420,7 @@ profiles above; "?" means not checked.
 
 | | Agent board | Person or agent credit | GitHub and Forgejo | Catalog of what a team runs | Readable documents as source | Per-fact freshness and provenance | Self-hostable |
 |---|---|---|---|---|---|---|---|
-| **Shinan (planned)** | Phase 2 | Yes | Yes (D-009) | Yes (D-006) | Yes (D-006) | Yes (D-007) | Yes (D-012) |
+| **Shinan (planned)** | Phase 2 | Yes; reliability open (D-017) | Yes (D-009) | Yes (D-006) | Yes (D-006) | Yes (D-007) | Yes (D-012) |
 | Multica | Yes | Yes | Yes, self-hosted only | No | No | No | Yes, internal use |
 | Linear | Yes | Yes (delegate) | ? | No | No | No | No |
 | GitHub Agent HQ | Yes | Yes | GitHub only | No | No | No | No |
@@ -425,15 +435,17 @@ profiles above; "?" means not checked.
 
 ### Table stakes
 
-**Decided** (plan section 3, confirmed by this survey): every serious
-competitor now has these, so Shinan needs them but cannot win on them:
+Every agent board checked (Multica, Linear, GitHub Agent HQ, Chartroom) has
+these, so Shinan needs them but cannot win on them. Context layers such as
+Port, OpsLevel and Glean are not agent boards and lack most of them.
 
-- a board or queue where agents take work beside people;
-- crediting each action to a person or an agent acting for a person;
-- access for any agent through MCP;
-- linking pull requests to tasks by a key in the branch name or title, and
-  deriving status from them;
-- letting people bring their own coding tools.
+| Table stake | Status |
+|---|---|
+| Crediting each action to a person or an agent acting for a person. | **Decided** (plan section 3: "Attribution is necessary, but every competitor has it"). Shinan's version is harder than the others' because agents share their person's git host account (D-017); see [risks](#risks-to-this-positioning). |
+| A board or queue where agents take work beside people. | **Proposed**. Reason: all four agent boards have one; Shinan's board is planned for phase 2 (plan section 10). |
+| Access for any agent through MCP or a CLI. | **Proposed**. Reason: Linear, Chartroom and Plane offer an MCP server and Multica gives agents a CLI and API; Shinan already plans MCP, a skill and a CLI (D-014). |
+| Linking pull requests to tasks by a key in the branch name or title, and calculating status from them. | **Proposed**. Reason: Multica and Chartroom do exactly this; Shinan already plans it (D-002, D-005). |
+| Letting people bring their own coding tools. | **Proposed**. Reason: Multica and Chartroom work with the coding tools people already have, and Linear's MCP server lets them work on issues (GitHub Agent HQ runs agents in GitHub's cloud instead); Shinan already plans it (D-008). |
 
 ### Differentiators
 
@@ -452,25 +464,38 @@ competitor now has these, so Shinan needs them but cannot win on them:
 3. **Documents people own.** Markdown as the source of truth, readable as a
    wiki, portable if Shinan goes away (D-006). Dosu and Waymark are also
    Markdown-based, so this is a differentiator only in combination with 1 and 2.
-4. **Self-hosted, including for others.** D-012 makes Shinan self-hostable;
-   Port and Chartroom are not, and Multica's license forbids hosting for people
-   outside your organisation. Whether Shinan's own license would allow that is
-   deferred (D-013).
+4. **Self-hostable.** D-012 makes Shinan self-hostable; Port and Chartroom are
+   not. Multica is self-hostable for internal use but needs a commercial
+   license once outside people sign in or it is run as a managed service.
+   Whether Shinan's own license would allow hosting for others is deferred
+   (D-013, [open question 7](#open-questions)).
 5. **Follows the agent sessions people already run.** Presence and nudges for
    agent sessions started in a person's own coding tool, through a plugin (D-014).
-   Multica, Linear and GitHub start a run when work is assigned. This matters
-   for people who work interactively with agents, as the owner does; how much
-   it matters to others is **open**.
+   Multica, Linear and GitHub start a new run when work is assigned, an agent
+   is mentioned or (in Multica) a wakeup fires; none of them reaches a
+   conversation a person already has open. This matters for people who work
+   interactively with agents, as the owner does; how much it matters to others
+   is **open**.
 
 The host-neutral task story is **not** listed: it is essential to Shinan
 (D-001, D-002) and still beats GitHub Agent HQ and Chartroom, which are
 GitHub-only, but Multica's self-hosted edition now offers the same linking
 across GitHub, Forgejo, Gitea and GitLab.
 
-### Positioning statement
+### Positioning statements
 
-**Proposed.** Reason: it names the target user, the category and the two
-competitor groups, and claims only the differentiators above.
+**Proposed** (owner decision 1), in two parts. Reason: plan section 2 and
+D-013 make the owner the user now, while the eventual fit is small teams; each
+statement names its audience and claims only the differentiators above.
+
+**Now**, while Shinan is tried in the owner's own use:
+
+> For the owner and the owner's agents, Shinan is the one place that says what
+> runs where and how sure we are, and where each piece of work stands across
+> GitHub and Forgejo, so neither has to reconstruct it from repositories and
+> terminals.
+
+**Later**, if Shinan proves itself:
 
 > For small teams that run many projects and machines and let coding agents do
 > much of the work, Shinan is the trusted record of what the team runs and the
@@ -494,14 +519,16 @@ positioning should be rechecked rather than assumed.
 | Linear's "context" pivot reaches engineering operations. | Large user base, strong design. | Linear features for systems, services or runbooks. |
 | "Markdown goes stale" proves true for us. | It would undercut D-006. | Share of facts past their expected check age during the trial. |
 | Agents do not reliably make catalog proposals. | Differentiator 1 depends on it. | Proportion of tasks that touch infrastructure and produce a catalog proposal. |
+| Attribution with shared git host accounts proves unreliable. | Agents share their person's git host account (D-017), while boards that start the agent themselves know who acted; how reliable Shinan's attribution can be is plan question 2. | Share of events with attribution `unknown` during the trial. |
 
 ### How Shinan relates to these products
 
 **Decided** (D-010): Shinan integrates with outside tools such as Multica,
-Linear and Plane through their APIs and does not embed them; Multica's license
-forbids embedding or hosting for others. **Proposed** consequence: a team that
-already uses one of these boards should be able to keep it, with Shinan holding
-the catalog and linking to their tasks. Whether items in outside tools become
+Linear and Plane through their APIs and does not embed them. D-010's reason is
+Multica's license; precisely, that license requires a commercial agreement for
+embedding, for a managed service, or when outside people sign in.
+**Proposed** consequence: a team that already uses one of these boards should
+be able to keep it, with Shinan holding the catalog and linking to their tasks. Whether items in outside tools become
 work items or task origins is open in the
 [domain model](domain-model.md#work-item) and belongs to
 [Tasks and work](tasks.md).
@@ -518,34 +545,39 @@ eventual fit and that business decisions are deferred (plan section 2, D-013).
 - Their records are only useful if they can be trusted months later, which is
   what freshness and provenance give (D-007).
 - They often host tools themselves or for clients. Port and Chartroom cannot be
-  self-hosted, and Multica needs a commercial license once clients sign in.
+  self-hosted, and Multica needs a commercial license once clients sign in or
+  it is run for them as a managed service.
 
-**Proposed** rule: these users act only as a tie-breaker between otherwise
-equal designs in the documents for this phase; nothing is built only for them.
+**Proposed** rule (owner decision 6): these users act only as a tie-breaker
+between otherwise equal designs in the documents for this phase; nothing is
+built only for them.
 Reason: D-013 defers business decisions until Shinan proves itself in the
 owner's use.
 
 ## Dependencies on other documents
 
-| Document | What this document relies on it for |
-|---|---|
-| [Domain model and glossary](domain-model.md) | All terms. Its proposed roles (workspace owner, member, viewer) underlie the personas. |
-| [Catalog](catalog.md) | Whether the catalog can deliver differentiators 1 to 3: entity types, fact states, granularity, catalog proposals, catalog approval, the agent index. |
-| [Tasks and work](tasks.md) | The task story, derived status and nudges; how tasks link to outside boards such as Multica or Linear. |
-| [Identity, agents and permissions](identity.md) | Roles behind the personas, the viewer role, and whether people outside a team (for example a client) can be members. |
-| [Git host integrations](git-hosts.md) | That GitHub and several Forgejo servers can be treated alike. |
-| [Agent integrations](agent-integrations.md) | That plugin-based presence and nudges work for agent sessions a person starts (differentiator 5). |
-| [Human experience](human-experience.md) | The wiki and start here path that make the catalog readable by people. |
-| [Architecture and operations](architecture.md) | That a single person can self-host an installation (differentiator 4) and that the public app is safe for infrastructure details (D-015). |
-| [Roadmap and migration](roadmap.md) | Phases, trial projects and the measurable readiness criteria behind [what success looks like](#what-success-looks-like). |
-| [Decision log](decisions/) | Records for any decisions taken from this document. |
+Links use each document's planned path; until it merges, its issue holds the
+work.
+
+| Document | Issue | What this document relies on it for |
+|---|---|---|
+| [Domain model and glossary](domain-model.md) | [#3](https://github.com/guneet-xyz/shinan/issues/3) | All terms. Its proposed roles (workspace owner, contributor, viewer) underlie the personas; its pending owner decisions (for example who may set `needs a person`) are not assumed here. |
+| [Catalog](catalog.md) | [#5](https://github.com/guneet-xyz/shinan/issues/5) | Whether the catalog can deliver differentiators 1 to 3: entity types, fact states, granularity, catalog proposals, catalog approval, the agent index. |
+| [Tasks and work](tasks.md) | [#6](https://github.com/guneet-xyz/shinan/issues/6) | The task story, calculated status and nudges; how tasks link to outside tools such as Multica or Linear; findings from the Multica trial (decision 5). |
+| [Identity, agents and permissions](identity.md) | [#7](https://github.com/guneet-xyz/shinan/issues/7) | Roles behind the personas, the viewer role, whether people outside a team (for example a client) can be members, and how Shinan holds its own credentials. |
+| [Git host integrations](git-hosts.md) | [#8](https://github.com/guneet-xyz/shinan/issues/8) | That GitHub and several Forgejo servers can be treated alike. |
+| [Agent integrations](agent-integrations.md) | [#9](https://github.com/guneet-xyz/shinan/issues/9) | That plugin-based presence and nudges work for agent sessions a person starts (differentiator 5). |
+| [Human experience](human-experience.md) | [#10](https://github.com/guneet-xyz/shinan/issues/10) | The wiki and start here path that make the catalog readable by people. |
+| [Architecture and operations](architecture.md) | [#11](https://github.com/guneet-xyz/shinan/issues/11) | That a single person can self-host an installation (differentiator 4), that the public app is safe for infrastructure details (D-015), and what happens to secrets pasted by mistake. |
+| [Roadmap and migration](roadmap.md) | [#12](https://github.com/guneet-xyz/shinan/issues/12) | Phases, trial projects and the measurable readiness criteria behind [what success looks like](#what-success-looks-like); findings from the Multica trial (decision 5). |
+| [Decision log](decisions/) | [#13](https://github.com/guneet-xyz/shinan/issues/13) | Records for the decisions below once the owner takes them. |
 
 ## Open questions
 
 1. **Multica and outside issues.** Does Multica turn issues opened on a git
    host into Multica issues, as Shinan does with outside issues (D-003)? Not
-   found in its documentation. (This document; affects how strong the task
-   half is against Multica.)
+   found in its documentation. (This document; the Multica trial in decision 5
+   can answer it.)
 2. **Linear and Forgejo.** Does Linear link work from Forgejo or other
    self-hosted git hosts? Not checked. (This document.)
 3. **Clients as users.** Should an agency's client ever sign in to see their
@@ -557,42 +589,27 @@ owner's use.
 5. **Is "readable like a wiki" enough?** Port now renders Markdown documents
    and Dosu publishes reviewed Markdown. What must Shinan's wiki do beyond
    rendering to justify D-006 to a newcomer? (Human experience.)
-6. **Which small tools.** Which of the projects named Cairn, Muster and Waymark
-   did the owner's earlier research refer to? (This document.)
-7. **Licensing if public.** Whether Shinan's license would allow others to host
-   it for third parties, which differentiator 4 assumes. Deferred by D-013;
-   listed as plan question 10.
+6. **Which small tools.** For the owner: which projects named Cairn, Muster and
+   Waymark did you have in mind? Several projects share each name. (This
+   document.)
+7. **Hosting for others.** Would Shinan's license allow others to run it for
+   third parties? Differentiator 4 claims only self-hosting until this is
+   settled. Deferred by D-013; plan question 10.
 
 ## Decisions needed from the owner
 
-1. **Adopt the positioning statement.**
-   *Recommended:* adopt it as written. *Reason:* it claims only what the survey
-   supports and leaves the task half as necessary rather than distinctive.
-2. **Catalog first when trade-offs arise.**
-   Should catalog quality win over task features when the documents or the
-   first version must choose?
-   *Recommended:* yes. *Reason:* the catalog is the only part no competitor
-   checked offers, while Multica already covers most of the task half.
-3. **Try Multica before building a board.**
-   Should the owner (or an agent, with deployment approval for anything deployed) try
-   self-hosted Multica against the owner's Forgejo before phase 2 board work
-   starts?
-   *Recommended:* yes, a short local trial with no deployment. *Reason:* it is
-   the cheapest way to confirm the overlap, and integrating with it (D-010)
-   might replace building a board.
-4. **Not an internal developer portal, not an index of everything.**
-   Accept the two proposed [non-goals](#non-goals) (no scorecards or
-   self-service actions; no search across chat and third-party documents).
-   *Recommended:* accept both. *Reason:* Port, OpsLevel, Glean and Unblocked
-   serve these well for larger organisations, and both would pull the catalog
-   towards copying facts.
-5. **Later adopters as a tie-breaker only.**
-   *Recommended:* yes, as proposed under [fit for later adopters](#fit-for-later-adopters).
-   *Reason:* D-013 defers business decisions; a tie-breaker keeps the option
-   open at no cost.
-6. **Recheck the competitor survey at each phase boundary.**
-   *Recommended:* yes, updating this document by pull request. *Reason:* several
-   of the facts above changed within the last six months.
+Each stays **proposed** until the owner agrees; agreed items get a record in
+the [decision log](decisions/).
+
+| # | Decision | Recommended | Reason |
+|---|---|---|---|
+| 1 | Adopt the [vision statement](#the-vision) and the two [positioning statements](#positioning-statements) (now and later). | Adopt | They claim only what the survey supports and keep the owner as today's user (plan section 2). |
+| 2 | Use "catalog first" as a tie-breaker in design trade-offs, without changing phase 1 scope. | Yes | The catalog is the one part no competitor checked offers; Multica already covers most of the task half. |
+| 3 | Adopt the "small and legible over configurable" [principle](#product-principles). | Yes | Small teams are the target; owning documents can still argue for specific exceptions. |
+| 4 | Accept all proposed [non-goals](#non-goals) and [non-audiences](#who-shinan-is-not-for). | Accept all | Others serve these well, and most would pull the catalog towards copying facts. |
+| 5 | Run a short local trial of self-hosted Multica against Forgejo before phase 2 board work; findings go to Roadmap and Tasks and work. | Yes; nothing deployed | Cheapest way to confirm the overlap; changing the phase 2 board would be a separate plan change. |
+| 6 | Treat later adopters as a [tie-breaker](#fit-for-later-adopters) only. | Yes | D-013 defers business decisions; a tie-breaker keeps the option open at no cost. |
+| 7 | Recheck the competitor survey at each phase boundary, updating this document by pull request. | Yes | Several facts here changed within the last six months. |
 
 ## Sources
 
@@ -600,7 +617,7 @@ All checked on 2026-11-16 unless stated.
 
 | Product | Sources |
 |---|---|
-| Multica | [README](https://github.com/multica-ai/multica), [GitHub API](https://api.github.com/repos/multica-ai/multica) (stars), [how Multica works](https://github.com/multica-ai/multica/blob/main/apps/docs/content/docs/how-multica-works.mdx), [agents](https://github.com/multica-ai/multica/blob/main/apps/docs/content/docs/agents.mdx), [self-hosted Git providers](https://multica.ai/docs/vcs-integration), [GitHub integration](https://multica.ai/docs/github-integration), [licensing](https://multica.ai/licensing), [pricing page](https://multica.ai/pricing) (no prices rendered). Per-seat cloud billing reported by [The Open Source Drop](https://www.opensourcedrop.com/tools/multica-ai/multica) (third party, not confirmed). |
+| Multica | [README](https://github.com/multica-ai/multica), [GitHub API](https://api.github.com/repos/multica-ai/multica) (stars), [how Multica works](https://github.com/multica-ai/multica/blob/main/apps/docs/content/docs/how-multica-works.mdx), [issue wakeups](https://multica.ai/docs/issue-wakeups), [agents](https://github.com/multica-ai/multica/blob/main/apps/docs/content/docs/agents.mdx), [self-hosted Git providers](https://multica.ai/docs/vcs-integration), [GitHub integration](https://multica.ai/docs/github-integration), [licensing](https://multica.ai/licensing), [pricing page](https://multica.ai/pricing) (no prices rendered). Per-seat cloud billing reported by [The Open Source Drop](https://www.opensourcedrop.com/tools/multica-ai/multica) (third party, not confirmed). |
 | Linear | [Issue tracking is dead](https://linear.app/next) (2026-03-24), [assign and delegate issues](https://linear.app/docs/assigning-issues), [agents developer guide](https://linear.app/developers/agents), [pricing](https://linear.app/pricing). |
 | GitHub | [Introducing Agent HQ](https://github.blog/news-insights/company-news/welcome-home-agents/) (2025-10-28), [Claude and Codex public preview](https://github.blog/changelog/2026-02-04-claude-and-codex-are-now-available-in-public-preview-on-github) (2026-02-04), [Claude and Codex for Business and Pro](https://github.blog/changelog/2026-02-26-claude-and-codex-now-available-for-copilot-business-pro-users) (2026-02-26). |
 | Chartroom | [Chartroom](https://cloudcitycomputing.com/products/chartroom), [products page](https://cloudcitycomputing.com/products). |
