@@ -837,17 +837,19 @@ owner's accepted risks.
 | Email is abused                                              | Magic links only to allowlisted addresses; messages only to verified account addresses; throttling; uniform answers ([9.2](#92-how-shinan-sends))                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | Proposed                                                                                                     |
 | Malicious Markdown or HTML in the wiki                       | Raw HTML stripped or sanitized; strict Content Security Policy                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Proposed                                                                                                     |
 | Shinan tricked into calling internal addresses               | Anyone can enter any Forgejo address to connect (owner, N-7). The rule is **decided**: Shinan contacts only the address entered, over HTTPS, refuses addresses that resolve to private, loopback or link-local ranges, re-checks on every request, and an installation operator may allow specific hosts (owner, N-12; [identity](identity.md) §3.5). **Mechanism (Proposed):** every outgoing request resolves the host name, checks every resolved address, and connects to the address it checked, so a DNS answer cannot change between the check and the connection; redirects are checked the same way before they are followed; the operator's exceptions are an installation setting ([3.5](#35-shinan-installation)) | Rule decided (owner, N-12); mechanism proposed. Reason: on Musashi, private addresses reach other services   |
-| Cross-site request forgery                                   | Same-site cookies plus a CSRF token or origin check on state-changing requests                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Proposed                                                                                                     |
+| Cross-site request forgery                                   | Same-site (`Lax`) sign-in cookies plus an origin check on every state-changing request: its `Origin` must be the installation's and its `Sec-Fetch-Site`, if sent, `same-origin` (M1-6). Reason: the web app's `fetch` always sends these headers, so the check needs no token state; same-site cookies alone would trust other sites under the same domain                                                                                                                                                                                                                                                                                                                                                                   | Implemented ([checklist](security-checklist.md) §2)                                                          |
 | Vulnerable dependencies                                      | Lockfiles; automated update PRs; critical advisories patched within 7 days; images rebuilt on base image updates                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Proposed                                                                                                     |
 | Tampered CLI or plugin                                       | Releases publish checksums and build provenance attestations ([12](#12-self-hosting))                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Proposed                                                                                                     |
 | Container compromise spreading                               | Non-root, read-only root filesystem, `cap_drop: ALL`, `no-new-privileges`, no Docker socket, no host ports, database on an internal-only network ([11.2](#112-shinan-stack))                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | Proposed                                                                                                     |
 | Another service on Musashi is compromised                    | `monitoring-agent` and `mon-private-agent` have owner-approved root-equivalent access through the Docker socket; if either is compromised, Shinan's secrets and data are exposed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Residual risk of sharing the host                                                                            |
-| Abuse and floods                                             | Per-IP and per-token rate limits; request size limits                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Proposed                                                                                                     |
+| Abuse and floods                                             | Per-IP and per-token rate limits, counted in PostgreSQL so they hold across `web` processes; the client's IP is taken from `X-Forwarded-For` only when the connection comes from a configured trusted proxy (`SHINAN_TRUSTED_PROXIES`); request size limits                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Per-IP limits and size limits implemented (M1-6); per-token limits come with tokens                          |
 | Undetected misuse                                            | Every write is an event credited to an actor; the security log, kept forever (owner, O-47)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Log owned by identity                                                                                        |
 
 **Proposed:** a written security checklist covering this table must pass before
 the first public deployment, and again before the `workspace` repository's
-catalog moves over. The [roadmap](roadmap.md) owns where these gates sit.
+catalog moves over. The [roadmap](roadmap.md) owns where these gates sit. The
+checklist is [security-checklist.md](security-checklist.md), with each item's
+current result.
 
 ### 10.2 Web hardening
 
@@ -857,6 +859,21 @@ in URLs; uniform, generic error pages; no stack traces to clients. Nothing is
 served without sign-in except the sign-in and invitation pages, the magic-link
 landing page and the webhook and MCP endpoints, which need their own
 credentials.
+
+As built in M1-6 (details and tests in the [checklist](security-checklist.md)):
+
+- Every answer carries a Content Security Policy that allows only the
+  installation's own files (`default-src 'none'`, no inline scripts or styles,
+  `base-uri 'none'`, `frame-ancestors 'none'`), `Referrer-Policy: no-referrer`,
+  `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, a
+  `Permissions-Policy` turning off unused browser features, and same-origin
+  opener and resource policies. An HTTPS installation adds HSTS (two years,
+  with subdomains) and `upgrade-insecure-requests`. API answers are
+  `Cache-Control: no-store`.
+- Public API routes, besides the sign-in routes: `/api/status` (a minimal
+  status answer, which the external uptime check can use), `/api/installation`
+  (the installation's name and sign-in methods, for the sign-in pages), the
+  first-start setup and the sign-in link confirm page.
 
 ### 10.3 Secrets and credentials
 
@@ -951,6 +968,13 @@ From the `workspace` repository's catalog and `infra/musashi` (read 2026-11-16):
 - **Proposed:** a public Caddy route to `shinan-web`, with certificates from the
   existing Cloudflare DNS challenge. Adding the bridge needs one coordinated
   recreation of public Caddy, briefly interrupting all public sites on Musashi.
+- **Proposed:** `shinan-web` sets `SHINAN_TRUSTED_PROXIES` to public Caddy's
+  address on `caddy-public-shinan` (or that bridge's fixed `/24`, whose only
+  other member is `shinan-web`), so the security log, rate limits and
+  new-browser alerts see the visitor's address rather than Caddy's. Caddy
+  replaces any `X-Forwarded-For` a visitor sends unless it trusts them, and
+  Shinan reads the header only from that address (M1-6). Reason: without it,
+  every visitor shares one address and one set of limits.
 - **Open:** whether Forgejo, also on Musashi, can deliver webhooks to
   `shinan.guneet.dev`. Forgejo allows only public targets by default
   (`ALLOWED_HOST_LIST = external`), and Musashi reaching its own public address
@@ -1069,7 +1093,16 @@ licensing (D-013); this section makes sure nothing blocks it. All **proposed**:
 - **Logs:** structured JSON to standard output, with a request ID on every line,
   IDs instead of content, and secrets removed ([10.3](#103-secrets-and-credentials)).
 - **Health endpoints:** liveness and readiness (database reachable, migrations
-  current), served only inside the container network.
+  current), served only inside the container network. As built (M1-6): the
+  `web` role serves `/healthz` (liveness) and `/readyz` (readiness, 503 when
+  the database does not answer within 2 seconds or migrations are behind) on a
+  separate internal listener (`INTERNAL_HOST`, default `127.0.0.1`, and
+  `INTERNAL_PORT`, default `3001`), which the reverse proxy never routes to;
+  the public listener does not serve them. Reason: they need no credentials,
+  and a readiness answer tells an outsider when the database is down. The
+  public `/api/status` stays as the minimal check
+  [identity §10](identity.md#10-protections-for-a-public-installation) allows,
+  for the external uptime tile; it reads nothing.
 - **Metrics:** Prometheus-format metrics on an unpublished internal port,
   scraped by Musashi's monitoring agent into VictoriaMetrics and Grafana
   (**Decided**, owner, O-69). Key metrics: request rates and errors by route type
