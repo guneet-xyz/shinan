@@ -472,8 +472,10 @@ only if measured growth requires it.
 
 **Proposed:** a one-time importer reads a folder of Markdown with frontmatter,
 such as the `workspace` repository's catalog, and creates catalog proposals for
-review. When the `workspace` repository moves over is owned by the
-[roadmap](roadmap.md) (D-018).
+review. Each imported document gets the `imported_from` field (source path and
+revision) that [catalog](catalog.md) §2.3 defines; the importer sets it once and
+nothing changes it afterwards. When the `workspace` repository moves over is
+owned by the [roadmap](roadmap.md) (D-018).
 
 ### 5.5 Export and import
 
@@ -485,15 +487,28 @@ into an empty workspace are in the first version (**Decided**, owner, O-75; the
 - **Started by a workspace owner** after re-authentication ([identity](identity.md)
   §3.3), built by the worker, and offered as a single download behind sign-in.
   The export is recorded in the security log.
-- **Contents:** the catalog's Markdown documents at the latest revision, the
-  revision history, catalog proposals, tasks with their subtasks, work links,
-  comments and events, as Markdown and JSON files. **Not included:** git host
-  credentials, webhook secrets and token hashes, which are set up again after
-  an import.
+- **Format:** one archive file. At its top, a generated `manifest.json` names
+  the export format version, the installation, the workspace, the catalog
+  revision and the time it was taken. **Proposed.** Reason: an importer must
+  know what it is reading before it reads it.
+- **The catalog part** is the `catalog/` folder, written exactly in the layout
+  [catalog](catalog.md) §2.2 defines, including `catalog/history.jsonl`. This
+  document does not restate that layout. The entity files are the stored text of
+  the latest revision, byte for byte ([5.2](#52-the-invariant)), and
+  `history.jsonl` is written from the stored revisions.
+- **Everything else** sits beside `catalog/` as JSON Lines files, one record per
+  line: catalog proposals; tasks with their subtasks, work links and comments;
+  and events. **Proposed.** Reason: the same machine-readable form as
+  `catalog/history.jsonl`, and easy to read without Shinan.
+- **Not included:** git host credentials, webhook secrets and token hashes,
+  which are set up again after an import.
 - **Import** recreates the workspace in an empty one, on the same or another
   installation, started by a workspace owner of the empty workspace after
-  re-authentication, and runs the round-trip test ([5.2](#52-the-invariant)) on the
-  imported catalog.
+  re-authentication. It rebuilds the catalog's revisions from
+  `catalog/history.jsonl`, so the catalog and its history come back exactly, as
+  catalog §2.2 requires; `imported_from` values are kept as they were. It then
+  runs the round-trip test ([5.2](#52-the-invariant)) and checks that the entity
+  files match the last revision in the history.
 - Reason: with no Git mirror (N-5) and no backups (O-62), a recent export is the
   only copy of a workspace that a person can take off the machine
   ([section 14](#14-backups-accepted-risk)).
