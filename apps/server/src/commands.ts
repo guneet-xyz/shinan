@@ -14,6 +14,7 @@ import { createDatabase, migrateDatabase, withMigrationLock } from "@shinan/db"
 import { createSesSender, createSmtpSender } from "@shinan/email"
 import type { EmailSender } from "@shinan/email"
 
+import type { SignIn } from "./api/sign-in.js"
 import { createApp } from "./app.js"
 import { readDatabaseUrl, readEmailConfig, readWebConfig } from "./config.js"
 import type { EmailConfig, Env } from "./config.js"
@@ -75,10 +76,11 @@ async function runWeb(env: Env): Promise<void> {
   const databaseUrl = readDatabaseUrl(env)
   const { db, pool } = createDatabase(databaseUrl)
   const jobs = await connectJobQueue(databaseUrl)
+  let signIn: SignIn | undefined
   try {
     await syncOperators({ db, actor: shinan }, { emails: config.operators })
     await announceSetupLink(db, config)
-    const signIn = createBetterAuthSignIn({
+    signIn = createBetterAuthSignIn({
       db,
       jobs,
       installationUrl: config.installationUrl,
@@ -95,10 +97,27 @@ async function runWeb(env: Env): Promise<void> {
     })
     await serveUntilShutdown(app.fetch, config)
   } finally {
-    await jobs.stop({ graceful: false })
-    await pool.end()
+    await closeWeb({ signIn, jobs, pool })
   }
   console.info(`${productName} web stopped`)
+}
+
+/**
+ * Stops the `web` role's resources in order: first the sign-in layer's
+ * background work (such as a sign-in link being queued as the request that
+ * asked for it was answered), then the job queue, then the database.
+ */
+export async function closeWeb(parts: {
+  signIn: Pick<SignIn, "idle"> | undefined
+  jobs: { stop(options: { graceful: boolean }): Promise<void> }
+  pool: { end(): Promise<void> }
+}): Promise<void> {
+  try {
+    await parts.signIn?.idle?.()
+  } finally {
+    await parts.jobs.stop({ graceful: false })
+    await parts.pool.end()
+  }
 }
 
 /**

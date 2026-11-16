@@ -1,8 +1,11 @@
+import { sameSitePath } from "@shinan/api-client"
+
 /**
  * Where the sign-in layer may send a browser after signing in: a path on
- * this site. The value is checked exactly as it was received and never
- * decoded again: `/%2f/evil.example` stays a same-site path, but a decoded
- * copy would not.
+ * this site, by the rule the web app uses too (`sameSitePath`), with no
+ * backslash or control character as received. The value is checked as it
+ * was received and never decoded again: `/%2f/evil.example` stays a
+ * same-site path, but a decoded copy would not.
  */
 export function isSafeReturnPath(value: unknown, base: string): boolean {
   if (typeof value !== "string" || value.length > 2048) return false
@@ -10,8 +13,7 @@ export function isSafeReturnPath(value: unknown, base: string): boolean {
   // Browsers treat a backslash as a slash and drop tabs and newlines.
   if (value.includes("\\") || hasControlCharacter(value)) return false
   try {
-    const origin = new URL(base).origin
-    return new URL(value, origin).origin === origin
+    return sameSitePath(value, new URL(base).origin) !== null
   } catch {
     return false
   }

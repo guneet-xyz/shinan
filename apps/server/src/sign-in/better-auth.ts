@@ -6,6 +6,7 @@ import { magicLink } from "better-auth/plugins/magic-link"
 import { parse, serialize } from "hono/utils/cookie"
 import type { CookieOptions } from "hono/utils/cookie"
 
+import { sameSitePath } from "@shinan/api-client"
 import {
   clientDescription,
   findPendingGitHubSignIn,
@@ -22,12 +23,15 @@ import {
   shinan,
   signInLinkMinutes,
   startGitHubSignIn,
+  throttleAddress,
 } from "@shinan/core"
 import type { Context, JobQueue, RequestInfo } from "@shinan/core"
 import { eq, schema } from "@shinan/db"
 import type { Database } from "@shinan/db"
 
+import { TooManyAttemptsError } from "../api/errors.js"
 import type { SignIn } from "../api/sign-in.js"
+import { createAttemptLimiter } from "./attempt-limiter.js"
 import { isSafeReturnPath, signInErrorPath } from "./paths.js"
 import { requestStore, withRequestStore } from "./request-store.js"
 import type { RequestStore } from "./request-store.js"
@@ -70,6 +74,12 @@ const servedPaths: Record<string, readonly string[]> = {
   "/callback/github": ["GET", "POST"],
   "/sign-out": ["POST"],
 }
+
+/**
+ * Opening sign-in links from one network address: the same limit Better
+ * Auth's magic-link plugin puts on asking for them (5 a minute).
+ */
+export const linkOpenLimit = { max: 5, windowSeconds: 60 }
 
 /**
  * The network address Better Auth records and rate-limits by. Shinan sets it
@@ -182,7 +192,20 @@ export function createBetterAuthSignIn(
         else console.warn(line)
       },
     },
-    onAPIError: { errorURL: new URL("/sign-in", base).href },
+    onAPIError: {
+      errorURL: new URL("/sign-in", base).href,
+      // Better Auth's own error logging would print messages that can echo
+      // the request; only a status goes to Shinan's log, and only for
+      // failures of the server, not refused requests.
+      onError: (error) => {
+        const status = (error as { statusCode?: unknown }).statusCode
+        if (typeof status === "number" && status < 500) return
+        const kind = error instanceof Error ? error.name : "Error"
+        console.error(
+          `Sign-in (error): ${typeof status === "number" ? status : kind}`,
+        )
+      },
+    },
     socialProviders: options.github
       ? {
           github: {
@@ -308,9 +331,8 @@ export function createBetterAuthSignIn(
       (key) => !allowed.includes(key),
     )
     if (unexpected.length > 0) {
-      throw new APIError("BAD_REQUEST", {
-        message: `Unexpected fields: ${unexpected.join(", ")}`,
-      })
+      // The field names are not repeated: they are the client's own text.
+      throw new APIError("BAD_REQUEST", { message: "Unexpected fields" })
     }
     if (
       input.metadata !== undefined &&
@@ -551,6 +573,14 @@ export function createBetterAuthSignIn(
     }
   }
 
+  const linkAttempts =
+    options.rateLimit === false
+      ? undefined
+      : createAttemptLimiter({
+          max: linkOpenLimit.max,
+          windowMs: linkOpenLimit.windowSeconds * 1000,
+        })
+
   /**
    * Work that must not hold up the answer. Failures are logged by kind
    * only (no values, which could hold an address or a token).
@@ -621,6 +651,21 @@ export function createBetterAuthSignIn(
 
     async openLink(request, info, input) {
       return withRequestStore({ request: info }, async () => {
+        // The same limit per network address as asking for a link. Only the
+        // first refusal in a window is recorded: the log is kept forever,
+        // and a flood must not fill it.
+        if (linkAttempts) {
+          const attempt = linkAttempts.take(
+            throttleAddress(info.networkAddress) ?? "unknown",
+          )
+          if (attempt === "first-refusal") {
+            await recordSignInFailure(asShinan(), {
+              method: "email",
+              reason: "throttled",
+            })
+          }
+          if (attempt !== "allowed") throw new TooManyAttemptsError()
+        }
         let answer: unknown
         try {
           answer = await auth.api.magicLinkVerify({
@@ -645,12 +690,9 @@ export function createBetterAuthSignIn(
         for (const value of headers.getSetCookie()) {
           cookies.append("set-cookie", value)
         }
-        const target = new URL(location, base)
         return {
-          location:
-            target.origin === base.origin
-              ? target.pathname + target.search + target.hash
-              : "/",
+          // Never a location a browser would read as another host.
+          location: sameSitePath(location, base.origin) ?? "/",
           headers: cookies,
         }
       })

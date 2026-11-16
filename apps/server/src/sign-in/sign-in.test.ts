@@ -189,6 +189,8 @@ describe("email magic links", () => {
       "https://evil.example/",
       "/\tevil",
       "javascript:alert(1)",
+      // Resolves to //evil.example/x, another host to a browser.
+      "/.//evil.example/x",
     ]) {
       const response = await b.requestLink(email, callbackURL)
       expect(response.status, callbackURL).toBe(400)
@@ -196,8 +198,10 @@ describe("email magic links", () => {
     // An encoded slash is a same-site path, as received.
     expect((await b.requestLink(email, "/%2f/evil.example")).status).toBe(200)
     const link = (await latestLink(db, email))!
-    const tampered = await b.open(link, { next: "//evil.example" })
-    expect(tampered.status).toBe(422)
+    for (const next of ["//evil.example", "/.//evil.example/x"]) {
+      const tampered = await b.open(link, { next })
+      expect(tampered.status, next).toBe(422)
+    }
     expect((await b.open(link)).location).toBe("/%2f/evil.example")
   })
 

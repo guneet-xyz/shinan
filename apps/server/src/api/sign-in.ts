@@ -55,6 +55,12 @@ export interface SignIn {
     info: RequestInfo,
     input: { email: string },
   ): Promise<void>
+  /**
+   * Resolves when work the sign-in layer started in the background, such as
+   * queuing a sign-in link after answering, has finished. Awaited on
+   * shutdown before the database closes.
+   */
+  idle?(): Promise<void>
   /** The GitHub sign-in waiting in this browser for an email address. */
   pendingGitHub?(request: Request): Promise<{ login: string | null } | null>
 }

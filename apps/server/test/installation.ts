@@ -17,7 +17,12 @@ export const installationUrl = "http://shinan.test"
  * these tests do not share a database with others.
  */
 export async function startInstallation(
-  options: { operators?: string[]; claimed?: boolean } = {},
+  options: {
+    operators?: string[]
+    claimed?: boolean
+    /** Better Auth's and Shinan's per-address limits; off unless asked for. */
+    rateLimit?: boolean
+  } = {},
 ) {
   const database = await createTestDatabase(
     {},
@@ -44,7 +49,7 @@ export async function startInstallation(
     secret: "a-test-secret-that-is-long-enough-to-use",
     github: { clientId: "test-client", clientSecret: "test-client-secret" },
     sessions: { idleMinutes: 60, maxHours: 24 },
-    rateLimit: false,
+    rateLimit: options.rateLimit ?? false,
   })
   const app = createApp({ db, signIn, jobs, installationUrl })
   return {

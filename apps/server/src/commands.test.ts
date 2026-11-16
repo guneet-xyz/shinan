@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import { createEmailSender, runCommand, usage } from "./commands.js"
+import { closeWeb, createEmailSender, runCommand, usage } from "./commands.js"
 
 describe("runCommand", () => {
   afterEach(() => {
@@ -64,6 +64,39 @@ describe("runCommand", () => {
   it("requires SES settings to run the worker in production", async () => {
     const env = { DATABASE_URL: "postgres://unused", NODE_ENV: "production" }
     await expect(runCommand(["worker"], env)).rejects.toThrow(/EMAIL_TRANSPORT/)
+  })
+})
+
+describe("closeWeb", () => {
+  it("waits for background sign-in work before closing the database", async () => {
+    const order: string[] = []
+    let finish!: () => void
+    const background = new Promise<void>((resolve) => (finish = resolve))
+    const closing = closeWeb({
+      signIn: {
+        idle: async () => {
+          await background
+          order.push("sign-in idle")
+        },
+      },
+      jobs: {
+        stop: () => {
+          order.push("jobs stopped")
+          return Promise.resolve()
+        },
+      },
+      pool: {
+        end: () => {
+          order.push("database closed")
+          return Promise.resolve()
+        },
+      },
+    })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(order).toEqual([])
+    finish()
+    await closing
+    expect(order).toEqual(["sign-in idle", "jobs stopped", "database closed"])
   })
 })
 
