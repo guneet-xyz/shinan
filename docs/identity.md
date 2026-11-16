@@ -356,11 +356,12 @@ member's role ([6.3](#63-what-an-agent-may-do)).
 | Post progress updates on its task | – | – | ✓ |
 | Send nudges | ✓ | ✓ | ✗ (nudges come from people) |
 | Withdraw a nudge before it is delivered | own | own | ✗ |
+| Release an agent session from a task (the session is told by a nudge) | ✓ | ✓ | Only its own session (Release task) |
 | Request a git host action on a task (reaches the requester's own agent sessions, N-3) | ✓ | ✓ | ✗ |
 | Accept or cancel tasks in `triage`; set `cancelled` or `on hold` | ✓ | ✓ | ✗ |
 | Set or clear `needs a person`, with a summary | ✓ | ✓ | ✓ (O-7) |
 | Set `awaiting deployment approval` (ask for approval) | ✓ | ✓ | ✓ |
-| Give a deployment approval in Shinan (with re-authentication) | ✓ | ✗ | Only to record one its own member gave in the agent's conversation (O-20) |
+| Give a deployment approval in Shinan (with re-authentication) | ✓ | ✓ only if the workspace setting "contributors may give deployment approval" is on (off by default) | Only to record one its own member gave in the agent's conversation (O-20) |
 | Make catalog proposals | ✓ | ✓ | ✓ |
 | Comment on catalog proposals | ✓ | ✓ | ✓ (with `catalog:propose`) |
 | Approve gated catalog proposals | ✓ | ✓ | ✗ |
@@ -387,12 +388,15 @@ Notes:
   people approve them. **Decided (owner, O-46):** a person may approve a
   proposal made by their own agent while one person uses Shinan; the approval
   is recorded as the person's action, separate from the proposal.
-- **Only workspace owners give deployment approval in Shinan**, and it needs
-  re-authentication ([3.3](#33-sign-in-sessions-and-re-authentication)). **Proposed**; reason: it is the
-  one approval gate for live deployments (D-016 for `shinan.guneet.dev`), and
-  no workspace setting for contributors is defined anywhere. If a team needs
-  contributors to approve, [Tasks and work](tasks.md) defines the setting and
-  [human experience](human-experience.md) its screen.
+- **Deployment approval in Shinan** is given by workspace owners, and by
+  contributors only when the workspace setting "contributors may give
+  deployment approval" is on. The setting is off by default and defined by
+  [Tasks and work](tasks.md); [human experience](human-experience.md) shows it.
+  Giving an approval always needs re-authentication
+  ([3.3](#33-sign-in-sessions-and-re-authentication)). **Proposed**; reason:
+  it is the one approval gate for live deployments (D-016 for
+  `shinan.guneet.dev`), so a team chooses who may allow it, and a stolen
+  sign-in session must not be enough.
 - **Decided (owner, NO-4, [#26](https://github.com/guneet-xyz/shinan/issues/26)):**
   deployment approval requests and answers are always recorded as task
   events, whether or not the workspace keeps the `awaiting deployment
@@ -566,6 +570,8 @@ three of these allow:
 - comment on tasks (agents post progress updates instead; they may comment on
   catalog proposals);
 - rank `to do` tasks, or confirm links made by outside actors' markers;
+- release another agent session from a task (an agent may release only its
+  own session);
 - give a deployment approval (an agent may only record one its own member gave
   in the agent's conversation, O-20);
 - purge, export, import or delete a workspace;
@@ -1075,34 +1081,28 @@ dropped from the first version (owner, N-11).
 ## Proposed glossary additions
 
 **Proposed** for the [domain model and glossary](domain-model.md), with this
-document as owner. Reason: one vocabulary needs one home.
+document as owner. Reason: one vocabulary needs one home. The glossary already
+has re-authentication, launcher token, email allowlist and email magic link;
+two terms remain:
 
 | Term | Definition |
 |---|---|
-| Re-authentication | Signing in again, by email magic link or GitHub, before a sensitive action, inside a sign-in session. |
 | Handle | A person's or agent's short, unchangeable name used when an actor is written in text ([8.7](#87-how-an-actor-is-written-in-text)). |
 | Read-only token | An agent token with only the two `read` scopes. A choice of scopes, not a role. |
-| Launcher token | The credential a launcher uses on one registered machine (phase 3). |
-
-This document uses "email allowlist" and "email magic link", as the
-integration review recommends (I-8).
 
 ## Dependencies on other documents
 
-Current needs only. Each is also tracked as a finding on
-[issue #26](https://github.com/guneet-xyz/shinan/issues/26) where one exists.
+Current needs only.
 
 | Document | What this document needs from it |
 |---|---|
-| [Domain model and glossary](domain-model.md) | The [additions above](#proposed-glossary-additions); "email allowlist" and "email magic link" as the main terms (I-8); Shinan's GitHub writes recognised by the app's own account (I-25). |
-| [Catalog](catalog.md) | The fact check's `by` field in the written form of [8.7](#87-how-an-actor-is-written-in-text); refusing Shinan's token prefixes in catalog proposals from the first version (I-27); a catalog export, if any, follows the workspace export rights in [5.1](#51-roles-and-permissions) (I-12). |
-| [Tasks and work](tasks.md) | Releasing claims and keeping assignments when a member is removed or an agent's token is revoked (I-16); deployment approval requests and answers always recorded as task events (NO-4); a contributor deployment-approval setting only if a team needs one. |
-| [Git host integrations](git-hosts.md) | Recognising Shinan's GitHub writes by the app's account; the pusher's account for commits; reading a Forgejo account with `read:user`; the mechanism behind the address checks (N-12); whether people other than the app's owner can authorize the private GitHub App for sign-in (I-29); the limitation that Forgejo connections use a workspace owner's account (I-31). |
-| [Agent integrations](agent-integrations.md) | Registration started from the plugin or CLI, writing the coding tool's MCP configuration with the token as a header (NO-1); a tool to comment on catalog proposals (I-22, I-33); trust labels on MCP answers (I-34); framing of nudges from other members; the launcher setup guide (O-1). |
-| [Human experience](human-experience.md) | "Your agents" following [6.2](#62-registering-an-agent) (NO-1, I-46), with the read-only token offered at approval (I-26); refusing invitations to addresses not on the allowlist (I-40); deployment approval by workspace owners with re-authentication; export and import screens (I-45); showing when a recipient has turned off nudges from others (I-47). |
-| [Architecture and operations](architecture.md) | The registration flow and the agent endpoints that accept a token (NO-1, I-48); the first-start rule in [3.2](#32-who-can-have-an-account) (I-53); security emails (I-51); the address-check mechanism (N-12, I-50); the security log not purgeable (N-13, I-49); token hashing, per-request checks and throttling. |
+| [Domain model and glossary](domain-model.md) | The two [terms above](#proposed-glossary-additions). |
+| [Tasks and work](tasks.md) | Claims released on removal or revocation, manual release, the deployment approval setting, and approval records as task events, as it defines them. |
+| [Git host integrations](git-hosts.md) | Whether people other than the app's owner can authorize the private GitHub App for sign-in ([open question 10](#open-questions)). |
+| [Agent integrations](agent-integrations.md) | Trust labels whose `author` uses the written forms of [8.7](#87-how-an-actor-is-written-in-text); framing of nudges from other members; the launcher setup guide (O-1). |
+| [Human experience](human-experience.md) | The "contributors may give deployment approval" setting on a screen, and Approve shown only to people allowed to give it ([5.1](#51-roles-and-permissions)). |
+| [Architecture and operations](architecture.md) | The first-start rule of [3.2](#32-who-can-have-an-account), including the one-time setup link printed to the installation's log. |
 | [Roadmap and migration](roadmap.md) | The [first version scope](#13-first-version-scope); measuring attribution in the proof of concept. |
-| [Decision log](decisions/README.md) | Records for NO-1 and NO-4 if the decision log records integration answers. |
 
 ## Sources checked
 
@@ -1158,7 +1158,7 @@ All checked on 2026-11-16.
     other than `guneet-xyz` can authorize the private GitHub App. If they
     cannot, GitHub sign-in for a second member needs a public app or a
     separate sign-in-only app; magic links work regardless. To settle before a
-    second member joins ([git host integrations](git-hosts.md), I-29).
+    second member joins ([git host integrations](git-hosts.md)).
 
 ## Decisions needed from the owner
 
