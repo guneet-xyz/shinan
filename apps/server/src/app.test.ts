@@ -3,7 +3,21 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 
-import { createApp } from "./app.js"
+import { connectTestDatabase } from "@shinan/db/testing"
+
+import { noSignIn } from "./api/sign-in.js"
+import { createApp as createAppWith } from "./app.js"
+import type { AppOptions } from "./app.js"
+
+const { db, pool } = connectTestDatabase()
+
+afterAll(async () => {
+  await pool.end()
+})
+
+function createApp(options: Partial<AppOptions> = {}) {
+  return createAppWith({ db, signIn: noSignIn, ...options })
+}
 
 describe("createApp", () => {
   it("answers the container health check", async () => {
@@ -26,7 +40,7 @@ describe("createApp", () => {
     for (const path of ["/api", "/api/nope", "/api/nope.json"]) {
       const response = await app.request(path)
       expect(response.status).toBe(404)
-      expect(await response.json()).toEqual({ error: "Not found" })
+      expect(await response.json()).toEqual(notFound)
     }
   })
 
@@ -87,10 +101,12 @@ describe("createApp", () => {
 
       const missing = await app.request("/api/nope")
       expect(missing.status).toBe(404)
-      expect(await missing.json()).toEqual({ error: "Not found" })
+      expect(await missing.json()).toEqual(notFound)
 
       const health = await app.request("/healthz")
       expect(await health.json()).toEqual({ status: "ok" })
     })
   })
 })
+
+const notFound = { error: "not-found", message: "Not found" }

@@ -2,21 +2,21 @@ import { extname } from "node:path"
 import { serveStatic } from "@hono/node-server/serve-static"
 import { Hono } from "hono"
 
-export interface AppOptions {
+import { createApi } from "./api/routes.js"
+import type { ApiOptions } from "./api/routes.js"
+
+export interface AppOptions extends ApiOptions {
   /** Directory of the built web app. When set, its files are served. */
   webDistDir?: string
 }
 
-export function createApp(options: AppOptions = {}) {
+export function createApp(options: AppOptions) {
   const app = new Hono()
 
   // Container health check, separate from the public API.
   app.get("/healthz", (c) => c.json({ status: "ok" }))
 
-  const api = new Hono()
-  api.get("/status", (c) => c.json({ status: "ok" }))
-  api.all("*", (c) => c.json({ error: "Not found" }, 404))
-  app.route("/api", api)
+  app.route("/api", createApi(options))
 
   if (options.webDistDir) {
     const root = options.webDistDir

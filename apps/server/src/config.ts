@@ -10,6 +10,11 @@ export interface WebConfig {
   port: number
   /** Built web app to serve, or undefined to serve only the API. */
   webDistDir: string | undefined
+  /**
+   * PLACEHOLDER until sign-in (M1-4): the handle of the person every request
+   * is signed in as, in development only.
+   */
+  placeholderPerson: string | undefined
 }
 
 const defaultWebDistDir = fileURLToPath(
@@ -18,12 +23,18 @@ const defaultWebDistDir = fileURLToPath(
 
 export function readWebConfig(env: Env): WebConfig {
   const production = env.NODE_ENV === "production"
+  if (production && env.SHINAN_PLACEHOLDER_PERSON) {
+    throw new Error(
+      "SHINAN_PLACEHOLDER_PERSON is for development only and cannot be used in production",
+    )
+  }
   return {
     host: env.HOST ?? "127.0.0.1",
     port: readPort(env.PORT ?? "3000", "PORT"),
     webDistDir: production
       ? (env.WEB_DIST_DIR ?? defaultWebDistDir)
       : env.WEB_DIST_DIR,
+    placeholderPerson: env.SHINAN_PLACEHOLDER_PERSON || undefined,
   }
 }
 
