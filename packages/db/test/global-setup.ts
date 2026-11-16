@@ -41,15 +41,26 @@ export default async function setup(project: TestProject) {
 
   const testUrl = new URL(serverUrl)
   testUrl.pathname = `/${name}`
-  await migrateDatabase(testUrl.toString())
-  project.provide("databaseUrl", testUrl.toString())
 
-  return async () => {
+  async function dropDatabase() {
     const client = new pg.Client({ connectionString: serverUrl })
     await client.connect()
-    await client.query(`drop database if exists "${name}" with (force)`)
-    await client.end()
+    try {
+      await client.query(`drop database if exists "${name}" with (force)`)
+    } finally {
+      await client.end()
+    }
   }
+
+  try {
+    await migrateDatabase(testUrl.toString())
+  } catch (error) {
+    await dropDatabase()
+    throw error
+  }
+  project.provide("databaseUrl", testUrl.toString())
+
+  return dropDatabase
 }
 
 function redact(url: string): string {

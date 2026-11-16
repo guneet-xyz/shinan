@@ -3,15 +3,15 @@ import { describe, expect, it, vi } from "vitest"
 import { ApiError, createApiClient } from "./index.js"
 
 describe("createApiClient", () => {
-  it("reads the server health", async () => {
+  it("reads the server status", async () => {
     const fetch = vi.fn<typeof globalThis.fetch>(() =>
       Promise.resolve(Response.json({ status: "ok" })),
     )
     const client = createApiClient({ baseUrl: "http://shinan.test", fetch })
 
-    await expect(client.health()).resolves.toEqual({ status: "ok" })
+    await expect(client.status()).resolves.toEqual({ status: "ok" })
     expect(fetch).toHaveBeenCalledWith(
-      "http://shinan.test/healthz",
+      "http://shinan.test/api/status",
       expect.anything(),
     )
   })
@@ -22,6 +22,6 @@ describe("createApiClient", () => {
     )
     const client = createApiClient({ fetch })
 
-    await expect(client.health()).rejects.toBeInstanceOf(ApiError)
+    await expect(client.status()).rejects.toBeInstanceOf(ApiError)
   })
 })

@@ -8,8 +8,8 @@ export function App() {
   const [status, setStatus] = useState("checking…")
 
   useEffect(() => {
-    api.health().then(
-      (health) => setStatus(health.status),
+    api.status().then(
+      (result) => setStatus(result.status),
       () => setStatus("unreachable"),
     )
   }, [])

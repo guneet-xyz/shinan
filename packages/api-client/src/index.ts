@@ -1,4 +1,4 @@
-export interface Health {
+export interface Status {
   status: "ok"
 }
 
@@ -36,7 +36,7 @@ export function createApiClient(options: ApiClientOptions = {}) {
   }
 
   return {
-    health: () => get<Health>("/healthz"),
+    status: () => get<Status>("/api/status"),
   }
 }
 
