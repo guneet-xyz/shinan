@@ -1,6 +1,7 @@
 import type { Database, EventOrigin, Transaction } from "@shinan/db"
 
 import type { Actor, ResolvedActor } from "./actor.js"
+import type { JobQueue } from "./jobs.js"
 import type { InstallationAction, WorkspaceAction } from "./permissions.js"
 
 /** Everything an operation needs to know about the request it serves. */
@@ -10,6 +11,8 @@ export interface Context {
   /** The path the request came through; defaults to `shinan_action`. */
   origin?: EventOrigin
   request?: RequestInfo
+  /** The job queue, for operations that add jobs, such as sending email. */
+  jobs?: JobQueue
 }
 
 /** Facts about the request, recorded in the security log (identity §11). */
@@ -46,6 +49,7 @@ export interface WorkspaceScope<
   readonly actor: ResolvedActor
   readonly origin: EventOrigin
   readonly request: RequestInfo
+  readonly jobs: JobQueue | undefined
 }
 
 /** Proof that the permission check passed for an installation action. */
@@ -58,4 +62,5 @@ export interface InstallationScope<
   readonly actor: ResolvedActor
   readonly origin: EventOrigin
   readonly request: RequestInfo
+  readonly jobs: JobQueue | undefined
 }

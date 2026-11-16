@@ -141,8 +141,13 @@ describe("decide", () => {
       })
     })
 
-    it("leaves account creation and set-up to Shinan", () => {
-      for (const action of ["person.create", "installation.set-up"] as const) {
+    it("leaves account creation, set-up and sending email to Shinan", () => {
+      for (const action of [
+        "person.create",
+        "installation.set-up",
+        "email.deliver",
+        "email.prune",
+      ] as const) {
         expect(allowed(action, { kind: "shinan" })).toEqual({ allowed: true })
         expect(allowed(action, { kind: "person" })).toEqual({
           allowed: false,
