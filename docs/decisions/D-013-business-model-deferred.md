@@ -37,19 +37,15 @@ No evidence yet of demand outside our own use.
   ([plan, section 2](../plan.md#2-who-it-is-for)).
 - **Decided:** the repository stays private for now
   ([D-011](D-011-private-repository-and-brand.md)).
-- **Proposed:** documents do not rely on any particular pricing, licence or
-  business model. Reason: none has been chosen, so a design that depends on one
-  would rest on an assumption.
 - **Open:** licensing if the project is ever made public
   ([plan, question 10](../plan.md#7-open-questions)).
-- **Open:** what "proved itself" means. The readiness criteria for moving the
-  `workspace` repository into Shinan ([D-018](D-018-start-empty-migrate-later.md))
-  may inform it. Owned by [roadmap and migration](../roadmap.md).
+- **Open:** what "proved itself" means. Owned by
+  [roadmap and migration](../roadmap.md).
 
 ## Alternatives considered
 
-- **Choose a business model, licence and pricing now.** Rejected: no evidence
-  of demand outside the owner's own use.
+- **Implied** by the reasons (not recorded as discussed): choose a business
+  model, licence and pricing now.
 
 ## Owning documents
 

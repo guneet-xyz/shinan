@@ -19,11 +19,10 @@ Status: **Accepted** by the owner on 2026-11-16, with the plan
 
 ## Context
 
-- The `workspace` repository's practice keeps no Markdown status mirror: issues
-  and pull requests own state, and nothing copies it by hand
+- The `workspace` repository's practice keeps no Markdown status mirror
   ([`workspace` repository collaboration practice](https://git.guneet.dev/guneet/workspace/src/branch/main/docs/collaboration.md)).
-- A task's work items live on git hosts ([D-001](D-001-above-git-hosts.md)) and
-  already show whether they are open, in review or merged.
+- A task's work items live on git hosts
+  ([D-001](D-001-above-git-hosts.md)).
 
 ## Decision
 
@@ -38,34 +37,24 @@ Copied status goes stale; this matches the current workspace rule.
 - **Decided:** a few states that only a person can set, such as "needs a
   person" (today's `human-effort` label), are set by hand
   ([plan, section 4](../plan.md#4-product-pillars)).
-- **Proposed** (in the [domain model](../domain-model.md#task-status-task-flags-and-manual-states)):
-  task status values `triage`, `to do`, `in progress`, `in review`, `done` and
-  `cancelled`; task flags `needs a person`, `awaiting deployment approval`,
-  `on hold` and `blocked` shown beside the status. Reason given there: they
-  follow the `workspace` repository's flow while keeping flags separate.
-- **Open, awaiting the owner** (raised by the
-  [domain model](../domain-model.md#decisions-needed-from-the-owner)): whether
-  to read this decision as "calculated from linked work plus recorded events"
-  (acceptance, agent session attachment, verification). This log does not
-  assume the outcome. If the owner agrees, it is recorded as a new record that
-  amends this one (see [changing a decision](README.md#changing-a-decision)).
-- **Decided:** status is only as current as Shinan's view of the git hosts, so
-  it depends on webhooks and reconciliation
-  ([plan, section 5](../plan.md#5-integration-points)).
-- **Open, awaiting the owner** (raised by the domain model): whether agents may
-  set and clear `needs a person`, which the plan reserves for people, and
-  whether `awaiting deployment approval` becomes its own task flag.
-- **Open:** how status is calculated with several `delivers` work links, or
-  when a pull request is closed without merging. Owned by
-  [tasks and work](../tasks.md).
+- **Decided:** Shinan learns about linked work through webhooks and periodic
+  reconciliation ([plan, section 5](../plan.md#5-integration-points)).
+- Proposed refinements: see the domain model's
+  [task status, task flags and manual states](../domain-model.md#task-status-task-flags-and-manual-states).
+- **Open:** the domain model asks the owner to confirm a reading of this
+  decision, and other changes to task states
+  ([decisions needed](../domain-model.md#decisions-needed-from-the-owner)).
+  This record does not assume the outcome.
+- **Open:** detailed status rules. Owned by [tasks and work](../tasks.md).
 
 ## Alternatives considered
 
-- **Status set and maintained by hand.** Rejected: copied status goes stale.
+- **Implied** by the wording (not recorded as discussed): status set and
+  maintained by hand.
 
 ## Owning documents
 
-- [Tasks and work](../tasks.md): status rules, task flags and manual states.
+- [Tasks and work](../tasks.md): status rules and manual states.
 - [Git host integrations](../git-hosts.md): the events status is calculated
   from.
 

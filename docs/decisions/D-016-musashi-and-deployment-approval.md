@@ -23,8 +23,8 @@ Status: **Accepted** by the owner on 2026-11-16, with the plan
   describes it as the production machine hosting the owner's public
   applications (entry last verified there on 2026-11-14;
   [Musashi catalog entry](https://git.guneet.dev/guneet/workspace/src/branch/main/catalog/machines/musashi.md)).
-- The owner's current practice already makes a change to an actual deployment
-  the one step that needs their approval
+- The owner's current practice makes a change to an actual deployment the one
+  step that needs their approval
   ([`workspace` repository access and safety policy](https://git.guneet.dev/guneet/workspace/src/branch/main/docs/access-and-safety.md)).
 
 ## Decision
@@ -36,31 +36,29 @@ approval.
 
 Musashi already runs the owner's public applications.
 
-The plan gives no separate reason for the approval rule. It matches the
-owner's current practice cited above.
+## Notes
+
+- **Sourced fact:** the plan gives no separate reason for the approval rule.
+  It matches the owner's current practice cited in Context.
 
 ## Consequences
 
-- **Decided:** no agent deploys `shinan.guneet.dev`, or changes its running
-  deployment, without the owner's approval.
+- **Decided:** no deployment of `shinan.guneet.dev` happens without the
+  owner's approval.
+- Proposed refinements: see the domain model's
+  [supporting terms](../domain-model.md#supporting-terms) ("deployment
+  approval") and its
+  [decisions needed](../domain-model.md#decisions-needed-from-the-owner).
+  This record does not assume their outcome.
 - **Open:** how DNS and deployment to Musashi are managed
   ([plan, question 6](../plan.md#7-open-questions)). Owned by
   [architecture and operations](../architecture.md).
-- **Open, awaiting the owner** (raised by the
-  [domain model](../domain-model.md#decisions-needed-from-the-owner)): whether
-  a task waiting for deployment approval gets its own task flag,
-  `awaiting deployment approval`, separate from `needs a person`. Owned by
-  [tasks and work](../tasks.md).
-- **Proposed:** the approval rule applies to the owner's deployment, not to
-  Shinan installations that others self-host
-  ([D-012](D-012-self-hostable.md)). Reason: those operators decide their own
-  deployment rules. See [open questions in the decision log](README.md#open-questions).
 
 ## Alternatives considered
 
-Not recorded. The first plan draft left the machine open ("Which machine hosts
-`shinan.guneet.dev`") and already stated that any deployment needs the owner's
-approval.
+- **Not recorded.** The first plan draft left the machine open ("Which machine
+  hosts `shinan.guneet.dev`") and already required the owner's approval for
+  any deployment.
 
 ## Owning documents
 

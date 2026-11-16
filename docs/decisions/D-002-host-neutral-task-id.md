@@ -20,9 +20,9 @@ Status: **Accepted** by the owner on 2026-11-16, with the plan
 ## Context
 
 - A piece of work can touch several repositories on different git hosts
-  ([D-001](D-001-above-git-hosts.md)).
-- Issue and pull request numbers are given by each repository on its git host,
-  so the same number means different things in different repositories.
+  ([plan, section 1](../plan.md#1-what-shinan-is)).
+- A task's ID is given as "for example `T-123`" in the
+  [plan, section 4](../plan.md#4-product-pillars).
 
 ## Decision
 
@@ -36,41 +36,30 @@ work on any host to one story.
 
 ## Consequences
 
-- **Decided:** the task ID (for example `T-123`) appears in branch names and
-  pull request descriptions, so work items on any git host can be connected to
-  the task ([plan, section 4](../plan.md#4-product-pillars)).
-- **Proposed** (in the [domain model](../domain-model.md#task)): task IDs are
-  unique within a workspace and never reused. Reason: a reused ID would make
-  old branch names and pull requests point at the wrong story.
-- **Proposed** (in the [domain model](../domain-model.md#work-link)): a task ID
-  found in a branch name, pull request description or commit message creates a
-  work link. Reason: this is how the ID ties work to the task without manual
-  linking.
-- **Open, awaiting the owner** (raised by the
-  [domain model](../domain-model.md#decisions-needed-from-the-owner)): whether
-  each workspace has its own task ID prefix instead of a fixed `T-`. The
-  domain model also proposes no subtasks in the first version. Owned by
-  [tasks and work](../tasks.md).
-- **Open:** the exact naming conventions agents must follow. Owned by
-  [agent integrations](../agent-integrations.md) and
-  [tasks and work](../tasks.md).
+- **Decided:** the task ID appears in branch names and pull request
+  descriptions, so work on any git host can be connected to the task.
+- Proposed refinements: see the domain model's [task](../domain-model.md#task)
+  (ID uniqueness, prefix, subtasks) and [work link](../domain-model.md#work-link)
+  entries.
+- **Open:** the task ID format and linking conventions. Owned by
+  [tasks and work](../tasks.md); the domain model asks the owner about a
+  per-workspace prefix
+  ([decisions needed](../domain-model.md#decisions-needed-from-the-owner)).
 
 ## Alternatives considered
 
-- **Use git host issue numbers (or URLs) as the task's identity.** Rejected:
-  they only mean something inside one repository.
-- Other alternatives: not recorded.
+- **Implied** by the reasons (not recorded as discussed): use git host issue
+  numbers as the task's identity.
 
 ## Owning documents
 
 - [Tasks and work](../tasks.md): task IDs, lifecycle and linking conventions.
 - [Git host integrations](../git-hosts.md): detecting task IDs on git hosts.
 - [Agent integrations](../agent-integrations.md): conventions agents follow.
-- [Domain model and glossary](../domain-model.md): the task as the core object.
 
 ## Related open questions
 
-None in the plan beyond those listed above.
+None in the plan.
 
 ## History
 

@@ -19,9 +19,8 @@ Status: **Accepted** by the owner on 2026-11-16, with the plan
 
 ## Context
 
-- Multica, Linear and Plane are tools in which teams track tasks and issues;
-  Multica is built around assigning work to coding agents. How Shinan compares
-  with them is owned by the [product overview](../product-overview.md).
+- Multica, Linear and Plane are tools in which teams track work. How Shinan
+  compares with them is owned by the [product overview](../product-overview.md).
 - Multica's licence, checked on 2026-11-16: the
   [Multica License](https://github.com/multica-ai/multica/blob/main/LICENSE)
   is the Apache License 2.0 plus extra conditions. Without a commercial licence
@@ -41,37 +40,36 @@ not embed them.
 Multica's license forbids embedding or hosting for others; integrating keeps
 Shinan host-neutral.
 
-More precisely, as checked above, the licence forbids this unless a commercial
-licence is obtained. That does not change the decision: depending on a
-commercial licence would conflict with deferring the business model
-([D-013](D-013-business-model-deferred.md)) and with self-hosting
-([D-012](D-012-self-hostable.md)). This last point is **proposed** reasoning
-added in this record.
+## Notes
+
+- **Sourced fact:** as checked above, the licence forbids hosting for others
+  or embedding in a distributed product unless a commercial licence is
+  obtained; it does not forbid it outright.
+- **Proposed:** the decision still follows from the licence because workspaces
+  have invited members from the start ([D-019](D-019-workspaces-from-the-start.md)).
+  People from outside the owner's organisation using a Shinan installation that
+  embedded Multica would count as a hosted service to third parties. Reason
+  for noting it: it explains why the "internal use is allowed" exception does
+  not help.
 
 ## Consequences
 
 - **Decided:** Shinan does not embed these tools; it connects to them through
   their APIs.
-- **Proposed** (in the [domain model](../domain-model.md#supporting-terms)):
-  such tools are called outside tools, and the term is owned by
-  [tasks and work](../tasks.md).
-- **Open:** whether items from outside tools become work items or task origins
-  ([domain model, open questions](../domain-model.md#open-questions)), and
-  which integrations are built in which phase. The plan's section 8 does not
-  list these integrations in any document's scope; see
-  [open questions in the decision log](README.md#open-questions).
+- Proposed refinements: see the domain model's
+  [supporting terms](../domain-model.md#supporting-terms) ("outside tool") and
+  its [open questions](../domain-model.md#open-questions).
+- **Open:** which document owns these integrations; see the decision log's
+  [open questions](README.md#open-questions).
 
 ## Alternatives considered
 
-- **Embed Multica (or build Shinan on its code).** Rejected: its licence
-  requires a commercial licence for hosting it for others or embedding it in a
-  distributed product, and embedding one tool would tie Shinan to it.
+- **Implied** by the reasons (not recorded as discussed): embed Multica.
 
 ## Owning documents
 
 - [Product overview](../product-overview.md): positioning against these tools.
-- [Tasks and work](../tasks.md): owner of the outside tool term, as proposed in
-  the domain model. Ownership of the integrations themselves is **open**.
+- Owner of the integrations themselves: **open**.
 
 ## Related open questions
 

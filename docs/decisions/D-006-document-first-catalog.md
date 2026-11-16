@@ -20,12 +20,8 @@ Status: **Accepted** by the owner on 2026-11-16, with the plan
 ## Context
 
 - The `workspace` repository's catalog is Markdown files with structured fields
-  at the top (`id`, `status`, `owner`, `last_verified` and others), read by both
-  people and agents
+  at the top, read by both people and agents
   ([`workspace` repository maintenance practice](https://git.guneet.dev/guneet/workspace/src/branch/main/docs/maintenance.md)).
-- The plan names Port, an internal developer portal, as a point of comparison.
-  Positioning against competitors is owned by the
-  [product overview](../product-overview.md).
 
 ## Decision
 
@@ -37,29 +33,31 @@ source of truth, and an index for agents is generated from it.
 People must be able to read it; this is where Port is weakest and our workspace
 repository already works well.
 
-The statement about Port is the owner's assessment as recorded in the plan. It
-was not independently checked for this record.
+## Notes
+
+- The statement about Port is the owner's assessment as recorded in the plan.
+  It was not independently checked for this record; the
+  [product overview](../product-overview.md) owns facts about competitors.
 
 ## Consequences
 
-- **Decided:** the agent index is generated from the Markdown, never edited on
-  its own ([plan, section 4](../plan.md#4-product-pillars)).
+- **Decided:** the agent index is generated from the Markdown
+  ([plan, section 4](../plan.md#4-product-pillars)).
 - **Decided:** the catalog is shown to people as a wiki with a "start here"
   path ([plan, section 4](../plan.md#4-product-pillars)).
+- Proposed refinements: see the domain model's
+  [catalog](../domain-model.md#catalog) and
+  [wiki and agent index](../domain-model.md#wiki-and-agent-index) entries.
 - **Open:** where the Markdown is stored and how it and the agent index stay in
   sync ([plan, question 1](../plan.md#7-open-questions)). Owned by
   [architecture and operations](../architecture.md).
-- **Open:** entity types' required fields and how relationships are expressed
-  ([plan, question 5](../plan.md#7-open-questions)). Owned by the
-  [catalog](../catalog.md).
+- **Open:** the catalog schema ([plan, question 5](../plan.md#7-open-questions)).
+  Owned by the [catalog](../catalog.md).
 
 ## Alternatives considered
 
-- **Structured-data-first catalog, with pages generated from a database** (the
-  approach the plan contrasts with Port). Rejected: people must be able to read
-  the catalog, and the Markdown approach already works in the `workspace`
-  repository.
-- Other alternatives: not recorded.
+- **Not recorded.** The reasons contrast the decision with Port, but the plan
+  does not describe Port's approach as an alternative that was considered.
 
 ## Owning documents
 

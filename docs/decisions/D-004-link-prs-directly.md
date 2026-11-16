@@ -19,12 +19,11 @@ Status: **Accepted** by the owner on 2026-11-16, with the plan
 
 ## Context
 
-- Today, substantive work starts with a Forgejo issue that owns the objective
-  and acceptance criteria, and pull requests link to it
+- Today, issues own objectives and acceptance criteria, and pull requests link
+  to them
   ([`workspace` repository collaboration practice](https://git.guneet.dev/guneet/workspace/src/branch/main/docs/collaboration.md)).
 - In Shinan, the task holds the intent and acceptance criteria
-  ([D-002](D-002-host-neutral-task-id.md)), so a repository issue for every
-  task would hold the same thing twice.
+  ([plan, section 4](../plan.md#4-product-pillars)).
 
 ## Decision
 
@@ -37,24 +36,17 @@ Avoids duplicate issues.
 
 ## Consequences
 
-- **Decided:** an agent working on a task opens a pull request that carries the
-  task ID, and the pull request is linked to the task without an intermediate
-  repository issue.
-- **Proposed** (in the [domain model](../domain-model.md#work-link)): such a
-  pull request has a work link with role `delivers`. Reason: derived status
-  ([D-005](D-005-derived-task-status.md)) is calculated from `delivers` links.
-- **Open:** when people "need" a repository issue (for example, for outside
-  contributors or public visibility), and who creates it. Owned by
+- **Decided:** a pull request from agent-driven work is linked to its task
+  without an intermediate repository issue.
+- Proposed refinements: see the domain model's
+  [work link](../domain-model.md#work-link) entry.
+- **Open:** when people need a repository issue, and who creates it. Owned by
   [tasks and work](../tasks.md).
-- **Proposed:** moving the `workspace` repository into Shinan
-  ([D-018](D-018-start-empty-migrate-later.md)) replaces its issue-per-task
-  practice. Reason: keeping both would recreate the duplicate issues this
-  decision avoids. Owned by [roadmap and migration](../roadmap.md).
 
 ## Alternatives considered
 
-- **Create a repository issue for every task, as the `workspace` repository's
-  practice does today.** Rejected: duplicate issues.
+- **Implied** by the reasons (not recorded as discussed): a repository issue
+  for every task, as in the `workspace` repository's current practice.
 
 ## Owning documents
 
@@ -65,7 +57,7 @@ Avoids duplicate issues.
 
 ## Related open questions
 
-None in the plan beyond those listed above.
+None in the plan.
 
 ## History
 

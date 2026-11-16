@@ -36,20 +36,18 @@ than a single pick.
 ## Consequences
 
 - **Decided:** the architecture document presents several stack options with
-  their trade-offs rather than one choice.
-- **Decided:** the owner makes the choice.
-- **Proposed:** the owner's choice is recorded as a new decision record that
-  cites this one. Reason: it meets this log's test for a decision record
-  (costly to reverse, affects several documents, the owner makes it); see
-  [how documents propose new decisions](README.md#how-documents-propose-new-decisions).
+  their trade-offs, and the owner makes the choice.
 - **Open:** the options themselves, storage, and how the catalog's Markdown and
   its agent index stay in sync ([plan, question 1](../plan.md#7-open-questions)).
-  Owned by [architecture and operations](../architecture.md).
+  Owned by [architecture and operations](../architecture.md). Recording the
+  owner's choice follows the decision log's
+  [process for new decisions](README.md#how-documents-propose-new-decisions).
 
 ## Alternatives considered
 
-- **The architecture document picks one stack.** Rejected: the owner has no
-  fixed preference, and options with reasons give a better decision.
+- **Implied** by the reasons (not recorded as discussed): the architecture
+  document picks a single stack. The first plan draft listed the stack only as
+  an open question (commit `5c3330c`).
 
 ## Owning documents
 

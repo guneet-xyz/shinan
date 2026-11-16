@@ -19,11 +19,11 @@ Status: **Accepted** by the owner on 2026-11-16, with the plan
 
 ## Context
 
-- Today the `workspace` repository holds the owner's hand-made catalog and its
-  cross-project coordination issues. Shinan is meant to replace both
+- The `workspace` repository holds the owner's hand-made catalog and its
+  cross-project coordination issues; Shinan is meant to replace both
   ([plan, section 1](../plan.md#1-what-shinan-is)).
-- The `workspace` repository is a Git repository; a Shinan workspace is a
-  different thing ([domain model](../domain-model.md#two-meanings-of-workspace)).
+- The `workspace` repository and a Shinan workspace are different things
+  ([domain model](../domain-model.md#two-meanings-of-workspace)).
 
 ## Decision
 
@@ -42,24 +42,21 @@ early changes.
   `workspace` repository stays the source of truth; the move happens in phase 2
   once Shinan is judged ready
   ([plan, section 10](../plan.md#10-phases-after-the-documents)).
-- **Decided:** where a fact appears both in Shinan and in the `workspace`
-  repository before the move, the `workspace` repository is the one to trust.
+- Proposed refinements: see the domain model's
+  [naming rule](../domain-model.md#two-meanings-of-workspace) and
+  [supporting terms](../domain-model.md#supporting-terms) ("migration",
+  "source of truth").
 - **Open:** which projects the proof of concept uses, what counts as "ready",
   and how the `workspace` repository is then moved over
   ([plan, question 8](../plan.md#7-open-questions)). Owned by
   [roadmap and migration](../roadmap.md).
-- **Proposed** (in the [domain model](../domain-model.md#two-meanings-of-workspace)):
-  strict naming to keep the `workspace` repository and a Shinan workspace
-  apart. Reason given there: both will be discussed side by side until the
-  move.
 
 ## Alternatives considered
 
-- **Move the `workspace` repository into Shinan from the start.** The first
-  plan draft said only that Shinan "should replace the `workspace` repository's
-  catalog and its cross-project coordination issues", without a trial. Replaced
-  by this decision: a small trial limits risk and avoids two sources of truth
-  while Shinan changes quickly.
+- **Recorded:** move the `workspace` repository into Shinan without a trial.
+  The first plan draft said only that Shinan "should replace the `workspace`
+  repository's catalog and its cross-project coordination issues" (commit
+  `5c3330c`). Replaced by this decision for the reasons above.
 
 ## Owning documents
 

@@ -20,12 +20,11 @@ Status: **Accepted** by the owner on 2026-11-16, with the plan
 ## Context
 
 - The `workspace` repository's catalog records, per page, when it was last
-  verified, what exactly was checked and where the evidence came from
+  verified, what was checked and where the evidence came from
   (`last_verified`, `verification_scope`, `verification_source`)
   ([`workspace` repository maintenance practice](https://git.guneet.dev/guneet/workspace/src/branch/main/docs/maintenance.md)).
 - Agents keep the catalog accurate as part of their work
-  ([plan, section 1](../plan.md#1-what-shinan-is)), so readers need to see how
-  far to trust each fact.
+  ([plan, section 1](../plan.md#1-what-shinan-is)).
 
 ## Decision
 
@@ -41,30 +40,19 @@ Trust in the catalog is the main differentiator.
   ([plan, section 4](../plan.md#4-product-pillars)).
 - **Decided:** every fact shows how fresh it is and where it came from
   ([plan, section 1](../plan.md#1-what-shinan-is)).
-- **Proposed** (in the [domain model](../domain-model.md#source-and-last-checked)):
-  "last checked" means a real check against the source, not an edit, and
-  checking one fact does not refresh others. Reason given there: it is the
-  `workspace` repository's working rule.
-- **Proposed** (in the [domain model](../domain-model.md#attribution)): the same
-  idea is applied to attribution, which records how sure Shinan is about who
-  did something. Reason given there: consistency with this decision.
-- **Open:** the unit a fact is made of (for example a structured field or a
-  marked statement). The [domain model](../domain-model.md#fact) proposes that a
-  fact is the smallest unit carrying its own state, source and last-checked
-  time, and leaves the unit to the [catalog](../catalog.md).
-- **Open, awaiting the owner** (raised by the
-  [domain model](../domain-model.md#decisions-needed-from-the-owner)): whether
-  the fact state `proposed` is renamed `planned`, to avoid confusion with
-  catalog proposals. The fact state names are part of the approved plan, so a
-  rename would be recorded as a new record.
+- Proposed refinements: see the domain model's [fact](../domain-model.md#fact),
+  [fact state](../domain-model.md#fact-state) and
+  [source and last checked](../domain-model.md#source-and-last-checked)
+  entries.
+- **Open:** the domain model asks the owner whether to rename a fact state
+  ([decisions needed](../domain-model.md#decisions-needed-from-the-owner)).
+  This record does not assume the outcome.
 - **Open:** how freshness is shown ([plan, question 4](../plan.md#7-open-questions)).
   Owned by [human experience](../human-experience.md).
 
 ## Alternatives considered
 
-Not recorded. (The `workspace` repository records checks per page rather than
-per fact; whether Shinan follows that is the open question above, not a
-rejected alternative.)
+- **Not recorded.**
 
 ## Owning documents
 

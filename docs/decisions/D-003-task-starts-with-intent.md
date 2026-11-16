@@ -19,12 +19,10 @@ Status: **Accepted** by the owner on 2026-11-16, with the plan
 
 ## Context
 
-- Intent for a piece of work can start in Shinan, in a conversation, or in an
-  issue someone opens directly on a git host, such as a user of a public
-  project (an outside issue, see the
-  [domain model](../domain-model.md#outside-issue)).
 - A task is the story of a piece of work from intent to verified outcome
-  ([D-002](D-002-host-neutral-task-id.md)).
+  ([plan, section 1](../plan.md#1-what-shinan-is)).
+- Outside issues are issues opened directly on a git host, for example by a
+  user of a public project ([domain model](../domain-model.md#outside-issue)).
 
 ## Decision
 
@@ -39,23 +37,20 @@ Every story needs one home, even when its first chapter was written elsewhere.
 
 - **Decided:** outside issues become tasks without anyone creating them by
   hand.
-- **Decided:** a triage inbox lists such tasks; it is part of phase 2
+- **Decided:** a triage inbox is part of phase 2
   ([plan, section 10](../plan.md#10-phases-after-the-documents)).
-- **Proposed** (in the [domain model](../domain-model.md#task-status-task-flags-and-manual-states)):
-  the new task starts in `triage`, keeps a work link with role `origin` to the
-  outside issue, and leaves triage only when a person accepts or cancels it.
-  Reason: automatically created tasks have not been agreed to by anyone yet.
-- **Open:** which repositories' issues are turned into tasks, and how noise
-  such as spam or duplicates is handled. Owned by [tasks and work](../tasks.md)
-  and [git host integrations](../git-hosts.md).
+- Proposed refinements: see the domain model's
+  [outside issue](../domain-model.md#outside-issue) and
+  [task status](../domain-model.md#task-status-task-flags-and-manual-states)
+  entries.
+- **Open:** which repositories' issues become tasks, and how noise is handled.
+  Owned by [tasks and work](../tasks.md) and
+  [git host integrations](../git-hosts.md).
 
 ## Alternatives considered
 
-- **Start the task where the code lands** (tie it to the repository that
-  receives the change). Rejected by the decision's wording: intent often
-  starts somewhere else, and the story would then be split.
-- Other alternatives, such as importing outside issues only by hand: not
-  recorded.
+- **Implied** by the wording (not recorded as discussed): start the task where
+  the code lands.
 
 ## Owning documents
 
@@ -65,7 +60,7 @@ Every story needs one home, even when its first chapter was written elsewhere.
 
 ## Related open questions
 
-None in the plan beyond those listed above.
+None in the plan.
 
 ## History
 

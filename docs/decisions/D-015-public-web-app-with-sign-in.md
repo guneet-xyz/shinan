@@ -22,8 +22,8 @@ Status: **Accepted** by the owner on 2026-11-16, with the plan
 - People use a web app at `shinan.guneet.dev` to browse the catalog, follow
   tasks and the timeline, comment and nudge
   ([plan, section 5](../plan.md#5-integration-points)).
-- A workspace's catalog holds infrastructure details such as machines and
-  services ([plan, section 1](../plan.md#1-what-shinan-is)).
+- The catalog holds infrastructure details such as machines and services
+  ([plan, section 1](../plan.md#1-what-shinan-is)).
 
 ## Decision
 
@@ -39,21 +39,18 @@ and architecture documents.
 
 - **Decided:** the identity and architecture documents give sign-in, access
   rules and security extra attention.
-- **Decided:** there is no anonymous access to the web app.
 - **Open:** the sign-in method and the protections for a public web app
   holding infrastructure details ([plan, question 7](../plan.md#7-open-questions)).
   Owned by [identity, agents and permissions](../identity.md) and
   [architecture and operations](../architecture.md).
-- **Open:** whether the endpoints agents use (MCP server, CLI, plugin reports)
-  follow the same exposure as the web app. Agents use scoped tokens
-  ([plan, section 5](../plan.md#5-integration-points)); exposure is owned by
-  [architecture and operations](../architecture.md).
+- **Open:** what, if anything, is reachable before sign-in (such as the sign-in
+  page and accepting an invitation), and whether the endpoints agents use
+  follow the same exposure. Owned by [identity, agents and permissions](../identity.md)
+  and [architecture and operations](../architecture.md).
 
 ## Alternatives considered
 
-Not recorded. The reason ("reach it from anywhere") suggests that reaching the
-web app only from a private network was not wanted, but this was not written
-down as a considered alternative.
+- **Not recorded.**
 
 ## Owning documents
 

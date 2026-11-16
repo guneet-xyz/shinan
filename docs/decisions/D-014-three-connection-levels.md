@@ -20,19 +20,18 @@ Status: **Accepted** by the owner on 2026-11-16, with the plan
 ## Context
 
 - Agents connect from outside ([D-008](D-008-agents-connect-from-outside.md)).
-- Shinan needs to know which agent sessions are running and what they are
-  working on (presence), and to pass a person's comment to the agent session
-  working on a task (a nudge) ([plan, section 4](../plan.md#4-product-pillars)).
+- Shinan shows which agent sessions are running (presence) and passes a
+  person's comment to the agent session working on a task (a nudge)
+  ([plan, section 4](../plan.md#4-product-pillars)).
 - MCP (Model Context Protocol) is a standard way for coding tools to call
   outside tools; a skill is an instruction file telling the agent how to use
   them ([domain model](../domain-model.md#connection-level)).
 - OpenCode's plugin API, checked on 2026-11-16: a server plugin can subscribe to
   the OpenCode server's event stream (`ctx.event.subscribe`) and can send a
-  prompt or a synthetic message into an OpenCode session (`ctx.session.prompt`,
-  `ctx.session.synthetic`), with delivery modes "steer" and "queue"
+  prompt or a synthetic message into an OpenCode session
+  (`ctx.session.prompt`, `ctx.session.synthetic`), with delivery modes "steer"
+  and "queue"
   ([OpenCode server plugin documentation](https://opencode.ai/docs/build/plugins/server/)).
-  Whether this covers every presence state Shinan needs is for
-  [agent integrations](../agent-integrations.md) to confirm.
 
 ## Decision
 
@@ -55,18 +54,20 @@ can follow session events and send messages into a running session.
 - **Decided:** phase 1 includes the MCP server, the skill and the OpenCode
   plugin for presence; nudges are phase 2; the launcher is phase 3
   ([plan, section 10](../plan.md#10-phases-after-the-documents)).
-- **Proposed** (in the [domain model](../domain-model.md#presence)): presence
-  states `starting`, `busy`, `idle`, `waiting`, `ended`, plus `unresponsive`
-  for an agent session that has gone silent. Reason given there: a crashed
-  agent session reports nothing.
+- Proposed refinements: see the domain model's
+  [connection level](../domain-model.md#connection-level),
+  [presence](../domain-model.md#presence) and [nudge](../domain-model.md#nudge)
+  entries.
 - **Open:** how far Claude Code and other coding tools can receive a message in
   a running agent session, and how presence works for tools with no plugin
-  ([plan, question 9](../plan.md#7-open-questions)).
+  ([plan, question 9](../plan.md#7-open-questions)). Owned by
+  [agent integrations](../agent-integrations.md).
 
 ## Alternatives considered
 
-- **MCP and a skill only.** Rejected: it depends on the agent choosing to
-  report, and cannot reach an idle or crashed agent session.
+- **Recorded:** MCP and a skill only. The first plan draft said agents connect
+  "through MCP and a skill" (commit `5c3330c`). Replaced by this decision for
+  the reasons above.
 
 ## Owning documents
 

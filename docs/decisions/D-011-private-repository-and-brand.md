@@ -20,10 +20,9 @@ Status: **Accepted** by the owner on 2026-11-16, with the plan
 ## Context
 
 - The name and its meaning are explained in the
-  [plan, section 1](../plan.md#the-name). Read as `shinan.ai`, it sounds like
-  *shinanai*, "won't die".
-- Shinan is for the owner's own use first, and building a business is not a
-  goal of this phase ([D-013](D-013-business-model-deferred.md)).
+  [plan, section 1](../plan.md#the-name).
+- Building a business is not a goal of this phase
+  ([D-013](D-013-business-model-deferred.md)).
 
 ## Decision
 
@@ -34,8 +33,10 @@ Private repository, internal brand "Shinan", first deployment at
 
 `shinan.ai` is too expensive for now; the product is for our own use first.
 
-The price of `shinan.ai` was not checked for this record; "too expensive" is
-the owner's judgement.
+## Notes
+
+- The price of `shinan.ai` was not checked for this record; "too expensive" is
+  the owner's judgement.
 
 ## Consequences
 
@@ -44,15 +45,13 @@ the owner's judgement.
 - **Decided:** the web app is served at `shinan.guneet.dev`
   ([plan, section 5](../plan.md#5-integration-points)); where it runs is
   [D-016](D-016-musashi-and-deployment-approval.md).
-- **Open:** whether Shinan later moves to `shinan.ai` or another public brand.
-  Tied to the business model and licensing questions deferred by
-  [D-013](D-013-business-model-deferred.md).
+- **Open:** whether Shinan later moves to `shinan.ai` or a public brand. Tied
+  to the questions deferred by [D-013](D-013-business-model-deferred.md).
 
 ## Alternatives considered
 
-- **Use `shinan.ai` from the start.** Rejected for now: too expensive.
-- **Public repository.** Not chosen now; licensing if the project is ever made
-  public is deferred ([D-013](D-013-business-model-deferred.md)).
+- **Implied** by the reasons (not recorded as discussed): use `shinan.ai` from
+  the start.
 
 ## Owning documents
 

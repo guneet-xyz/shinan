@@ -20,8 +20,7 @@ Status: **Accepted** by the owner on 2026-11-16, with the plan
 ## Context
 
 - People already use their own coding tools, such as OpenCode, Claude Code and
-  Codex, with models they choose and pay for
-  ([plan, section 1](../plan.md#1-what-shinan-is)).
+  Codex ([plan, section 1](../plan.md#1-what-shinan-is)).
 - How agents connect is decided separately in
   [D-014](D-014-three-connection-levels.md).
 
@@ -38,22 +37,19 @@ offers little advantage early.
 
 - **Decided:** Shinan does not run models or host agents, at least until a
   later phase ([plan, section 3](../plan.md#3-what-shinan-does-not-do)).
-- **Proposed** (in the [domain model](../domain-model.md#coding-tool)): the
-  program that runs an agent conversation is called a coding tool, and the
-  agent is the registered identity it works as. Reason given there: "agent"
-  alone was used for both.
+- Proposed refinements: see the domain model's
+  [coding tool](../domain-model.md#coding-tool) and
+  [agent](../domain-model.md#agent) entries.
 - **Open:** whether phase 3, "Agents run by Shinan", changes this decision
   ([plan, section 10](../plan.md#10-phases-after-the-documents)). In the plan,
-  phase 3 starts agent sessions through a launcher on the user's machines
-  ([D-014](D-014-three-connection-levels.md)); if a later phase has Shinan run
-  models itself, that needs a new decision record that supersedes or amends
-  this one.
+  phase 3 starts agent sessions from the website through a launcher on each
+  machine ([D-014](D-014-three-connection-levels.md)). Owned by
+  [roadmap and migration](../roadmap.md).
 
 ## Alternatives considered
 
-- **Shinan runs models and hosts agents itself.** Rejected for the first
-  phases: costly, and little advantage while users already have agents they
-  chose.
+- **Implied** by the reasons (not recorded as discussed): Shinan runs models
+  and hosts agents itself.
 
 ## Owning documents
 

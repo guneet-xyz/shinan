@@ -21,9 +21,9 @@ Status: **Accepted** by the owner on 2026-11-16, with the plan
 
 - The owner's work spans many repositories on GitHub and Forgejo
   ([plan, section 2](../plan.md#2-who-it-is-for)).
-- Today, cross-project work is coordinated in the `workspace` repository's
-  Forgejo issues, which link project issues and pull requests rather than
-  copying their progress
+- Today, cross-project work is coordinated in issues in the `workspace`
+  repository, which link project issues and pull requests rather than copying
+  their progress
   ([`workspace` repository collaboration practice](https://git.guneet.dev/guneet/workspace/src/branch/main/docs/collaboration.md)).
 
 ## Decision
@@ -44,21 +44,17 @@ creates two sources of truth.
 - **Decided:** Shinan reads pull requests, issues, comments, checks and merges
   through webhooks, API calls and reconciliation, and posts links back where
   appropriate ([plan, section 5](../plan.md#5-integration-points)).
-- **Proposed** (in the [domain model](../domain-model.md#event)): events link
-  to git host content rather than copying it, and comments on work items stay
-  on the git host. Reason: copying would recreate the second source of truth
-  this decision avoids.
+- Proposed refinements: see the domain model's
+  [event](../domain-model.md#event) and
+  [comment](../domain-model.md#comment-and-progress-update) entries.
 - **Open:** exactly what Shinan writes back to git hosts. Owned by
   [git host integrations](../git-hosts.md).
 
 ## Alternatives considered
 
-- **Replace git host issues and pull requests with Shinan's own tracker.**
-  Rejected: it would duplicate what git hosts already do and create two sources
-  of truth ([plan, section 3](../plan.md#3-what-shinan-does-not-do)).
-- **Let one git host manage work on the other.** Rejected: neither GitHub nor
-  Forgejo can manage the other.
-- **Copy (mirror) issues into Shinan.** Rejected: two sources of truth.
+- **Implied** by the reasons (not recorded as discussed): replace git host
+  issues and pull requests with Shinan's own tracker; let one git host manage
+  work on the other; copy issues into Shinan.
 
 ## Owning documents
 
