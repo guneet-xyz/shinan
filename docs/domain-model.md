@@ -17,23 +17,20 @@ Each main term has:
 - **Relationships:** how it connects to other terms.
 - **Owner:** the document that owns the details.
 - **Status:** one of
-  - **Decided**: follows from an accepted decision or from approved plan
-    content (pillars, integration points, phases, non-goals) in the
-    [plan](plan.md), which is cited and gives the reason.
-  - **Proposed**: suggested here, with a reason. The owning document confirms
-    or changes it. Items that would change or reinterpret the plan are also
-    listed under [decisions needed from the owner](#decisions-needed-from-the-owner).
+  - **Decided**: follows from an accepted decision or approved plan content
+    (pillars, integration points, phases, non-goals) in the [plan](plan.md),
+    or from the owner's answers in [issue #25][o]. Owner answers are cited as
+    "owner, O-n".
+  - **Proposed**: suggested here or in the owning document, with a reason. The
+    owning document confirms or changes it.
   - **Open**: not settled. Listed under [open questions](#open-questions).
 
 When an owning document changes a proposed term, it updates this glossary in the
 same pull request (proposed; reason: one vocabulary only works if it has one
-home). Some "decided" items rest on plan pillars rather than numbered
-decisions; the [Decision log](https://github.com/guneet-xyz/shinan/issues/13)
-may need records for them so later documents have something to link to.
+home). The [Decision log](https://github.com/guneet-xyz/shinan/issues/13) turns
+the owner's answers into decision records; this document cites the O-numbers.
 
 ### Owning documents
-
-None of these exist yet. Until they do, links go to their issues.
 
 | Document | Issue |
 |---|---|
@@ -102,9 +99,11 @@ flowchart LR
     AG[Agent] -->|acts for| M
     AG -->|has| AS[Agent session]
     AS -->|attached to| T[Task]
+    T -->|has| ST[Subtask]
     T -->|work link| WI
     CAT[Catalog] -->|contains| CE[Catalog entity]
     CE -->|has| F[Fact]
+    FC[Fact check] -->|covers| F
     CP[Catalog proposal] -->|changes| CE
     CON[Git host connection]
     N[Nudge] -->|to| AS
@@ -130,46 +129,68 @@ flowchart LR
 
 - **Definition:** one running copy of Shinan, such as `shinan.guneet.dev` or a
   self-hosted copy. It can hold many workspaces.
-- **Attributes:** address, operator, settings that apply to every workspace.
+- **Attributes:** address, installation operators, installation settings (for
+  example the account allowlist).
+- **Installation operator:** a person who runs the installation. Being an
+  operator does not make someone a member of any workspace, and operators
+  cannot purge.
 - **Relationships:** contains workspaces and the people who can sign in to it.
 - **Owner:** Architecture and operations.
-- **Status:** **Proposed** term. Reason: Shinan is self-hostable (D-012), so
-  documents need a word for "this copy of Shinan" that is not "workspace".
+- **Status:** **Proposed** term, confirmed by Architecture and operations.
+  Reason: Shinan is self-hostable (D-012), so documents need a word for "this
+  copy of Shinan" that is not "workspace". Operators cannot purge:
+  **Decided** (owner, [O-50][o]).
 
 ### Workspace
 
 - **Definition:** the container for one team's records in Shinan: its catalog,
   tasks, git host connections, members and agents. People are invited to it.
 - **Attributes:** name, task ID prefix, members, invitations, agents, catalog,
-  tasks, git host connections, workspace settings (for example which catalog
-  proposals need approval).
+  tasks, git host connections, workspace settings (for example its task flags
+  and custom entity types).
 - **Belongs to one workspace:** member, invitation, agent (with its tokens and
   agent sessions), task, work link, comment, nudge, catalog, catalog entity,
   fact, catalog proposal, git host connection, event.
 - **Outside any one workspace:** Shinan installation, person, git host account,
   git host, repository, work item, coding tool. A workspace refers to these; it
   does not own them.
+- **Visibility:** every member sees everything in the workspace, including work
+  from private repositories. Links to private repositories stay protected by
+  the git host's own access control.
 - **Owner:** Identity, agents and permissions (membership and access); Human
   experience (management screens).
-- **Status:** **Decided** that workspaces exist and use invitations (D-019:
-  adding multi-user support later would mean reworking data, permissions and
-  sign-in). **Proposed:** nothing is shared between workspaces except the
-  person (their sign-in and linked git host accounts). Reason: a workspace
-  holds infrastructure details (D-015), so a single hard boundary is the
-  simplest one to keep safe. Whether one repository can be connected to more
-  than one workspace is **open**.
+- **Status:**
+  - **Decided** that workspaces exist and use invitations (D-019: adding
+    multi-user support later would mean reworking data, permissions and
+    sign-in).
+  - **Decided:** every member sees everything (owner, [O-43][o]); there is no
+    restricted catalog content (owner, [O-2][o]).
+  - **Decided:** a repository is connected to only one workspace in an
+    installation in the first version (owner, [O-59][o]).
+  - **Proposed:** nothing is shared between workspaces except the person (their
+    sign-in and linked git host accounts). Reason: a workspace holds
+    infrastructure details (D-015), so a single hard boundary is the simplest
+    one to keep safe.
 
 ### Person
 
 - **Definition:** a human who can sign in to a Shinan installation.
-- **Attributes:** name, sign-in identity, linked git host accounts,
-  memberships.
+- **Attributes:** name, email address, sign-in methods, linked git host
+  accounts, memberships.
 - **Relationships:** has a membership in zero or more workspaces; agents act
   for a person through their membership; a `person` catalog entity can describe
   them (see [catalog entity](#catalog-entity)).
 - **Owner:** Identity, agents and permissions.
 - **Status:** **Proposed**. Reason: separating the human from their membership
   lets one person belong to several workspaces with different roles.
+
+Related terms (owner: Identity, agents and permissions):
+
+| Term | Definition | Status |
+|---|---|---|
+| Sign-in method | A way a person proves who they are: GitHub sign-in, Forgejo sign-in (any instance, including self-hosted), an email magic link (a one-time sign-in link sent by email), or a password. | **Decided** (owner, [O-41][o]) |
+| Account allowlist | The installation's list of email addresses allowed to have an account. Joining a workspace still needs an invitation. | **Decided** (owner, [O-48][o]) |
+| Sign-in session | A person's signed-in session in the web app. Never just "session". | Proposed: keeps "session" for agent sessions. |
 
 ### Member and role
 
@@ -178,43 +199,47 @@ flowchart LR
 - **Attributes:** person, workspace, role, date joined, who invited them.
 - **Roles (high level):**
   - **Workspace owner:** everything a contributor can do, plus managing
-    members, roles, git host connections, workspace settings, and deleting the
-    workspace. A workspace has at least one and may have several.
-  - **Contributor:** works on tasks, comments, nudges, makes and approves
-    catalog proposals where allowed.
+    members, roles, git host connections, workspace settings, purging, and
+    deleting the workspace. A workspace has at least one and may have several.
+  - **Contributor:** works on tasks, comments, nudges, makes catalog proposals
+    and gives catalog approval where allowed.
   - **Viewer:** reads the catalog, tasks and timelines.
   - Every role may register agents. An agent can never do more than its
     member, so a viewer's agent is read-only.
 - **Relationships:** links a person to a workspace; agents act for a member.
 - **Owner:** Identity, agents and permissions.
-- **Status:** **Decided** that members exist (D-019). **Proposed** role set.
-  Reasons: three roles cover one owner today and small teams later without a
-  full permission system; several workspace owners avoid lock-out; read-only
-  agents still help agents that only need context. Finer rules, such as access
-  to private repositories, are **open** (plan question 3).
+- **Status:** **Decided** that members exist (D-019) and that only workspace
+  owners purge (owner, [O-50][o]). **Proposed** role set. Reasons: three roles
+  cover one owner today and small teams later without a full permission system;
+  several workspace owners avoid lock-out; read-only agents still help agents
+  that only need context.
 
 ### Invitation
 
 - **Definition:** an offer for a person to join a workspace with a given role.
-- **Attributes:** workspace, role, who invited, invitee address, state
-  (`pending`, `accepted`, `declined`, `expired`, `withdrawn`).
+- **Attributes:** workspace, role, who invited, invitee (an email address or a
+  git host account), state (`pending`, `accepted`, `declined`, `expired`,
+  `withdrawn`).
 - **Owner:** Identity, agents and permissions.
-- **Status:** **Decided** (D-019). States **proposed**; reason: the inviter
-  needs to see whether an invitation is still waiting.
+- **Status:** **Decided** (D-019; owner, [O-48][o]). States **proposed**;
+  reason: the inviter needs to see whether an invitation is still waiting.
 
 ### Git host account
 
 - **Definition:** a user account on a git host, such as a GitHub username.
-- **Attributes:** git host, account name, the person it belongs to.
+- **Attributes:** git host, account name, the host's stable account number, the
+  person it belongs to.
 - **Relationships:** a person links their git host accounts in Shinan. Their
   agents use the same accounts (D-017), so an action on a git host by this
   account may have been done by the person or by one of their agents.
 - **Owner:** Identity, agents and permissions.
 - **Status:** **Decided** that agents share the person's account (D-017:
-  separate bot accounts are a barrier to adoption). **Proposed:** a person
-  links their accounts, and the link is verified before it counts. Reason:
-  linking is how git host activity gets credited at all, and an unverified link
-  would let anyone claim someone else's activity.
+  separate bot accounts are a barrier to adoption). **Decided:** Shinan stores
+  no per-person GitHub tokens and never writes to a git host on a person's
+  behalf (owner, [O-1][o]). **Proposed:** a person links their accounts, and the
+  link is verified before it counts. Reason: linking is how git host activity
+  gets credited at all, and an unverified link would let anyone claim someone
+  else's activity.
 
 ## Agents
 
@@ -230,42 +255,56 @@ flowchart LR
 
 ### Agent
 
-- **Definition:** a named, registered identity through which a coding tool
-  works in a workspace for one member. Example: "Guneet's OpenCode".
-- **Attributes:** name, the member it acts for, coding tool, tokens, state
-  (`active` or `disabled`).
+- **Definition:** a named, registered identity through which one coding tool on
+  one machine works in a workspace for one member. Example: "Guneet's OpenCode
+  on Daedalus".
+- **Attributes:** name, the member it acts for, coding tool, machine, tokens,
+  state (`active` or `disabled`).
 - **Relationships:** belongs to one workspace; acts for exactly one member; has
-  many agent sessions; an `agent` catalog entity can describe it.
+  many agent sessions; an `agent` catalog entity can describe it, and its
+  machine can point to a `machine` catalog entity.
 - **Owner:** Identity, agents and permissions (identity, tokens, rights);
   Agent integrations (how it connects).
-- **Status:** **Decided** that agents connect from outside (D-008) and act for
-  a person (D-017). **Proposed:**
-  - An agent belongs to one workspace. A person using the same tool in two
-    workspaces registers two agents. Reason: keeps tokens and permissions
-    inside the workspace boundary.
-  - By default there is one agent per member and coding tool. A member may
-    register more, for example one per machine. Reason: the model only needs
-    each agent to act for exactly one member.
-  - An agent can never do more than the member it acts for. Reason: it already
-    uses that member's git host account, so it cannot be trusted with more.
-  - The machine is recorded per agent session, not per agent. Reason: the same
-    agent may run on several machines.
+- **Status:**
+  - **Decided** that agents connect from outside (D-008) and act for a person
+    (D-017).
+  - **Decided:** an agent is per person, coding tool and machine (owner,
+    [O-40][o]).
+  - **Proposed:** an agent belongs to one workspace; a person using the same
+    tool and machine in two workspaces registers two agents. Reason: keeps
+    tokens and permissions inside the workspace boundary.
+  - **Proposed:** an agent can never do more than the member it acts for.
+    Reason: it already uses that member's git host account, so it cannot be
+    trusted with more.
 
 ### Agent session
 
 - **Definition:** the part of one coding tool conversation that works as one
   agent. Presence is tracked per agent session. A conversation that works in
-  two workspaces is two agent sessions.
-- **Attributes:** agent, coding tool, machine, current task, current
-  repository, presence state, presence source, started, last seen, ended. The
-  model in use may be recorded as information only.
+  two workspaces is two agent sessions. Every subagent (a helper conversation
+  that a coding tool starts inside another) is its own agent session.
+- **Attributes:** agent, conversation ID, agent session ID, parent agent session
+  (for subagents), current task, current repository and branch, presence state,
+  presence source, started, last seen, ended. The model in use may be recorded
+  as information only. The machine and coding tool come from the agent.
 - **Relationships:** belongs to an agent (and so to a member and workspace);
   attached to at most one task at a time; receives nudges; is the most specific
   actor for an agent's actions.
 - **Owner:** Agent integrations.
-- **Status:** **Decided** that sessions and presence exist (D-014). **Proposed**
+- **Status:** **Decided** that sessions and presence exist (D-014); subagents
+  are their own agent sessions (owner, [O-37][o]); calls are matched to an
+  agent session by the conversation ID first (owner, [O-29][o]). **Proposed**
   "at most one task at a time". Reason: nudges need one clear target; moving to
   another task is cheap because it is recorded as an event.
+
+Related terms (owner: Agent integrations):
+
+| Term | Definition | Status |
+|---|---|---|
+| Conversation ID | The ID the coding tool gives a conversation, reported by the tool itself. It identifies the agent session, never authorizes anything. | **Decided** (owner, [O-29][o]) |
+| Agent session ID | An ID Shinan issues for an agent session. An agent passes it on calls when its tool reports no conversation ID. If the two disagree, Shinan refuses writes. | **Decided** (owner, [O-29][o]) |
+| Claim | An agent session attaching itself to a task to work on it. Not a lock. A branch marker can claim automatically, for tasks that can be claimed; a subagent is attached only when it claims a task itself. | **Decided** automatic claim (owner, [O-35][o]). Not a lock proposed, reason: the `workspace` repository's practice says assignment is coordination, not a lock. The subagent rule is proposed by Agent integrations, reason: subagents share their parent's branch and would otherwise all be attached. |
+| Release | An agent session detaching from its task, by choice or after 24 hours `offline` or `unresponsive`. A session that resumes claims the task again. | **Decided** (owner, [O-32][o]) |
 
 ### Connection level
 
@@ -276,12 +315,17 @@ flowchart LR
      agent how to use them. A CLI (command-line program) offers the same
      actions.
   2. **Plugin** (per coding tool, OpenCode first): reports presence from inside
-     the tool and delivers nudges live.
-  3. **Launcher** (phase 3): a small program on a machine that starts new agent
-     sessions on request.
+     the tool and delivers nudges live. Installing the plugin also sets up MCP
+     and the skill.
+  3. **Launcher** (phase 3): a small program a person installs on their own
+     machine (for example a VM or a laptop), which registers that machine and
+     starts new agent sessions there on request. The **device setup guide**
+     explains how to prepare such a machine.
 - **Owner:** Agent integrations.
 - **Status:** **Decided** (D-014: MCP alone depends on the agent choosing to
-  report and cannot reach an idle or crashed session).
+  report and cannot reach an idle or crashed session). Plugin sets up MCP and
+  skill: **Decided** (owner, [O-36][o]). Launcher on the person's own hardware
+  with a setup guide: **Decided** (owner, [O-1][o]).
 
 ### Presence
 
@@ -289,20 +333,30 @@ flowchart LR
   it is running, what it is doing, where, and when it was last seen.
 - **Attributes:**
   - **Presence source:** `plugin-reported` (from a tool plugin) or
-    `self-reported` (only from the agent's own MCP calls).
-  - **Presence state:** for plugin-reported sessions, `starting`, `busy`,
-    `idle`, `waiting` (waiting for a person, for example on a question or
-    permission prompt) or `ended`, as reported. Shinan calculates
-    `unresponsive` when a session that has not ended stops reporting.
-    Self-reported sessions cannot report `idle` or `waiting`, so Shinan shows
-    only their last-seen time.
-  - Last seen, current task, repository, machine.
-- **Owner:** Agent integrations (reporting, and the time before a session is
-  `unresponsive`, based on the plugin's reporting interval); Human experience
+    `self-reported` (only from the agent's own MCP or CLI calls).
+  - **Presence state:**
+
+    | State | Meaning |
+    |---|---|
+    | `starting` | The agent session has just started. |
+    | `busy` | Working. |
+    | `idle` | Running, waiting for its next instruction. |
+    | `waiting` | Waiting for a person, for example on a question or permission prompt. |
+    | `offline` | The coding tool stopped, or the person switched away, but the conversation can be resumed. The agent session keeps its task until released. |
+    | `unresponsive` | Calculated: an agent session that sends heartbeats has gone silent without saying why. |
+    | `ended` | The conversation was deleted or archived, the agent session was ended on purpose, or it has been silent for 30 days. |
+
+    Self-reported agent sessions cannot report `idle`, `waiting` or `offline`,
+    so Shinan shows only their last-seen time between start and end.
+  - Last seen, current task, repository.
+- **Heartbeat:** a regular "still here" report from a plugin. Only agent
+  sessions that send heartbeats can become `unresponsive`.
+- **Owner:** Agent integrations (reporting and time limits); Human experience
   (display).
 - **Status:** **Decided** that presence exists and "self-reported" is marked
-  (plan, Agent presence pillar). **Proposed** state names, taken from the
-  plugin reports in the plan, plus the calculated `unresponsive`. Reason: a
+  (plan, Agent presence pillar). **Decided:** `offline`, release after 24 hours
+  of silence, and `ended` only on delete, archive, an explicit end or 30 days
+  (owner, [O-32][o]). Other state names and heartbeats **proposed**; reason: a
   crashed session reports nothing, so silence needs its own state.
 
 ## Actors and attribution
@@ -314,7 +368,7 @@ flowchart LR
   - an **agent session** acting for a member, or the **agent** when no session
     is known (for example a CLI call);
   - **Shinan** itself, for automatic actions such as creating a task from an
-    outside issue;
+    outside issue or posting a backlink;
   - an **outside actor**: a git host account not linked to any member, such as
     an outside contributor or a dependency bot.
 - When an action came from a linked git host account but Shinan cannot tell
@@ -338,19 +392,19 @@ flowchart LR
 - **Definition:** how Shinan decides which actor did something, and how sure it
   is. Because agents share their person's git host account (D-017), Shinan
   cannot rely on the git host. It uses its own records: actions that came
-  through an agent's token, agent sessions attached to the task, and markers in
-  commits and pull requests.
+  through an agent's token, agent sessions attached to the task, markers in
+  commits and pull requests, and the IDs of items Shinan itself wrote.
 - **Attributes:** the actor, and a **confidence**:
   - `recorded`: the action went through Shinan with a known token.
   - `marked`: the git host item carries a marker naming the agent session.
   - `inferred`: matched by timing or task links only.
   - `unknown`: the git host account is known but not who used it.
 - **Owner:** Identity, agents and permissions; markers in Tasks and work and
-  Agent integrations.
+  Agent integrations; display in Human experience (text events with `unknown`
+  attribution are shown in full and labelled as unsure, owner, [O-91][o]).
 - **Status:** **Decided** that attribution comes from Shinan's own records
   (D-017). Confidence levels **proposed**; reason: showing how sure a credit is
-  follows the same rule as facts in the catalog (D-007). How reliable this can
-  be is **open** (plan question 2).
+  follows the same rule as facts in the catalog (D-007).
 
 ## Tasks and work
 
@@ -360,16 +414,21 @@ flowchart LR
   outcome, across any number of repositories and git hosts. The task is the
   core object (D-002).
 - **Attributes:**
-  - **Task ID:** stable and host-neutral, such as `T-123`. Used in branch names
-    and pull request descriptions.
+  - **Task ID:** stable and host-neutral: the workspace's prefix and a number,
+    such as `T-123`. Used in branch names and pull request descriptions.
   - Title, intent (what and why), acceptance criteria, decisions made along the
     way.
   - Task status and task flags (below).
-  - Assignees (members), attached agent sessions.
-  - Origin: where the intent started (in Shinan, an outside issue, or a
+  - Parent task and subtasks.
+  - Assignees (members), attached agent sessions, rank (for `to do` tasks).
+  - Origin: where the intent started (in Shinan, an outside issue or PR, or a
     conversation).
-  - Work links, related catalog entities, related tasks, comments, progress
-    updates, timeline.
+  - Work links, verification records, related catalog entities, dependencies,
+    comments, progress updates, timeline.
+- **Subtask:** a task whose parent is another task. It is a full task with its
+  own ID, status and work links. Large work is split into subtasks.
+- **Rank:** a simple order of `to do` tasks, set by people, saying what comes
+  next. There are no priority levels.
 - **Relationships:** belongs to one workspace; links to work items through work
   links; can relate to catalog entities it touches and produce catalog
   proposals; can depend on other tasks.
@@ -379,157 +438,211 @@ flowchart LR
     (D-002); a task starts where the intent starts and outside issues become
     tasks automatically (D-003); repository issues are created only when people
     need them (D-004).
-  - **Proposed:** IDs are unique within a workspace and never reused. Reason: a
-    reused ID would make old branch names and PRs point at the wrong story.
-  - **Proposed (owner decision):** each workspace has its own ID prefix, chosen
-    when it is created and never reused. Reason: with a shared `T-` prefix, a
-    repository connected to two workspaces would have ambiguous branch names.
+  - **Decided:** each workspace has its own task ID prefix (owner, [O-6][o]);
+    subtasks exist (owner, [O-21][o]); people can rank `to do` tasks (owner,
+    [O-28][o]).
+  - **Proposed:** IDs are unique within a workspace and never reused, and so is
+    the prefix. Reason: a reused ID would make old branch names and PRs point
+    at the wrong story.
   - **Proposed:** lasting decisions recorded on a task are promoted to a
     `decision` catalog entity. Reason: the `workspace` repository already
     separates task narrative from durable decisions, and that works.
-  - **Proposed:** no subtasks in the first version. Reason: dependencies and
-    related tasks cover the need for now.
 
 ### Task status, task flags and manual states
 
-D-005 says task status is calculated from linked work, because copied status
-goes stale. This document reads that as **calculated from linked work plus
-recorded events** (acceptance, agent session attachment, verification). The
-result is still calculated; nobody types the status. This reading is
-**proposed (owner decision)**. Reason: `triage`, `in progress` and `done`
-cannot be told from links alone. Only work links with role `delivers` count
-toward status.
+Task status is calculated from linked work **plus recorded events**
+(acceptance, agent session attachment, verification). Nobody types a status,
+and no tool marks a task done; agents record verification instead. **Decided**
+(D-005; owner, [O-4][o] and [O-10][o]).
 
 A **manual state** is a status or flag set explicitly by an actor rather than
 calculated. A **task flag** is shown beside the status and can combine with
 any status.
 
-**Task status** (one at a time, **proposed**):
+**Task status** (one at a time):
 
 | Status | Meaning | How it is set |
 |---|---|---|
-| `triage` | Created automatically from an outside issue, not yet accepted. | Calculated on creation; leaving it is manual (accept or cancel). |
+| `triage` | Created automatically from an outside issue or PR, not yet accepted. | Calculated on creation; leaving it is manual (accept or cancel). |
 | `to do` | Accepted; no active `delivers` work and no attached agent session. | Calculated |
-| `in progress` | An agent session is attached, or a `delivers` branch or draft pull request exists. | Calculated |
-| `in review` | A `delivers` pull request is open and ready for review. | Calculated |
-| `done` | The `delivers` work is merged or completed, and verification is recorded where the acceptance criteria need more than the merge. | Calculated |
+| `in progress` | An agent session is attached, or there is active `delivers` work that is not all ready for review. | Calculated |
+| `in review` | There is active `delivers` work, and every active item is a PR ready for review. | Calculated |
+| `verifying` | All `delivers` PRs are merged, but a criterion marked verify after merge has no passing verification yet. | Calculated |
+| `done` | All subtasks are done, every `delivers` PR is merged, and verification is recorded where needed. A task without code work is done when a passing verification covers every acceptance criterion. | Calculated |
 | `cancelled` | A person decided the task will not be done. | Manual |
 
-**Verification** is a recorded event checked against the acceptance criteria.
-An agent may record it with evidence; a person can reopen the task. Where no
-check beyond the merge applies, merging is enough (proposed; reason: matches
-the `workspace` repository's rule that work is complete only after
-implementation and applicable verification, while keeping status calculated).
+Related terms:
 
-**Task flags** (**proposed**):
+- **Verification record:** an event saying who verified, when, which
+  acceptance criteria it covers, the result (`passed` or `failed`) and a link
+  to evidence. Agents and people may record it. A `failed` verification moves
+  the task back to `in progress`.
+- **Verify after merge:** a marking on an acceptance criterion that can only be
+  checked after merge, such as "the page loads on `shinan.guneet.dev`". It is
+  off unless a criterion is marked. Not called "check after merge", because
+  "check" is kept for fact checks and CI checks.
+
+**Task flags.** Task flags are managed per workspace: a workspace can add and
+remove flags. The built-in flags below are the defaults.
 
 | Flag | Meaning | How it is set |
 |---|---|---|
-| `needs a person` | The task cannot progress until a person does something an agent cannot or must not do. Replaces today's `human-effort` label and carries the same short summary of what is needed. | Manual |
-| `awaiting deployment approval` | The work is ready but changes a running deployment and needs a person's deployment approval. | Manual; cleared by the recorded approval |
-| `on hold` | A person paused the task. | Manual |
+| `needs a person` | The task cannot progress until a person does something an agent cannot or must not do. Replaces today's `human-effort` label and carries the same short summary of what is needed. | Manual: agents and people may set and clear it; the summary is required, and who cleared it is recorded. |
+| `awaiting deployment approval` | The work changes a running deployment and needs a person's deployment approval. | Manual: set by whoever asks; cleared by a recorded deployment approval or decline. |
+| `on hold` | A person paused the task. | Manual, people only. |
 | `blocked` | A task this one depends on is not done. | Calculated |
 
-**Who may set each manual state** (**proposed**):
-
-- Accepting a task out of `triage`, `cancelled` and `on hold`: people only.
-  Reason: these are decisions about what the team works on.
-- `needs a person`: agents and people may set it, with the summary required;
-  either may clear it, and who cleared it is recorded. Reason: agents are
-  usually the ones who discover they need a person, as with today's label.
-  The plan says only a person can set such states, so this is an
-  **owner decision**.
-- `awaiting deployment approval`: set by whoever asks for approval; cleared
-  only by a person's recorded deployment approval. It is kept separate from
-  `needs a person` because the `workspace` repository's practice keeps them
-  apart. This new flag is an **owner decision**.
+Accepting a task out of `triage` and setting `cancelled` are for people only
+(proposed; reason: these are decisions about what the team works on).
 
 - **Owner:** Tasks and work.
-- **Status:** **Decided** that status is calculated (D-005) and that some
-  states are set by hand, including "needs a person" (plan, Tasks pillar). All
-  names above are **proposed**. Reason: they follow the `workspace` repository's
-  flow (draft PR early, review, merge, verify) and keep flags separate, so a
-  task can be in progress and need a person at once. How status is calculated
-  with several `delivers` links, or a PR closed without merging, is **open**
-  for Tasks and work.
+- **Status:**
+  - **Decided:** the D-005 reading (owner, [O-4][o]); `verifying` (owner,
+    [O-9][o]); agents record verification and nothing marks a task done (owner,
+    [O-10][o]); the done rule with subtasks (owner, [O-21][o]); verify after
+    merge off by default (owner, [O-22][o]); agents may set and clear `needs a
+    person` (owner, [O-7][o]); the separate `awaiting deployment approval` flag
+    and per-workspace task flags (owner, [O-8][o]).
+  - **Proposed:** the remaining status and flag names, verification record
+    contents, and the "least advanced work wins" rule for `in review`. Reason:
+    they follow the `workspace` repository's flow (draft PR early, review,
+    merge, verify) and let a task be in progress and need a person at once.
+
+### Deployment approval
+
+- **Definition:** a person's approval for a change to a running deployment. It
+  is given in Shinan, or in the conversation with an agent and recorded by that
+  agent; never by a comment or a nudge. It clears the `awaiting deployment
+  approval` flag.
+- **Owner:** Tasks and work; Identity, agents and permissions (who may give
+  it).
+- **Status:** **Decided** (owner, [O-8][o] and [O-20][o]). D-016 applies it to
+  every deployment of `shinan.guneet.dev`.
 
 ### Work item
 
-- **Definition:** a thing in an outside system that is part of a task's work.
-  Git hosts come first. Kinds on a git host: **pull request** (PR), **issue**,
-  **commit**, **branch**.
-- **Attributes:** kind, system (git host), repository, the system's own ID and
-  URL, current state as the system reports it (for example draft, merged,
-  closed), last time Shinan read it.
+- **Definition:** a thing on a git host that is part of a task's work. Kinds:
+  **pull request** (PR), **issue**, **commit**, **branch**.
+- **Attributes:** kind, git host, repository, the host's own ID and URL,
+  current state as the host reports it, last time Shinan read it.
+- **States used by status:**
+  - **Merged:** a PR merged into the repository's default branch or into a
+    counting branch; a commit counts as merged when it reaches such a branch by
+    a direct push. A **counting branch** is a branch the git host connection
+    marks as counting, such as a long-lived release branch.
+  - **Merged elsewhere:** a PR merged into any other branch. It is neither
+    active nor merged.
+  - **Active:** a `delivers` branch with no PR and not merged, a draft PR, or a
+    PR ready for review.
 - **Relationships:** lives in a repository; linked to tasks through work links.
   Comments, reviews, CI checks and merges on a work item are recorded as
   events, not as separate work items.
 - **Owner:** Git host integrations (reading); Tasks and work (meaning for
   status).
 - **Status:** **Decided** that the work itself stays on git hosts (D-001).
-  **Proposed:** the four kinds, and the rule that sub-activity is events.
-  Reason: these four are what the plan's integrations read; events keep
-  comments and checks on the timeline without making them objects.
-  **Proposed:** releases and deployments are not work items in the first
-  version; tags and releases are events on the repository, and deployments are
-  catalog facts or events. Reason: no need has been shown yet. Whether items in
-  outside tools (D-010) become work items or task origins is **open**.
+  Shinan does not integrate with other trackers such as Multica, Linear or
+  Plane (owner, [O-97][o], amending D-010). **Proposed:** the four kinds, the
+  three states above, and the rule that sub-activity is events. Reason: these
+  are what the integrations read, and "merged" must exclude stacked PRs merged
+  into feature branches. **Proposed:** releases and deployments are not work
+  items in the first version; releases are repository events and deployments
+  are catalog facts or events. Reason: no need has been shown yet.
 
 ### Work link
 
 - **Definition:** the connection between a task and a work item.
 - **Attributes:**
   - task, work item;
-  - **role:** `origin` (the outside issue the task came from), `delivers` (work
-    that implements the task), or `related`;
+  - **role:** `origin` (the outside issue or PR where the task's intent
+    started; a task can have several), `delivers` (work that implements the
+    task), or `related`. Issues are never `delivers` work items;
   - **how made:** task ID in a branch name, task ID in a PR description or
-    commit message, an agent's call, by a person, or by Shinan automatically;
-  - who made it and when.
+    commit message, a member's mention in a git host comment (`related` only),
+    an agent's call, by a person, or by Shinan automatically;
+  - **confirmed or unconfirmed**; who made it and when.
+- **Unconfirmed link:** a work link shown on the task that does not count toward
+  status until a member confirms it. Markers from outside actors make
+  unconfirmed links. Confirming or dismissing it is an event.
 - **Relationships:** a task has many work links; a work item can link to more
-  than one task.
+  than one task. Only confirmed `delivers` links count toward status.
 - **Owner:** Tasks and work (conventions); Git host integrations (detection).
-- **Status:** **Decided** that work on git hosts links to tasks by task ID
-  (D-002) and that agent-driven work links PRs directly (D-004). Roles and "how
-  made" are **proposed**; reason: status counts `delivers` links only, so the
-  role must be explicit.
+- **Status:**
+  - **Decided** that work on git hosts links to tasks by task ID (D-002) and
+    that agent-driven work links PRs directly (D-004).
+  - **Decided:** markers from accounts not linked to a member make unconfirmed
+    links (owner, [O-24][o]); members' mentions of a task ID in git host
+    comments make `related` links that never affect status, and outsiders'
+    mentions are ignored (owner, [O-25][o]).
+  - **Proposed:** roles, "how made", and issues never being `delivers`. Reason:
+    status counts `delivers` links only, so the role must be explicit; an
+    issue's open or closed state is set by hand, which D-005 avoids.
 
 ### Outside issue
 
 - **Definition:** an issue opened on a git host without going through Shinan,
   for example by a user of a public project. It becomes a task automatically,
-  in `triage`, with a work link of role `origin`.
+  in `triage`, with a work link of role `origin`. A PR from an outside actor
+  that names no task is treated the same way.
 - **Owner:** Tasks and work.
-- **Status:** **Decided** (D-003). The `triage` status is **proposed**.
+- **Status:** **Decided** (D-003). Issues that existed before a repository was
+  connected are imported only when a person asks: **Decided** (owner,
+  [O-23][o]). Outside PRs **proposed** by Tasks and work; reason: the PR is
+  where that intent starts.
+
+### Unlinked work
+
+- **Definition:** a PR or branch by a member or their agent that carries no
+  task ID. It is not turned into a task; it is listed so a person or agent can
+  link or dismiss it.
+- **Owner:** Tasks and work.
+- **Status:** **Proposed**. Reason: members are expected to use markers;
+  creating tasks for every missed marker would hide the slip.
 
 ### Comment and progress update
 
 - **Comment:** a message on a task in Shinan. Comments on work items stay on the
-  git host and appear in the timeline as events. A person's comment on a task
-  can create a nudge.
+  git host and appear in the timeline as events. A person's comment tells the
+  agent sessions attached to the task (a nudge) unless the person marks it
+  "note only".
 - **Progress update:** a short note from an agent session on its task. It is an
   event, shown compactly, and does not create nudges.
 - **Owner:** Tasks and work.
-- **Status:** **Proposed**. Reasons: Shinan must not copy git host discussions
-  (plan, "What Shinan does not do"); the plan has agents "report progress" and
-  shows agent activity compactly, so progress should not look like a person's
-  comment.
+- **Status:** **Decided:** comments nudge by default with a "note only" opt-out
+  (owner, [O-26][o]). Comment and progress update as terms **proposed**.
+  Reasons: Shinan must not copy git host discussions (plan, "What Shinan does
+  not do"); agent activity is shown compactly, so progress should not look like
+  a person's comment.
 
 ### Nudge
 
 - **Definition:** a message from a person to the agent sessions working on a
   task, usually created by their comment on the task.
-- **Attributes:** from (person), task, message, and one delivery per target
-  agent session. If no session is attached, the nudge records "no active
-  session" and the person can ask for a new agent session (started by a
-  launcher in phase 3, by hand before then).
-- **Delivery state** (per target): `pending` → `delivered` (live through a
-  plugin, or at the session's next check-in), or `undeliverable` (the session
-  ended first).
+- **Attributes:** from (person), task, message, and one **delivery** per target
+  agent session. If no session is attached, the nudge waits on the task and the
+  next agent session that claims the task receives it; the person can also ask
+  for a new agent session (started by a launcher in phase 3, by hand before
+  then).
+- **Delivery state** (per target): `pending`, then one outcome:
+  - `delivered`: live through a plugin when the coding tool confirms the agent
+    received it, or at check-in when the agent acknowledges it;
+  - `undeliverable`: the agent session ended first;
+  - `withdrawn`: the sender withdrew it before delivery;
+  - `cancelled`: a person at the coding tool removed it from the tool's queue.
+- **Delivery mode:** `steer` (the agent sees it at its next step) or `queue`
+  (after its current work). Nudges from the agent's own member use `steer`,
+  others use `queue`; the sender can override.
+- **Route** and **holder:** each delivery records how it went (live `steer`,
+  live `queue`, or check-in) and, while pending, who holds it (offered to the
+  plugin, accepted by the coding tool, or available for check-in).
 - **Owner:** Tasks and work (when nudges are created); Agent integrations
   (delivery).
 - **Status:** **Decided** that nudges exist with live and check-in delivery
-  (plan, Nudges pillar). Delivery states **proposed**; reason: the person must
-  see whether their message reached each agent session.
+  (plan, Nudges pillar); waiting for the next claiming session, only for nudges
+  never delivered to any session (owner, [O-27][o]); `delivered` at check-in
+  means acknowledged (owner, [O-30][o]); default delivery modes (owner,
+  [O-31][o]). The outcomes `withdrawn` and `cancelled`, route and holder are
+  **proposed** by Agent integrations; reason: the person must see what happened
+  to each delivery.
 
 ## Git hosts
 
@@ -547,28 +660,54 @@ implementation and applicable verification, while keeping status calculated).
 
 - **Definition:** a workspace's authorized link to one git host. It lets
   Shinan receive webhooks, call the host's API, and reconcile.
-- **Attributes:** workspace, git host, which repositories it covers, who set it
-  up, health (working, failing, last successful contact).
+- **How it connects:** on GitHub, through a GitHub App installation, using only
+  the app's installation token. On Forgejo, through the connecting person's
+  own account and a token they provide (any token is accepted and stored
+  encrypted; a broad token from a site admin can act as any user, which is a
+  stated, accepted risk).
+- **Attributes:** workspace, git host, method and account, covered
+  repositories, counting branches, automated accounts, write-back settings,
+  who set it up, health (`working`, `degraded`, `failing`).
 - **Relationships:** a workspace has many connections; a connection gives
   access to repositories.
 - **Owner:** Git host integrations; Identity, agents and permissions (who may
   manage them, how credentials are held).
 - **Status:** **Decided** that workspaces hold git host connections (plan,
-  Workspaces pillar). Attributes **proposed**; reason: people need to see what a
-  connection covers and whether it still works.
+  Workspaces pillar); the GitHub App with installation token only (owner,
+  [O-51][o]); the connecting person's Forgejo account and any token (owner,
+  [O-53][o], [O-54][o]). Attributes **proposed**; reason: people need to see
+  what a connection covers and whether it still works.
 
 ### Repository
 
 - **Definition:** a Git repository on a git host that a workspace can see
   through a connection.
-- **Attributes:** git host, owner and name on the host, URL, visibility.
+- **Attributes:** git host, the host's stable repository ID, owner and name on
+  the host, URL, visibility, default branch.
 - **Relationships:** holds work items; a `project` catalog entity points to one
   or more repositories. A repository is not a project: the project is the
   catalog's description, the repository is the thing on the git host.
 - **Owner:** Git host integrations.
-- **Status:** **Proposed**. Reason: the `workspace` repository's catalog keeps
-  "project" and "repository" apart and that works. Whether one repository can
-  be connected to more than one workspace is **open**.
+- **Status:** **Decided:** one workspace per repository in the first version
+  (owner, [O-59][o]). The rest **proposed**. Reason: the `workspace`
+  repository's catalog keeps "project" and "repository" apart and that works.
+
+### Shinan's own writes and backlinks
+
+- **Shinan's own writes:** the few things Shinan itself posts on a git host,
+  such as backlinks. Shinan never writes on a person's behalf; anything a
+  person wants done on a git host is done by an agent on that person's own
+  hardware. On GitHub, Shinan's writes appear as the GitHub App; on Forgejo,
+  as the connecting person's account. Shinan recognizes its own writes by the
+  IDs it stored.
+- **Backlink:** a single comment Shinan posts on a git host PR or issue linking
+  to its task. Added only when the PR description lacks the task's address, and
+  never in public repositories. It is a git host comment, not a
+  [comment](#comment-and-progress-update) on a task.
+- **Owner:** Git host integrations.
+- **Status:** **Decided** (owner, [O-1][o], [O-53][o], [O-56][o]). "Backlink"
+  as a term **proposed** by Git host integrations; reason: "comment" alone
+  means a message on a task.
 
 ## Catalog
 
@@ -577,133 +716,182 @@ implementation and applicable verification, while keeping status calculated).
 - **Definition:** a workspace's trusted, current record of everything the team
   runs and works on. People read it as a wiki; agents read it through the agent
   index and keep it accurate as part of their work.
-- **Attributes:** catalog entities and the links between them.
+- **Attributes:** catalog entities, the start-here document, and their catalog
+  revisions.
+- **Catalog revision:** the full Markdown text of the entity documents one
+  applied catalog proposal changed. Revisions are never edited; a revert is a
+  new proposal.
+- **Git mirror:** a read-only Git copy of the catalog's Markdown, always kept
+  current, for cloning, searching, history and leaving Shinan. Nobody edits
+  through it.
 - **Relationships:** one per workspace.
-- **Owner:** Catalog.
+- **Owner:** Catalog; Architecture and operations (storage and the Git
+  mirror).
 - **Status:** **Decided**: document-first, Markdown with structured fields at
   the top (frontmatter) is the source of truth, and the agent index is
   generated from it (D-006: people must be able to read it). Every fact records
   state, source and last-checked time (D-007: trust is the differentiator).
+  Each catalog revision's Markdown is the source of truth, with an always-on,
+  read-only Git mirror (owner, [O-11][o]); proposals and review happen in
+  Shinan (owner, [O-12][o]).
 
 ### Catalog entity
 
-- **Definition:** one typed page in the catalog describing one thing.
-- **Entity types:**
+- **Definition:** one typed Markdown document in the catalog describing one
+  thing.
+- **Entity types:** eight built-in types, plus custom types a workspace
+  defines.
   - `project`: a body of work, such as an application, and its repositories.
   - `machine`: a computer or server.
-  - `service`: a running service that other things depend on, such as a
-    registry or DNS.
+  - `service`: something running: a deployment of a project, or a shared
+    service others depend on, such as DNS. Deployment facts live only here.
   - `runbook`: a checked procedure for an operation.
   - `decision`: a lasting decision with its reasons.
   - `policy`: a rule the team follows, such as an approval or access rule.
   - `person`: describes a person.
   - `agent`: describes an agent.
-- **Attributes:** ID (stable, unique in the workspace), type, title, entity
-  status, entity owner, facts, body text, links to other entities, links to
-  owning sources.
+- **Type schema:** for each entity type, its fact keys, whether each is
+  single-valued or multi-valued, which keys are relations, any recheck
+  intervals, and its body sections.
+- **Attributes:** entity ID, type, title, summary, entity status, entity owner,
+  aliases, facts, body text.
+- **Entity ID:** written `<type>/<slug>`, such as `machine/musashi`; stable.
+  Former IDs are kept as aliases so old links still resolve.
 - **Entity status:** `active`, `deprecated`, `retired`, describing the thing
-  itself, not the page's accuracy. Retired entities keep their history and link
+  itself, not the page's accuracy. Retired entities stay readable and link
   their replacement.
 - **Entity owner:** the member responsible for the thing, or `unknown`.
-- **Relationships:** contains facts; links to other entities; changed through
-  catalog proposals; can relate to tasks.
-- **`person` and `agent` entities** describe people and agents for readers
-  (responsibilities, what they own). When the person is a member, or the agent
-  is registered, the entity links to that record and does not copy sign-in,
-  role or token details. A `person` entity can also describe someone who is
-  not a member, such as a former member or an outside contact.
+- **`person` and `agent` entities** describe people and agents for readers.
+  When the person is a member, or the agent is registered, the entity links to
+  that record and does not copy sign-in, role or token details. A `person`
+  entity can also describe someone who is not a member, such as a former member.
+- **Start-here document:** one special catalog document per workspace with two
+  paths through the catalog, one for people and one for agents. It is not an
+  entity, holds no facts, and changes only with catalog approval.
 - **Owner:** Catalog.
-- **Status:** **Decided** entity type list (plan, Catalog pillar).
-  **Proposed:** the type descriptions, entity status values, stable IDs, the
-  entity owner rule and the person/agent rule. Reasons: these are the
-  `workspace` repository's working practice; keeping identity in one place
-  avoids two sources of truth; former members must stay describable; teams
-  inside a workspace are deferred while there is one user (D-019). How
-  relationships are expressed is **open** (plan question 5).
+- **Status:**
+  - **Decided:** the eight built-in types (plan, Catalog pillar); custom entity
+    types in the first version (owner, [O-17][o]); `<type>/<slug>` IDs with
+    aliases (owner, [O-15][o]); deployment facts only on `service` entities
+    (owner, [O-16][o]); the start-here document (owner, [O-18][o]).
+  - **Proposed:** type descriptions, entity status values, entity owner rule,
+    and the person/agent rule. Reasons: they are the `workspace` repository's
+    working practice; keeping identity in one place avoids two sources of
+    truth; former members must stay describable.
 
 ### Fact
 
-- **Definition:** a single claim about a catalog entity that can be checked.
-  It is the smallest unit that carries its own state, source and last-checked
-  time. Example: "Dockyard's deployment runs on Musashi."
-- **Attributes:** the claim, fact state, source, last checked, who checked it,
-  check scope (what exactly was checked).
+- **Definition:** one structured field or relation of a catalog entity that can
+  be checked. Example: "Dockyard's deployment runs on Musashi." It is the
+  smallest unit that carries its own state, source and last-checked time. The
+  body text is not made of facts.
+- **Attributes:** key, value, fact state, fact check (or none).
+- **Relation:** a fact whose value is another entity, such as `runs-on`
+  `machine/musashi`. It is written on one side; its inverse is generated.
+- **Cardinality:** whether a key holds one value (single-valued) or many
+  (multi-valued), set by the type schema.
+- **Fact identity:** the rule for which written facts are "the same fact", so a
+  new one replaces an old one or is added beside it. For a single-valued key it
+  includes the fact state and **`via`**, a short label for how the fact was
+  observed (such as `filesystem`).
 - **Relationships:** belongs to one catalog entity; changed through catalog
-  proposals; checks are events. The intended and observed versions of the same
-  property are two separate facts.
-- **Owner:** Catalog, which chooses the unit (for example a structured field
-  or an explicitly marked statement). Any page-level date is calculated from
-  the facts on the page.
-- **Status:** **Decided** (D-007). The definition and the page-level rule are
-  **proposed**. Reason: they satisfy D-007 without fixing the schema here, and
-  keep the `workspace` repository's narrow-scope checks.
+  proposals; covered by a fact check. The intended and observed versions of the
+  same property are separate facts.
+- **Owner:** Catalog.
+- **Status:** **Decided** (D-007); unit, cardinality and identity rules (owner,
+  [O-13][o]). Relations as facts and `via` **proposed** by Catalog; reason:
+  relations go stale like any claim.
 
 ### Fact state
 
 - **Definition:** what kind of knowledge a fact is:
   - `intended`: what the owning source, such as a configuration repository or
     a decision, currently declares should be true.
-  - `observed`: what someone actually saw when they checked, at the
-    last-checked time.
-  - `proposed` (recommended rename: `planned`): an accepted change that the
-    owning source does not yet declare. Not to be confused with a [catalog proposal](#catalog-proposal-and-approval),
-    which is a pending edit to the catalog and never a fact state.
+  - `observed`: what someone actually saw when they checked.
+  - `planned`: an accepted change that the owning source does not yet declare.
   - `unknown`: not known. Recorded on purpose instead of guessed.
 - **Test:** if the owning source declares it now, it is `intended`, even if not
   yet applied; a merged infrastructure change that has not been applied is
-  `intended`, and its absence from reality shows as an `observed` discrepancy.
-  If it is agreed but not yet in the owning source, it is `proposed`.
-- **Discrepancy:** when intended and observed facts disagree, both are kept
-  with their evidence. Neither is declared right by default.
+  `intended`, and its absence from reality shows as a discrepancy with an
+  `observed` fact. If it is agreed but not yet in the owning source, it is
+  `planned`.
+- **Discrepancy:** a single-valued key with two or more current facts whose
+  values differ (not counting `planned` or `unknown`). Both are kept with their
+  evidence; neither is declared right by default.
 - **Owner:** Catalog.
-- **Status:** **Decided** names (plan, Catalog pillar). **Proposed** meanings,
-  test and discrepancy rule. Reason: they follow the `workspace` repository's
-  practice and avoid hiding real drift. Renaming `proposed` to `planned` is an
-  **owner decision**.
+- **Status:** **Decided:** the four states (plan, Catalog pillar), with
+  `proposed` renamed `planned` (owner, [O-5][o]). Meanings, test and
+  discrepancy rule **proposed**; reason: they follow the `workspace`
+  repository's practice and avoid hiding real drift.
 
-### Source and last checked
+### Fact check, source and freshness
 
+- **Fact check:** the record of one act of checking: when it happened (the
+  last-checked time), who checked (an actor), what exactly was checked (scope),
+  where the evidence is (source), and what was not checked (limits). Several
+  facts checked together share one fact check. Rechecking an unchanged fact
+  records a new fact check; checking one fact never refreshes others.
 - **Source:** where a fact came from: a link to the owning source (a file at a
   given revision, a URL), a described observation, or a person's statement.
 - **Owning source:** the system or document that owns a fact. The catalog links
   to it and does not copy it ("link, don't copy").
-- **Last checked:** when the fact was actually checked against its source. It
-  is not the time the page was edited or merged. Checking one fact does not
-  refresh the others.
-- **Freshness:** how long ago a fact was last checked, used as a risk signal.
+- **Last checked:** when the fact was actually checked. Not when the page was
+  edited or a proposal applied.
+- **Not checked:** shown for a fact whose origin is known but that was never
+  checked, such as an imported fact whose old check date does not cover it.
+- **Freshness:** how long ago a fact was last checked; always shown, as a risk
+  signal.
+- **Recheck interval** and **due for recheck:** a type schema may set how often
+  a fact key should be rechecked; a fact past it is shown as due for recheck.
   There is no single interval after which a fact is wrong.
-- **Owner:** Catalog (rules); Human experience (how freshness is shown).
+- **Owner:** Catalog (rules); Human experience (display).
 - **Status:** **Decided** that source and last-checked time are recorded
   (D-007) and that facts owned elsewhere are linked, not copied (plan, "What
-  Shinan does not do"). The meanings above are **proposed**; reason: they are
-  the `workspace` repository's rules for `last_verified`, `verification_scope`
-  and `verification_source`, which have worked.
+  Shinan does not do"). **Decided:** provenance of imported facts (owner,
+  [O-14][o]); always show age, and "due for recheck" only where an interval is
+  set (owner, [O-19][o]). Fact check fields **proposed**; reason: they are the
+  `workspace` repository's `last_verified`, `verification_scope` and
+  `verification_source`, moved to the facts they cover.
 
 ### Catalog proposal and approval
 
 - **Catalog proposal:** a suggested change to one or more catalog entities,
-  with its evidence, made by an actor (often an agent).
-- **Approval** (catalog approval): a person's acceptance of a catalog proposal.
-- **Attributes:** author (actor), changes, evidence, related task, state
+  with its fact checks, made by an actor. People's own edits are catalog
+  proposals too. A proposal applies all or nothing.
+- **Gated change:** a high-risk change that needs catalog approval: changes to
+  rules (policies, a decision's status, the start-here document), lifecycle
+  (deprecate, retire, change ID or owner), `person` and `agent` entities, and
+  doubtful changes (for example a fact check older than the current one).
+  Catalog owns the exact list. Other changes apply on their own and appear in a
+  recent changes feed, where they can be reverted.
+- **Catalog approval:** a person's acceptance of a gated change.
+- **Attributes:** author (actor), changes, fact checks, related task, state
   (`pending`, `applied`, `rejected`, `withdrawn`), approver.
-- **Which proposals need approval:** in the first version, all of them except
-  re-checks that leave a claim unchanged and only move its last-checked time.
-  Workspace settings may relax this later.
 - **Owner:** Catalog (flow); Identity, agents and permissions (who may
   approve).
-- **Status:** **Decided** that agents propose and people approve where needed
-  (plan, Catalog pillar). **Proposed:** only people approve; the states and the
-  first-version approval rule above. Reasons: agents act for people, so an
-  agent approving would be a person approving their own agent's change without
-  looking; starting strict is safer while trust in the catalog is being built.
+- **Status:**
+  - **Decided** that agents propose and people approve where needed (plan,
+    Catalog pillar).
+  - **Decided:** only gated changes need approval, from the start; switch to
+    approving everything if accuracy slips (owner, [O-3][o]). A person may
+    approve their own agent's proposals while one person uses Shinan (owner,
+    [O-46][o]).
+  - **Proposed:** only people approve; the states above. Reason: agents act
+    for people, so approval must come from the person who is accountable.
+
+### Secrets and the catalog
+
+- Secrets (passwords, keys, tokens) never go in the catalog. The catalog may
+  record where a secret lives, such as which secrets manager holds it.
+- **Status:** **Decided** (owner, [O-2][o]).
 
 ### Wiki and agent index
 
-- **Wiki:** the catalog shown to people as readable pages, including a **start
-  here path** for a new person or agent.
+- **Wiki:** the catalog shown to people as readable pages, including the
+  start-here document's path for people.
 - **Agent index:** a machine-readable form of the catalog generated for agents.
 - **Owner:** Human experience (wiki); Catalog (agent index); Architecture and
-  operations (how they stay in sync, plan question 1).
+  operations (how they stay in sync).
 - **Status:** **Decided** (D-006).
 
 ## Events and timeline
@@ -711,22 +899,28 @@ implementation and applicable verification, while keeping status calculated).
 ### Event
 
 - **Definition:** a record that something happened. Events are not edited
-  afterwards; corrections are new events.
+  afterwards; corrections are new events. The only exception is purge.
 - **Attributes:** time, kind, actor and attribution confidence, subjects, where
   it came from (Shinan action, git host webhook or reconciliation, plugin
   report, MCP call), a link to the original where one exists, and a short
   summary.
 - **Subjects** can be: task, work item, catalog entity, fact, catalog proposal,
   agent session, nudge, member.
+- **Purge:** replacing the content of a record (an event, catalog revision,
+  comment, progress update, or an operational record such as a raw webhook
+  delivery) with a marker, for example to remove a leaked secret or honor a
+  deletion request. The record keeps its time, kind, actor and subjects, and
+  the purge itself is a new event. Only workspace owners can purge.
 - **Owner:** Tasks and work (task events); Git host integrations (git host
   events); Agent integrations (presence events); Catalog (fact checks, catalog
   proposals); Identity, agents and permissions (membership, invitations,
-  tokens); Human experience (display).
-- **Status:** **Proposed**. Reason: one record type lets the timeline join
-  activity from every host and tool; not editing events keeps the history
-  trustworthy. Events link to git host content rather than copying it (D-001).
-  Whether events can be redacted, for example when a summary captured a secret
-  or someone asks for their data to be deleted, is **open**.
+  tokens); Architecture and operations (purge); Human experience (display).
+- **Status:** **Decided:** only workspace owners purge, including operational
+  records about their workspace (owner, [O-50][o]). The rest **proposed**.
+  Reason: one record type lets the timeline join activity from every host and
+  tool; not editing events keeps the history trustworthy; a visible purge keeps
+  that trust while still removing what must not survive. Events link to git
+  host content rather than copying it (D-001).
 
 ### Timeline
 
@@ -738,25 +932,33 @@ implementation and applicable verification, while keeping status calculated).
   **proposed**; reason: the same events answer "what happened to this task"
   and "what happened today".
 
+### Security log
+
+- **Definition:** the record of security-relevant events in a workspace or
+  installation, such as sign-ins, token changes and membership changes. Kept
+  forever.
+- **Owner:** Identity, agents and permissions.
+- **Status:** **Decided** retention (owner, [O-47][o]). Term **proposed** by
+  Identity.
+
 ## Supporting terms
 
 | Term | Definition | Owner | Status and reason |
 |---|---|---|---|
-| Assignee | A member responsible for a task. Not a lock. | Tasks and work | Proposed: the `workspace` repository's practice is that assignment is coordination, not an atomic lock. |
+| Assignee | A member responsible for a task. Not a lock. | Tasks and work | Proposed: the `workspace` repository's practice is that assignment is coordination, not a lock. |
 | Board | A view of tasks grouped by status (phase 2). | Human experience | Decided (plan, phase 2). |
-| Check-in | An agent session contacting Shinan, which updates last seen and delivers pending nudges. | Agent integrations | Proposed: sessions without a plugin need a defined moment to receive nudges. |
+| Check-in | An agent session contacting Shinan, which updates last seen and hands over pending nudges. | Agent integrations | Proposed: sessions without a plugin need a defined moment to receive nudges. |
 | Checkout | A local copy of a repository on a machine. A worktree is an extra checkout on its own branch. Long-lived checkout locations are facts on `project` entities; task worktree paths are not catalog facts. | Catalog | Proposed: the `workspace` repository's rule; task worktrees are short-lived. |
-| Claim | An agent session attaching itself to a task to work on it. Not a lock; overlaps are coordinated. | Tasks and work | Proposed: same reason as Assignee. |
 | CI check | A test or build result reported on a work item by the git host. Recorded as an event. | Git host integrations | Proposed: keeps "check" free for fact checks. |
-| Deployment approval | A person's approval for a change to a running deployment. The only approval gate in the `workspace` repository's practice; D-016 applies it to Shinan's own deployment. | Tasks and work | Proposed term: needed for the `awaiting deployment approval` flag. |
-| Machine | A computer. Described by a `machine` entity; agent sessions record the machine they run on. | Catalog | Proposed: one meaning for both uses. |
+| Decision record | A file in this repository's `docs/decisions/` recording a decision about Shinan itself, with statuses `proposed`, `accepted`, `rejected`, `withdrawn`, `superseded`. Not a `decision` entity. | Decision log | Decided (owner, [O-93][o]). |
+| Machine | A computer. Described by a `machine` entity; each agent is tied to one. | Catalog | Decided that agents are per machine (owner, [O-40][o]). |
 | Marker | Text in a commit message, PR description or branch name that carries a task ID and, where possible, the agent session. | Tasks and work; Agent integrations | Proposed: needed for attribution (D-017) and linking (D-002). |
 | Migration | Moving the `workspace` repository's catalog and coordination into a Shinan workspace once Shinan is judged ready. | Roadmap and migration | Decided (D-018). |
-| Outside tool | A work tracker other than a git host, such as Linear, Plane or Multica, integrated through its API. | Tasks and work | Decided (D-010). |
 | Reconciliation | Periodically re-reading a git host to catch events missed by webhooks. | Git host integrations | Decided (plan, Integration points). |
-| Sign-in session | A person's logged-in session in the web app. Never just "session". | Identity, agents and permissions | Proposed: keeps "session" for agent sessions. |
-| Source of truth | The place whose version wins when copies disagree, used for whole bodies of records (the `workspace` repository is the source of truth until migration). For a single fact, say owning source. | This document | Proposed: D-018 uses the phrase; owning source is the per-fact form. |
-| Token | A scoped credential an agent uses to reach Shinan. Belongs to one agent and cannot exceed its member's rights. | Identity, agents and permissions | Decided (plan, Integration points: scoped tokens for agents). |
+| Revocation | Making a token, agent, sign-in session or membership stop working at once. | Identity, agents and permissions | Proposed by Identity: long-lived tokens make revocation the main control. |
+| Source of truth | The place whose version wins when copies disagree, used for whole bodies of records. The `workspace` repository is the source of truth until migration, except that cross-project coordination for trial projects moves into Shinan during the trial. For a single fact, say owning source. | This document | Decided (D-018; owner, [O-73][o]). |
+| Token | A credential an agent uses to reach Shinan. It belongs to one agent, lasts until revoked, and cannot exceed its member's rights. Its **scopes** are the kinds of action it allows. In git host documents, "token" may mean a git host credential; say which. | Identity, agents and permissions | Decided: scoped tokens for agents (plan, Integration points); long-lived (owner, [O-44][o]). |
+| Trial | Phase 1b: using the first version on the proof-of-concept projects while the `workspace` repository stays the source of truth. | Roadmap and migration | Decided (plan, phases; owner, [O-70][o]). |
 | Triage inbox | The list of tasks in `triage`. | Tasks and work; Human experience | Decided (plan, phase 2). |
 | Webhook | A message a git host sends to Shinan when something happens. | Git host integrations | Decided (plan, Integration points). |
 | The owner | In planning documents, Guneet, the owner of this project. In product terms, write "workspace owner" or "entity owner". | This document | Proposed: three meanings of "owner" otherwise collide. |
@@ -771,78 +973,92 @@ glossary; one word for one thing keeps the documents consistent.
 | "workspace" for the existing repository; "workspace repo"; "the workspace catalog"; "workspace issues" | the `workspace` repository; its catalog; issues in the `workspace` repository | Keeps the two apart. |
 | "workspace" for a folder or editor window | checkout, folder | Same reason. |
 | ticket, story, card, job; "issue" for a Shinan task | task | "Issue" means a git host issue only. |
-| bot, AI, assistant (meaning an agent) | agent | One word for one thing. "Dependency bot" for an outside actor is fine. |
+| child task, sub-issue | subtask | One word for one thing. |
+| bot, AI, assistant (meaning an agent) | agent | "Dependency bot" for an outside actor is fine. |
 | "agent" for the program | coding tool | The agent is the identity, not the program. |
-| session, run, conversation, chat, instance (alone) | agent session or sign-in session | Two different things. |
+| session, run, conversation, chat, instance (alone) | agent session or sign-in session | "Conversation" is fine for the coding tool's own conversation, as in conversation ID. |
 | user (as an object) | person, member | "User" is fine in general prose about who Shinan is for. |
 | "member" for the role | contributor | The member is the membership; the role is separate. |
 | "project" for a workspace or a repository | workspace, repository, `project` entity | Three different things. |
 | merge request | pull request (PR), on every host | One word across hosts. |
 | link (for a task connection) | work link | "Link" alone means a hyperlink. |
-| sync (for git hosts) | reconciliation | "Sync" is reserved for the catalog Markdown and its index. |
+| sync (for git hosts) | reconciliation | "Sync" is kept for the catalog Markdown and what is built from it. |
 | integration (for a configured link) | git host connection | An integration is a capability; a connection is one configured instance. |
 | last updated, last modified, last verified (for facts) | last checked | Only real checks count; edits do not. |
 | status (for facts) | fact state | Task status, entity status, fact state and presence state are different. |
+| `proposed` (as a fact state) | `planned` | Renamed (owner, [O-5][o]). |
 | "open" for a task or a catalog proposal | `to do`, `pending` | "Open" is also a host's PR state and a statement status here. |
-| proposal (alone) | catalog proposal | Fact state `proposed` and document status "proposed" also exist. |
+| proposal (alone) | catalog proposal | Document status "proposed" also exists. |
 | approval (alone) | catalog approval, deployment approval, PR review approval | Three different things. |
-| check (alone) | fact check / last checked, or CI check | Two different things. |
-| decision (alone, in product terms) | `decision` entity, or decision on a task | This repository's decision records in `docs/decisions/` are also called decisions. |
+| check (alone); "check after merge" | fact check, CI check; verify after merge | Two kinds of check, and verification is a third thing. |
+| redact, delete (for records) | purge | One operation, one word. |
+| decision (alone, in product terms) | `decision` entity, decision on a task, or decision record | Three different things. |
 | notification (for agents) | nudge | Notifications are for people and come later. |
 | `human-effort` label (in Shinan) | `needs a person` | The label is the `workspace` repository's mechanism. |
 | repo | repository | Plain words. |
 
 ## Main proposals
 
-Every section marks its own proposals; these are the main ones.
+Every section marks its own proposals; these are the main ones that still
+stand.
 
 1. The [naming rule](#two-meanings-of-workspace) for "workspace" versus the
    `workspace` repository.
 2. The [workspace boundary](#workspace): nothing shared except the person.
 3. [Person and member](#person) as separate objects; roles
    [workspace owner, contributor, viewer](#member-and-role).
-4. [Coding tool](#coding-tool) versus [agent](#agent); an agent acts for one
-   member and can never do more than that member.
+4. [Coding tool](#coding-tool) versus [agent](#agent); an agent belongs to one
+   workspace and can never do more than its member.
 5. An [agent session](#agent-session) is part of one conversation, in one
    workspace, attached to at most one task.
-6. [Presence states](#presence), including the calculated `unresponsive`.
-7. [Actor](#actor) kinds and [attribution confidence](#attribution); verified
+6. [Actor](#actor) kinds and [attribution confidence](#attribution); verified
    [git host account](#git-host-account) links.
-8. [Task status, task flags and manual states](#task-status-task-flags-and-manual-states),
-   with verification as a recorded event.
-9. [Work item](#work-item) kinds; [work link](#work-link) roles.
-10. Per-target [nudge](#nudge) delivery.
-11. [Entity types, status and owner](#catalog-entity); [fact](#fact) as the
-    smallest checkable unit; the [fact state test](#fact-state).
-12. [Only people approve catalog proposals](#catalog-proposal-and-approval),
-    and all except unchanged re-checks need approval at first.
-13. [Events](#event) are not edited; [timelines](#timeline) per subject.
+7. Status and flag names not fixed by the owner, and verification records
+   ([task status](#task-status-task-flags-and-manual-states)).
+8. [Work item](#work-item) kinds and states; [work link](#work-link) roles;
+   issues never `delivers`.
+9. [Entity status and owner](#catalog-entity); the [fact state test](#fact-state)
+   and discrepancy rule.
+10. Only people give [catalog approval](#catalog-proposal-and-approval).
+11. [Events](#event) are not edited except by purge; [timelines](#timeline) per
+    subject.
 
 ## Decisions needed from the owner
 
-These change or reinterpret approved plan content, so they stay proposed until
-the owner agrees. Each needs a record in the
-[Decision log](https://github.com/guneet-xyz/shinan/issues/13).
-
-| # | Decision | Recommended | Reason |
-|---|---|---|---|
-| 1 | Read D-005 as "status is calculated from linked work **plus recorded events**" (acceptance, agent session attachment, verification). | Yes | `triage`, `in progress` and `done` cannot be told from links alone; the status is still calculated, never typed. |
-| 2 | Let agents set (and clear) `needs a person`, with a required summary. | Yes | Agents usually discover the need, as with today's `human-effort` label; the plan says only a person sets such states. |
-| 3 | Rename the fact state `proposed` to `planned`. | Yes | Avoids clashing with "catalog proposal" and the "proposed" status in documents. |
-| 4 | Give each workspace its own task ID prefix instead of a fixed `T-`. | Yes | Keeps branch names unambiguous if a repository is connected to two workspaces. |
-| 5 | Add a separate `awaiting deployment approval` task flag. | Yes | Current practice keeps deployment approval apart from `needs a person`, and D-016 makes it routine. |
+None. Every earlier item was answered in [issue #25][o]: O-4 (D-005 reading),
+O-7 (`needs a person`), O-5 (`planned`), O-6 (task ID prefix) and O-8
+(`awaiting deployment approval`). The questions the answers raise are design
+details for the owning documents and are listed below.
 
 ## Open questions
 
-1. **Outside tools.** Do items from outside tools (D-010) become work items or
-   task origins? (Tasks and work; Git host integrations)
-2. **Shared repositories.** Can one repository be connected to more than one
-   workspace? (Git host integrations; Identity, agents and permissions)
-3. **Status edge cases.** How is status calculated with several `delivers`
-   links, or when a PR is closed without merging? (Tasks and work)
-4. **Event redaction.** Can events be redacted, for example to remove a secret
-   or honor a deletion request? (Architecture and operations; Identity, agents
-   and permissions)
-5. Plan questions 2 (attribution reliability), 3 (private repository
-   visibility) and 5 (catalog schema) also affect terms here and are answered
-   by their owning documents.
+1. **Subtasks.** How deep can subtasks nest, and can a subtask move to another
+   parent? (Tasks and work)
+2. **Workspace-managed task flags.** Can a workspace remove built-in flags, and
+   do `blocked` and `awaiting deployment approval` keep their special rules?
+   Recommended: built-in flags can be turned off but not redefined; flags a
+   workspace adds are always manual. (Tasks and work)
+3. **Custom entity types.** Who may define them, and is a new or changed type a
+   gated change? Recommended: workspace owners only, and yes. (Catalog)
+4. **Subagent sessions.** How are subagent sessions grouped under their parent
+   on screen? (Human experience)
+5. **Attribution reliability** (plan question 2). (Identity, agents and
+   permissions)
+
+## Dependencies
+
+This document follows the owner's answers. Sibling drafts read on 2026-11-16
+still differ in these places, for the integration review:
+
+| Document (branch, commit read) | Difference |
+|---|---|
+| Tasks and work (`task/6-tasks`, `8d8e010`) | Uses `delivers` scope `completes`/`part`, `Completes`/`Part of` markers and "no subtasks"; replaced by subtasks (O-21). Says comments create no links; members' mentions now make `related` links (O-25). |
+| Catalog (`task/5-catalog`, `6613b55`) | Has a `restricted` level (removed, O-2), custom types "not in the first version" (allowed, O-17), the fact state `proposed` (now `planned`, O-5), and calls purge "redaction". |
+| Identity, agents and permissions (`task/7-identity`, `fcaea3a`) | Proposes passkeys, recovery codes, step-up checks, grants with rotating renewal parts and machine labels. Replaced by the sign-in methods of O-41, long-lived tokens (O-44) and agents per machine (O-40); this glossary does not add those terms. |
+| Architecture and operations (`task/11-architecture`, `5ce42de`) | Lets installation operators purge operational records and lists a backup target; replaced by O-50 and O-62 to O-64. |
+
+Product overview (`017e7da`), Git host integrations (`98333b8`) and Agent
+integrations (`88acc1d`) already follow the owner's answers; their glossary
+requests are included here.
+
+[o]: https://github.com/guneet-xyz/shinan/issues/25
