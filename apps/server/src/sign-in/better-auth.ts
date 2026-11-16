@@ -31,6 +31,7 @@ import type { Database } from "@shinan/db"
 
 import { TooManyAttemptsError } from "../api/errors.js"
 import type { SignIn } from "../api/sign-in.js"
+import { safeLogText } from "../log-text.js"
 import { createAttemptLimiter } from "./attempt-limiter.js"
 import { isSafeReturnPath, signInErrorPath } from "./paths.js"
 import { requestStore, withRequestStore } from "./request-store.js"
@@ -176,18 +177,22 @@ export function createBetterAuthSignIn(
     advanced: {
       database: { generateId: "uuid" },
       ipAddress: { ipAddressHeaders: [clientAddressHeader] },
+      // Always check origins and return addresses, whatever NODE_ENV says:
+      // Better Auth would otherwise skip them when NODE_ENV is "test".
+      disableOriginCheck: false,
       cookiePrefix: "shinan",
       useSecureCookies: secure,
     },
     rateLimit: { enabled: options.rateLimit ?? true, storage: "memory" },
     logger: {
       level: "warn",
-      // Only Better Auth's own message, never its extra values, which can
-      // hold provider answers or request details (architecture §10.3). A
-      // GitHub account nobody has linked is expected, not an error.
+      // Only the start of Better Auth's own message, never its extra values
+      // or the request values it puts after a colon (architecture §10.3),
+      // so a request cannot write lines into the log. A GitHub account
+      // nobody has linked is expected, not an error.
       log: (level, message) => {
         if (message === "signup_disabled") return
-        const line = `Sign-in (${level}): ${String(message).slice(0, 200)}`
+        const line = `Sign-in (${level}): ${safeLogText(message)}`
         if (level === "error") console.error(line)
         else console.warn(line)
       },

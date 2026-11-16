@@ -771,6 +771,33 @@ describe("POST /workspaces", () => {
   })
 })
 
+describe("request bodies", () => {
+  it("are refused over 64 KB with 413, before anything reads them", async () => {
+    const handle = vi.fn(() => Promise.resolve(new Response("handled")))
+    const app = createApi({ db, signIn: { ...testSignIn, handle } })
+    const big = JSON.stringify({ name: "x".repeat(65 * 1024) })
+    for (const path of ["/workspaces", "/auth/sign-in/magic-link"]) {
+      const response = await app.request(path, {
+        method: "POST",
+        headers: { "content-type": "application/json", ...as(owner) },
+        body: big,
+      })
+      expect(response.status, path).toBe(413)
+      expect(await response.json()).toMatchObject({
+        error: "payload-too-large",
+      })
+    }
+    expect(handle).not.toHaveBeenCalled()
+    // A normal body still works.
+    const ok = await app.request("/workspaces", {
+      method: "POST",
+      headers: { "content-type": "application/json", ...as(owner) },
+      body: JSON.stringify({ name: "Small" }),
+    })
+    expect(ok.status).toBe(201)
+  })
+})
+
 describe("errors from the sign-in layer", () => {
   function failingWith(statusCode: number): SignIn {
     const error = Object.assign(new Error("echoes the request: secret"), {

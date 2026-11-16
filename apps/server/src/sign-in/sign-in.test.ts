@@ -1,4 +1,12 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest"
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest"
 
 import type * as Api from "@shinan/api-client"
 import { hashToken } from "@shinan/core"
@@ -193,16 +201,19 @@ describe("email magic links", () => {
       "/.//evil.example/x",
     ]) {
       const response = await b.requestLink(email, callbackURL)
-      expect(response.status, callbackURL).toBe(400)
+      // Refused by Better Auth's own check (403) or Shinan's (400).
+      expect([400, 403], callbackURL).toContain(response.status)
     }
-    // An encoded slash is a same-site path, as received.
-    expect((await b.requestLink(email, "/%2f/evil.example")).status).toBe(200)
+    expect((await b.requestLink(email, "/w/1")).status).toBe(200)
     const link = (await latestLink(db, email))!
     for (const next of ["//evil.example", "/.//evil.example/x"]) {
       const tampered = await b.open(link, { next })
       expect(tampered.status, next).toBe(422)
     }
-    expect((await b.open(link)).location).toBe("/%2f/evil.example")
+    // An encoded slash is a same-site path, checked as received.
+    expect((await b.open(link, { next: "/%2f/evil.example" })).location).toBe(
+      "/%2f/evil.example",
+    )
   })
 
   it("answers before deciding, so the reply cannot tell addresses apart by time", async () => {
@@ -267,6 +278,35 @@ describe("email magic links", () => {
     }
   })
 
+  it("never lets a request write its own lines into the log", async () => {
+    const lines: string[] = []
+    const capture = (...args: unknown[]) => {
+      lines.push(args.map(String).join(" "))
+    }
+    const spies = [
+      vi.spyOn(console, "error").mockImplementation(capture),
+      vi.spyOn(console, "warn").mockImplementation(capture),
+      vi.spyOn(console, "info").mockImplementation(capture),
+      vi.spyOn(console, "log").mockImplementation(capture),
+    ]
+    try {
+      const b = browser()
+      // A cookie makes Better Auth check the origin and callback itself,
+      // and its message would include the value.
+      b.cookies.set("other", "1")
+      const forged =
+        "https://evil.example/\nShinan web listening on http://127.0.0.1:3000 FORGED"
+      const response = await b.request("/api/auth/sign-in/magic-link", {
+        body: { email: "a@example.com", callbackURL: forged },
+      })
+      expect(response.status).toBeGreaterThanOrEqual(400)
+      expect(lines.join("\n")).not.toContain("FORGED")
+      for (const line of lines) expect(line).not.toContain("\n")
+    } finally {
+      for (const spy of spies) spy.mockRestore()
+    }
+  })
+
   it("refuses fields the sign-in page never sends", async () => {
     const b = browser()
     const response = await b.request("/api/auth/sign-in/magic-link", {
@@ -276,7 +316,7 @@ describe("email magic links", () => {
         newUserCallbackURL: "https://evil.example",
       },
     })
-    expect(response.status).toBe(400)
+    expect([400, 403]).toContain(response.status)
   })
 
   it("serves only the sign-in routes the web app uses", async () => {

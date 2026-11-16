@@ -203,6 +203,7 @@ export interface PageRequest {
  * - `not-found` (404): it does not exist, or the requester may not know it does;
  * - `conflict` (409): it breaks a rule given the current state (`rule`);
  * - `invalid-input` (422): the input itself is malformed (`rule`);
+ * - `payload-too-large` (413): the request body is over the limit;
  * - `too-many-requests` (429): too many attempts; wait and try again;
  * - `not-implemented` (501): the server does not offer this;
  * - `internal` (500): anything else; details are only in the server's log.
@@ -215,6 +216,7 @@ export type ErrorCode =
   | "conflict"
   | "invalid-input"
   | "too-many-requests"
+  | "payload-too-large"
   | "not-implemented"
   | "internal"
 

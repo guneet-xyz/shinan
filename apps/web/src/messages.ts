@@ -15,6 +15,8 @@ export function errorMessage(error: unknown): string {
         return "Sign in again to continue."
       case "sign-in-required":
         return "Your sign-in has ended. Sign in to continue."
+      case "payload-too-large":
+        return "That is too large to send."
       case "too-many-requests":
         return "Too many attempts. Wait a minute and try again."
       case "not-implemented":

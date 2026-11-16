@@ -1,5 +1,6 @@
 import { Hono } from "hono"
 import type { Context as HonoContext } from "hono"
+import { bodyLimit } from "hono/body-limit"
 
 import type * as Api from "@shinan/api-client"
 import {
@@ -56,6 +57,9 @@ import { BadRequestError, errorResponse, handleError } from "./errors.js"
 import { appendHeaders, requirePerson } from "./sign-in.js"
 import type { SignedInEnv, SignIn } from "./sign-in.js"
 
+/** The largest request body the API reads: 64 KB. */
+export const requestBodyLimit = 64 * 1024
+
 export interface ApiOptions {
   db: Database
   signIn: SignIn
@@ -73,6 +77,19 @@ export interface ApiOptions {
 export function createApi({ db, signIn, jobs, installationUrl }: ApiOptions) {
   const api = new Hono()
   api.onError(handleError)
+  // Every API request body is small (forms of a few fields); a larger one is
+  // refused before it is read in full.
+  api.use(
+    "*",
+    bodyLimit({
+      maxSize: requestBodyLimit,
+      onError: (c) =>
+        errorResponse(c, 413, {
+          error: "payload-too-large",
+          message: "The request is too large",
+        }),
+    }),
+  )
 
   api.get("/status", (c) => c.json({ status: "ok" } satisfies Api.Status))
 
