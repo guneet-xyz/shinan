@@ -6,6 +6,7 @@ import {
   foreignKey,
   index,
   inet,
+  integer,
   jsonb,
   pgEnum,
   pgTable,
@@ -245,5 +246,87 @@ export const securityLog = pgTable(
     index("security_log_workspace_id_id").on(t.workspaceId, t.id),
     index("security_log_actor_person_id").on(t.actorPersonId),
     index("security_log_subject_person_id").on(t.subjectPersonId),
+  ],
+)
+
+/** The messages Shinan sends in the first version (architecture §9.1). */
+export const emailKinds = [
+  "magic_link",
+  "invitation",
+  "security_alert",
+] as const
+export type EmailKind = (typeof emailKinds)[number]
+export const emailKindEnum = pgEnum("email_kind", emailKinds)
+
+/**
+ * Where an email stands (architecture §9.2): waiting to be sent, accepted by
+ * the provider, rejected for good, given up after temporary errors, or never
+ * queued because of throttling.
+ */
+export const emailStatuses = [
+  "queued",
+  "sent",
+  "rejected",
+  "given_up",
+  "throttled",
+] as const
+export type EmailStatus = (typeof emailStatuses)[number]
+export const emailStatusEnum = pgEnum("email_status", emailStatuses)
+
+/** The rendered message, kept only until the email is finished. */
+export interface EmailContent {
+  subject: string
+  text: string
+  html: string
+}
+
+/**
+ * One email Shinan sends, and its outcome. The message itself is removed
+ * when the email is finished, so the record keeps only who it was for, what
+ * kind it was and how it ended (architecture §9.2). The ID is also the job
+ * queue's job ID.
+ */
+export const emailDeliveries = pgTable(
+  "email_deliveries",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    kind: emailKindEnum("kind").notNull(),
+    /** Stored in lower case. */
+    recipient: text("recipient").notNull(),
+    /**
+     * For magic links, the network address of the request that caused it
+     * (an IPv6 address as its /64), for throttling.
+     */
+    networkAddress: inet("network_address"),
+    status: emailStatusEnum("status").notNull().default("queued"),
+    attempts: integer("attempts").notNull().default(0),
+    /** The last error's code, such as `TooManyRequestsException`; never text. */
+    lastError: text("last_error"),
+    /** The provider's ID for the accepted message. */
+    providerMessageId: text("provider_message_id"),
+    /** Not sent after this time (at most an hour, or a magic link's expiry). */
+    notAfter: timestamp("not_after", { withTimezone: true }).notNull(),
+    message: jsonb("message").$type<EmailContent>(),
+    createdAt: createdAt(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+  },
+  (t) => [
+    check(
+      "email_deliveries_recipient_lower_case",
+      sql`${t.recipient} = lower(${t.recipient})`,
+    ),
+    check(
+      "email_deliveries_message_only_while_queued",
+      sql`(${t.status} = 'queued') = (${t.message} is not null)`,
+    ),
+    check(
+      "email_deliveries_finished_unless_queued",
+      sql`(${t.status} = 'queued') = (${t.finishedAt} is null)`,
+    ),
+    index("email_deliveries_recipient_created_at").on(t.recipient, t.createdAt),
+    index("email_deliveries_network_address_created_at")
+      .on(t.networkAddress, t.createdAt)
+      .where(sql`${t.networkAddress} is not null`),
+    index("email_deliveries_status_created_at").on(t.status, t.createdAt),
   ],
 )

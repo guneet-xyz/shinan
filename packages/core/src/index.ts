@@ -49,3 +49,28 @@ export {
   removeMember,
 } from "./identity/members.js"
 export type { Member, MemberSummary } from "./identity/members.js"
+export type { JobQueue, QueueDefinition } from "./jobs.js"
+export { jobQueues } from "./queues.js"
+export { deliverEmail, EmailRetryError } from "./email/deliver.js"
+export type { DeliveryOutcome, EmailAttempt } from "./email/deliver.js"
+export {
+  emailRecordRetentionDays,
+  lostEmailGraceMinutes,
+  pruneEmailDeliveries,
+} from "./email/prune.js"
+export type { PruneResult } from "./email/prune.js"
+export { EmailQueueError, emailLimits, emailQueue } from "./email/queue.js"
+export type { EmailJob } from "./email/queue.js"
+// Message templates are pure functions, so they bypass no check. The core
+// operations that send them (M1-4) queue them with the internal `queueEmail`.
+export {
+  invitationEmail,
+  magicLinkEmail,
+  securityAlertEmail,
+} from "./email/templates.js"
+export type {
+  InvitationEmail,
+  MagicLinkEmail,
+  SecurityAlert,
+  SecurityAlertEmail,
+} from "./email/templates.js"

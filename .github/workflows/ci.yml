@@ -38,6 +38,16 @@ jobs:
           --health-interval 2s
           --health-timeout 5s
           --health-retries 15
+      mailpit:
+        image: axllent/mailpit:v1.33
+        ports:
+          - 1025:1025
+          - 8025:8025
+        options: >-
+          --health-cmd "/mailpit readyz"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 15
     env:
       DATABASE_URL: postgres://shinan@localhost:5432/shinan
     steps:

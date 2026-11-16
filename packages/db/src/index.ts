@@ -9,10 +9,25 @@ export { schema }
 
 // Query helpers, re-exported so that every package uses this package's one
 // copy of Drizzle.
-export { and, asc, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm"
+export {
+  and,
+  asc,
+  desc,
+  eq,
+  gt,
+  inArray,
+  isNull,
+  lt,
+  ne,
+  or,
+  sql,
+} from "drizzle-orm"
 export type {
   ActorKind,
   Confidence,
+  EmailContent,
+  EmailKind,
+  EmailStatus,
   EventOrigin,
   EventSubject,
   Role,

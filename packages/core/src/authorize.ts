@@ -126,6 +126,7 @@ export async function createWorkspaceAsOwner(
       actor,
       origin: installation.origin,
       request: installation.request,
+      jobs: installation.jobs,
     } as WorkspaceScope<"workspace.create">,
   }
 }
@@ -136,6 +137,7 @@ function scopeFields(ctx: Context, tx: Transaction, actor: ResolvedActor) {
     actor,
     origin: ctx.origin ?? "shinan_action",
     request: ctx.request ?? {},
+    jobs: ctx.jobs,
   }
 }
 

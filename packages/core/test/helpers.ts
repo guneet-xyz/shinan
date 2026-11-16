@@ -1,4 +1,6 @@
 import { randomBytes } from "node:crypto"
+import { PgBoss } from "pg-boss"
+import { inject } from "vitest"
 
 import { connectTestDatabase } from "@shinan/db/testing"
 
@@ -7,6 +9,7 @@ import { shinan } from "../src/actor.js"
 import type { Context } from "../src/context.js"
 import { createPerson } from "../src/identity/people.js"
 import type { Person } from "../src/identity/people.js"
+import { jobQueues } from "../src/queues.js"
 
 type Db = Context["db"]
 
@@ -73,4 +76,24 @@ export async function newPerson(db: Db, prefix = "person"): Promise<Person> {
     name: `Person ${handle}`,
     email: `${handle}@example.com`,
   })
+}
+
+/**
+ * Starts a job queue on this test run's database, installing pg-boss and
+ * creating core's queues as `migrate` does. Call `stop()` when done.
+ */
+export async function startTestJobQueue(): Promise<PgBoss> {
+  const boss = new PgBoss({
+    connectionString: inject("databaseUrl"),
+    schema: "pgboss",
+    migrate: true,
+    supervise: false,
+    schedule: false,
+    useListenNotify: true,
+  })
+  boss.on("error", (error) => console.error(error))
+  await boss.start()
+  for (const queue of jobQueues)
+    await boss.createQueue(queue.name, queue.options)
+  return boss
 }

@@ -61,6 +61,20 @@ export const rules = deepFreeze({
     people: false,
     shinan: true,
   },
+  /** Send a queued email and record how it ended; the worker does this. */
+  "email.deliver": {
+    level: "installation",
+    access: "write",
+    people: false,
+    shinan: true,
+  },
+  /** Delete old email records (architecture §4.2); the worker does this. */
+  "email.prune": {
+    level: "installation",
+    access: "write",
+    people: false,
+    shinan: true,
+  },
   /** Any person on the installation can create a workspace (identity §4). */
   "workspace.create": {
     level: "installation",

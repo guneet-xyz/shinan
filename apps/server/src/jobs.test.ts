@@ -9,12 +9,18 @@ import {
   vi,
 } from "vitest"
 
-import { getInstallation } from "@shinan/core"
-import { createDatabase } from "@shinan/db"
+import { emailQueue, getInstallation } from "@shinan/core"
+import { createDatabase, eq, schema } from "@shinan/db"
 import { connectTestDatabase, createTestDatabase } from "@shinan/db/testing"
+import type { EmailSender, SendResult } from "@shinan/email"
 
 import { runCommand } from "./commands.js"
-import { migrateJobQueue, queues, startWorker } from "./jobs.js"
+import {
+  connectJobQueue,
+  migrateJobQueue,
+  queues,
+  startWorker,
+} from "./jobs.js"
 import type { Worker } from "./jobs.js"
 
 const databaseUrl = inject("databaseUrl")
@@ -37,6 +43,21 @@ describe("migrate", () => {
     await expect(runCommand(["migrate"], env)).resolves.toBe(0)
 
     expect(await getInstallation(db)).toMatchObject({ name: "Shinan" })
+  })
+
+  it("creates core's queues with their retry policies", async () => {
+    const boss = await connectJobQueue(databaseUrl)
+    try {
+      expect(await boss.getQueue(emailQueue.name)).toMatchObject({
+        retryLimit: emailQueue.options.retryLimit,
+        retryDelay: emailQueue.options.retryDelay,
+        retryBackoff: true,
+        retryDelayMax: emailQueue.options.retryDelayMax,
+        notify: true,
+      })
+    } finally {
+      await boss.stop({ graceful: false })
+    }
   })
 
   it("lets overlapping runs on a fresh database take turns", async () => {
@@ -62,6 +83,15 @@ describe("migrate", () => {
   })
 })
 
+function fakeSender(result: SendResult) {
+  return {
+    send: vi.fn(() => Promise.resolve(result)),
+    close: vi.fn(() => Promise.resolve()),
+  } satisfies EmailSender
+}
+
+const emailSender = fakeSender({ ok: true, messageId: null })
+
 describe("worker", () => {
   let worker: Worker | undefined
 
@@ -71,7 +101,12 @@ describe("worker", () => {
   })
 
   it("runs the heartbeat job", async () => {
-    worker = await startWorker({ databaseUrl, db, pollingIntervalSeconds: 0.5 })
+    worker = await startWorker({
+      databaseUrl,
+      db,
+      emailSender,
+      pollingIntervalSeconds: 0.5,
+    })
     const id = await worker.boss.send(queues.heartbeat)
 
     await vi.waitFor(
@@ -83,15 +118,166 @@ describe("worker", () => {
     )
   })
 
-  it("schedules the heartbeat", async () => {
-    worker = await startWorker({ databaseUrl, db })
-    const schedule = await worker.boss.getSchedule(queues.heartbeat)
-    expect(schedule?.cron).toBe("0 * * * *")
+  it("schedules the heartbeat and pruning email records", async () => {
+    worker = await startWorker({ databaseUrl, db, emailSender })
+    const heartbeat = await worker.boss.getSchedule(queues.heartbeat)
+    expect(heartbeat?.cron).toBe("0 * * * *")
+    const prune = await worker.boss.getSchedule(queues.emailPrune)
+    expect(prune?.cron).toBe("30 * * * *")
+  })
+
+  it("prunes email records", async () => {
+    worker = await startWorker({
+      databaseUrl,
+      db,
+      emailSender,
+      pollingIntervalSeconds: 0.5,
+    })
+    const id = await worker.boss.send(queues.emailPrune)
+
+    await vi.waitFor(
+      async () => {
+        const [job] = await worker!.boss.findJobs(queues.emailPrune, {
+          id: id!,
+        })
+        expect(job?.state).toBe("completed")
+        expect(job?.output).toEqual({
+          lost: expect.any(Number) as number,
+          deleted: expect.any(Number) as number,
+        })
+      },
+      { timeout: 10_000, interval: 200 },
+    )
   })
 
   it("stops cleanly", async () => {
-    const started = await startWorker({ databaseUrl, db })
+    const started = await startWorker({ databaseUrl, db, emailSender })
     await started.stop()
     await expect(started.boss.send(queues.heartbeat)).rejects.toThrow()
+  })
+})
+
+describe("sending email", () => {
+  let worker: Worker | undefined
+
+  afterEach(async () => {
+    await worker?.stop()
+    worker = undefined
+  })
+
+  /** A queued email, as core's `queueEmail` leaves it, and its job. */
+  async function queuedEmail(boss: Worker["boss"], to: string) {
+    const [delivery] = await db
+      .insert(schema.emailDeliveries)
+      .values({
+        kind: "security_alert",
+        recipient: to,
+        notAfter: new Date(Date.now() + 60_000),
+        message: {
+          subject: "New sign-in",
+          text: "secret-text",
+          html: "<p>x</p>",
+        },
+      })
+      .returning({ id: schema.emailDeliveries.id })
+    await boss.send(
+      emailQueue.name,
+      { deliveryId: delivery!.id },
+      { id: delivery!.id },
+    )
+    return delivery!.id
+  }
+
+  async function waitForStatus(id: string, status: string) {
+    await vi.waitFor(
+      async () => {
+        const [row] = await db
+          .select({ status: schema.emailDeliveries.status })
+          .from(schema.emailDeliveries)
+          .where(eq(schema.emailDeliveries.id, id))
+        expect(row?.status).toBe(status)
+      },
+      { timeout: 10_000, interval: 200 },
+    )
+  }
+
+  it("works the email queue with the configured sender", async () => {
+    const sender = fakeSender({ ok: true, messageId: "message-1" })
+    worker = await startWorker({
+      databaseUrl,
+      db,
+      emailSender: sender,
+      pollingIntervalSeconds: 0.5,
+    })
+    const id = await queuedEmail(worker.boss, "worker@example.com")
+
+    await waitForStatus(id, "sent")
+    expect(sender.send).toHaveBeenCalledWith(
+      expect.objectContaining({ to: "worker@example.com" }),
+    )
+  })
+
+  it("logs failures by delivery ID and code, never the address", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {})
+    const sender = fakeSender({
+      ok: false,
+      temporary: false,
+      code: "MessageRejected",
+    })
+    worker = await startWorker({
+      databaseUrl,
+      db,
+      emailSender: sender,
+      pollingIntervalSeconds: 0.5,
+    })
+    const id = await queuedEmail(worker.boss, "rejected@example.com")
+
+    await waitForStatus(id, "rejected")
+    expect(error).toHaveBeenCalledWith(`Email ${id} rejected: MessageRejected`)
+    for (const call of error.mock.calls) {
+      expect(String(call[0])).not.toContain("rejected@example.com")
+    }
+  })
+
+  it("stores only a code with a failed run, never the message", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {})
+    const sender = fakeSender({
+      ok: false,
+      temporary: true,
+      code: "TooManyRequestsException",
+    })
+    worker = await startWorker({
+      databaseUrl,
+      db,
+      emailSender: sender,
+      pollingIntervalSeconds: 0.5,
+    })
+    const id = await queuedEmail(worker.boss, "retry@example.com")
+
+    await vi.waitFor(
+      async () => {
+        const [job] = await worker!.boss.findJobs(emailQueue.name, { id })
+        expect(job?.state).toBe("retry")
+        expect(JSON.stringify(job?.output)).toContain(
+          "Email not sent: TooManyRequestsException",
+        )
+        expect(JSON.stringify(job)).not.toContain("secret-text")
+      },
+      { timeout: 10_000, interval: 200 },
+    )
+  })
+})
+
+describe("connectJobQueue", () => {
+  it("adds jobs without working them", async () => {
+    const boss = await connectJobQueue(databaseUrl)
+    try {
+      const deliveryId = crypto.randomUUID()
+      const id = await boss.send(emailQueue.name, { deliveryId })
+      const [job] = await boss.findJobs(emailQueue.name, { id: id! })
+      expect(job?.state).toBe("created")
+    } finally {
+      await boss.stop({ graceful: false })
+    }
   })
 })
