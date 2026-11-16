@@ -18,6 +18,7 @@
     "@hono/node-server": "^2.1.8",
     "@shinan/core": "workspace:*",
     "@shinan/db": "workspace:*",
+    "@shinan/email": "workspace:*",
     "hono": "^4.13.18",
     "pg-boss": "^12.38.2"
   }

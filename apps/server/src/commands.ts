@@ -2,10 +2,12 @@ import { serve } from "@hono/node-server"
 
 import { productName, setUpInstallation, shinan } from "@shinan/core"
 import { createDatabase, migrateDatabase, withMigrationLock } from "@shinan/db"
+import { createSesSender, createSmtpSender } from "@shinan/email"
+import type { EmailSender } from "@shinan/email"
 
 import { createApp } from "./app.js"
-import { readDatabaseUrl, readWebConfig } from "./config.js"
-import type { Env } from "./config.js"
+import { readDatabaseUrl, readEmailConfig, readWebConfig } from "./config.js"
+import type { EmailConfig, Env } from "./config.js"
 import { migrateJobQueue, startWorker } from "./jobs.js"
 
 export const usage = `Usage: shinan <command>
@@ -70,16 +72,27 @@ async function runWeb(env: Env): Promise<void> {
 
 async function runWorker(env: Env): Promise<void> {
   const databaseUrl = readDatabaseUrl(env)
+  const emailConfig = readEmailConfig(env)
+  const emailSender = createEmailSender(emailConfig)
   const { db, pool } = createDatabase(databaseUrl)
   try {
-    const worker = await startWorker({ databaseUrl, db })
-    console.info(`${productName} worker started`)
+    const worker = await startWorker({ databaseUrl, db, emailSender })
+    console.info(
+      `${productName} worker started, sending email through ${emailConfig.transport}`,
+    )
     await waitForShutdown()
     await worker.stop()
   } finally {
+    await emailSender.close()
     await pool.end()
   }
   console.info(`${productName} worker stopped`)
+}
+
+export function createEmailSender(config: EmailConfig): EmailSender {
+  return config.transport === "ses"
+    ? createSesSender(config)
+    : createSmtpSender(config)
 }
 
 async function runMigrate(env: Env): Promise<void> {
