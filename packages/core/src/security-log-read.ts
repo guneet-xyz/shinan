@@ -1,11 +1,14 @@
-import { and, desc, eq, lt, or, schema } from "@shinan/db"
+import { and, desc, eq, getTableColumns, lt, or, schema } from "@shinan/db"
 
 import { inWorkspace } from "./authorize.js"
 import type { Context } from "./context.js"
 import { pageSize } from "./events.js"
 import type { Page } from "./events.js"
 
-export type SecurityLogEntry = typeof schema.securityLog.$inferSelect
+export type SecurityLogEntry = typeof schema.securityLog.$inferSelect & {
+  /** The handle of the person the entry is about, if any. */
+  subjectHandle: string | null
+}
 
 /**
  * The workspace's security log, newest first. Workspace owners see every
@@ -30,8 +33,15 @@ export async function listSecurityLog(
             eq(schema.securityLog.subjectPersonId, personId),
           )
     const rows = await scope.tx
-      .select()
+      .select({
+        ...getTableColumns(schema.securityLog),
+        subjectHandle: schema.people.handle,
+      })
       .from(schema.securityLog)
+      .leftJoin(
+        schema.people,
+        eq(schema.people.id, schema.securityLog.subjectPersonId),
+      )
       .where(
         and(
           eq(schema.securityLog.workspaceId, scope.workspaceId),

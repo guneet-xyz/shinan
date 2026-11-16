@@ -1106,7 +1106,14 @@ details (D-015).
 
 ### Workspace settings
 
-For workspace owners.
+For workspace owners. Contributors see three of these screens read only:
+General, Members and Security log (only the entries they made or that are
+about them, as [Identity](identity.md) section 11 allows), with no actions.
+The other screens are not shown to them. **Proposed.** Reason: every member
+already sees everything in the workspace (owner, O-43, [#25]), so who the
+members and owners are is no secret, and a contributor needs somewhere to
+leave the workspace and to read their own security log. Actions their role
+does not allow are still not offered.
 
 | Screen               | Shows                                                                                                                                                                      | Actions                                                                                                                                             |
 | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |

@@ -82,6 +82,16 @@ export const rules = deepFreeze({
     people: true,
     shinan: false,
   },
+  /**
+   * A person reads their own account: profile and the workspaces they belong
+   * to (human experience, Your account). It shows nothing about others.
+   */
+  "account.read": {
+    level: "installation",
+    access: "read",
+    people: true,
+    shinan: false,
+  },
   /** Read the workspace: members, timeline (identity §5.1, first row). */
   "workspace.read": {
     level: "workspace",
@@ -109,6 +119,17 @@ export const rules = deepFreeze({
     reauthentication: true,
   },
   "member.remove": {
+    level: "workspace",
+    access: "write",
+    roles: ["owner"],
+    agents: "people",
+    reauthentication: true,
+  },
+  /**
+   * Change workspace settings, such as its name: workspace owners only, with
+   * re-authentication (identity §3.3, §5.1).
+   */
+  "workspace.change-settings": {
     level: "workspace",
     access: "write",
     roles: ["owner"],

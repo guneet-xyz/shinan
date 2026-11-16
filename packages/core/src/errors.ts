@@ -42,6 +42,15 @@ export class RuleViolationError extends CoreError {
 }
 
 /**
+ * The input itself is malformed, such as a blank name or an email address
+ * without an `@`, whatever the state of the data. Other rule violations
+ * conflict with the current state, such as removing the last owner.
+ */
+export class InvalidInputError extends RuleViolationError {
+  override name = "InvalidInputError"
+}
+
+/**
  * Why the permission check refused a request:
  * - `actor`: this kind of actor never takes this action;
  * - `not-member`: the actor is not a member of the workspace;

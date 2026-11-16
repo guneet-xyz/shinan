@@ -8,7 +8,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "dev": "tsx watch --conditions=@shinan/source src/cli.ts web",
+    "dev": "NODE_ENV=development SHINAN_PLACEHOLDER_PERSON=${SHINAN_PLACEHOLDER_PERSON-dev} tsx watch --conditions=@shinan/source src/cli.ts web",
     "migrate": "tsx --conditions=@shinan/source src/cli.ts migrate",
     "start": "NODE_ENV=production node dist/cli.js web",
     "typecheck": "tsc --noEmit",
@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@hono/node-server": "^2.1.8",
+    "@shinan/api-client": "workspace:*",
     "@shinan/core": "workspace:*",
     "@shinan/db": "workspace:*",
     "@shinan/email": "workspace:*",

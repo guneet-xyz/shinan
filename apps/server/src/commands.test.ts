@@ -33,6 +33,10 @@ describe("runCommand", () => {
     await expect(runCommand(["migrate"], {})).rejects.toThrow(/DATABASE_URL/)
   })
 
+  it("requires DATABASE_URL to serve the web role", async () => {
+    await expect(runCommand(["web"], {})).rejects.toThrow(/DATABASE_URL/)
+  })
+
   it("requires DATABASE_URL to run the worker", async () => {
     await expect(runCommand(["worker"], {})).rejects.toThrow(/DATABASE_URL/)
   })

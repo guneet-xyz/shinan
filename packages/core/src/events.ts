@@ -74,6 +74,7 @@ export interface Page {
   before?: number
 }
 
+/** How many entries a page request reads: 50 by default, 1 to 200. */
 export function pageSize(page: Page): number {
   return Math.min(Math.max(page.limit ?? 50, 1), 200)
 }

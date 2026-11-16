@@ -10,6 +10,11 @@ export interface WebConfig {
   port: number
   /** Built web app to serve, or undefined to serve only the API. */
   webDistDir: string | undefined
+  /**
+   * PLACEHOLDER until sign-in (M1-4): the handle of the person every request
+   * is signed in as, in development only.
+   */
+  placeholderPerson: string | undefined
 }
 
 const defaultWebDistDir = fileURLToPath(
@@ -18,12 +23,29 @@ const defaultWebDistDir = fileURLToPath(
 
 export function readWebConfig(env: Env): WebConfig {
   const production = env.NODE_ENV === "production"
+  // An empty value turns the placeholder off.
+  const placeholderPerson = env.SHINAN_PLACEHOLDER_PERSON || undefined
+  if (placeholderPerson) requireDevelopment(env)
   return {
     host: env.HOST ?? "127.0.0.1",
     port: readPort(env.PORT ?? "3000", "PORT"),
     webDistDir: production
       ? (env.WEB_DIST_DIR ?? defaultWebDistDir)
       : env.WEB_DIST_DIR,
+    placeholderPerson,
+  }
+}
+
+/**
+ * PLACEHOLDER until sign-in (M1-4). The placeholder person runs only when
+ * NODE_ENV is exactly `development`; any other value, or none, refuses it, so
+ * a mistyped or missing NODE_ENV can never sign the public in.
+ */
+export function requireDevelopment(env: { NODE_ENV?: string }): void {
+  if (env.NODE_ENV !== "development") {
+    throw new Error(
+      "SHINAN_PLACEHOLDER_PERSON is for development only: it needs NODE_ENV=development",
+    )
   }
 }
 

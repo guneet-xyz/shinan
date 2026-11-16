@@ -15,12 +15,13 @@ export type { Context, RequestInfo } from "./context.js"
 export {
   CoreError,
   ForbiddenError,
+  InvalidInputError,
   NotFoundError,
   ReauthenticationRequiredError,
   RuleViolationError,
 } from "./errors.js"
 export type { RefusalReason } from "./errors.js"
-export { listEvents } from "./events.js"
+export { listEvents, pageSize } from "./events.js"
 export type { Event, Page } from "./events.js"
 export { decide, rules } from "./permissions.js"
 export type {
@@ -39,8 +40,14 @@ export { getInstallation, setUpInstallation } from "./identity/installation.js"
 export type { Installation } from "./identity/installation.js"
 export { createPerson } from "./identity/people.js"
 export type { NewPerson, Person } from "./identity/people.js"
-export { createWorkspace } from "./identity/workspaces.js"
-export type { Workspace } from "./identity/workspaces.js"
+export { getAccount } from "./identity/account.js"
+export type { Account, AccountWorkspace } from "./identity/account.js"
+export {
+  createWorkspace,
+  getWorkspace,
+  renameWorkspace,
+} from "./identity/workspaces.js"
+export type { Workspace, WorkspaceDetails } from "./identity/workspaces.js"
 export {
   addMember,
   changeRole,

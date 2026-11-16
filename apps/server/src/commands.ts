@@ -5,6 +5,8 @@ import { createDatabase, migrateDatabase, withMigrationLock } from "@shinan/db"
 import { createSesSender, createSmtpSender } from "@shinan/email"
 import type { EmailSender } from "@shinan/email"
 
+import { placeholderSignIn } from "./api/placeholder-sign-in.js"
+import { noSignIn } from "./api/sign-in.js"
 import { createApp } from "./app.js"
 import { readDatabaseUrl, readEmailConfig, readWebConfig } from "./config.js"
 import type { EmailConfig, Env } from "./config.js"
@@ -53,9 +55,27 @@ export async function runCommand(
 
 async function runWeb(env: Env): Promise<void> {
   const config = readWebConfig(env)
-  const app = createApp({ webDistDir: config.webDistDir })
+  const { db, pool } = createDatabase(readDatabaseUrl(env))
+  try {
+    // Sign-in (M1-4) replaces this: until then nobody can sign in, except
+    // through the development placeholder.
+    const signIn = config.placeholderPerson
+      ? await placeholderSignIn(db, config.placeholderPerson, env)
+      : noSignIn
+    const app = createApp({ db, signIn, webDistDir: config.webDistDir })
+    await serveUntilShutdown(app.fetch, config)
+  } finally {
+    await pool.end()
+  }
+  console.info(`${productName} web stopped`)
+}
+
+async function serveUntilShutdown(
+  fetch: (request: Request) => Response | Promise<Response>,
+  config: { host: string; port: number },
+): Promise<void> {
   const server = serve(
-    { fetch: app.fetch, hostname: config.host, port: config.port },
+    { fetch, hostname: config.host, port: config.port },
     (info) => {
       console.info(
         `${productName} web listening on http://${info.address}:${info.port}`,
@@ -67,7 +87,6 @@ async function runWeb(env: Env): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     server.close((error) => (error ? reject(error) : resolve()))
   })
-  console.info(`${productName} web stopped`)
 }
 
 async function runWorker(env: Env): Promise<void> {

@@ -16,6 +16,7 @@ describe("readWebConfig", () => {
       host: "127.0.0.1",
       port: 3000,
       webDistDir: undefined,
+      placeholderPerson: undefined,
     })
   })
 
@@ -27,8 +28,41 @@ describe("readWebConfig", () => {
 
   it("reads overrides", () => {
     expect(
-      readWebConfig({ HOST: "0.0.0.0", PORT: "8080", WEB_DIST_DIR: "/srv" }),
-    ).toEqual({ host: "0.0.0.0", port: 8080, webDistDir: "/srv" })
+      readWebConfig({
+        HOST: "0.0.0.0",
+        PORT: "8080",
+        WEB_DIST_DIR: "/srv",
+        NODE_ENV: "development",
+        SHINAN_PLACEHOLDER_PERSON: "dev",
+      }),
+    ).toEqual({
+      host: "0.0.0.0",
+      port: 8080,
+      webDistDir: "/srv",
+      placeholderPerson: "dev",
+    })
+  })
+
+  it("allows the placeholder sign-in only with NODE_ENV=development", () => {
+    for (const NODE_ENV of [
+      undefined,
+      "",
+      "production",
+      "prod",
+      "dev",
+      "test",
+    ]) {
+      expect(
+        () => readWebConfig({ NODE_ENV, SHINAN_PLACEHOLDER_PERSON: "dev" }),
+        String(NODE_ENV),
+      ).toThrow(/NODE_ENV=development/)
+    }
+  })
+
+  it("turns the placeholder sign-in off with an empty value", () => {
+    expect(
+      readWebConfig({ SHINAN_PLACEHOLDER_PERSON: "" }).placeholderPerson,
+    ).toBeUndefined()
   })
 
   it("rejects an invalid port", () => {
