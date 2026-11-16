@@ -1,7 +1,8 @@
 # Human experience
 
 Status: **draft for review** ([issue #10](https://github.com/guneet-xyz/shinan/issues/10)).
-The owner's answers in [#25] are applied.
+The owner's answers in [#25] (O-1 to O-98 and follow-ups N-1 to N-11) are
+applied.
 
 This document describes what people see and do in Shinan's web app: the screens,
 what each shows, and the flows between them. It covers the wiki and the start
@@ -23,7 +24,8 @@ depends on it.
   [dependencies](#dependencies-on-other-documents).
 - Every statement is marked:
   - **Decided**: follows from an accepted plan decision (D-nnn) or from the
-    owner's answers in the decision checklist, cited as "owner, O-n, [#25]".
+    owner's answers in the decision checklist, cited as "owner, O-n, [#25]" or
+    "owner, N-n, [#25]" for the follow-up answers.
   - **Proposed**: suggested here, with a reason.
   - **Open**: not settled; listed under [open questions](#open-questions).
 - Where a rule belongs to another document (for example when a nudge is
@@ -81,11 +83,11 @@ It does not cover:
    change intent and acceptance criteria, split work into subtasks, comment and
    nudge, set task flags and manual states, rank work, accept or cancel tasks
    in triage, give deployment approval, review catalog changes, assign people.
-   It does not offer code review, CI controls or a pull request view, and
-   Shinan never acts on a git host as a person. **Decided** (D-001: Shinan sits
-   above git hosts; owner, O-1, [#25]: anything a person wants done on a git
-   host is done by an agent on that person's own hardware). Every work item
-   links straight to its git host page.
+   It does not offer code review, CI controls or a pull request view. Shinan
+   writes to GitHub only as its app and makes no writes on Forgejo; anything a
+   person wants done on a git host is [asked of their own agent](#asking-your-agent-to-act-on-a-git-host).
+   **Decided** (D-001: Shinan sits above git hosts; owner, O-1, N-3, N-4,
+   [#25]). Every work item links straight to its git host page.
 4. **Show how sure Shinan is.** Facts show their fact state, source and how
    long ago they were last checked; credits show their attribution confidence;
    presence shows whether it is self-reported and when it was last seen;
@@ -147,7 +149,7 @@ repositories. **Decided** (owner, O-43, [#25]).
 | [Triage](#triage) | A filtered task list in phase 1; the full triage inbox in phase 2 | 1 and 2 |
 | [Unlinked work](#unlinked-work) | Branches and PRs with no task ID | 1 |
 | [Workspace settings](#workspace-and-member-management) | Members, invitations, agents, git host connections, task flags, catalog settings, security log, data | 1 |
-| [Your account](#your-account) | Sign-in methods, git host accounts, your agents, your machines (phase 3), workspaces, notification settings (phase 2) | 1 |
+| [Your account](#your-account) | Sign-in, git host accounts, your agents, your machines (phase 3), workspaces, notification settings (phase 2) | 1 |
 
 Phases follow the plan (section 10): the board, nudges, the triage inbox and
 notifications are phase 2; starting agents from the website is phase 3.
@@ -217,11 +219,14 @@ never a presence state they cannot report (glossary, Presence). **Proposed.**
 Reason: this answers "what is being worked on now" in one glance and puts
 agent sessions that may need help first.
 
-Every subagent is its own agent session. **Decided** (owner, O-37, [#25]).
-Subagent sessions are shown with their parent agent session, summarised as
-"3 subagents (2 busy)" and expandable. A subagent that is `waiting` or silent
-is shown on its own. **Proposed.** Reason: this keeps the screen readable when
-one agent session starts many subagents, without hiding one that needs help.
+Every subagent is its own agent session, and it is attached to a task only
+when it claims one; automatic claims from a branch marker apply only to
+top-level agent sessions. **Decided** (owner, O-37, N-2, [#25]). A subagent
+that claimed a task is shown on that task, labelled with its parent agent
+session. Subagents not on a task are summarised in their parent's line, for
+example "3 subagents (2 busy)", expandable; one that is `waiting` or silent is
+shown on its own. **Proposed.** Reason: this keeps the screen readable when one
+agent session starts many subagents, without hiding one that needs help.
 
 Agent sessions that are running but attached to no task are shown as a short
 group, "Not on a task", after the tasks. **Proposed.** Reason: work that is not
@@ -242,8 +247,8 @@ outcomes, not a replay; marking items as seen by hand is busywork.
 ### Task list (phase 1)
 
 A list of tasks with filters and saved views. Each row shows task ID, title,
-parent task (for a subtask) or subtask progress ("2 of 3 subtasks done"), task
-status, task flags (including `blocked`), assignees, attached agent sessions
+parent task (for a subtask), subtask progress ("2 of 3 subtasks done", counting
+direct subtasks), task status, task flags (including `blocked`), assignees, attached agent sessions
 with presence, the number of linked pull requests and their combined CI check
 result, and the time of the last event. **Proposed.** Reason: these answer
 "what is it, who has it, is it moving, does it need me" without opening it.
@@ -291,12 +296,13 @@ Rules:
   flags are separate from status so both are true at once; the always-visible
   group keeps attention on what blocks progress.
 - **Subtasks** appear as tasks in their own right, labelled with their parent.
-  The board can be grouped by parent. **Proposed.** Reason: subtasks are how
-  big work is split (owner, O-21, [#25]); each moves through its own status.
+  The board can be grouped by top-level task. **Proposed.** Reason: subtasks
+  are how big work is split and can nest to any depth (owner, O-21, N-1,
+  [#25]); grouping by the top-level task keeps a deep tree in one group.
 - **Each task on the board** shows task ID, title, assignee, presence of its
   attached agent sessions, linked pull request count and CI check result,
   `blocked`, and how long since its last event. **Proposed.**
-- **Grouping:** none, by assignee, by parent task, or by related `project`
+- **Grouping:** none, by assignee, by top-level task, or by related `project`
   entity. **Proposed.** Reason: grouping by project shows where effort goes.
 
 ## Task page
@@ -415,10 +421,13 @@ catalog proposal. **Proposed**, following the glossary.
 ### Subtasks
 
 Subtasks of this task, each with its status, assignee and attached agent
-sessions, and **Add subtask**. **Decided** that tasks have subtasks and that a
-parent is done only when all its subtasks are done (owner, O-21, [#25]). The
-screen is **proposed**. Whether subtasks can have their own subtasks is owned
-by [Tasks and work](tasks.md).
+sessions, and **Add subtask**. Subtasks can nest to any depth; deeper levels
+are shown as an expandable tree, collapsed below the first level. The header
+of a subtask shows its full chain of parents. **Decided** that tasks have
+subtasks, that they nest to any depth, and that a parent is done only when all
+its subtasks are done (owner, O-21, N-1, [#25]). The screen is **proposed**.
+Reason: a collapsed tree keeps deep splits readable while every level stays
+one step away.
 
 ### Work
 
@@ -437,10 +446,10 @@ that work item.
   links, which never affect status. Mentions by outside accounts are ignored.
   **Decided** (owner, O-25, [#25]).
 - **Origin issues** still open when the task is `done` or `cancelled` are
-  shown as a reminder to whoever finishes the task, who closes or comments with
-  their own git host tools. **Decided** that Shinan does nothing to them and
-  relies on the reminder (owner, O-57, [#25]); the reminder's display is
-  **proposed**.
+  shown as a reminder to whoever finishes the task, with **Ask my agent to
+  close it** ([asking your agent](#asking-your-agent-to-act-on-a-git-host)).
+  **Decided** that Shinan does nothing to them and relies on the reminder
+  (owner, O-57, [#25]); the reminder's display is **proposed**.
 - A person can add, change the role of, or remove a work link. **Proposed**;
   the rules are owned by [Tasks and work](tasks.md).
 - Work from private repositories is shown like any other: every member sees its
@@ -470,9 +479,24 @@ reachable in one step from anywhere on the page. **Proposed.**
 | Assign or unassign members | Assignment is not a lock | Proposed (glossary, Assignee) |
 | Start a new agent session for this task | See [below](#when-no-agent-session-is-attached) | Decided (plan, Nudges pillar) |
 | Detach an agent session | Removes the agent session from the task and tells it (phase 2) | Proposed. Reason: the owner must be able to redirect work |
+| Ask my agent to act on a git host | See [below](#asking-your-agent-to-act-on-a-git-host) | Decided (owner, O-1, N-3, [#25]) |
 
-Viewers see the task page without these actions. **Proposed**, following the
-glossary's viewer role.
+### Asking your agent to act on a git host
+
+Shinan does not act on git hosts for a person: it writes to GitHub only as its
+app and makes no writes on Forgejo. **Decided** (owner, O-1, N-4, [#25]).
+Wherever a person might want something done on a git host (for example
+opening a repository issue for the task, or closing or commenting on an origin
+issue), the screen offers **Ask my agent**. The request is sent as a queued
+nudge to the person's **own** agent sessions; if none is running, it waits like
+any nudge until one claims the task or the person starts one. **Decided**
+(owner, N-3, [#25]). The request shows its delivery like a comment, and the
+agent's reply links to the result. **Proposed** display. Which actions are
+offered is owned by [Tasks and work](tasks.md) and
+[Git host integrations](git-hosts.md).
+
+These requests are nudges, so they arrive in phase 2. In phase 1 the screen
+shows the reminder and a link to the item on the git host. **Proposed.**
 
 ## Comments and nudges
 
@@ -640,10 +664,8 @@ instructions whenever attribution fails.
   (comments, reviews, issue and PR descriptions) are shown at full prominence,
   labelled as unsure. Routine kinds (commits, pushes, branch creation, CI) stay
   compact. **Decided** (owner, O-91, [#25]).
-- **Shinan's own writes** on a git host are shown as "Shinan", even where the
-  git host shows them as a person: on Forgejo Shinan uses the connecting
-  person's own account (owner, O-53, [#25]) and recognises its own writes by
-  stored IDs. **Proposed** display.
+- **Shinan's own writes**, made on GitHub as its app (it makes none on
+  Forgejo: owner, N-4, [#25]), are shown as "Shinan". **Proposed** display.
 - Outside actors show their git host account and the label "outside".
   Accounts listed as automated, such as dependency update tools, are shown at
   compact prominence. **Proposed.** Reason: their activity is frequent and
@@ -685,7 +707,7 @@ are grouped by presence state: `waiting`, `unresponsive`, `busy`, `starting`,
 plugin that cannot send them) form their own group, overdue ones first, then by
 last seen. For each: agent, member it acts for, coding tool, machine, current
 task, repository, last seen, and presence source. Subagent sessions are listed
-under their parent. A second list shows recently ended agent sessions with how
+under their parent, each with the task it claimed, if any (N-2). A second list shows recently ended agent sessions with how
 they ended. **Proposed.** Reason: it is the operational view of "who is doing
 what right now".
 
@@ -741,10 +763,9 @@ Registering agents and revoking their tokens is under
 ## The wiki
 
 The wiki is the catalog shown to people as readable pages. **Decided** (D-006).
-Each catalog revision's Markdown text is the source of truth; revisions are
-stored in Shinan, with a read-only Git mirror that is always kept current, and
-catalog proposals and review happen inside Shinan. **Decided** (owner, O-11,
-O-12, [#25]). The entity types, facts and rules are owned by the
+Each catalog revision's Markdown text is the source of truth and is stored in
+Shinan's database only; there is no Git mirror for now. Catalog proposals and
+review happen inside Shinan. **Decided** (owner, O-11, O-12, N-5, [#25]). The entity types, facts and rules are owned by the
 [Catalog](catalog.md) document; this section is how they look and how people
 move around them.
 
@@ -777,10 +798,9 @@ An entity page shows, in order of importance:
 9. **Tasks.** Unfinished tasks related to this entity, and recently done ones.
    **Proposed.** Reason: the owner can see what is changing about a project or
    machine without searching.
-10. **History.** The entity's timeline, with a link to the same document in
-    the read-only Git mirror. **Proposed.** Reason: the mirror exists for
-    cloning, searching and history (owner, O-11, [#25]); linking it saves
-    looking it up.
+10. **History.** The entity's timeline. Any earlier catalog revision can be
+    opened and compared with the current one. **Proposed.** Reason: with no
+    Git mirror (N-5), the wiki is where people read a page's history.
 
 **Secrets.** Secrets never go in the catalog; the catalog records only where a
 secret lives, for example a path in a secrets manager such as Obscuro or
@@ -951,8 +971,9 @@ forgotten marker is a small slip, not something that blocks agents.
 ## Notifications
 
 Notifications are phase 2 (plan, sections 5 and 10). **Decided.** Shinan sends
-email from the first version, for sign-in links (owner, O-41, [#25]), so email
-is available as the first channel. No document in plan section 8 owns
+email from the first version, for sign-in links (owner, O-41, N-7, [#25]),
+through the AWS SES API (owner, N-6, [#25]), so email is available as the first
+channel. No document in plan section 8 owns
 notifications; this document proposes the person's side, and how they are sent
 is an [open question](#open-questions).
 
@@ -971,11 +992,10 @@ is an [open question](#open-questions).
 
 ## Workspace and member management
 
-What roles exist and what each may do is owned by [Identity](identity.md); the
-glossary proposes workspace owner, contributor and viewer. This section
-describes the screens. Actions a person's role does not allow are not offered,
-and a viewer sees a short note that the workspace is read-only for them.
-**Proposed.**
+What each role may do is owned by [Identity](identity.md). Workspace roles
+are owner and contributor only; there is no viewer role. **Decided** (owner,
+N-11, [#25]). This section describes the screens. Actions a person's role does
+not allow are not offered. **Proposed.**
 
 All changes below are events on the workspace timeline, at full prominence, and
 security-relevant ones are also in the security log. **Proposed.** Reason:
@@ -999,19 +1019,20 @@ For workspace owners.
 | Screen | Shows | Actions |
 |---|---|---|
 | General | Name, task ID prefix, creation date, workspace owners | Rename; delete workspace (typed confirmation, consequences listed first) |
-| Members | Each member: name, role, joined, invited by, linked git host accounts, their agents, last active | Change role; remove member. The last workspace owner cannot be removed or given another role |
+| Members | Each member: name, role (workspace owner or contributor), joined, invited by, linked git host accounts, their agents, last active | Change role; remove member. The last workspace owner cannot be removed or made a contributor |
 | Invitations | Pending, expired and declined invitations with role and who invited | Invite; resend; withdraw |
 | Agents | Every agent: name (person, coding tool and machine), member it acts for, state, last agent session seen, its tokens (created, last used) | Disable an agent; revoke a token |
 | Git host connections | Each connection: git host, account used, repositories covered, who set it up, health, last successful contact | Add; reconnect; change repositories covered; import existing issues into triage; remove |
 | Task flags | Built-in and workspace-defined flags, each with its description, whether it shows in Needs you, and how many tasks have it | Add; edit; remove |
 | Catalog settings | Approval mode (gated classes only, or strict), workspace-defined entity types | Change (options owned by the [Catalog](catalog.md) document) |
 | Security log | Security-relevant events, kept forever | Read only |
-| Data | What can be purged, including operational records about this workspace | Purge (typed confirmation) |
+| Data | What can be purged, including operational records about this workspace | Purge (typed confirmation). Installation-level security-log entries are not offered |
 
 **Proposed** screen set, based on these answers: task flags managed per
 workspace (owner, O-8, [#25]); approval mode (O-3); custom entity types
 (O-17); the security log is kept forever (O-47); only workspace owners can
-purge, and installation operators cannot (O-50). Reason: one screen per thing
+purge, and installation operators cannot (O-50); installation-level
+security-log entries cannot be purged by anyone (N-8). Reason: one screen per thing
 the workspace owns.
 
 Screen details:
@@ -1023,13 +1044,16 @@ Screen details:
   keep a record of a removed flag in their history. **Proposed.** Reason:
   [small and legible](#design-principles) means saying what a change affects.
   The rules for flags are owned by [Tasks and work](tasks.md).
-- **Git host connections.** Adding a Forgejo connection uses the connecting
-  person's own Forgejo account and accepts any token. **Decided** (owner, O-53,
-  O-54, [#25]). The screen states the risk plainly before saving: Shinan's
-  writes on that Forgejo will appear as that person, and a broad token (for
-  example a site administrator's) lets Shinan act as any user there. It says
-  the token is stored encrypted. A repository already connected to another
-  workspace cannot be added (owner, O-59, [#25]). **Proposed** wording.
+- **Git host connections.** A Forgejo connection is read-only: Shinan makes
+  no writes there, so there are no backlinks on Forgejo. It uses the
+  connecting person's own Forgejo account and accepts any token, and anyone
+  can enter any Forgejo address to connect. **Decided** (owner, O-53, O-54,
+  N-4, N-7, [#25]). Before saving, the screen states the risk plainly: Shinan
+  only reads, but the stored token can do whatever its owner can, and a broad
+  token (for example a site administrator's) could act as any user on that
+  Forgejo if it were stolen; the token is stored encrypted. A repository
+  already connected to another workspace cannot be added (owner, O-59, [#25]).
+  **Proposed** wording.
 - **Removing a member** lists the consequences first: their agents and tokens
   that will be disabled, tasks they are assigned to, agent sessions of theirs
   attached to tasks, and git host connections they set up. **Proposed.**
@@ -1050,27 +1074,29 @@ Screen details:
 ### Joining a workspace
 
 1. The invited person follows the invitation and signs in, or creates an
-   account if their email is on the allowlist. Sign-in is by GitHub, Forgejo
-   (including any self-hosted instance), an emailed sign-in link, or a
-   password. **Decided** (owner, O-41, O-48, [#25]).
+   account if their email is on the allowlist. Sign-in is by an emailed
+   sign-in link or GitHub only. **Decided** (owner, O-48, N-7, [#25]).
 2. They see the workspace name, who invited them and the role, and accept or
    decline.
 3. On accepting, they are asked to link their git host accounts, if not
    already linked, with a short reason: "so Shinan can show what you and your
-   agents did on GitHub and Forgejo". Each link is verified before it counts
-   (glossary, Git host account); how is owned by [Identity](identity.md).
+   agents did on GitHub and Forgejo". Forgejo accounts on any address can be
+   linked, but are never used to sign in (N-7). Each link is verified before
+   it counts (glossary, Git host account); how is owned by
+   [Identity](identity.md).
 4. They are offered to [register an agent](#your-agents) now or later.
 5. They land on [start here for people](#start-here-for-people).
 
 **Decided** that invitations exist (D-019). The flow is **proposed**. Reason:
 linking git host accounts is how git host activity is credited at all. Shinan
 does not store git host tokens for people (owner, O-1, [#25]); linking is for
-credit and sign-in only.
+credit, and a linked GitHub account can also be used to sign in (N-7).
 
 ### Your account
 
 Each person has an account area, separate from any workspace: profile,
-sign-in methods (owned by [Identity](identity.md)), linked git host accounts,
+sign-in (an email address for sign-in links, and an optional linked GitHub
+account; owned by [Identity](identity.md)), linked git host accounts,
 the workspaces they belong to with their role, pending invitations,
 [notification settings](#notifications) (phase 2), and
 [your machines](#your-machines-phase-3) (phase 3). **Proposed.**
@@ -1082,8 +1108,7 @@ OpenCode on Daedalus". **Decided** (owner, O-40, [#25]). Agents belong to one
 workspace. In each workspace, a member sees **Your agents**:
 
 1. **Register an agent:** the coding tool and the machine; the name is
-   suggested from them. Every role may register agents; a viewer is told that
-   their agent will be read-only (glossary, Member and role).
+   suggested from them.
 2. **Connect:** short instructions for that coding tool. Installing the plugin
    also sets up the MCP server and skill (owner, O-36, [#25]); without a
    plugin, add the MCP server and skill. The content is owned by
@@ -1110,7 +1135,10 @@ A person registers a machine for launching agents by installing the launcher
 on it; a device setup guide (for example for a VM or a MacBook) explains how.
 **Decided** (owner, O-1, [#25]). This screen lists the person's registered
 machines with their coding tools and last contact, links to the setup guide,
-and offers **Remove**. Only the person's own machines are offered when they
+and offers **Remove**. The guide is part of Shinan's own built-in help, the
+same for every workspace, and is also linked from the launcher's install step.
+**Proposed.** Reason: it is product help, not team knowledge, so it does not
+belong in a workspace's catalog. Only the person's own machines are offered when they
 [start an agent session](#when-no-agent-session-is-attached). **Proposed**
 screen. The guide's content is owned by
 [Agent integrations](agent-integrations.md).
@@ -1124,7 +1152,7 @@ How this document's screens map to the plan's phases (plan, section 10). The
 | Phase | Screens | Status |
 |---|---|---|
 | 1 | Now screen; task list with ranking and the `triage` filter; task page with comments, panels, subtasks and steering actions (changes are events agents see when they next read the task); timelines; agents view; wiki with start here; catalog review and recent changes; unlinked work; workspace settings for one owner; your account and agents | Decided that the wiki, tasks, timeline and presence are phase 1 (plan, section 10); the rest proposed |
-| Before a second member joins | Invitations, contributor and viewer roles in screens, member removal | Decided (owner, O-49, [#25]: D-019 read as "design now, build before the second member") |
+| Before a second member joins | Invitations, the contributor role in screens, member removal | Decided (owner, O-49, [#25]: D-019 read as "design now, build before the second member") |
 | 2 | Board; nudges (recipients, delivery states, waiting comments, "nudge not received"); triage inbox; notifications | Decided (plan, section 10). Board and triage inbox are required before migration (owner, O-78, [#25]) |
 | 3 | Your machines; starting agent sessions from the task page through a launcher | Decided (plan, section 10; D-014; owner, O-1, [#25]) |
 
@@ -1145,19 +1173,20 @@ source of truth until migration (D-018).
 
 ## Dependencies on other documents
 
-The sibling drafts were read on 2026-11-16, before their authors applied the
-owner's answers. Mismatches below are for the integration review.
+The sibling drafts were read again on 2026-11-16 at the commits shown. They
+include the first batch of owner answers but not the follow-up answers N-1 to
+N-11. The mismatches below are for the integration review.
 
-| Document | What this document needs from it, and known mismatches |
-|---|---|
-| [Domain model and glossary](domain-model.md) (read at `8bb5d65`) | All terms. **To change after the answers:** nudge definition, so that a nudge with no active session waits for the next claiming agent session (O-27); presence state `offline` (O-32); subtasks (O-21, reverses "no subtasks"); an agent per person, coding tool and machine (O-40); every subagent its own agent session (O-37); catalog approval only for gated classes (O-3); task flags managed per workspace (O-8); fact state `planned` (O-5); remove "outside tool" (O-97). Event redaction is now purge by workspace owners (O-50). |
-| [Tasks and work](tasks.md) (read at `8d8e010`) | Status rules behind each explanation; required fields for `needs a person` and deployment approval requests, and what makes an approval stale; when comments become nudges; batching of waiting nudges; triage actions; unlinked work; the rules for workspace-defined flags (who may set them, what removing a built-in does). **Mismatches:** the draft still has no subtasks and uses `Completes`/`Part of` (O-21); it has no ranking attribute yet (O-28); it does not yet treat flags as per-workspace (O-8). |
-| [Agent integrations](agent-integrations.md) (read at `6bea8fb`) | Presence thresholds (`unresponsive`, the 30-minute display threshold, 24-hour release, 30-day end); waiting reasons and labels; delivery holders and outcomes (`withdrawn`, `cancelled`); the "reply to nudge" tool; the ready-made start prompt; connect instructions; the device setup guide and launcher (phase 3); whether an agent session can be stopped from Shinan. **Mismatch:** the draft folds subagents into their parent unless they claim a task (O-37 makes each one its own agent session). |
-| [Identity, agents and permissions](identity.md) (read at `fcaea3a`) | Roles and what each may do; who may approve catalog proposals and give deployment approval; removal effects; which actions need signing in again; who may create workspaces; the email allowlist; token issue and revocation. **Mismatches:** the draft has passkey-only sign-in (O-41), invitations bound to git host accounts without email (O-48), rotating short-lived tokens (O-44), one agent per person and tool (O-40), stored per-person git host tokens (O-1), and hidden-item display for private repositories (O-43). |
-| [Catalog](catalog.md) (read at `6613b55`) | Gated classes; validation results shown in the editor; recheck intervals; the start-here document; workspace-wide lists; revert. **Mismatches:** the draft still has `restricted` content (O-2), no custom entity types (O-17) and an optional Git export (O-11). |
-| [Git host integrations](git-hosts.md) (read at `87d9cf2`) | Connection health and reconciliation thresholds; how unconfirmed links and mentions are detected; where the automated-account list lives; the origin-issue reminder. **Mismatch:** the draft's Forgejo connection uses a separate `shinan` account and limited tokens (O-53, O-54). |
-| [Architecture and operations](architecture.md) | How screens update while open; how notifications and sign-in email are sent; purge of operational records; the always-on Git mirror and its links. |
-| [Roadmap and migration](roadmap.md) | Which phase 1 screens are in the first release. |
+| Document (commit read) | What this document needs from it | Known mismatches |
+|---|---|---|
+| [Domain model and glossary](domain-model.md) (`0e4bfcd`) | All terms. | Still lists a viewer role (N-11), password and Forgejo sign-in methods (N-7), and a Git mirror term (N-5). Its open question 4 (how subagent sessions are grouped on screen) is answered [here](#2-being-worked-on-now) and in the [agents view](#agents-view). |
+| [Tasks and work](tasks.md) (`fae89ac`) | Status rules behind each explanation; required fields for `needs a person` and deployment approval requests, and what makes an approval stale; when comments become nudges; batching of waiting nudges; triage actions; unlinked work; rules for workspace-defined flags; which git host actions a person can ask for (N-3). | Subtasks limited to one level (N-1 allows any depth); a "viewer" row in its nudge table (N-11). |
+| [Agent integrations](agent-integrations.md) (`88acc1d`) | Presence thresholds (`unresponsive`, the 30-minute display threshold, 24-hour release, 30-day end); waiting reasons; delivery holders and outcomes; the "reply to nudge" tool; delivering git host action requests (N-3); the ready-made start prompt; connect instructions; the device setup guide's content and the launcher (phase 3); whether an agent session can be stopped from Shinan. | Says Shinan's own Forgejo writes go through the connecting person's account (N-4: no Forgejo writes). It asks this document where the device setup guide lives: answered in [your machines](#your-machines-phase-3). |
+| [Identity, agents and permissions](identity.md) (`03207c7`) | What each role may do; who may approve catalog proposals and give deployment approval; removal effects; which actions need signing in again; who may create workspaces; the email allowlist and invitations; token issue and revocation; linking Forgejo accounts on any address. | Password and Forgejo sign-in (N-7: email link or GitHub only); viewer role and read-only agents (N-11); security-log purge rules to align with N-8. |
+| [Catalog](catalog.md) (`78d6bb1`) | Gated classes; validation results shown in the editor; recheck intervals; the start-here document; workspace-wide lists; revert; comparing revisions. | Always-on Git mirror and its layout (N-5: no mirror for now). |
+| [Git host integrations](git-hosts.md) (`98333b8`) | Connection health and reconciliation thresholds; how unconfirmed links and mentions are detected; where the automated-account list lives; the origin-issue reminder; which git host actions a person can ask for. | Backlinks and write scopes on Forgejo (N-4: Forgejo connections are read-only). |
+| [Architecture and operations](architecture.md) (`d3ca54e`) | How screens update while open; how notifications and sign-in email are sent; purge of operational records. | Always-on Git mirror (N-5); email through SMTP (N-6: the AWS SES API). |
+| [Roadmap and migration](roadmap.md) (`820f2a6`) | Which phase 1 screens are in the first release. | Viewer test account (N-11 drops it); Git mirror as a first-version item and as the catalog's exit copy (N-5). |
 
 ## Open questions
 
@@ -1166,13 +1195,14 @@ owner's answers. Mismatches below are for the integration review.
 2. **Who owns notifications.** No document in plan section 8 owns how
    notifications are sent (channels, delivery, failures). Recommended: the
    [Architecture](architecture.md) document for sending, starting with email
-   (already needed for sign-in links, O-41); this document for what is sent and
-   the person's settings.
+   (already sent for sign-in links, N-6, N-7); this document for what is sent
+   and the person's settings.
 
 ## Decisions needed from the owner
 
-None. All earlier decisions were answered in [#25] and are marked Decided
-above. The new screens these answers need (task flags, purge, security log,
-your machines, recent changes) are proposals that follow directly from them.
+None. All earlier decisions and the follow-ups N-1 to N-11 were answered in
+[#25] and are marked Decided above. The screens these answers need (task flags,
+purge, security log, your machines, recent changes, asking your agent to act on
+a git host) are proposals that follow directly from them.
 
 [#25]: https://github.com/guneet-xyz/shinan/issues/25
