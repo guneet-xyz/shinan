@@ -11,10 +11,15 @@ const databaseSetup = fileURLToPath(
   new URL("./packages/db/test/global-setup.ts", import.meta.url),
 )
 
+// Server-side tests resolve packages the way Node.js does in production. Vite's
+// default server conditions include "module", a bundler convention that picks
+// builds Node.js cannot load (the AWS SDK's extensionless `dist-es`).
+const serverConditions = defaultServerConditions.filter((c) => c !== "module")
+
 export default defineConfig({
   resolve: { conditions: [sourceCondition, ...defaultClientConditions] },
   ssr: {
-    resolve: { conditions: [sourceCondition, ...defaultServerConditions] },
+    resolve: { conditions: [sourceCondition, ...serverConditions] },
   },
   test: {
     projects: [
@@ -39,6 +44,7 @@ export default defineConfig({
         extends: true,
         test: { name: "api-client", root: "packages/api-client" },
       },
+      { extends: true, test: { name: "email", root: "packages/email" } },
       {
         extends: true,
         test: {
