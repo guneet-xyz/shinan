@@ -38,8 +38,15 @@ You need Node.js 24 (see `.nvmrc`), pnpm (the version in `package.json`'s
 ```sh
 pnpm install
 pnpm services:up   # PostgreSQL on localhost:5432 and Mailpit (http://localhost:8025)
+export DATABASE_URL=postgres://shinan@localhost:5432/shinan
+pnpm --filter @shinan/server migrate
 pnpm dev           # API on http://localhost:3000, web app on http://localhost:5173
 ```
+
+Until sign-in exists (M1-4), `pnpm dev` signs every request in as a
+**placeholder person** (handle `dev`, with a "Development" workspace), set by
+`SHINAN_PLACEHOLDER_PERSON`. It is refused when `NODE_ENV` is `production`,
+and is removed when sign-in arrives.
 
 `pnpm services:down` stops the services. If a port is taken, set
 `SHINAN_DB_PORT`, `SHINAN_SMTP_PORT` or `SHINAN_MAILPIT_PORT` before
@@ -50,22 +57,23 @@ The server reads its settings from environment variables. A secret can
 instead be read from a file: set `NAME_FILE` to its path rather than `NAME`
 (for example `DATABASE_URL_FILE`, `SES_SECRET_ACCESS_KEY_FILE`).
 
-| Variable                | Default                             | Meaning                                                         |
-| ----------------------- | ----------------------------------- | --------------------------------------------------------------- |
-| `DATABASE_URL`          | none (tests use the local service)  | PostgreSQL connection string (secret)                           |
-| `HOST`                  | `127.0.0.1`                         | Address the `web` role listens on                               |
-| `PORT`                  | `3000`                              | Port the `web` role listens on                                  |
-| `NODE_ENV`              | unset                               | `production` serves the built web app and requires SES          |
-| `WEB_DIST_DIR`          | `apps/web/dist` in production       | Directory of the built web app to serve                         |
-| `EMAIL_TRANSPORT`       | `smtp`, except in production (none) | `ses`, or `smtp` for the local mail catcher (not in production) |
-| `EMAIL_FROM`            | `shinan@localhost` for `smtp`       | From address; required for `ses`                                |
-| `EMAIL_FROM_NAME`       | `Shinan`                            | From display name                                               |
-| `SES_REGION`            | none                                | AWS region of the SES identity, such as `us-east-1`             |
-| `SES_ACCESS_KEY_ID`     | none (the AWS SDK's default chain)  | Access key of the send-only IAM user (secret)                   |
-| `SES_SECRET_ACCESS_KEY` | none (the AWS SDK's default chain)  | Its secret key (secret)                                         |
-| `SES_CONFIGURATION_SET` | none                                | SES configuration set, such as `guneet-dev`                     |
-| `SMTP_HOST`             | `127.0.0.1`                         | Mail catcher host, for `smtp`                                   |
-| `SMTP_PORT`             | `1025`                              | Mail catcher port, for `smtp`                                   |
+| Variable                    | Default                              | Meaning                                                                |
+| --------------------------- | ------------------------------------ | ---------------------------------------------------------------------- |
+| `DATABASE_URL`              | none (tests use the local service)   | PostgreSQL connection string (secret)                                  |
+| `HOST`                      | `127.0.0.1`                          | Address the `web` role listens on                                      |
+| `PORT`                      | `3000`                               | Port the `web` role listens on                                         |
+| `NODE_ENV`                  | unset                                | `production` serves the built web app and requires SES                 |
+| `WEB_DIST_DIR`              | `apps/web/dist` in production        | Directory of the built web app to serve                                |
+| `EMAIL_TRANSPORT`           | `smtp`, except in production (none)  | `ses`, or `smtp` for the local mail catcher (not in production)        |
+| `EMAIL_FROM`                | `shinan@localhost` for `smtp`        | From address; required for `ses`                                       |
+| `EMAIL_FROM_NAME`           | `Shinan`                             | From display name                                                      |
+| `SES_REGION`                | none                                 | AWS region of the SES identity, such as `us-east-1`                    |
+| `SES_ACCESS_KEY_ID`         | none (the AWS SDK's default chain)   | Access key of the send-only IAM user (secret)                          |
+| `SES_SECRET_ACCESS_KEY`     | none (the AWS SDK's default chain)   | Its secret key (secret)                                                |
+| `SES_CONFIGURATION_SET`     | none                                 | SES configuration set, such as `guneet-dev`                            |
+| `SMTP_HOST`                 | `127.0.0.1`                          | Mail catcher host, for `smtp`                                          |
+| `SMTP_PORT`                 | `1025`                               | Mail catcher port, for `smtp`                                          |
+| `SHINAN_PLACEHOLDER_PERSON` | `dev` in `pnpm dev`, otherwise unset | Development only, until M1-4: the handle every request is signed in as |
 
 In development the worker sends email to Mailpit; open http://localhost:8025
 to read it. Email is queued as a job in the same transaction as the change
@@ -80,8 +88,22 @@ The server's commands, from `apps/server`:
 export DATABASE_URL=postgres://shinan@localhost:5432/shinan
 pnpm migrate   # prepare the database: migrations, job queue tables, installation record (overlapping runs take turns)
 pnpm worker    # worker role: background jobs (pg-boss), including email; needs migrate first
-pnpm dev       # web role, restarting on changes
+pnpm dev       # web role, restarting on changes (needs DATABASE_URL)
 ```
+
+### Web app and API
+
+The web app (`apps/web`) uses [React Router](https://reactrouter.com/) in
+declarative mode for its pages and one plain stylesheet
+(`apps/web/src/styles.css`, narrow screens first) with no CSS framework or
+design system. It talks to the server only through `@shinan/api-client`,
+which also defines the REST API's JSON shapes and error codes.
+
+API handlers in `apps/server/src/api` only translate: they call one core
+operation and map its errors (`NotFoundError` to 404, `ForbiddenError` to 403,
+`ReauthenticationRequiredError` to 403 with `reauthentication-required`,
+`InvalidInputError` to 422, other `RuleViolationError`s to 409). Who is signed
+in comes from the `SignIn` interface in `apps/server/src/api/sign-in.ts`.
 
 To run the production build: `pnpm build`, then `pnpm start` (the `web` role
 serving the API and the built web app on port 3000).

@@ -34,5 +34,10 @@ export default defineConfig([
     ],
     languageOptions: { globals: globals.browser },
   },
+  {
+    // Tests are not hot-reloaded, so they may mix components and helpers.
+    files: ["apps/web/src/test/**", "apps/web/src/**/*.test.tsx"],
+    rules: { "react-refresh/only-export-components": "off" },
+  },
   prettier,
 ])

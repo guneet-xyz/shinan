@@ -1,0 +1,32 @@
+import { isApiError } from "./api"
+
+/** Explains a failed request in words a person can act on. */
+export function errorMessage(error: unknown): string {
+  if (isApiError(error)) {
+    switch (error.code) {
+      case "forbidden":
+        return "You are not allowed to do that."
+      case "not-found":
+        return "That no longer exists, or you do not have access to it."
+      case "conflict":
+      case "invalid-input":
+        return error.message
+      case "reauthentication-required":
+        return "Sign in again to continue."
+      case "sign-in-required":
+        return "Your sign-in has ended. Sign in to continue."
+      case "not-implemented":
+        return "This is not available yet."
+    }
+  }
+  return "Something went wrong. Try again in a moment."
+}
+
+/** Explains why sign-in (or signing in again) could not start. */
+export function signInErrorMessage(error: unknown): string {
+  if (isApiError(error, "invalid-input")) return error.message
+  if (isApiError(error) && [404, 501].includes(error.status)) {
+    return "Sign-in is not available on this installation yet."
+  }
+  return "Could not start sign-in. Try again in a moment."
+}

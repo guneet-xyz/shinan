@@ -1,13 +1,135 @@
-import { renderToString } from "react-dom/server"
-import { describe, expect, it } from "vitest"
+import { screen, waitFor, within } from "@testing-library/react"
+import { describe, expect, it, vi } from "vitest"
 
-import { App } from "./App"
+import {
+  account,
+  apiError,
+  currentPath,
+  fakeApi,
+  renderApp,
+  signedOut,
+  workspaceId,
+} from "./test/render"
 
-describe("App", () => {
-  it("renders the hello page", () => {
-    const html = renderToString(<App />)
+describe("the app shell", () => {
+  it("sends someone who is not signed in to sign in, then back", async () => {
+    const api = fakeApi({ account: () => Promise.reject(signedOut()) })
+    renderApp(`/w/${workspaceId}/settings/members`, api)
 
-    expect(html).toContain("<h1>Shinan</h1>")
-    expect(html).toContain("checking…")
+    expect(
+      await screen.findByRole("heading", { name: "Sign in to Shinan" }),
+    ).toBeTruthy()
+    expect(currentPath()).toBe(
+      `/sign-in?next=${encodeURIComponent(`/w/${workspaceId}/settings/members`)}`,
+    )
+  })
+
+  it("needs sign-in even for unknown addresses", async () => {
+    const api = fakeApi({ account: () => Promise.reject(signedOut()) })
+    renderApp("/no/such/page", api)
+
+    expect(
+      await screen.findByRole("heading", { name: "Sign in to Shinan" }),
+    ).toBeTruthy()
+  })
+
+  it("opens the person's first workspace", async () => {
+    renderApp("/")
+
+    expect(await screen.findByRole("heading", { name: "Team" })).toBeTruthy()
+    await waitFor(() =>
+      expect(currentPath()).toBe(`/w/${workspaceId}/settings/general`),
+    )
+  })
+
+  it("welcomes someone with no workspace", async () => {
+    const api = fakeApi({
+      account: () => Promise.resolve({ ...account, workspaces: [] }),
+    })
+    renderApp("/", api)
+
+    expect(
+      await screen.findByRole("heading", { name: "Welcome, Guneet" }),
+    ).toBeTruthy()
+    expect(screen.getByText(/needs an invitation/)).toBeTruthy()
+  })
+
+  it("lists the person's workspaces with their role", async () => {
+    const api = fakeApi({
+      account: () =>
+        Promise.resolve({
+          ...account,
+          workspaces: [
+            ...account.workspaces,
+            {
+              id: "66666666-6666-4666-8666-666666666666",
+              name: "Other",
+              role: "contributor",
+              memberId: "77777777-7777-4777-8777-777777777777",
+              joinedAt: "2026-11-03T10:00:00.000Z",
+            },
+          ],
+        }),
+    })
+    renderApp(`/w/${workspaceId}/settings/general`, api)
+
+    const banner = await screen.findByRole("banner")
+    const links = within(banner).getAllByRole("link")
+    expect(links.map((l) => l.textContent)).toEqual([
+      "Shinan",
+      "TeamWorkspace owner",
+      "OtherContributor",
+      "Your account",
+    ])
+  })
+
+  it("answers not found for unknown pages", async () => {
+    renderApp("/no/such/page")
+
+    expect(
+      await screen.findByRole("heading", { name: "Not found" }),
+    ).toBeTruthy()
+  })
+
+  it("answers not found for a workspace the person cannot see", async () => {
+    const api = fakeApi({
+      workspace: () =>
+        Promise.reject(
+          apiError(404, { error: "not-found", message: "Not found" }),
+        ),
+    })
+    renderApp("/w/88888888-8888-4888-8888-888888888888", api)
+
+    expect(
+      await screen.findByRole("heading", { name: "Not found" }),
+    ).toBeTruthy()
+  })
+
+  it("shows a generic message when the server fails", async () => {
+    const api = fakeApi({
+      account: () =>
+        Promise.reject(
+          apiError(500, { error: "internal", message: "Something went wrong" }),
+        ),
+    })
+    renderApp("/", api)
+
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      "Something went wrong. Try again in a moment.",
+    )
+  })
+
+  it("shows a generic page when rendering fails", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {})
+    const api = fakeApi({
+      // A malformed answer makes the page throw while rendering.
+      account: () => Promise.resolve({} as typeof account),
+    })
+    renderApp("/account", api)
+
+    expect(
+      await screen.findByRole("heading", { name: "Something went wrong" }),
+    ).toBeTruthy()
+    error.mockRestore()
   })
 })
