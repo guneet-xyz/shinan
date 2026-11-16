@@ -42,7 +42,11 @@ export type Rule = WorkspaceRule | InstallationRule
  */
 const anyRead: readonly Scope[] = ["catalog:read", "tasks:read"]
 
-export const rules = {
+/**
+ * Frozen all the way down, so no caller can widen what `decide()` allows at
+ * run time; `as const` only protects against that in the type checker.
+ */
+export const rules = deepFreeze({
   /** Set up the installation record. */
   "installation.set-up": {
     level: "installation",
@@ -116,7 +120,7 @@ export const rules = {
     agents: "people",
     reauthentication: false,
   },
-} as const satisfies Record<string, Rule>
+} as const satisfies Record<string, Rule>)
 
 export type Action = keyof typeof rules
 export type WorkspaceAction = {
@@ -175,4 +179,12 @@ const allow: Decision = { allowed: true }
 
 function refuse(reason: RefusalReason): Decision {
   return { allowed: false, reason }
+}
+
+function deepFreeze<T>(value: T): T {
+  if (typeof value === "object" && value !== null) {
+    for (const child of Object.values(value)) deepFreeze(child)
+    Object.freeze(value)
+  }
+  return value
 }

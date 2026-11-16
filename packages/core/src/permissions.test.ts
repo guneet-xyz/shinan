@@ -162,3 +162,27 @@ describe("decide", () => {
     }
   })
 })
+
+describe("rules", () => {
+  it("cannot be changed at run time", () => {
+    const remove = rules["member.remove"] as unknown as {
+      roles: string[]
+      reauthentication: boolean
+    }
+    expect(Object.isFrozen(rules)).toBe(true)
+    expect(() => remove.roles.push("contributor")).toThrow(TypeError)
+    expect(() => {
+      remove.reauthentication = false
+    }).toThrow(TypeError)
+    expect(() => {
+      ;(rules as Record<string, unknown>)["member.remove"] = {}
+    }).toThrow(TypeError)
+    expect(
+      decide(rules["member.remove"], {
+        kind: "person",
+        role: "contributor",
+        reauthenticated: true,
+      }),
+    ).toEqual({ allowed: false, reason: "role" })
+  })
+})
