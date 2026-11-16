@@ -16,7 +16,11 @@ vi.mock("../navigation", () => ({ leaveApp: vi.fn() }))
 function signedOutApi(overrides: Parameters<typeof fakeApi>[0] = {}) {
   return fakeApi({
     account: () => Promise.reject(signedOut()),
-    installation: () => Promise.resolve({ name: "Guneet's Shinan" }),
+    installation: () =>
+      Promise.resolve({
+        name: "Guneet's Shinan",
+        signInMethods: { github: true },
+      }),
     ...overrides,
   })
 }
@@ -97,7 +101,7 @@ describe("the sign-in page", () => {
     )
   })
 
-  it("says when sign-in is not available yet", async () => {
+  it("says when sign-in is not available", async () => {
     const api = signedOutApi({
       requestSignInLink: () =>
         Promise.reject(
@@ -114,7 +118,7 @@ describe("the sign-in page", () => {
       screen.getByRole("button", { name: "Email me a sign-in link" }),
     )
     expect((await screen.findByRole("alert")).textContent).toBe(
-      "Sign-in is not available on this installation yet.",
+      "Sign-in is not available on this installation.",
     )
   })
 

@@ -32,25 +32,6 @@ const declined: Invitation = {
 }
 
 describe("the invitations screen", () => {
-  it("says plainly when the server has no invitations yet", async () => {
-    const api = fakeApi({
-      invitations: () =>
-        Promise.reject(
-          apiError(501, {
-            error: "not-implemented",
-            message: "Invitations are not available yet",
-          }),
-        ),
-    })
-    renderApp(path, api)
-
-    expect(
-      await screen.findByText(
-        "Invitations are not available on this installation yet.",
-      ),
-    ).toBeTruthy()
-  })
-
   it("lists pending invitations first, with their actions", async () => {
     const api = fakeApi({
       invitations: () => Promise.resolve([declined, pending]),

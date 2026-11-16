@@ -36,6 +36,12 @@ export const account: Account = {
       joinedAt: "2026-11-01T10:00:00.000Z",
     },
   ],
+  signInMethods: {
+    email: person.email,
+    github: null,
+    githubAvailable: true,
+  },
+  operator: false,
 }
 
 export const workspace: Workspace = {
@@ -88,8 +94,11 @@ export function fakeApi(overrides: Partial<ApiClient> = {}): Fake {
   const notSetUp = (name: string) => () =>
     Promise.reject(new Error(`${name} was not set up in this test`))
   const defaults: Partial<ApiClient> = {
-    installation: () => Promise.resolve({ name: "Shinan" }),
+    installation: () =>
+      Promise.resolve({ name: "Shinan", signInMethods: { github: true } }),
     account: () => Promise.resolve(account),
+    signInSessions: () => Promise.resolve([]),
+    invitationsForYou: () => Promise.resolve([]),
     workspace: () => Promise.resolve(workspace),
     members: () => Promise.resolve([ownerMember, contributorMember]),
   }
@@ -99,7 +108,23 @@ export function fakeApi(overrides: Partial<ApiClient> = {}): Fake {
     "requestSignInLink",
     "startGitHubSignIn",
     "signOut",
+    "pendingGitHubSignIn",
+    "startSetup",
     "account",
+    "signInSessions",
+    "endSignInSession",
+    "signOutEverywhere",
+    "addGitHub",
+    "removeGitHub",
+    "invitationsForYou",
+    "acceptInvitationById",
+    "declineInvitationById",
+    "findInvitation",
+    "acceptInvitation",
+    "declineInvitation",
+    "allowlist",
+    "addToAllowlist",
+    "removeFromAllowlist",
     "workspace",
     "renameWorkspace",
     "leaveWorkspace",
@@ -125,7 +150,7 @@ function Location() {
   const location = useLocation()
   return (
     <output data-testid="location">
-      {location.pathname + location.search}
+      {location.pathname + location.search + location.hash}
     </output>
   )
 }
