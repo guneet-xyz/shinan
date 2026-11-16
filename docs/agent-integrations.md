@@ -100,7 +100,7 @@ rest of the document depends on this table.
   mods it has no heartbeat.
 - Codex can report presence through hooks and deliver nudges during a turn, but
   not wake an idle agent session. A Codex plugin is not planned
-  ([question 5](#open-questions)).
+  ([question 4](#open-questions)).
 - Every other tool stays at level 1 with `self-reported` presence.
 
 ## Agent sessions
@@ -324,7 +324,7 @@ to this document. **Decided** (owner, O-32, [#25](https://github.com/guneet-xyz/
   is shown as a warning sign. This is for people, not a rule agents follow
   (agents have no clock; see [reporting progress](#reporting-progress)).
 - **Open:** whether workspaces can change these values
-  ([question 2](#open-questions)).
+  ([question 1](#open-questions)).
 
 ### What becomes an event
 
@@ -389,12 +389,16 @@ All **proposed**:
 3. **Writes are safe to retry.** Each write takes a key chosen by the caller,
    and repeating it changes nothing. Reason: a broken response stream loses the
    request in flight, and the client must send it again.
-4. **Nudges travel in their own field.** Every result has a separate, clearly
-   labelled `nudges` field. It holds nudges available for check-in for this
-   agent session, but not those offered to or accepted by a plugin (see
-   [nudge delivery](#nudge-delivery)). Nudges are never mixed into task or
-   catalog text. Reason: MCP-only agents never poll on their own, and the agent
-   must be able to tell a person's message from stored data.
+4. **Messages travel in their own field.** Every result has a separate,
+   clearly labelled `messages` field. It holds the nudges and
+   [task notices](#task-notices) available for check-in for this agent
+   session, in time order, but not those offered to or accepted by a plugin
+   (see [nudge delivery](#nudge-delivery)). Each entry has its kind (`nudge` or
+   `notice`), its ID, its time and its [trust label](#trust-labels). Messages
+   are never mixed into task or catalog text. Reason: MCP-only agents never
+   poll on their own, and the agent must be able to tell a person's message, a
+   notice from Shinan and stored data apart. One field keeps the time order the
+   tasks document asks for when nudges and notices are delivered together.
 5. **Results link and do not copy.** Task and catalog results point to owning
    sources and work items by URL. Reason: D-001 and the plan's rule not to copy
    facts another system owns.
@@ -419,7 +423,7 @@ the field names and skill wording to this document. All **proposed**:
 | Field | Values | Meaning |
 |---|---|---|
 | `author_kind` | `member`, `agent`, `outside`, `shinan` | Who wrote the text. `outside` covers outside actors: outside issue text, and git host content from accounts not linked to a member. `shinan` covers text Shinan generated, such as summaries of events. |
-| `author` | A member's name, an agent session ID, a git host account, or `shinan` | The specific writer, where known. |
+| `author` | The written form from the identity document, "How an actor is written in text": a person's handle (`guneet`), `<person handle> via <agent handle>` for an agent (`guneet via opencode-daedalus`), or `shinan`. For an outside actor, the git host and account (`github.com/someone`). | The specific writer, where known. The exact agent session is on the event that recorded the text. |
 | `instruction` | `yes`, `request`, `no` | `yes` only for a nudge from the agent's own member. `request` for a nudge from another member. `no` for everything else, including task intent and acceptance criteria. |
 
 - A label with `instruction: no` does not make the text useless. A task's
@@ -446,15 +450,15 @@ Reason: together they cover the level 1 actions in the plan.
 
 | Group | Tool | What it does | Notes |
 |---|---|---|---|
-| Agent session | **Start agent session** | Registers or finds the agent session. Returns the agent session ID, who the agent acts for, the start-here path for agents, any task attached automatically, and nudges. | First call. With a plugin, the agent already has this through its context. |
-| | **Check in** | Says "still here", optionally with a one-line status, and acknowledges the nudge IDs the agent has read. Returns nudges. | |
+| Agent session | **Start agent session** | Registers or finds the agent session. Returns the agent session ID, who the agent acts for, the start-here path for agents, any task attached automatically, and messages (nudges and task notices). | First call. With a plugin, the agent already has this through its context. |
+| | **Check in** | Says "still here", optionally with a one-line status, and acknowledges the message IDs the agent has read. Returns messages. | Any other call can also acknowledge message IDs. |
 | | **End agent session** | Ends the agent session and releases its task. | Only when the work is over, not when pausing. |
 | Context | **Workspace context** | Returns the agent, its member, the workspace, what the agent may do, the task ID prefix, and the workspace's task flags with their descriptions and whether agents may set each one. | Agents read the flags here so they know when to use a custom one (tasks document, "Managing flags"). |
 | Catalog | **Search catalog** | Finds catalog entities by text, type or relation, with fact freshness. | Reads the [agent index](catalog.md). |
 | | **Get entity** | One catalog entity with facts, fact states, sources, last-checked times and links. | |
 | | **Propose catalog change** | Opens a [catalog proposal](domain-model.md#catalog-proposal-and-approval) with changes, evidence and related task. | Flow owned by the [catalog document](catalog.md). |
 | | **Record fact check** | Records a recheck (facts checked against a source, with scope and result, value unchanged) as a catalog proposal. | It applies on its own unless the catalog's "doubtful" rule applies, for example a fact check older than the current one. Only gated changes need approval (owner, O-3, [#25](https://github.com/guneet-xyz/shinan/issues/25)); the [catalog document](catalog.md) defines them. |
-| | **Comment on catalog proposal** | Adds a comment to a catalog proposal, for example an agent's review findings. | The catalog document lets agents comment on proposals; only people approve. The identity document must allow this for agents (see [dependencies](#dependencies-on-other-documents)). |
+| | **Comment on catalog proposal** | Adds a comment to a catalog proposal, for example an agent's review findings. | The catalog and identity documents let agents comment on proposals; only people approve. |
 | Tasks | **Find tasks** | Searches by text, repository, status, assignee or parent. Can return `to do` tasks in the order people set, so the agent can pick the next one. | Agents read the order but never change it (tasks document, conventions). |
 | | **Get task** | Intent, acceptance criteria, decisions, status, task flags, work links, attached agent sessions, recent timeline. | |
 | | **Create task** | Creates a task where the intent starts, optionally as a subtask of another task. Returns the ID for markers. | D-003. Subtasks are how big work is split (owner, O-21); rules in the [tasks document](tasks.md). |
@@ -478,7 +482,7 @@ Reason: together they cover the level 1 actions in the plan.
 - **Decided** (owner, O-10, [#25](https://github.com/guneet-xyz/shinan/issues/25)): the plan's "agents complete tasks"
   means agents **record verification**. No tool marks a task done.
 - **Open:** whether the agent index is also offered as MCP resources
-  ([question 6](#open-questions)).
+  ([question 5](#open-questions)).
 
 ## The CLI
 
@@ -666,7 +670,7 @@ these holds it:
 |---|---|---|
 | Offered to plugin | Shinan has sent it to the plugin, which has not answered. | The plugin accepts or rejects. Shinan can withdraw the offer, and the plugin confirms the withdrawal or reports that it already accepted. |
 | Accepted by the coding tool | The plugin handed it to the coding tool, which queued it (OpenCode: `ctx.session.prompt` admitted it). | The coding tool delivers it, or the person cancels it in the tool. |
-| Available for check-in | Returned in the `nudges` field of every MCP or CLI result for this agent session. | The agent acknowledges it. |
+| Available for check-in | Returned in the `messages` field of every MCP or CLI result for this agent session. | The agent acknowledges it. |
 
 ```mermaid
 flowchart TD
@@ -709,11 +713,11 @@ All of the following is **proposed**.
   delivery ends as `cancelled` and does not move to check-in. Reason: someone
   at the tool decided the agent should not get it; sending it another way would
   overrule them.
-- **Batching.** Nudges waiting for one agent session are delivered together, in
-  order, as one message listing each nudge with its sender and ID. This follows
-  the tasks document. In OpenCode the message ID is derived from the nudge IDs,
-  so sending it again is harmless (OpenCode returns the original admission for
-  a known ID).
+- **Batching.** Nudges and task notices waiting for one agent session are
+  delivered together, in time order, as one message listing each with its
+  sender (or "from Shinan"), kind and ID. This follows the tasks document. In
+  OpenCode the message ID is derived from their IDs, so sending it again is
+  harmless (OpenCode returns the original admission for a known ID).
 - **No agent session.** **Decided** (owner, O-27, [#25](https://github.com/guneet-xyz/shinan/issues/25)): a nudge
   never delivered to any agent session stays on the task, and the next agent
   session that claims the task receives it in the claim result. Nudges already
@@ -749,6 +753,33 @@ current work first. Either one wakes an idle agent session.
   ([git host actions](#git-host-actions-a-person-asks-for)).
 - Tools without these modes use the nearest equivalent
   ([Claude Code plugin](#claude-code-plugin)).
+
+### Task notices
+
+A **task notice** is a message from Shinan, not from a person, about something
+that happened to a task without anyone doing it in Shinan: a delivering PR
+closed or merged, a dependency finished, or an outside actor's marker linking a
+PR. The tasks document, "Task notices", decides when notices are sent and to
+whom, adopting the delivery this document proposed. How they travel, all
+**proposed**:
+
+- **Same path as nudges.** Same targets, same [holders](#one-owner-at-a-time),
+  same acknowledgement and the same outcomes, live through the plugin or in the
+  `messages` field at check-in. Reason: one delivery path to build and test,
+  and the agent hears about events as reliably as it hears from people.
+- **Always `queue`.** Reason: a notice is information; it should not cut into
+  a step in progress.
+- **Labelled as from Shinan,** with the trust label `author_kind: shinan` and
+  `instruction: no`. The text says what happened and links to it. Reason: no
+  person asked for anything, and text quoted from the host, such as a closed
+  PR's description, must not reach the agent as a command.
+- **Not kept for the next claimant.** A notice whose deliveries are all
+  `undeliverable`, or that had no target, is dropped. The task's timeline still
+  shows the event, so the next agent session reads it there. Reason: unlike a
+  person's message, the information is on the task anyway and can go stale.
+- **The agent decides what to do** under its own instructions and the task's
+  intent, and records anything it does as a progress update. Notices are not
+  answered with **reply to nudge**; acknowledging is enough.
 
 ### Starting a new agent session
 
@@ -809,11 +840,11 @@ documentation confirmed this on 2026-11-16.
   synthetic messages. Reason: a nudge is a person's words, and prompts pass
   through the user's own prompt hooks, such as redaction plugins; synthetic
   messages skip them. **Open** which models handle better
-  ([question 3](#open-questions)).
+  ([question 2](#open-questions)).
 - **Proposed:** each plugin instance reports only conversations in its own
   location, and Shinan removes duplicates by conversation ID. Reason: the event
   stream is not limited to the plugin's location. To be checked in a prototype
-  ([question 4](#open-questions)).
+  ([question 3](#open-questions)).
 - **Phases (proposed):** phase 1 ships presence, context and automatic claims;
   phase 2 adds live nudges. Reason: follows the plan's phases.
 
@@ -1030,7 +1061,7 @@ to close integration findings are listed in the fix pull request for
 | Document | What this document relies on |
 |---|---|
 | [Domain model and glossary](domain-model.md) | Terms: agent session, agent session ID, conversation ID, heartbeat, presence states including `offline`, subagent sessions, release, nudge outcomes, delivery mode, holder and route, launcher and device setup guide. |
-| [Tasks and work](tasks.md) | Claim rules, including which tasks can be claimed automatically; subtasks and moving them; who receives a nudge ("To whom"); nudge creation, batching and withdrawal; git host actions a person can request; task flags and which ones agents may set; deployment approval requests; the `Shinan-Task` marker scheme, alongside this document's `Shinan-Session`; how agent sessions hear about events no person caused. |
+| [Tasks and work](tasks.md) | Claim rules, including which tasks can be claimed automatically; subtasks and moving them; who receives a nudge ("To whom"); nudge creation, batching and withdrawal; git host actions a person can request; task flags and which ones agents may set; deployment approval requests; the `Shinan-Task` marker scheme, alongside this document's `Shinan-Session`; when task notices are sent and to whom. |
 | [Identity, agents and permissions](identity.md) | Agent registration and tokens (NO-1); the launcher token; what agents may do, including commenting on catalog proposals and recording a deployment approval given in the conversation (O-20); how tool-reported and model-passed session IDs count for attribution; marker checks; nudges from other members. |
 | [Architecture and operations](architecture.md) | MCP endpoint, protocol versions and the CLI's local MCP bridge; one token accepted at MCP, the REST API and the plugin stream (NO-1); the plugin stream with offers, withdrawals and acknowledgements; the server-side allow-list for plugin reports; trust labels in MCP answers; serving the skill; the launcher's connection. |
 | [Git host integrations](git-hosts.md) | Detecting markers. Shinan writes only as its GitHub App and never on Forgejo (O-1, N-4). |
@@ -1040,27 +1071,19 @@ to close integration findings are listed in the fix pull request for
 
 ## Open questions
 
-1. **Events that no person caused.** When a PR is closed on the host, a
-   dependency finishes or a linked PR merges, attached agent sessions should
-   hear about it. The tasks document decides what kind of message this is
-   (integration finding I-17 on [#26](https://github.com/guneet-xyz/shinan/issues/26); the recommendation is a separate kind,
-   not a nudge). For delivery, this document proposes reusing the nudge path:
-   holder, acknowledgement and `queue` mode, with the trust label
-   `author_kind: shinan` and `instruction: no`, so it never carries a person's
-   authority.
-2. **Heartbeat values.** Are 60 s and 3 min right, and should a workspace be
+1. **Heartbeat values.** Are 60 s and 3 min right, and should a workspace be
    able to change the timeouts?
-3. **Prompt or synthetic message in OpenCode.** Which do models handle better
+2. **Prompt or synthetic message in OpenCode.** Which do models handle better
    for nudges? Settle with a prototype.
-4. **OpenCode plugin instances and locations.** How instances, locations and
+3. **OpenCode plugin instances and locations.** How instances, locations and
    the shared event stream relate. Settle with a prototype before relying on
    the duplicate-removal rule.
-5. **Codex and other tools.** Is a Codex plugin worth building after Claude
+4. **Codex and other tools.** Is a Codex plugin worth building after Claude
    Code?
-6. **MCP resources.** Should the agent index also be offered as MCP resources?
-7. **Claude Code inbox socket.** If its message format is documented, is it a
+5. **MCP resources.** Should the agent index also be offered as MCP resources?
+6. **Claude Code inbox socket.** If its message format is documented, is it a
    better live route than the mod and hooks?
-8. **Launcher and other coding tools.** O-1 has the launcher run OpenCode.
+7. **Launcher and other coding tools.** O-1 has the launcher run OpenCode.
    Should it later start Claude Code too?
 
 ## Decisions needed from the owner
