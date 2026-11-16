@@ -42,10 +42,9 @@ Owner's choice; no reason recorded.
 
 ## Notes
 
-- **Sourced fact:** the owner's answer names GitHub. On Forgejo, the owner
-  chose that Shinan uses the connecting person's own account
-  ([D-033](D-033-forgejo-connection.md)). See
-  [decisions needed](README.md#decisions-needed-from-the-owner).
+- **Sourced fact:** the owner's answer names GitHub. For Forgejo, the owner
+  later decided that Shinan makes no writes at all
+  ([D-042](D-042-no-writes-on-forgejo.md), N-4).
 
 ## Consequences
 
@@ -80,3 +79,4 @@ Owner's choice; no reason recorded.
 - 2026-11-16: accepted by the owner on issue #25. Recorded in the decision
   log's pull request as part of the issue #25 batch (see
   [README, history](README.md#history)).
+- 2026-11-16: related decision [D-042](D-042-no-writes-on-forgejo.md) recorded from batch 12 on [issue #25](https://github.com/guneet-xyz/shinan/issues/25#issuecomment-6913152214); maintained sections updated.

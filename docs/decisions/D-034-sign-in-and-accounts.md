@@ -8,7 +8,7 @@ evidence: "https://github.com/guneet-xyz/shinan/issues/25 (O-41, O-48)"
 supersedes: []
 superseded_by: []
 amends: []
-amended_by: []
+amended_by: [D-044]
 ---
 
 # D-034: Sign-in by GitHub, Forgejo, email magic link or password; an email allowlist decides who can have an account
@@ -16,6 +16,7 @@ amended_by: []
 Status: **Accepted** by the owner on 2026-11-16
 ([issue #25, batch 6](https://github.com/guneet-xyz/shinan/issues/25#issuecomment-6912093727):
 O-41 and O-48, not as recommended).
+Amended by [D-044](D-044-sign-in-magic-link-or-github.md).
 
 ## Context
 
@@ -42,6 +43,9 @@ Owner's choice; no reason recorded.
 
 ## Consequences
 
+- **Decided (owner, [D-044](D-044-sign-in-magic-link-or-github.md)):** sign-in
+  is narrowed to email magic link or GitHub; no password or Forgejo sign-in.
+  Email is sent through the AWS SES API.
 - **Decided:** "no email in the first version" no longer holds; magic links
   need outgoing email.
 - **Decided:** plan question 7's sign-in method is answered; the protections
@@ -49,7 +53,7 @@ Owner's choice; no reason recorded.
 - Details: see [identity, agents and permissions](../identity.md),
   [architecture and operations](../architecture.md),
   [human experience](../human-experience.md) and
-  [git host integrations](../git-hosts.md) (Forgejo sign-in on any instance).
+  [git host integrations](../git-hosts.md) (connecting Forgejo by URL).
 
 ## Alternatives considered
 
@@ -74,3 +78,4 @@ Owner's choice; no reason recorded.
 - 2026-11-16: accepted by the owner on issue #25. Recorded in the decision
   log's pull request as part of the issue #25 batch (see
   [README, history](README.md#history)).
+- 2026-11-16: amended by [D-044](D-044-sign-in-magic-link-or-github.md) (owner answers, batch 12, on [issue #25](https://github.com/guneet-xyz/shinan/issues/25#issuecomment-6913152214)). Decision and Reasons unchanged; maintained sections updated.

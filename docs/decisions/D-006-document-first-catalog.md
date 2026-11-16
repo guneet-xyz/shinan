@@ -50,8 +50,8 @@ repository already works well.
   [catalog](../domain-model.md#catalog) and
   [wiki and agent index](../domain-model.md#wiki-and-agent-index) entries.
 - **Decided (owner, [D-022](D-022-catalog-storage-and-git-mirror.md)):**
-  revisions are stored in PostgreSQL with an always-on read-only Git mirror,
-  and review happens in Shinan. How the agent index is rebuilt: see
+  revisions are stored in PostgreSQL and review happens in Shinan. There is
+  no Git mirror for now ([D-043](D-043-no-git-mirror-for-now.md)). How the agent index is rebuilt: see
   [architecture and operations](../architecture.md).
 - **Open:** the catalog schema ([plan, question 5](../plan.md#7-open-questions)).
   Owned by the [catalog](../catalog.md).
@@ -80,3 +80,4 @@ repository already works well.
 - Accepted when the owner's answers were recorded (commit `e46c560`) and
   approved with the plan on 2026-11-16 (merge commit `248a2c5`).
 - 2026-11-16: amended by [D-022](D-022-catalog-storage-and-git-mirror.md) (owner answers on [issue #25](https://github.com/guneet-xyz/shinan/issues/25)). Decision and Reasons unchanged; maintained sections updated.
+- 2026-11-16: related decision [D-043](D-043-no-git-mirror-for-now.md) recorded from batch 12 on [issue #25](https://github.com/guneet-xyz/shinan/issues/25#issuecomment-6913152214); maintained sections updated.

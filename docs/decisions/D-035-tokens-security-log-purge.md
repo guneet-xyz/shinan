@@ -8,7 +8,7 @@ evidence: "https://github.com/guneet-xyz/shinan/issues/25 (O-44, O-47, O-50)"
 supersedes: []
 superseded_by: []
 amends: []
-amended_by: []
+amended_by: [D-047]
 ---
 
 # D-035: Agent tokens last until revoked; the security log is kept forever; only workspace owners can purge
@@ -16,6 +16,7 @@ amended_by: []
 Status: **Accepted** by the owner on 2026-11-16
 ([issue #25, batch 6](https://github.com/guneet-xyz/shinan/issues/25#issuecomment-6912093727):
 O-44, O-47 and O-50, not as recommended).
+Amended by [D-047](D-047-installation-security-log-not-purgeable.md).
 
 ## Context
 
@@ -41,6 +42,10 @@ Owner's choice; no reason recorded.
 
 ## Consequences
 
+- **Decided (owner, [D-047](D-047-installation-security-log-not-purgeable.md)):**
+  installation-level security-log entries cannot be purged by anyone, for now.
+- **Decided (owner, [D-043](D-043-no-git-mirror-for-now.md)):** purge has no
+  Git mirror to reach.
 - Token handling, the security log and purge: see
   [identity, agents and permissions](../identity.md),
   [agent integrations](../agent-integrations.md),
@@ -71,3 +76,4 @@ None.
 - 2026-11-16: accepted by the owner on issue #25. Recorded in the decision
   log's pull request as part of the issue #25 batch (see
   [README, history](README.md#history)).
+- 2026-11-16: amended by [D-047](D-047-installation-security-log-not-purgeable.md) (owner answers, batch 12, on [issue #25](https://github.com/guneet-xyz/shinan/issues/25#issuecomment-6913152214)). Decision and Reasons unchanged; maintained sections updated.

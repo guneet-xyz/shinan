@@ -8,7 +8,7 @@ evidence: "https://github.com/guneet-xyz/shinan/issues/25 (O-11, O-12)"
 supersedes: []
 superseded_by: []
 amends: [D-006]
-amended_by: []
+amended_by: [D-043]
 ---
 
 # D-022: Catalog revisions are stored in PostgreSQL with an always-on read-only Git mirror; review happens in Shinan
@@ -16,6 +16,7 @@ amended_by: []
 Status: **Accepted** by the owner on 2026-11-16
 ([issue #25, batch 3](https://github.com/guneet-xyz/shinan/issues/25#issuecomment-6911355396):
 O-11 and O-12).
+Amended by [D-043](D-043-no-git-mirror-for-now.md).
 
 ## Context
 
@@ -41,8 +42,9 @@ No other reason recorded.
 
 ## Consequences
 
-- **Decided:** the Git mirror is on for the owner's installation, not
-  optional; changes made in the mirror are not accepted back.
+- **Decided (owner, [D-043](D-043-no-git-mirror-for-now.md)):** no Git
+  mirror for now; catalog revisions live in PostgreSQL only. Proposals and
+  review stay inside Shinan.
 - Details: see the [catalog](../catalog.md) and
   [architecture and operations](../architecture.md).
 
@@ -68,3 +70,4 @@ None.
 - 2026-11-16: accepted by the owner on issue #25. Recorded in the decision
   log's pull request as part of the issue #25 batch (see
   [README, history](README.md#history)).
+- 2026-11-16: amended by [D-043](D-043-no-git-mirror-for-now.md) (owner answers, batch 12, on [issue #25](https://github.com/guneet-xyz/shinan/issues/25#issuecomment-6913152214)). Decision and Reasons unchanged; maintained sections updated.

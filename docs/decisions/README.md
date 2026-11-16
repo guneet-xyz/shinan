@@ -46,10 +46,11 @@ document, it is listed under
 
 D-001 to D-020 were accepted with the plan
 ([issue #1](https://github.com/guneet-xyz/shinan/issues/1),
-[PR #2](https://github.com/guneet-xyz/shinan/pull/2)). D-021 to D-041 record
-the owner's answers on [issue #25](https://github.com/guneet-xyz/shinan/issues/25);
-the O-numbers are in each record's `evidence` field and in the
-[O-number mapping](#owner-answers-on-issue-25).
+[PR #2](https://github.com/guneet-xyz/shinan/pull/2)). D-021 to D-047 record
+the owner's answers on [issue #25](https://github.com/guneet-xyz/shinan/issues/25):
+O-numbers (batches 1 to 11) and N-numbers (batch 12, follow-up questions).
+The numbers are in each record's `evidence` field and in the
+[mapping](#owner-answers-on-issue-25).
 
 | ID | Decision | Status | Date | Amends / amended by | Owning documents |
 |---|---|---|---|---|---|
@@ -74,26 +75,32 @@ the O-numbers are in each record's `evidence` field and in the
 | [D-019](D-019-workspaces-from-the-start.md) | One user at first, but workspaces and invitations are designed in from the start | Accepted | 2026-11-16 | Amended by D-036 | Identity, agents and permissions |
 | [D-020](D-020-stack-chosen-from-options.md) | The technology stack is chosen by the owner from options with trade-offs | Accepted | 2026-11-16 | | Architecture and operations |
 | [D-021](D-021-status-from-work-and-events.md) | Task status is calculated from linked work plus recorded events; agents record verification | Accepted | 2026-11-16 | Amends D-005 | Tasks and work |
-| [D-022](D-022-catalog-storage-and-git-mirror.md) | Catalog revisions in PostgreSQL with an always-on read-only Git mirror; review in Shinan | Accepted | 2026-11-16 | Amends D-006 | Catalog; Architecture and operations |
+| [D-022](D-022-catalog-storage-and-git-mirror.md) | Catalog revisions in PostgreSQL with an always-on read-only Git mirror; review in Shinan | Accepted | 2026-11-16 | Amends D-006; amended by D-043 | Catalog; Architecture and operations |
 | [D-023](D-023-workspace-wide-visibility-no-secrets.md) | Every member sees everything in a workspace; secrets never go in the catalog | Accepted | 2026-11-16 | | Catalog; Identity, agents and permissions |
 | [D-024](D-024-gated-catalog-approval.md) | Only gated catalog changes need approval, from the start of the trial | Accepted | 2026-11-16 | | Catalog |
 | [D-025](D-025-fact-state-planned.md) | The fact state `proposed` is renamed `planned` | Accepted | 2026-11-16 | | Catalog |
 | [D-026](D-026-custom-entity-types.md) | Custom entity types are allowed in the first version | Accepted | 2026-11-16 | | Catalog |
 | [D-027](D-027-workspace-task-id-prefix.md) | Each workspace has its own task ID prefix | Accepted | 2026-11-16 | | Tasks and work |
 | [D-028](D-028-task-flags.md) | Task flags are managed per workspace; agents may set `needs a person`; `awaiting deployment approval` is its own flag | Accepted | 2026-11-16 | | Tasks and work |
-| [D-029](D-029-subtasks.md) | Tasks can have subtasks; done when subtasks are done and delivering PRs are merged | Accepted | 2026-11-16 | | Tasks and work |
+| [D-029](D-029-subtasks.md) | Tasks can have subtasks; done when subtasks are done and delivering PRs are merged | Accepted | 2026-11-16 | Amended by D-046 | Tasks and work |
 | [D-030](D-030-related-links-from-mentions.md) | Members' mentions of a task ID in git host comments create a `related` link | Accepted | 2026-11-16 | | Tasks and work; Git host integrations |
 | [D-031](D-031-agent-and-session-granularity.md) | An agent is per person, coding tool and machine; every subagent is its own agent session | Accepted | 2026-11-16 | | Identity, agents and permissions; Agent integrations |
 | [D-032](D-032-no-writes-as-a-person-on-github.md) | Shinan never writes to GitHub as a person; person-requested git host actions are done by the person's own agents | Accepted | 2026-11-16 | Amends D-017 | Git host integrations; Identity, agents and permissions |
-| [D-033](D-033-forgejo-connection.md) | On Forgejo, Shinan uses the connecting person's own account and accepts any token | Accepted | 2026-11-16 | | Git host integrations |
-| [D-034](D-034-sign-in-and-accounts.md) | Sign-in by GitHub, Forgejo, email magic link or password; an email allowlist decides who can have an account | Accepted | 2026-11-16 | | Identity, agents and permissions |
-| [D-035](D-035-tokens-security-log-purge.md) | Agent tokens last until revoked; the security log is kept forever; only workspace owners can purge | Accepted | 2026-11-16 | | Identity, agents and permissions; Architecture and operations |
+| [D-033](D-033-forgejo-connection.md) | On Forgejo, Shinan uses the connecting person's own account and accepts any token | Accepted | 2026-11-16 | Amended by D-042 | Git host integrations |
+| [D-034](D-034-sign-in-and-accounts.md) | Sign-in by GitHub, Forgejo, email magic link or password; an email allowlist decides who can have an account | Accepted | 2026-11-16 | Amended by D-044 | Identity, agents and permissions |
+| [D-035](D-035-tokens-security-log-purge.md) | Agent tokens last until revoked; the security log is kept forever; only workspace owners can purge | Accepted | 2026-11-16 | Amended by D-047 | Identity, agents and permissions; Architecture and operations |
 | [D-036](D-036-design-now-build-before-second-member.md) | D-019 means design now, build before the second member | Accepted | 2026-11-16 | Amends D-019 | Identity, agents and permissions |
 | [D-037](D-037-typescript-node-react.md) | The stack is TypeScript, a plain Node.js server and a React single-page app | Accepted | 2026-11-16 | | Architecture and operations |
 | [D-038](D-038-no-built-in-backups.md) | No built-in backups for now; relying on host-level backups is an accepted risk | Accepted | 2026-11-16 | | Architecture and operations; Roadmap and migration |
 | [D-039](D-039-deploy-as-needed.md) | Deploy to Musashi as needed, each deployment with its own approval | Accepted | 2026-11-16 | | Architecture and operations; Roadmap and migration |
 | [D-040](D-040-trial-coordination-in-shinan.md) | Cross-project coordination for trial projects moves into Shinan during the trial | Accepted | 2026-11-16 | Amends D-018 | Roadmap and migration |
 | [D-041](D-041-no-outside-tracker-integrations.md) | No integrations with outside trackers are planned; the Multica trial is skipped | Accepted | 2026-11-16 | Amends D-010 | Product overview |
+| [D-042](D-042-no-writes-on-forgejo.md) | Shinan makes no writes on Forgejo; on GitHub it writes only as its app | Accepted | 2026-11-16 | Amends D-033 | Git host integrations |
+| [D-043](D-043-no-git-mirror-for-now.md) | No Git mirror of the catalog for now; revisions live in PostgreSQL only | Accepted | 2026-11-16 | Amends D-022 | Catalog; Architecture and operations |
+| [D-044](D-044-sign-in-magic-link-or-github.md) | Sign-in by email magic link or GitHub only; Forgejo only for connecting; email through the AWS SES API | Accepted | 2026-11-16 | Amends D-034 | Identity, agents and permissions; Architecture and operations |
+| [D-045](D-045-no-viewer-role.md) | Workspace roles are workspace owner and contributor only; no viewer role | Accepted | 2026-11-16 | | Identity, agents and permissions; Roadmap and migration |
+| [D-046](D-046-subtasks-any-depth.md) | Subtasks can nest to any depth | Accepted | 2026-11-16 | Amends D-029 | Tasks and work |
+| [D-047](D-047-installation-security-log-not-purgeable.md) | Installation-level security-log entries cannot be purged by anyone, for now | Accepted | 2026-11-16 | Amends D-035 | Identity, agents and permissions |
 
 The full list of owning documents, with planned paths, is in each record.
 
@@ -105,10 +112,10 @@ resolves the conflict.
 
 ## Owner answers on issue #25
 
-Mapping from the owner's answers to decision records. Answers not listed here
+Mapping from the owner's answers to decision records. Answers without a record
 accepted a document's own recommendation inside that document (or, for O-93
 to O-96 and O-98, this README's rules); they are decided in the documents,
-which cite the O-number.
+which cite the O-number or N-number.
 
 | Owner answers | Record |
 |---|---|
@@ -135,6 +142,13 @@ which cite the O-number.
 | O-97, O-88 | [D-041](D-041-no-outside-tracker-integrations.md) |
 | O-93, O-94, O-95, O-96, O-98 | This README (no record) |
 | All other O-numbers | No record; decided in the owning document |
+| N-4 | [D-042](D-042-no-writes-on-forgejo.md) |
+| N-5, N-9 | [D-043](D-043-no-git-mirror-for-now.md) |
+| N-7, N-6 | [D-044](D-044-sign-in-magic-link-or-github.md) |
+| N-11 | [D-045](D-045-no-viewer-role.md) |
+| N-1 | [D-046](D-046-subtasks-any-depth.md) |
+| N-8 | [D-047](D-047-installation-security-log-not-purgeable.md) |
+| N-2, N-3, N-10 | No record; decided in the owning document |
 
 ## Record format
 
@@ -377,19 +391,18 @@ document to adopt, change or ignore.
 
 ## Open questions
 
-None besides the decision below. The earlier open questions were answered by
-the owner on issue #25: acceptance (O-94), ownership of outside tracker
-integrations (O-97, [D-041](D-041-no-outside-tracker-integrations.md)), plan
-text without IDs (O-98), and the domain model's owner decisions
+None. The earlier open questions were answered by the owner on issue #25:
+acceptance (O-94), ownership of outside tracker integrations (O-97,
+[D-041](D-041-no-outside-tracker-integrations.md)), plan text without IDs
+(O-98), the domain model's owner decisions
 ([D-021](D-021-status-from-work-and-events.md),
 [D-025](D-025-fact-state-planned.md), [D-027](D-027-workspace-task-id-prefix.md),
-[D-028](D-028-task-flags.md)).
+[D-028](D-028-task-flags.md)), and the GitHub and Forgejo write difference
+(N-4, [D-042](D-042-no-writes-on-forgejo.md)).
 
 ## Decisions needed from the owner
 
-| # | Decision | Recommended | Reason |
-|---|---|---|---|
-| 1 | Is the difference between GitHub and Forgejo writes intended? On GitHub, Shinan never writes as a person and stores no per-person token ([D-032](D-032-no-writes-as-a-person-on-github.md), O-1); on Forgejo, it writes as the connecting person with that person's token ([D-033](D-033-forgejo-connection.md), O-53/O-54). | Confirm as intended, and have git hosts and identity state the difference plainly. | Both answers are explicit, and O-1 names only GitHub; a short confirmation stops documents from generalising either rule to both hosts. |
+None.
 
 ## History
 
@@ -404,3 +417,7 @@ text without IDs (O-98), and the domain model's owner decisions
   numbering collisions between parallel pull requests. Amended records
   (D-005, D-006, D-010, D-017, D-018, D-019) got `amended_by` and a History
   line; their Decision and Reasons are unchanged.
+- 2026-11-16: records D-042 to D-047 added for the owner's follow-up answers
+  (batch 12, N-numbers) on issue #25, in this pull request for the same
+  reason. Amended records (D-022, D-029, D-033, D-034, D-035) got `amended_by`
+  and a History line. N-4 answered this log's only open owner decision.

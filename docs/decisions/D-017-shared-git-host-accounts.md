@@ -50,8 +50,8 @@ have the same setup. This is a known limitation to design around.
   agents).
 - **Decided (owner, [D-032](D-032-no-writes-as-a-person-on-github.md)):**
   Shinan never writes to GitHub as a person; what a person wants done on a git
-  host is done by their own agents. On Forgejo, Shinan uses the connecting
-  person's account ([D-033](D-033-forgejo-connection.md)).
+  host is done by their own agents. Shinan makes no writes on Forgejo
+  ([D-042](D-042-no-writes-on-forgejo.md)).
 - **Open:** how reliable attribution can be
   ([plan, question 2](../plan.md#7-open-questions)). Owned by
   [identity, agents and permissions](../identity.md).
@@ -88,3 +88,4 @@ three options (commit `5c3330c`):
   (commit `e46c560`, 2026-11-16), and approved with the plan on 2026-11-16
   (merge commit `248a2c5`).
 - 2026-11-16: amended by [D-032](D-032-no-writes-as-a-person-on-github.md) (owner answers on [issue #25](https://github.com/guneet-xyz/shinan/issues/25)). Decision and Reasons unchanged; maintained sections updated.
+- 2026-11-16: related decision [D-042](D-042-no-writes-on-forgejo.md) recorded from batch 12 on [issue #25](https://github.com/guneet-xyz/shinan/issues/25#issuecomment-6913152214); maintained sections updated.

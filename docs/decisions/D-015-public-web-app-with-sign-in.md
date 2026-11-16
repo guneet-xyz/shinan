@@ -40,7 +40,8 @@ and architecture documents.
 - **Decided:** the identity and architecture documents give sign-in, access
   rules and security extra attention.
 - **Decided (owner):** sign-in methods and accounts are set by
-  [D-034](D-034-sign-in-and-accounts.md); agent tokens, the security log and
+  [D-034](D-034-sign-in-and-accounts.md) as narrowed by
+  [D-044](D-044-sign-in-magic-link-or-github.md); agent tokens, the security log and
   purge rights by [D-035](D-035-tokens-security-log-purge.md); visibility by
   [D-023](D-023-workspace-wide-visibility-no-secrets.md).
 - **Open:** the remaining protections for a public web app
@@ -78,3 +79,4 @@ and architecture documents.
 - Recorded as accepted from the owner's answers (commit `e46c560`, 2026-11-16)
   and approved with the plan on 2026-11-16 (merge commit `248a2c5`).
 - 2026-11-16: related decisions [D-023](D-023-workspace-wide-visibility-no-secrets.md), [D-034](D-034-sign-in-and-accounts.md), [D-035](D-035-tokens-security-log-purge.md) recorded from [issue #25](https://github.com/guneet-xyz/shinan/issues/25); maintained sections updated.
+- 2026-11-16: related decision [D-044](D-044-sign-in-magic-link-or-github.md) recorded from batch 12 on [issue #25](https://github.com/guneet-xyz/shinan/issues/25#issuecomment-6913152214); maintained sections updated.

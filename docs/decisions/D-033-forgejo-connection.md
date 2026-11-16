@@ -8,7 +8,7 @@ evidence: "https://github.com/guneet-xyz/shinan/issues/25 (O-53, O-54)"
 supersedes: []
 superseded_by: []
 amends: []
-amended_by: []
+amended_by: [D-042]
 ---
 
 # D-033: On Forgejo, Shinan uses the connecting person's own account and accepts any token
@@ -16,6 +16,7 @@ amended_by: []
 Status: **Accepted** by the owner on 2026-11-16
 ([issue #25, batch 7](https://github.com/guneet-xyz/shinan/issues/25#issuecomment-6912226367):
 O-53 and O-54, not as recommended).
+Amended by [D-042](D-042-no-writes-on-forgejo.md).
 
 ## Context
 
@@ -39,10 +40,10 @@ Owner's choice; no reason recorded.
 
 ## Notes
 
-- **Sourced fact:** for GitHub, the owner chose that Shinan never writes as a
-  person and stores no per-person tokens
-  ([D-032](D-032-no-writes-as-a-person-on-github.md)). See
-  [decisions needed](README.md#decisions-needed-from-the-owner).
+- **Sourced fact:** the owner later decided that Shinan makes no writes on
+  Forgejo ([D-042](D-042-no-writes-on-forgejo.md), N-4). This record now
+  concerns only reading: the connecting person's account and token are used to
+  read.
 
 ## Consequences
 
@@ -75,3 +76,4 @@ Owner's choice; no reason recorded.
 - 2026-11-16: accepted by the owner on issue #25. Recorded in the decision
   log's pull request as part of the issue #25 batch (see
   [README, history](README.md#history)).
+- 2026-11-16: amended by [D-042](D-042-no-writes-on-forgejo.md) (owner answers, batch 12, on [issue #25](https://github.com/guneet-xyz/shinan/issues/25#issuecomment-6913152214)). Decision and Reasons unchanged; maintained sections updated.

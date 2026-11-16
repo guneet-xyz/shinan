@@ -49,6 +49,8 @@ sign-in.
 - **Decided (owner, [D-023](D-023-workspace-wide-visibility-no-secrets.md)):**
   every member sees everything in a workspace, including private repository
   work (plan question 3).
+- **Decided (owner, [D-045](D-045-no-viewer-role.md)):** workspace roles are
+  workspace owner and contributor only.
 - **Decided (owner, [D-034](D-034-sign-in-and-accounts.md)):** an email
   allowlist decides who can have an account; joining a workspace needs an
   invitation.
@@ -77,3 +79,4 @@ sign-in.
 - Recorded as accepted from the owner's answers (commit `e46c560`, 2026-11-16)
   and approved with the plan on 2026-11-16 (merge commit `248a2c5`).
 - 2026-11-16: amended by [D-036](D-036-design-now-build-before-second-member.md) (owner answers on [issue #25](https://github.com/guneet-xyz/shinan/issues/25)). Decision and Reasons unchanged; maintained sections updated.
+- 2026-11-16: related decision [D-045](D-045-no-viewer-role.md) recorded from batch 12 on [issue #25](https://github.com/guneet-xyz/shinan/issues/25#issuecomment-6913152214); maintained sections updated.

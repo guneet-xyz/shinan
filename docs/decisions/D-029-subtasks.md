@@ -8,7 +8,7 @@ evidence: "https://github.com/guneet-xyz/shinan/issues/25 (O-21)"
 supersedes: []
 superseded_by: []
 amends: []
-amended_by: []
+amended_by: [D-046]
 ---
 
 # D-029: Tasks can have subtasks; a task is done when its subtasks are done and its delivering PRs are merged
@@ -16,6 +16,7 @@ amended_by: []
 Status: **Accepted** by the owner on 2026-11-16
 ([issue #25, batch 4](https://github.com/guneet-xyz/shinan/issues/25#issuecomment-6911557353):
 O-21, not as recommended).
+Amended by [D-046](D-046-subtasks-any-depth.md).
 
 ## Context
 
@@ -38,6 +39,8 @@ Owner's choice; no reason recorded.
 ## Consequences
 
 - **Decided:** `Completes` / `Part of` link scopes are not used.
+- **Decided (owner, [D-046](D-046-subtasks-any-depth.md)):** subtasks can nest
+  to any depth.
 - How subtasks are created, shown and calculated: see
   [tasks and work](../tasks.md) and [human experience](../human-experience.md).
 
@@ -63,3 +66,4 @@ None.
 - 2026-11-16: accepted by the owner on issue #25. Recorded in the decision
   log's pull request as part of the issue #25 batch (see
   [README, history](README.md#history)).
+- 2026-11-16: amended by [D-046](D-046-subtasks-any-depth.md) (owner answers, batch 12, on [issue #25](https://github.com/guneet-xyz/shinan/issues/25#issuecomment-6913152214)). Decision and Reasons unchanged; maintained sections updated.
