@@ -23,7 +23,8 @@ who may nudge whom. Terms follow the [domain model and glossary](domain-model.md
 Every statement is marked:
 
 - **Decided**: follows from an accepted decision or approved content in the
-  [plan](plan.md), which is cited.
+  [plan](plan.md), or from the owner's answers in [#25](https://github.com/guneet-xyz/shinan/issues/25), cited as
+  "owner, O-n". The decision log maps O-n to decision records.
 - **Proposed**: suggested here, with a reason. Proposals that change or
   reinterpret approved plan content are also listed under
   [decisions needed from the owner](#decisions-needed-from-the-owner).
@@ -38,31 +39,37 @@ Coding tools change quickly. Any plugin work must check these facts again first.
 | Connection level | Who has it | What it gives | Phase |
 |---|---|---|---|
 | 1. MCP server, skill and CLI | Any agent that can call MCP tools or run a command | Actions: read the catalog, propose catalog changes, find, create, claim and update tasks, link work, report progress, ask for a person, receive nudges. Presence is `self-reported`. | 1 |
-| 2. Plugin for the coding tool | OpenCode first, then Claude Code | Everything in level 1, plus `plugin-reported` presence and live nudge delivery into the running agent session. | OpenCode presence in 1, live nudges in 2. Claude Code after OpenCode. |
-| 3. Launcher | A machine that runs one | Starts a new agent session for a task when a person asks from the website. | 3 (optional) |
+| 2. Plugin for the coding tool | OpenCode first, then Claude Code | Everything in level 1, plus `plugin-reported` presence and live nudge delivery into the running agent session. | OpenCode presence in 1, live nudges in 2. Claude Code in 2a (O-82). |
+| 3. Launcher | Hardware a person registers by installing it | Starts a new OpenCode agent session for the person when they ask from the website, including for git host actions they want done. | 3 (optional) |
 
 **Decided** (D-014): the three levels, and OpenCode before Claude Code. Reason
 (from D-014): MCP alone depends on the agent choosing to report, and it cannot
 reach an idle or crashed agent session. A plugin reports from inside the tool.
 **Decided** (plan, section 10): phase 1 has the MCP server, the skill and the
-OpenCode plugin for presence; nudges arrive in phase 2.
+OpenCode plugin for presence; nudges arrive in phase 2. **Decided** (owner,
+O-82, [#25](https://github.com/guneet-xyz/shinan/issues/25)): the Claude Code plugin comes in phase 2a, after the
+OpenCode plugin.
 
-The main proposals are:
+The owner decided the main design points in [#25](https://github.com/guneet-xyz/shinan/issues/25):
 
-1. Shinan finds the agent session behind a call from an ID **the coding tool
-   reports**, not one the model copies. A Shinan-issued agent session ID that
-   the model passes is only the fallback for MCP-only agents.
-2. A coding tool that stops is `offline`, not `ended`. When the same
-   conversation comes back, it continues the same agent session and keeps its
-   task.
-3. Each nudge delivery has exactly one owner at a time (the plugin or check-in),
-   and counts as `delivered` only when the coding tool or the agent confirms it.
-4. Plugins send only allow-listed metadata, which Shinan enforces. They never
-   send conversation text, file contents or tool output.
-5. Nudges from the agent's own member steer by default; nudges from other
-   members wait until the agent has finished its current work.
-6. One plugin install also sets up the MCP server and the skill.
-7. Shinan never blocks or slows a coding tool.
+1. Shinan finds the agent session behind a call from the conversation ID **the
+   coding tool reports**. The agent session ID the model passes is only a
+   fallback (O-29).
+2. A coding tool that stops is `offline`, not `ended`; a resumed conversation
+   keeps its agent session and task (O-32).
+3. A check-in delivery counts as `delivered` only when the agent acknowledges it
+   (O-30).
+4. Nudges from the agent's own member steer; nudges from others queue (O-31).
+5. Plugins send only allow-listed metadata, enforced by Shinan (O-34).
+6. One plugin install also sets up the MCP server and the skill (O-36).
+7. Every subagent is its own agent session (O-37).
+8. An agent is per person, coding tool and machine (O-40), with long-lived
+   tokens (O-44).
+9. Shinan stores no per-person git host tokens. Git host actions a person asks
+   for are done by that person's own agent on their own hardware (O-1).
+
+Shinan never blocks or slows a coding tool (proposed; reason: it helps the
+work and must never stop it).
 
 ## Coding tool capabilities
 
@@ -105,19 +112,22 @@ session, and its **conversation ID** is the ID the coding tool gives it.
 ### How a call is matched to an agent session
 
 The agent's token tells Shinan which **agent** is calling (identity document,
-"Agent sessions"). By default one agent has many agent sessions running at
-once, so Shinan also needs to know which **agent session** is calling. The MCP
+"Agent sessions"). An agent is one person's coding tool on one machine
+(owner, O-40, [#25](https://github.com/guneet-xyz/shinan/issues/25)), and it still has many agent sessions running at
+once: parallel conversations and every subagent (O-37). So Shinan also needs to
+know which **agent session** is calling. The MCP
 connection cannot tell it: one connection serves many conversations (OpenCode
 connects once per directory, or shares one connection across directories with
 `pool`), and MCP revision 2026-07-28 has no protocol-level sessions at all.
 
-**Proposed** order, first match wins:
+**Decided** (owner, O-29, [#25](https://github.com/guneet-xyz/shinan/issues/25)), first match wins:
 
 1. **Conversation ID reported by the coding tool.** OpenCode sends it on every
    MCP tool call in `_meta["ai.opencode/sessionID"]`. The Claude Code plugin adds
    it to calls to Shinan's tools with a `PreToolUse` hook (`updatedInput`).
-   The plugin reports it on its own calls. Shinan looks up the agent session by
-   agent, machine and conversation ID.
+   Inside a Claude Code subagent, the hook also adds the subagent's `agent_id`.
+   The plugin reports both on its own calls. Shinan looks up the agent session
+   by agent and conversation ID (plus subagent ID where there is one).
 2. **Agent session ID passed by the model.** Shinan issues an agent session ID
    when an MCP-only agent starts an agent session. The agent passes it on later
    calls. The plugin also puts it in the environment of shell commands (see
@@ -134,19 +144,18 @@ not catch copying between agent sessions of the same agent. IDs the tool sets
 outside the model's view are much harder to get wrong. Conversation IDs are
 correlation values, never credentials; OpenCode's documentation says the same.
 How much each source counts for [attribution](domain-model.md#attribution) is
-owned by the [identity document](identity.md). This order is a
-[decision for the owner](#decisions-needed-from-the-owner).
+owned by the [identity document](identity.md).
 
 ### What an agent session records
 
-The attributes are listed in the [glossary](domain-model.md#agent-session). All
-of the following is **proposed**.
+The attributes are listed in the [glossary](domain-model.md#agent-session).
+Unless marked, the following is **proposed**.
 
 | Attribute | How it is filled in | Reason |
 |---|---|---|
 | Agent | From the token used. | One source of truth for who is acting. |
-| Machine | From the token's machine label, which can point to a `machine` catalog entity ([identity](identity.md), "What one agent is"). Not a separate local setting. | One place records the machine; identity issues one token per machine. |
-| Coding tool and version | Reported by the plugin; for MCP-only agent sessions, by the agent at start, otherwise `unknown`. | The plugin knows its own tool. |
+| Machine and coding tool | From the agent. **Decided** (owner, O-40): an agent is per person, coding tool and machine, for example "Guneet's OpenCode on Daedalus". How the agent's machine points to a `machine` catalog entity is owned by the [identity document](identity.md). | The agent already fixes both; reporting them again would allow disagreement. |
+| Coding tool version | Reported by the plugin. | Helps when a tool change breaks reporting. |
 | Conversation ID | Reported by the coding tool (see above). | Lets Shinan recognize the same conversation after a restart or resume. |
 | Repository and branch | The checkout's remote, reduced to git host and repository path with any user name or password removed, and the current branch. Updated on OpenCode `vcs.branch.updated` and `session.moved`, or Claude Code `CwdChanged`. | Lets Shinan match work to tasks. Remote URLs can contain credentials, for example `https://user:token@host/...`. |
 | Current task | Set by a [claim](#claim-and-release). | |
@@ -166,32 +175,45 @@ document adds:
 - **Proposed:** an agent session is attached to at most one task at a time,
   confirming the glossary's proposal. Moving to another task is a release and
   then a claim. Reason: nudges need one clear target.
-- **Proposed:** the plugin claims automatically when the checkout's branch
-  carries a task marker and the agent session is not attached yet, **but only
-  if the task can be claimed** under the tasks document's rules. A task that is
-  `on hold`, `done`, `cancelled` or in `triage` is not claimed automatically.
-  The plugin tells the agent why instead, through its context (see
-  [plugins](#common-behavior)). The claim event records that it came from the
-  branch name. Reason: this does not depend on the agent remembering to claim,
-  and it respects pauses and finished work. This is a
+- **Decided** (owner, O-35, [#25](https://github.com/guneet-xyz/shinan/issues/25)): the plugin claims automatically when
+  the checkout's branch carries a task marker and the top-level agent session is
+  not attached yet, **but only if the task can be claimed** under the tasks
+  document's rules. A task that is `on hold`, `done`, `cancelled` or in `triage`
+  is not claimed automatically; the plugin tells the agent why through its
+  context (see [plugins](#common-behavior)). The claim event records that it
+  came from the branch name.
+- **Proposed:** a coordinating agent session that splits work stays unattached.
+  It creates subtasks (owner, O-21: big work is split into subtasks), and each
+  subagent claims its own subtask. Reason: this keeps
+  "one task per agent session" while supporting how the owner works. These
+  documents are themselves written by subagents started by one coordinating
+  agent session.
+
+### Subagents
+
+Coding tools start subagents: OpenCode child sessions (`parentID`), Claude Code
+subagents (`SubagentStart` and `SubagentStop` hooks, with an `agent_id`), and
+Claude Code forks.
+
+- **Decided** (owner, O-37, [#25](https://github.com/guneet-xyz/shinan/issues/25)): every subagent is its own agent
+  session, linked to its parent agent session, under the same agent.
+- **Proposed:** a subagent is **not** attached to its parent's task
+  automatically, and the branch-marker automatic claim applies only to
+  top-level agent sessions. A subagent is attached only when it claims a task
+  itself. Nudges for the parent's task go to the parent, which can pass them
+  on. Reason: subagents share their parent's checkout and branch, so the
+  automatic claim would attach every short helper. Each helper that finished
+  would then leave an `undeliverable` nudge delivery behind. This is a
   [decision for the owner](#decisions-needed-from-the-owner).
-- **Proposed:** a coordinating agent session that splits work into several
-  tasks stays unattached; each child agent session claims its own task. Reason:
-  this keeps "one task per agent session" while supporting how the owner works.
-  These documents are themselves written by child agent sessions started by one
-  coordinating agent session.
-
-### Child agent sessions
-
-Coding tools start child conversations: OpenCode child sessions (`parentID`),
-Claude Code subagents and forks.
-
-- **Proposed:** a child conversation is not a separate agent session unless it
-  claims a task of its own. Until then, its activity counts as the parent's.
-  When it claims a task, it becomes an agent session linked to its parent.
-  Reason: most child conversations are short helpers, and showing each would
-  flood presence. Children that do their own task need their own presence and
-  nudges.
+- **Proposed:** a subagent's presence follows its own signals. In OpenCode it
+  has its own session events. In Claude Code, `SubagentStart` marks it `busy` and
+  `SubagentStop` marks it `idle`. A subagent goes `offline` or `ended` with its
+  parent. Claude Code also runs internal agents for its own features, such as
+  prompt suggestions, that fire `SubagentStop` without a `SubagentStart`; these
+  are ignored. Reason: only real subagents should appear.
+- How subagents are grouped under their parent on screen is owned by the
+  [human experience document](human-experience.md). Reason: many short
+  subagents would otherwise flood the presence view.
 
 ### One workspace per agent session
 
@@ -209,7 +231,8 @@ agent sessions connected only through MCP are marked "self-reported".
 ### States
 
 The glossary's states are `starting`, `busy`, `idle`, `waiting`, `ended`, and
-the calculated `unresponsive`. **Proposed:** add `offline`.
+the calculated `unresponsive`. **Decided** (owner, O-32, [#25](https://github.com/guneet-xyz/shinan/issues/25)): add
+`offline`.
 
 | State | Meaning |
 |---|---|
@@ -222,9 +245,8 @@ conversations can be resumed (`--resume`). If stopping the tool meant `ended`,
 closing a laptop over a weekend would release the task, make nudges
 `undeliverable`, and start a new agent session that does not own the task when
 the person resumes. A clean stop is also different from a crash, so it should
-not look like `unresponsive`. The plan lists "end" among the plugin reports, so
-adding `offline` is a [decision for the owner](#decisions-needed-from-the-owner).
-The glossary needs the new state ([dependencies](#dependencies-on-other-documents)).
+not look like `unresponsive`. The glossary needs the new state
+([dependencies](#dependencies-on-other-documents)).
 
 ### How states are detected
 
@@ -240,11 +262,11 @@ The glossary needs the new state ([dependencies](#dependencies-on-other-document
 | `ended` | `session.deleted`, `session.archived` | None (conversations can always be resumed) | The agent's "end agent session" call |
 | (any, both sources) | | | `ended` after 30 days without any report or call |
 
-Notes, all **proposed**:
+Notes (**proposed** unless marked):
 
 - **Self-reported** agent sessions show only their last-seen time between
   start and end, as the glossary says. Every MCP or CLI call updates it.
-- **Resuming.** When a conversation that Shinan knows reports again, it
+- **Resuming** (**decided**, owner, O-32). When a conversation that Shinan knows reports again, it
   continues the same agent session. If the agent session was detached from its
   task while silent (see [timeouts](#heartbeats-and-timeouts)), it re-claims
   that task automatically, under the same rules as the
@@ -257,11 +279,16 @@ Notes, all **proposed**:
   only. Reason: people need to know why the agent is stuck, but arguments can
   contain secrets or private paths. Waiting for a person to act on the task
   itself is the task flag `needs a person`, not a presence state.
+- **Answering from the web app.** **Decided** (owner, O-39, [#25](https://github.com/guneet-xyz/shinan/issues/25)): not in
+  the first version. Shinan shows the waiting reason and where to answer it:
+  the agent's machine and coding tool.
 
 ### Heartbeats and timeouts
 
 The glossary leaves the time before an agent session counts as `unresponsive`
-to this document. All **proposed**:
+to this document. **Decided** (owner, O-32, [#25](https://github.com/guneet-xyz/shinan/issues/25)): release the task after
+24 hours of silence, re-claim on resume, and end after 30 days. The rest is
+**proposed**:
 
 - **Heartbeats are declared.** When a plugin starts an agent session, it says
   whether it sends heartbeats. The OpenCode plugin does. The Claude Code plugin
@@ -303,7 +330,8 @@ to this document. All **proposed**:
 
 ### What plugins send, and what they never send
 
-All **proposed**:
+**Decided** (owner, O-34, [#25](https://github.com/guneet-xyz/shinan/issues/25)): only allow-listed metadata, enforced by
+Shinan, with remote URLs stripped of credentials. In detail:
 
 - **Allowed fields only.** Shinan accepts a fixed list of fields in plugin
   reports and rejects any report with other fields: agent session and
@@ -346,7 +374,7 @@ the [architecture document](architecture.md), "MCP server".
 
 All **proposed**:
 
-1. **Few, task-shaped tools.** Under twenty, each matching a step in the
+1. **Few, task-shaped tools.** About twenty, each matching a step in the
    agent's work. Reason: tool descriptions take up the model's context;
    OpenCode's documentation warns about this.
 2. **Calls are matched to agent sessions** as described in
@@ -389,26 +417,29 @@ Reason: together they cover the level 1 actions in the plan.
 | Catalog | **Search catalog** | Finds catalog entities by text, type or relation, with fact freshness. | Reads the [agent index](catalog.md). |
 | | **Get entity** | One catalog entity with facts, fact states, sources, last-checked times and links. | |
 | | **Propose catalog change** | Opens a [catalog proposal](domain-model.md#catalog-proposal-and-approval) with changes, evidence and related task. | Flow owned by the [catalog document](catalog.md). |
-| | **Record fact check** | Records that facts were checked against a source, with scope and result. | Unchanged claims only. The glossary proposes that such re-checks need no approval. |
+| | **Record fact check** | Records that facts were checked against a source, with scope and result. | Unchanged claims only, so no approval is needed. Only high-risk (gated) changes need approval (owner, O-3, [#25](https://github.com/guneet-xyz/shinan/issues/25)); the [catalog document](catalog.md) defines them. |
 | Tasks | **Find tasks** | Searches by text, repository, status or assignee. | |
 | | **Get task** | Intent, acceptance criteria, decisions, status, task flags, work links, attached agent sessions, recent timeline. | |
-| | **Create task** | Creates a task where the intent starts. Returns the ID for markers. | D-003. |
+| | **Create task** | Creates a task where the intent starts, optionally as a subtask of another task. Returns the ID for markers. | D-003. Subtasks are how big work is split (owner, O-21); rules in the [tasks document](tasks.md). |
 | | **Claim task** / **Release task** | Attaches or detaches the agent session. The claim returns the task, the marker formats, other attached agent sessions, and nudges waiting for the next claimant. | Rules in the [tasks document](tasks.md). |
 | | **Report progress** | Adds a [progress update](domain-model.md#comment-and-progress-update). | |
 | | **Link work** | Links a pull request, branch, commit or issue by URL, with a role. | Usually not needed when markers are used. |
-| | **Ask for a person** | Sets the task flag `needs a person` with its required summary, or clears it. | Depends on the glossary's owner decision that agents may set this flag. If not adopted, the tool asks a person to set it. |
-| | **Ask for deployment approval** | Sets `awaiting deployment approval` with the request details. | Contents and who clears it: [tasks document](tasks.md), "Awaiting deployment approval". |
+| | **Ask for a person** | Sets the task flag `needs a person` with its required summary, or clears it. | **Decided** (owner, O-7): agents may set and clear it. |
+| | **Ask for deployment approval** | Sets `awaiting deployment approval` with the request details. | **Decided** (owner, O-8): a separate flag. Contents: [tasks document](tasks.md), "Awaiting deployment approval". |
+| | **Record deployment approval** | Records an approval that the agent's own member gave in the conversation, with its scope: target, operation and revision. | **Decided** (owner, O-20): approval is given in Shinan, or in the conversation as recorded by the agent; never by a comment or nudge. |
 | | **Record verification** | Records that the outcome was checked against the acceptance criteria, with evidence. | Status is calculated (D-005). |
 | Nudges | **Reply to nudge** | A progress update linked to a nudge; also acknowledges it. | Progress updates create no nudges, so replies cannot loop. |
 
-- **Proposed:** no tools set task status, approve catalog proposals, record
-  deployment approvals, send nudges or comments, or manage members, tokens or
-  git host connections. Reason: status is calculated (D-005), and the identity
-  document reserves these actions for people.
-- **Proposed:** the plan's level 1 list says agents "complete" tasks. Here that
-  means **record verification**, which feeds the calculated status. No tool
-  marks a task done. Reason: D-005. This reading is a
-  [decision for the owner](#decisions-needed-from-the-owner).
+- **Proposed:** no tools set task status, approve catalog proposals, approve a
+  deployment on a person's behalf, send nudges or comments, or manage members,
+  tokens or git host connections. Reason: status is calculated (D-005), and the
+  identity document reserves these actions for people.
+- **Proposed:** the flag tools cover the built-in flags. Workspaces can add
+  their own flags (owner, O-8). Whether agents may set those is for the
+  [tasks document](tasks.md); if so, a general "set task flag" tool replaces the
+  two flag tools.
+- **Decided** (owner, O-10, [#25](https://github.com/guneet-xyz/shinan/issues/25)): the plan's "agents complete tasks"
+  means agents **record verification**. No tool marks a task done.
 - **Open:** whether the agent index is also offered as MCP resources
   ([question 6](#open-questions)).
 
@@ -439,10 +470,14 @@ All **proposed**:
   catalog; the Claude Code plugin bundles a copy; other tools get a file.
   Reason: one source keeps conventions current. Today the `workspace`
   repository's skills are copied to each machine by hand.
-- During the trial (D-018), the skill and MCP server are enabled only for trial
-  projects. Reason: D-018 keeps the `workspace` repository as the source of
-  truth until migration, and two sets of instructions on one project would
-  conflict.
+- **Decided** (owner, O-38, [#25](https://github.com/guneet-xyz/shinan/issues/25)): during the trial (D-018), the skill
+  and MCP server are enabled only for trial projects.
+- **Decided** (owner, O-73): cross-project coordination for trial projects
+  moves into Shinan during the trial. So for those projects the skill replaces
+  the `workspace` repository's issue-based coordination. mon and easyshell
+  still keep their repository issues (O-74), which agents link as work items.
+  The `workspace` repository's own collaboration rules get a note at the start
+  of the trial, in a separate change to that repository.
 
 ## Conventions agents follow
 
@@ -457,7 +492,9 @@ All are **proposed**, with reasons.
 1. Start the agent session (or confirm the one the plugin started), then find
    or create the task and claim it. Reason: every piece of work needs one home
    (D-003), and a claim records who is working.
-2. Read the relevant catalog entities and their freshness before relying on
+2. Split big work into subtasks (owner, O-21, [#25](https://github.com/guneet-xyz/shinan/issues/25)), each claimed by
+   the agent session or subagent that does it.
+3. Read the relevant catalog entities and their freshness before relying on
    them. Reason: D-007.
 
 ### Markers
@@ -466,10 +503,11 @@ All are **proposed**, with reasons.
   formats are in the [tasks document](tasks.md), "Markers".
 - **Required here:** PR descriptions, and commit messages the agent writes,
   also name the agent session, so that git host items can be credited
-  (D-017). The line's name and form must use the same scheme as the tasks
-  document's trailers. The checks that make it count are in the identity
-  document, "Checking markers". Reason: agents share their person's git host
-  account, so Shinan needs its own evidence.
+  (D-017). The line follows the tasks document's namespaced trailer scheme
+  (`Shinan-…`), for example `Shinan-Session: <agent session ID>`. The final
+  name is agreed with the tasks document. The checks that make it count are in
+  the identity document, "Checking markers". Reason: agents share their
+  person's git host account, so Shinan needs its own evidence.
 
 ### Reporting progress
 
@@ -498,10 +536,38 @@ document, "Needs a person". Reason: this is the `workspace` repository's
 `human-effort` rule, which the glossary maps to `needs a person`.
 
 Use **ask for deployment approval** before any step that would change a running
-deployment; preparing the change needs no approval. A nudge, even from the
-right person, is never a deployment approval: the identity document reserves
-recording one for people, in Shinan. Reason: this is the `workspace`
-repository's only approval gate, and D-016 applies it to Shinan itself.
+deployment; preparing the change needs no approval. **Decided** (owner, O-20,
+[#25](https://github.com/guneet-xyz/shinan/issues/25)): the approval is given in Shinan, or by the agent's own member in
+the conversation, in which case the agent records it with **record deployment
+approval**. A comment or nudge is never a deployment approval. Reason: this is
+the `workspace` repository's only approval gate, and D-016 applies it to
+Shinan itself.
+
+### Git host actions a person asks for
+
+**Decided** (owner, O-1, [#25](https://github.com/guneet-xyz/shinan/issues/25)): Shinan does not write to GitHub as a
+person and stores no per-person git host tokens. Anything a person wants done
+on a git host, such as opening a repository issue for a task, is done by an
+agent running on that person's own hardware, which is already signed in to the
+git host. Shinan's own writes, such as backlinks, use its GitHub App
+installation token. On Forgejo they go through the connecting person's account
+(O-53). Details are in the [git hosts document](git-hosts.md).
+
+**Proposed:**
+
+- A request from the web app for such an action is delivered as a nudge from
+  the person to **their own** agent sessions only, with `queue` delivery. Reason:
+  the action must run under the requester's own git host account. `queue` lets
+  the agent finish its current step before an errand.
+- If the person has no running agent session, the request waits like any
+  nudge with no target. The person can start an agent session: by hand before
+  phase 3, or through a launcher on their registered hardware in phase 3
+  ([launcher](#launcher-phase-3)).
+- The agent does the action, then replies with **reply to nudge**, including a
+  link to the result. Which actions people can request is owned by the
+  [tasks](tasks.md) and [git hosts](git-hosts.md) documents.
+- How to deliver these requests is a
+  [decision for the owner](#decisions-needed-from-the-owner).
 
 ### Handling nudges
 
@@ -533,8 +599,10 @@ repository's only approval gate, and D-016 applies it to Shinan itself.
 ### Safety
 
 - Never send secrets, credentials, private keys or unredacted logs to Shinan.
-  Reason: the `workspace` repository's access policy; Shinan is not a secret
-  store.
+  **Decided** (owner, O-2, [#25](https://github.com/guneet-xyz/shinan/issues/25)): secrets never go in the catalog. They
+  live in a secrets manager, such as Obscuro or Infisical, and the catalog
+  records only where a secret lives. Agents propose that pointer, never the
+  value.
 - Shinan grants no permissions. Local tool permissions, git host access and
   deployment approval rules still apply. Reason: D-017.
 
@@ -591,7 +659,7 @@ All of the following is **proposed**.
   agent acknowledges the nudge ID on a later call or replies to it. Until then
   the nudge is returned again on each call. Reason: a result can be lost on the
   way (a broken response stream loses the request), so sending is not
-  receiving. This is a [decision for the owner](#decisions-needed-from-the-owner).
+  receiving. **Decided** for check-in (owner, O-30, [#25](https://github.com/guneet-xyz/shinan/issues/25)).
 - **Withdrawal.** When a person withdraws a nudge, Shinan withdraws offers. If
   the coding tool has already queued it, the plugin cancels the queued item
   (OpenCode `DELETE /api/session/{sessionID}/inbox/{inboxID}`) and confirms. If
@@ -606,15 +674,19 @@ All of the following is **proposed**.
   the tasks document. In OpenCode the message ID is derived from the nudge IDs,
   so sending it again is harmless (OpenCode returns the original admission for
   a known ID).
-- **No agent session.** A nudge whose deliveries are all `undeliverable`, or
-  that had no target, stays on the task. The next agent session that claims the
-  task receives it in the claim result (tasks document). A resumed agent
-  session that re-claims receives its own pending deliveries the same way.
+- **No agent session.** **Decided** (owner, O-27, [#25](https://github.com/guneet-xyz/shinan/issues/25)): a nudge
+  never delivered to any agent session stays on the task, and the next agent
+  session that claims the task receives it in the claim result. Nudges already
+  delivered to some agent session do not wait. A resumed agent session that
+  re-claims receives its own pending deliveries the same way.
 - **Route recorded.** Each delivery records its route: live `steer`, live
   `queue`, the nearest equivalent in other tools, or check-in. Reason: a person
   can see how soon the agent could have acted.
 - **Framing.** The text says who sent it, the task, the nudge ID, and how to
-  reply. Messages that Shinan writes for a person's action (tasks document,
+  reply. A nudge from another member opens with "Request from <name>, another
+  member of the workspace", which the skill treats as a request within the
+  current task ([handling nudges](#handling-nudges)). This is the framing route
+  that the identity document requires for nudges from others. Messages that Shinan writes for a person's action (tasks document,
   "When a nudge is created") are labelled as from Shinan, with the action they
   report.
 - **New outcomes** `withdrawn` and `cancelled`, and the holder states above,
@@ -626,12 +698,13 @@ OpenCode accepts two delivery modes. `steer` admits the message at the agent's
 next step. `queue` waits behind work already queued, so the agent finishes its
 current work first. Either one wakes an idle agent session.
 
-- **Proposed:** nudges from the agent's own member use `steer`. Nudges from
-  other members use `queue`. The sender can override this when sending. Reason:
-  the member's own corrections are worth most before the agent goes further,
-  but another person should not redirect someone else's agent mid-step. The
-  plan says nothing about timing, so this is a
-  [decision for the owner](#decisions-needed-from-the-owner).
+- **Decided** (owner, O-31, [#25](https://github.com/guneet-xyz/shinan/issues/25)): nudges from the agent's own member
+  use `steer`, nudges from other members use `queue`, and the sender can
+  override. Reason: the member's own corrections are worth most before the
+  agent goes further, but another person should not redirect someone else's
+  agent mid-step.
+- **Proposed:** requests for git host actions use `queue`
+  ([git host actions](#git-host-actions-a-person-asks-for)).
 - Tools without these modes use the nearest equivalent
   ([Claude Code plugin](#claude-code-plugin)).
 
@@ -642,19 +715,22 @@ current work first. Either one wakes an idle agent session.
   tool. It names the task and tells the agent to claim it. Reason: no launcher
   yet; making the manual step easy keeps nudges useful. The page belongs to the
   [human experience document](human-experience.md).
-- In phase 3, a launcher can start it (see [launcher](#launcher-phase-3)).
+- In phase 3, the person can start it from Shinan on hardware they registered
+  by installing the launcher (owner, O-1; see [launcher](#launcher-phase-3)).
 
 ## Plugins
 
 ### Common behavior
 
-All **proposed**:
+Proposed unless marked:
 
-- **One install.** Installing the plugin also sets up the Shinan MCP server and
-  the skill (OpenCode `ctx.mcp.transform` and `ctx.skill.transform`; Claude Code
-  plugins bundle both). Reason: fewer steps, and the parts always match.
+- **One install.** **Decided** (owner, O-36, [#25](https://github.com/guneet-xyz/shinan/issues/25)): installing the plugin
+  also sets up the Shinan MCP server and the skill (OpenCode `ctx.mcp.transform`
+  and `ctx.skill.transform`; Claude Code plugins bundle both).
 - **Configuration.** The plugin needs the Shinan installation's address and the
-  agent's token. How the token is obtained and stored is owned by the identity
+  agent's token. Because an agent is per person, coding tool and machine
+  (O-40), installing the plugin on a machine registers that machine's agent
+  for the coding tool. Registration and token storage are owned by the identity
   document ("Registering an agent") and the architecture document.
 - **Agent context.** The plugin gives the agent its agent session ID, its task
   and title, any reason a branch marker was not claimed automatically, and a
@@ -674,7 +750,7 @@ documentation confirmed this on 2026-11-16.
 |---|---|
 | Run alongside the tool | Server part of the plugin; `setup` with a clean-up function on unload (reports `offline`). |
 | Follow conversations | `ctx.event.subscribe` for the events in [how states are detected](#how-states-are-detected), plus `session.moved`, `vcs.branch.updated`, `session.inbox.delivered` and `session.inbox.cancelled`. |
-| Catch up after a restart | `ctx.session.list` and `ctx.session.get` (`parentID` for [child agent sessions](#child-agent-sessions)); `GET /api/session/{sessionID}/inbox` for nudges still queued. |
+| Catch up after a restart | `ctx.session.list` and `ctx.session.get` (`parentID` for [subagents](#subagents)); `GET /api/session/{sessionID}/inbox` for nudges still queued. |
 | Match MCP calls to the agent session | OpenCode sends `_meta["ai.opencode/sessionID"]` on every MCP tool call. |
 | Repository and branch | `ctx.vcs.get`, `ctx.location`. |
 | Deliver nudges | `ctx.session.prompt` with `delivery`, a message `id` derived from the nudge IDs, and `metadata`. It can attach the `shinan` skill. |
@@ -697,8 +773,11 @@ documentation confirmed this on 2026-11-16.
 
 ### Claude Code plugin
 
-**Decided** (D-014): second. One plugin can bundle a skill, hooks, a mod (hooks
-written as JavaScript, v2.1.287 or later) and an MCP server.
+**Decided** (D-014): second; (owner, O-82, [#25](https://github.com/guneet-xyz/shinan/issues/25)): in phase 2a, after the
+OpenCode plugin; (owner, O-33): live nudges through the mod and `PostToolUse`
+context, a hooks-only fallback, and no channels, as described below. One plugin
+can bundle a skill, hooks, a mod (hooks written as JavaScript, v2.1.287 or
+later) and an MCP server.
 
 #### Claude Code lifecycle
 
@@ -711,7 +790,8 @@ does not fire again after them, but `session.end` does.
 | New conversation | `SessionStart` `source: startup` | New agent session; automatic claim if the branch has a marker. |
 | `/clear` | `SessionEnd` `reason: clear`, then `SessionStart` `source: clear` with a new conversation ID | Old agent session `offline` (it can be resumed). New agent session for the new ID, with automatic claim. |
 | `/resume`, `--resume`, `--continue` | `SessionEnd` `reason: resume` for the one left; `SessionStart` `source: resume` | The left one goes `offline`. If the resumed conversation keeps its conversation ID, it continues its agent session and re-claims if needed; otherwise it is a new agent session with automatic claim (to be checked in a prototype). |
-| Fork, `/branch` | `SessionStart` `source: fork` | Treated as a [child](#child-agent-sessions) of the original. |
+| Fork, `/branch` | `SessionStart` `source: fork` | Its own agent session, linked to the original, like a [subagent](#subagents). |
+| Subagent | `SubagentStart` / `SubagentStop` with `agent_id` | Its own agent session (owner, O-37); see [subagents](#subagents). |
 | Compaction | `SessionStart` `source: compact`, same ID | Same agent session; the plugin repeats the agent context, because compaction may have dropped it. |
 | Exit | `SessionEnd` | `offline`. |
 
@@ -727,7 +807,8 @@ fire-and-forget request. If it is lost, the timeouts still apply.
 #### Matching MCP calls
 
 A `PreToolUse` hook matching Shinan's MCP tools adds the current conversation
-ID to the arguments through `updatedInput`. Shinan treats it as tool-reported.
+ID, and the subagent's `agent_id` when the call comes from a subagent, to the
+arguments through `updatedInput`. Shinan treats them as tool-reported.
 **Proposed**; to be checked in a prototype, because Claude Code does not
 document sending a conversation ID to MCP servers itself.
 
@@ -750,7 +831,7 @@ routes (2026-11-16):
 | The conversation's inbox socket (cross-session messaging, v2.1.224 or later) | Between tool calls, or as a new turn when idle | Yes | Claude is told it came from another session and cannot approve anything with it. Only the first "auth" line of the format is documented. |
 | Channels | Queued into the conversation | Yes | Research preview; custom channels need `--dangerously-load-development-channels` or an organization allowlist; no confirmation; not registered on MCP revision 2026-07-28. |
 
-- **Proposed:** the mod holds the connection to Shinan and keeps accepted
+- **Decided** (owner, O-33, [#25](https://github.com/guneet-xyz/shinan/issues/25)), details proposed: the mod holds the connection to Shinan and keeps accepted
   nudges on the machine. It delivers them with `$.prompt.submit` when the
   conversation is idle, or when the delivery mode is `queue`. During a turn, a
   `PostToolUse` hook's `additionalContext` delivers them, which is the closest
@@ -762,7 +843,11 @@ routes (2026-11-16):
 - **Proposed:** the delivery is `delivered` when the hook returns the context
   or `$.prompt.submit` starts the turn. Claude Code offers no stronger
   confirmation.
-- **Proposed fallback without mods:** no live delivery. A `Stop` hook checks in
+- **Proposed:** a subagent attached to a task of its own receives nudges through
+  the mod's `$.session.send` to its `agent_id`, which Claude Code documents for
+  messaging subagents. Otherwise its nudges go to check-in. To be checked in a
+  prototype.
+- **Fallback without mods** (decided, O-33; details proposed): no live delivery. A `Stop` hook checks in
   at the end of each turn, adds any nudges as context, and acknowledges them.
   Nudges otherwise wait for the agent's own calls. Reason: hooks alone cannot
   hold a connection, but the end of a turn is a natural point to look.
@@ -777,34 +862,79 @@ routes (2026-11-16):
 
 ## Launcher (phase 3)
 
-**Decided** (D-014): a launcher on each machine starts agents, in phase 3,
-optional and depending on phases 1 and 2 (plan, section 10). Outline only. All
-**proposed**:
+**Decided** (D-014): a launcher starts agents, in phase 3, optional and
+depending on phases 1 and 2 (plan, section 10). **Decided** (owner, O-1,
+[#25](https://github.com/guneet-xyz/shinan/issues/25)):
 
-- A small program under the person's own account, with an outgoing connection
-  to Shinan like a plugin. Reason: same network reasons (architecture
-  document).
-- When a person asks for a new agent session on a task, the launcher creates an
-  isolated checkout following the machine's catalog entry and starts the
-  coding tool with the plugin and a prompt that claims the task.
-- It never deploys or approves. Which coding tools and projects it offers is
-  set on the machine. Reason: a person controls what starts on their machine.
-- It could also set up the per-machine signing key that the identity document
+- Agents started from Shinan run OpenCode on hardware that the person registers
+  by installing the launcher.
+- That hardware is already signed in to the person's git host accounts, so git
+  host actions the person asks for run there
+  ([git host actions](#git-host-actions-a-person-asks-for)).
+- Shinan provides a **device setup guide** for such hardware, such as a cloud
+  VM or a MacBook.
+
+Outline, **proposed**:
+
+- **Registration.** Installing the launcher registers the device for one
+  person. With one agent per person, coding tool and machine (O-40), it creates
+  the agent "<person>'s OpenCode on <device>" and its long-lived token (O-44),
+  through the identity document's registration flow. The launcher starts agents
+  only for the person who registered it. Reason: it runs with that person's git
+  host access.
+- **Connection.** The launcher keeps an outgoing connection to Shinan, like a
+  plugin. Reason: devices sit behind NAT and firewalls (architecture document).
+- **Starting an agent session.** When the person asks for a new agent session,
+  for a task or a git host action, the launcher creates an isolated checkout
+  following the device's `machine` catalog entry. It then starts OpenCode with
+  the Shinan plugin and a prompt that claims the task or carries the request.
+- **Limits.** The launcher never deploys and never approves. The person sets
+  on the device which repositories and projects it may work on. Reason: a
+  person controls what starts on their own hardware.
+- It could also set up the per-device signing key that the identity document
   proposes as later, stronger evidence ("Agent signing keys").
-- **Open:** how a launcher is authorized (identity document).
+
+**Device setup guide** (proposed contents; the guide itself is written in
+phase 3):
+
+1. Supported systems and minimum resources, with tested examples: a Linux cloud
+   VM and a macOS laptop.
+2. Install OpenCode and sign in to a model provider. These are the person's own
+   choices; Shinan runs no model (D-008).
+3. Sign in to each git host the person uses: Git over SSH or HTTPS, plus the
+   hosts' command-line tools if wanted. The credentials stay on the device;
+   Shinan never sees them (O-1).
+4. Choose a data location for checkouts and worktrees, kept apart from the
+   system disk where possible (as on Daedalus today).
+5. Install the launcher and approve the device in the browser. This creates the
+   agent and its token; the Shinan plugin, MCP server and skill come with it
+   (O-36).
+6. Record the device as a `machine` entity in the catalog, without secrets
+   (O-2).
+7. Check the device: it appears online in Shinan, a test agent session starts,
+   claims a test task and reports presence.
+8. Removing a device: revoke its agent in Shinan, which revokes its token, and
+   uninstall the launcher.
 
 ## Authentication requirements
 
 The [identity document](identity.md) owns registration, tokens, scopes,
 machines, revocation and attribution. The [architecture document](architecture.md)
-owns how tokens reach the MCP endpoint. Agent integrations needs:
+owns how tokens reach the MCP endpoint. **Decided** (owner, [#25](https://github.com/guneet-xyz/shinan/issues/25)): an agent is per person, coding tool and machine (O-40),
+and agent tokens are long-lived, valid until revoked, with no short-lived
+access tokens and no rotation (O-44). Agent integrations needs:
 
-1. One approval covers the plugin, the MCP server and the CLI on a machine.
+1. One approval on a machine covers the plugin, the MCP server and the CLI for
+   that machine's agent.
 2. Headless runs work: `claude -p`, `opencode run` and machines without a
-   browser. Claude Code documents that `claude -p` cannot run an OAuth flow.
+   browser. Long-lived tokens (O-44) make this simple: there is nothing to
+   renew mid-run.
 3. Tokens never pass through the model's context, a repository or a
    command-line argument.
-4. Each token carries a machine label (see [what an agent session records](#what-an-agent-session-records)).
+4. A revoked token stops working at once. The plugin then stops reporting,
+   tells the agent through its context, and asks the person to register again.
+   Reason: with long-lived tokens, revocation is the main control when a device
+   is lost.
 5. An agent session ID or conversation ID is never a credential.
 
 ## Verified external facts
@@ -818,7 +948,8 @@ Checked on **2026-11-16** against the vendors' own documentation.
 | OpenCode MCP: `_meta["ai.opencode/sessionID"]` on tool calls, hidden from the model, not for authentication; default `protocol` is `legacy` (up to 2025-11-25); one connection per directory unless `pool`; server instructions added to the system prompt; tools consume context | [MCP servers](https://opencode.ai/docs/mcp-servers) |
 | OpenCode skills: HTTP catalogs with `index.json` | [Skills](https://opencode.ai/docs/skills) |
 | Claude Code hooks: events, `SessionStart` `source` values, `SessionEnd` reasons and budget (1.5 s; per-hook timeouts up to 60 s, not for plugin hooks), `additionalContext`, `PreToolUse` `updatedInput`, `CLAUDE_ENV_FILE`, `async` and `asyncRewake`, `Notification` timings | [Hooks reference](https://code.claude.com/docs/en/hooks) |
-| Claude Code plugins and mods: components, version 2.1.287, `session.start` not repeated after `/clear` or `/resume`, timers, `$.prompt.submit` and `asUser`, `$.session.messages()` | [Plugins overview](https://code.claude.com/docs/en/plugins/overview), [Mods overview](https://code.claude.com/docs/en/plugins/mods/overview), [Mods API](https://code.claude.com/docs/en/plugins/mods/api), [Mods reference](https://code.claude.com/docs/en/plugins/mods/reference) |
+| Claude Code subagents: `SubagentStart` and `SubagentStop` with `agent_id`; hooks inside a subagent carry `agent_id`; internal agents fire `SubagentStop` too | [Hooks reference](https://code.claude.com/docs/en/hooks) |
+| Claude Code plugins and mods: components, version 2.1.287, `session.start` not repeated after `/clear` or `/resume`, timers, `$.prompt.submit` and `asUser`, `$.session.send` to a subagent's `agent_id`, `$.session.messages()` | [Plugins overview](https://code.claude.com/docs/en/plugins/overview), [Mods overview](https://code.claude.com/docs/en/plugins/mods/overview), [Mods API](https://code.claude.com/docs/en/plugins/mods/api), [Mods reference](https://code.claude.com/docs/en/plugins/mods/reference) |
 | Cross-session messaging and the inbox socket | [Cross-session messaging](https://code.claude.com/docs/en/cross-session-messaging), [Environment variables](https://code.claude.com/docs/en/env-vars) |
 | Channels: research preview, development flag, no acknowledgement; not registered on 2026-07-28 | [Channels](https://code.claude.com/docs/en/channels), [Channels reference](https://code.claude.com/docs/en/channels-reference), [Claude Code MCP](https://code.claude.com/docs/en/mcp) |
 | Codex hooks and background hook delivery | [Codex hooks](https://learn.chatgpt.com/docs/hooks) |
@@ -826,24 +957,27 @@ Checked on **2026-11-16** against the vendors' own documentation.
 
 ## Dependencies on other documents
 
-| Document | What this document needs from it |
+The sibling drafts were read on 2026-11-16, before they applied the owner's
+answers in [#25](https://github.com/guneet-xyz/shinan/issues/25). The mismatches below are for the integration review.
+
+| Document | What this document needs from it, and known mismatches |
 |---|---|
-| [Domain model and glossary](domain-model.md) ([#3](https://github.com/guneet-xyz/shinan/issues/3)) | New terms: **agent session ID**, **conversation ID**, **heartbeat**; presence state **`offline`** (distinct from `ended` and `unresponsive`); nudge delivery outcomes **`withdrawn`** and **`cancelled`**, the delivery **holder** (offered to plugin, accepted by the coding tool, available for check-in) and the delivery **route**. Confirmed: one task and one workspace per agent session. Owner decisions on `needs a person` and `awaiting deployment approval` affect two tools. |
-| [Tasks and work](tasks.md) ([#6](https://github.com/guneet-xyz/shinan/issues/6)) | Claim rules and which tasks can be claimed automatically; markers, and one naming scheme for the task and agent session trailers; nudge creation, targets, meaning, batching and withdrawal; Shinan-written nudges; flag contents. |
-| [Identity, agents and permissions](identity.md) ([#7](https://github.com/guneet-xyz/shinan/issues/7)) | Registration and tokens meeting the [authentication requirements](#authentication-requirements); machine labels; how tool-reported and model-passed session IDs count for attribution; marker checks; who may nudge whose agent; signing keys; launcher authorization. |
-| [Architecture and operations](architecture.md) ([#11](https://github.com/guneet-xyz/shinan/issues/11)) | MCP endpoint and protocol versions; the plugin stream with offers, withdrawals and acknowledgements as used in [one owner at a time](#one-owner-at-a-time); the server-side allow-list for plugin reports; serving the skill. |
-| [Catalog](catalog.md) ([#5](https://github.com/guneet-xyz/shinan/issues/5)) | The agent index; catalog proposal flow; recording unchanged re-checks; the agents' start-here path. |
-| [Git host integrations](git-hosts.md) ([#8](https://github.com/guneet-xyz/shinan/issues/8)) | Detecting markers and turning them into work links. |
-| [Human experience](human-experience.md) ([#10](https://github.com/guneet-xyz/shinan/issues/10)) | Showing presence (including `offline`), waiting reasons and delivery outcomes; the nudge form with steer or queue; the "start a new agent session" prompt. |
-| [Roadmap and migration](roadmap.md) ([#12](https://github.com/guneet-xyz/shinan/issues/12)) | Trial projects; when Claude Code support lands. |
-| [Decision log](decisions/) ([#13](https://github.com/guneet-xyz/shinan/issues/13)) | Records for D-014 and for the decisions below that the owner accepts. |
+| [Domain model and glossary](domain-model.md) ([#3](https://github.com/guneet-xyz/shinan/issues/3)) | New terms: **agent session ID**, **conversation ID**, **heartbeat**, **device setup guide**; presence state **`offline`** (O-32); nudge delivery outcomes **`withdrawn`** and **`cancelled`**, the delivery **holder** and **route**. Update: an agent is per person, coding tool and machine (O-40); every subagent is its own agent session, linked to its parent (O-37); nudges wait for the next claimant only if never delivered (O-27). |
+| [Tasks and work](tasks.md) ([#6](https://github.com/guneet-xyz/shinan/issues/6)) | Claim rules and which tasks can be claimed automatically; subtasks (O-21) and whether a subagent's subtask claim needs anything special; markers, including the name of the agent session trailer in its `Shinan-…` scheme; nudge creation, batching and withdrawal; which git host actions a person can request (O-1); whether agents may set workspace-defined flags (O-8). |
+| [Identity, agents and permissions](identity.md) ([#7](https://github.com/guneet-xyz/shinan/issues/7)) | Registration and tokens meeting the [authentication requirements](#authentication-requirements). **Mismatches:** the draft has one agent per person and coding tool, with tokens per machine (now per machine, O-40), and short-lived tokens with renewal (now long-lived, O-44). It also reserves "record a deployment approval" for people, but O-20 lets the agent record an approval its member gave in the conversation. Also needed: launcher registration (O-1); how tool-reported and model-passed session IDs count for attribution; the framing route for nudges from others, which this document chooses. |
+| [Architecture and operations](architecture.md) ([#11](https://github.com/guneet-xyz/shinan/issues/11)) | MCP endpoint and protocol versions; the plugin stream with offers, withdrawals and acknowledgements as used in [one owner at a time](#one-owner-at-a-time); the server-side allow-list for plugin reports; serving the skill; the launcher's connection. |
+| [Git host integrations](git-hosts.md) ([#8](https://github.com/guneet-xyz/shinan/issues/8)) | Detecting markers; Shinan's own writes only through its GitHub App installation token, with person-requested actions done by the person's agents (O-1). |
+| [Catalog](catalog.md) ([#5](https://github.com/guneet-xyz/shinan/issues/5)) | The agent index; which changes are gated (O-3); recording unchanged re-checks; the agents' start-here path (O-18); secrets recorded only as locations (O-2). |
+| [Human experience](human-experience.md) ([#10](https://github.com/guneet-xyz/shinan/issues/10)) | Showing presence (including `offline`), grouping subagents under their parent (O-37), waiting reasons and where to answer them (O-39), delivery outcomes; the nudge form with steer or queue; requesting git host actions and new agent sessions; where the device setup guide lives. |
+| [Roadmap and migration](roadmap.md) ([#12](https://github.com/guneet-xyz/shinan/issues/12)) | Trial projects and coordination in Shinan during the trial (O-73); Claude Code plugin in phase 2a (O-82); the device setup guide in phase 3 (O-1). |
+| [Decision log](decisions/) ([#13](https://github.com/guneet-xyz/shinan/issues/13)) | Records mapping the O-n answers cited here to decision numbers. |
 
 ## Open questions
 
 1. **Following tasks without claiming them.** Should a coordinating agent
-   session be able to follow other tasks, for example to receive their nudges?
-2. **Timeouts.** Are 60 s, 3 min, 24 h and 30 days right, and should a
-   workspace be able to change them?
+   session be able to follow its subtasks, for example to receive their nudges?
+2. **Heartbeat values.** Are 60 s and 3 min right, and should a workspace be
+   able to change the timeouts?
 3. **Prompt or synthetic message in OpenCode.** Which do models handle better
    for nudges? Settle with a prototype.
 4. **OpenCode plugin instances and locations.** How instances, locations and
@@ -854,19 +988,15 @@ Checked on **2026-11-16** against the vendors' own documentation.
 6. **MCP resources.** Should the agent index also be offered as MCP resources?
 7. **Claude Code inbox socket.** If its message format is documented, is it a
    better live route than the mod and hooks?
+8. **Launcher and other coding tools.** O-1 has the launcher run OpenCode.
+   Should it later start Claude Code too?
 
 ## Decisions needed from the owner
 
+The owner's answers in [#25](https://github.com/guneet-xyz/shinan/issues/25) settled every earlier row. These two are new
+questions that the answers raise:
+
 | # | Decision | Recommended option | Reason |
 |---|---|---|---|
-| 1 | How calls are matched to an agent session | Conversation ID reported by the coding tool first; model-passed agent session ID only as fallback; refuse writes when they disagree | The model can omit, reuse or copy IDs; tool-set IDs are outside its reach. |
-| 2 | When a check-in delivery counts as `delivered` | When the agent acknowledges it, not when it is sent | A result can be lost on the way; sending is not receiving. |
-| 3 | Default nudge delivery mode | `steer` for the agent's own member, `queue` for other members, overridable | Own corrections are worth most early; others should not redirect an agent mid-step. |
-| 4 | Add presence state `offline` and the timeouts | `offline` on tool stop; release the task after 24 h silence and re-claim on resume; `ended` only on delete, archive, explicit end or 30 days | Conversations can be resumed; work and nudges should follow them. |
-| 5 | Claude Code live nudges | Mod `$.prompt.submit` plus `PostToolUse` context, after OpenCode; hooks-only fallback without heartbeat or live delivery; no channels | Documented, generally available features; no "dangerous" flag. |
-| 6 | What plugins may send | Allow-listed metadata only, enforced by Shinan; remote URLs without credentials | Shinan is public and holds infrastructure details (D-015). |
-| 7 | Automatic claim from a branch marker | Yes, only for tasks that can be claimed | Does not rely on the agent's memory and respects pauses. |
-| 8 | Plan's "complete tasks" for agents | Means "record verification"; no tool marks a task done | Status is calculated (D-005). |
-| 9 | Plugin install also sets up MCP and the skill | Yes | Fewer steps; parts stay in step. |
-| 10 | Subagents | Part of the parent unless they claim their own task | Keeps presence readable. |
-| 11 | Skill and MCP during the trial | Trial projects only | D-018 keeps the `workspace` repository authoritative. |
+| 1 | Do subagents attach to their parent's task? (follows O-37) | No. Subagents are linked to the parent, attach only by claiming a task themselves, and the branch-marker automatic claim applies only to top-level agent sessions | Otherwise every short helper attaches and leaves `undeliverable` nudge deliveries when it finishes. |
+| 2 | How git host actions a person asks for reach an agent (follows O-1) | As a nudge to the requester's own agent sessions only, with `queue` delivery; if none is running, it waits like any nudge until the person starts one | The action must run under the requester's own git host account and should not interrupt a step in progress. |
