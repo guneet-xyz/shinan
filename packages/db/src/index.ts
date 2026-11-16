@@ -14,6 +14,7 @@ export {
   asc,
   desc,
   eq,
+  getTableColumns,
   gt,
   inArray,
   isNull,
@@ -22,6 +23,7 @@ export {
   or,
   sql,
 } from "drizzle-orm"
+export { alias } from "drizzle-orm/pg-core"
 export type {
   ActorKind,
   Confidence,

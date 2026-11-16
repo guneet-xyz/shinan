@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull, schema, sql } from "@shinan/db"
+import { alias, and, asc, eq, isNull, schema, sql } from "@shinan/db"
 import type { Role } from "@shinan/db"
 
 import { inWorkspace } from "../authorize.js"
@@ -7,7 +7,7 @@ import { NotFoundError, RuleViolationError } from "../errors.js"
 import { appendEvent } from "../events.js"
 import type { WriteScope } from "../events.js"
 import { recordSecurityEntry } from "../security-log.js"
-import { isId } from "../validation.js"
+import { checkRole, isId } from "../validation.js"
 
 export type Member = typeof schema.members.$inferSelect
 
@@ -18,6 +18,8 @@ export interface MemberSummary {
   name: string
   role: Role
   joinedAt: Date
+  /** The handle of the person who invited them, if anyone did. */
+  invitedByHandle: string | null
 }
 
 /** Current members of the workspace, oldest first. */
@@ -41,6 +43,7 @@ export async function addMember(
   ctx: Context,
   input: { workspaceId: string; personId: string; role: Role },
 ): Promise<MemberSummary> {
+  const role = checkRole(input.role)
   return inWorkspace(ctx, input.workspaceId, "member.add", async (scope) => {
     if (!isId(input.personId)) throw new NotFoundError()
     await lockMemberships(scope)
@@ -66,7 +69,7 @@ export async function addMember(
       .values({
         workspaceId: scope.workspaceId,
         personId: input.personId,
-        role: input.role,
+        role,
         invitedByMemberId: scope.actor.member!.id,
       })
       .returning()
@@ -74,8 +77,8 @@ export async function addMember(
       kind: "member.added",
       memberId: member!.id,
       personId: input.personId,
-      summary: `${scope.actor.label} added ${person.handle} as ${roleName[input.role]}`,
-      data: { role: input.role },
+      summary: `${scope.actor.label} added ${person.handle} as ${roleName[role]}`,
+      data: { role },
     })
     return {
       id: member!.id,
@@ -84,6 +87,7 @@ export async function addMember(
       name: person.name,
       role: member!.role,
       joinedAt: member!.joinedAt,
+      invitedByHandle: scope.actor.label,
     }
   })
 }
@@ -96,27 +100,28 @@ export async function changeRole(
   ctx: Context,
   input: { workspaceId: string; memberId: string; role: Role },
 ): Promise<MemberSummary> {
+  const role = checkRole(input.role)
   return inWorkspace(
     ctx,
     input.workspaceId,
     "member.change-role",
     async (scope) => {
       const member = await findCurrentMember(scope, input.memberId)
-      if (member.role === input.role) return member
+      if (member.role === role) return member
       if (member.role === "owner") await keepAnOwner(scope)
 
       await scope.tx
         .update(schema.members)
-        .set({ role: input.role })
+        .set({ role })
         .where(and(currentIn(scope), eq(schema.members.id, member.id)))
       await record(scope, {
         kind: "member.role-changed",
         memberId: member.id,
         personId: member.personId,
-        summary: `${scope.actor.label} changed ${member.handle}'s role to ${roleName[input.role]}`,
-        data: { from: member.role, to: input.role },
+        summary: `${scope.actor.label} changed ${member.handle}'s role to ${roleName[role]}`,
+        data: { from: member.role, to: role },
       })
-      return { ...member, role: input.role }
+      return { ...member, role }
     },
   )
 }
@@ -165,6 +170,9 @@ function currentIn(scope: WorkspaceScope) {
   )
 }
 
+const inviter = alias(schema.members, "inviter")
+const inviterPerson = alias(schema.people, "inviter_person")
+
 function currentMembers(scope: WorkspaceScope) {
   return scope.tx
     .select({
@@ -174,9 +182,12 @@ function currentMembers(scope: WorkspaceScope) {
       name: schema.people.name,
       role: schema.members.role,
       joinedAt: schema.members.joinedAt,
+      invitedByHandle: inviterPerson.handle,
     })
     .from(schema.members)
     .innerJoin(schema.people, eq(schema.people.id, schema.members.personId))
+    .leftJoin(inviter, eq(inviter.id, schema.members.invitedByMemberId))
+    .leftJoin(inviterPerson, eq(inviterPerson.id, inviter.personId))
 }
 
 async function findCurrentMember(

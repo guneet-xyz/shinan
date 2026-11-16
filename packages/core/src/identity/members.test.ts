@@ -11,6 +11,7 @@ import {
 } from "../../test/helpers.js"
 import {
   ForbiddenError,
+  InvalidInputError,
   NotFoundError,
   ReauthenticationRequiredError,
   RuleViolationError,
@@ -108,6 +109,27 @@ describe("addMember", () => {
     })
   })
 
+  it("lists who invited each member", async () => {
+    const members = await listMembers(asPerson(db, owner), workspaceId)
+    expect(
+      members.map((m) => ({ handle: m.handle, by: m.invitedByHandle })),
+    ).toEqual([
+      { handle: owner.handle, by: null },
+      { handle: contributor.handle, by: owner.handle },
+    ])
+  })
+
+  it("refuses a role that does not exist", async () => {
+    const someone = await newPerson(db)
+    await expect(
+      addMember(asPerson(db, owner), {
+        workspaceId,
+        personId: someone.id,
+        role: "viewer" as never,
+      }),
+    ).rejects.toMatchObject({ rule: "role-unknown" })
+  })
+
   it("refuses someone who is already a member", async () => {
     await expect(
       addMember(asPerson(db, owner), {
@@ -184,6 +206,16 @@ describe("changeRole", () => {
       personId: someone.id,
       role: "contributor",
     })
+  })
+
+  it("refuses a role that does not exist", async () => {
+    await expect(
+      changeRole(asPerson(db, owner), {
+        workspaceId,
+        memberId: contributorMemberId,
+        role: "viewer" as never,
+      }),
+    ).rejects.toBeInstanceOf(InvalidInputError)
   })
 
   it("does nothing when the role is unchanged", async () => {
@@ -426,6 +458,7 @@ describe("the security log", () => {
       actorPersonId: owner.id,
       actorLabel: owner.handle,
       subjectPersonId: contributor.id,
+      subjectHandle: contributor.handle,
       networkAddress: "192.0.2.10",
       client: "test",
       details: {

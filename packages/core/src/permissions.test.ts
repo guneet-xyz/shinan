@@ -49,6 +49,7 @@ describe("decide", () => {
       "member.add",
       "member.change-role",
       "member.remove",
+      "workspace.change-settings",
     ]
     for (const action of actions) {
       expect(allowed(action, owner)).toEqual({ allowed: true })
@@ -70,6 +71,7 @@ describe("decide", () => {
       "member.add",
       "member.change-role",
       "member.remove",
+      "workspace.change-settings",
     ] as const) {
       expect(allowed(action, stale)).toEqual({
         allowed: false,
@@ -94,6 +96,7 @@ describe("decide", () => {
         "member.remove",
         "member.leave",
         "security-log.read",
+        "workspace.change-settings",
       ] as const) {
         expect(allowed(action, ownersAgent)).toEqual({
           allowed: false,
@@ -139,6 +142,18 @@ describe("decide", () => {
         allowed: false,
         reason: "actor",
       })
+    })
+
+    it("lets only people read their own account", () => {
+      expect(allowed("account.read", { kind: "person" })).toEqual({
+        allowed: true,
+      })
+      for (const requester of [ownersAgent, { kind: "shinan" } as const]) {
+        expect(allowed("account.read", requester)).toEqual({
+          allowed: false,
+          reason: "actor",
+        })
+      }
     })
 
     it("leaves account creation, set-up and sending email to Shinan", () => {
