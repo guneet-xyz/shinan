@@ -1,5 +1,5 @@
-import { and, eq, isNull, schema } from "@shinan/db"
-import type { Transaction } from "@shinan/db"
+import { and, eq, isNull, schema, sql } from "@shinan/db"
+import type { Role, Transaction } from "@shinan/db"
 
 import type { Actor, ResolvedActor } from "./actor.js"
 import { writtenActor } from "./actor.js"
@@ -129,7 +129,54 @@ export async function createWorkspaceAsOwner(
       origin: installation.origin,
       request: installation.request,
       jobs: installation.jobs,
+      installationUrl: installation.installationUrl,
     } as WorkspaceScope<"workspace.create">,
+  }
+}
+
+/**
+ * Makes the actor a member of a workspace through an invitation they accept
+ * (identity §5.2), and returns a scope in it for recording that. Like
+ * `createWorkspaceAsOwner`, it is the only way in without the membership
+ * check, and only for the membership it has just created; the caller has
+ * checked the invitation.
+ */
+export async function joinWorkspaceByInvitation(
+  installation: InstallationScope<"invitation.respond">,
+  input: { workspaceId: string; role: Role; invitedByMemberId: string },
+): Promise<{
+  member: typeof schema.members.$inferSelect
+  scope: WorkspaceScope<"invitation.respond">
+}> {
+  const personId = installation.actor.personId
+  if (installation.action !== "invitation.respond" || !personId) {
+    throw new Error("Only a person accepting an invitation can use this")
+  }
+  const [member] = await installation.tx
+    .insert(schema.members)
+    .values({
+      workspaceId: input.workspaceId,
+      personId,
+      role: input.role,
+      invitedByMemberId: input.invitedByMemberId,
+    })
+    .returning()
+  const actor: ResolvedActor = {
+    ...installation.actor,
+    member: { id: member!.id, role: member!.role },
+  }
+  return {
+    member: member!,
+    scope: {
+      action: installation.action,
+      tx: installation.tx,
+      workspaceId: input.workspaceId,
+      actor,
+      origin: installation.origin,
+      request: installation.request,
+      jobs: installation.jobs,
+      installationUrl: installation.installationUrl,
+    } as WorkspaceScope<"invitation.respond">,
   }
 }
 
@@ -140,6 +187,7 @@ function scopeFields(ctx: Context, tx: Transaction, actor: ResolvedActor) {
     origin: ctx.origin ?? "shinan_action",
     request: ctx.request ?? {},
     jobs: ctx.jobs,
+    installationUrl: ctx.installationUrl,
   }
 }
 
@@ -149,6 +197,7 @@ function requesterFor(actor: Actor, resolved: ResolvedActor): Requester {
     role: resolved.member?.role,
     scopes: actor.kind === "agent" ? actor.scopes : undefined,
     reauthenticated: actor.kind === "person" ? actor.reauthenticated : false,
+    operator: resolved.operator,
   }
 }
 
@@ -252,6 +301,7 @@ async function resolveActor(
     agentSessionId: null,
     confidence: "recorded" as const,
     member: null,
+    operator: false,
   }
   if (actor.kind === "shinan") {
     return {
@@ -271,7 +321,12 @@ async function resolveActor(
     return null
   }
   const [person] = await tx
-    .select({ handle: schema.people.handle })
+    .select({
+      handle: schema.people.handle,
+      // Written out in full: Drizzle leaves column names unqualified here,
+      // and "email" would then mean the operators' column on both sides.
+      operator: sql<boolean>`exists (select 1 from installation_operators o where o.email = people.email)`,
+    })
     .from(schema.people)
     .where(eq(schema.people.id, actor.personId))
   if (!person) return null
@@ -284,5 +339,7 @@ async function resolveActor(
     agentSessionId:
       actor.kind === "agent" ? (actor.agentSessionId ?? null) : null,
     label: writtenActor(actor, person.handle),
+    // Only a person's own requests count as an operator's; never an agent's.
+    operator: actor.kind === "person" && person.operator,
   }
 }

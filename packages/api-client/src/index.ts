@@ -14,6 +14,8 @@ export const roles: readonly Role[] = ["owner", "contributor"]
 /** The installation's public details, shown before sign-in. */
 export interface Installation {
   name: string
+  /** Sign-in methods offered besides email magic links. */
+  signInMethods: { github: boolean }
 }
 
 export interface Account {
@@ -26,6 +28,52 @@ export interface Account {
   }
   /** The workspaces the person belongs to, with their role in each. */
   workspaces: AccountWorkspace[]
+  /** How the person signs in (identity §3.1). */
+  signInMethods: {
+    /** Magic links go to this address. */
+    email: string
+    /** The linked GitHub account, if any. */
+    github: { accountId: string; login: string | null; addedAt: string } | null
+    /** Whether this installation offers GitHub sign-in at all. */
+    githubAvailable: boolean
+  }
+  /** Whether the person is an installation operator. */
+  operator: boolean
+}
+
+/** One of the person's sign-in sessions (identity §3.3). */
+export interface SignInSession {
+  id: string
+  createdAt: string
+  lastActiveAt: string
+  expiresAt: string
+  networkAddress: string | null
+  /** The user agent the session started with. */
+  client: string | null
+  /** A short description of the browser, such as "Firefox on Linux". */
+  browser: string
+  /** The session of this browser. */
+  current: boolean
+}
+
+/** A GitHub sign-in waiting for its email address (identity §3.2). */
+export interface PendingGitHubSignIn {
+  login: string | null
+}
+
+/** Where to send the browser next. */
+export interface Redirect {
+  url: string
+}
+
+/** An address on the installation's email allowlist (identity §3.2). */
+export interface AllowlistEntry {
+  email: string
+  addedAt: string
+  /** Named as an operator in the installation's configuration. */
+  operator: boolean
+  /** The handle of the person with this address, once they have an account. */
+  handle: string | null
 }
 
 export interface AccountWorkspace {
@@ -101,7 +149,7 @@ export interface SecurityLogEntry extends ActorFields {
 export type InvitationState =
   "pending" | "accepted" | "declined" | "expired" | "withdrawn"
 
-/** An invitation to join a workspace (identity §5.2). Served by M1-4. */
+/** An invitation to join a workspace, as its owners see it (§5.2). */
 export interface Invitation {
   id: string
   email: string
@@ -110,6 +158,21 @@ export interface Invitation {
   invitedByHandle: string
   createdAt: string
   expiresAt: string
+}
+
+/** An invitation as the invited person sees it (identity §5.2). */
+export interface InvitationForYou {
+  id: string
+  workspaceId: string
+  workspaceName: string
+  invitedByHandle: string
+  role: Role
+  expiresAt: string
+}
+
+export interface AcceptedInvitation {
+  workspaceId: string
+  memberId: string
 }
 
 /** One page of a list that is read newest first. */
@@ -132,7 +195,7 @@ export interface PageRequest {
  * - `not-found` (404): it does not exist, or the requester may not know it does;
  * - `conflict` (409): it breaks a rule given the current state (`rule`);
  * - `invalid-input` (422): the input itself is malformed (`rule`);
- * - `not-implemented` (501): the server does not offer this yet;
+ * - `not-implemented` (501): the server does not offer this;
  * - `internal` (500): anything else; details are only in the server's log.
  */
 export type ErrorCode =
@@ -212,8 +275,8 @@ export function createApiClient(options: ApiClientOptions = {}) {
     status: () => request<Status>("GET", "/api/status"),
     installation: () => request<Installation>("GET", "/api/installation"),
 
-    // Sign-in. These are served by the sign-in layer (M1-4) under /api/auth,
-    // with the routes of Better Auth's magic link and social sign-in.
+    // Sign-in, served by the sign-in layer under /api/auth with the routes of
+    // Better Auth's magic link and social sign-in.
     requestSignInLink: (input: { email: string; callbackURL: string }) =>
       request<unknown>("POST", "/api/auth/sign-in/magic-link", input).then(
         () => undefined,
@@ -226,7 +289,49 @@ export function createApiClient(options: ApiClientOptions = {}) {
     signOut: () =>
       request<unknown>("POST", "/api/auth/sign-out", {}).then(() => undefined),
 
+    pendingGitHubSignIn: () =>
+      request<PendingGitHubSignIn>("GET", "/api/sign-in/github"),
+    startSetup: (input: { token: string; email: string }) =>
+      request<void>("POST", "/api/setup", input),
+
     account: () => request<Account>("GET", "/api/account"),
+    signInSessions: () =>
+      request<SignInSession[]>("GET", "/api/account/sessions"),
+    endSignInSession: (sessionId: string) =>
+      request<void>(
+        "DELETE",
+        `/api/account/sessions/${encodeURIComponent(sessionId)}`,
+      ),
+    signOutEverywhere: () =>
+      request<void>("POST", "/api/account/sessions/end-all"),
+    addGitHub: (input: { callbackURL: string }) =>
+      request<Redirect>("POST", "/api/account/github", input),
+    removeGitHub: () => request<void>("DELETE", "/api/account/github"),
+    invitationsForYou: () =>
+      request<InvitationForYou[]>("GET", "/api/account/invitations"),
+    acceptInvitationById: (invitationId: string) =>
+      request<AcceptedInvitation>(
+        "POST",
+        `/api/account/invitations/${encodeURIComponent(invitationId)}/accept`,
+      ),
+    declineInvitationById: (invitationId: string) =>
+      request<void>(
+        "POST",
+        `/api/account/invitations/${encodeURIComponent(invitationId)}/decline`,
+      ),
+    findInvitation: (token: string) =>
+      request<InvitationForYou>("POST", "/api/invitations/find", { token }),
+    acceptInvitation: (token: string) =>
+      request<AcceptedInvitation>("POST", "/api/invitations/accept", { token }),
+    declineInvitation: (token: string) =>
+      request<void>("POST", "/api/invitations/decline", { token }),
+
+    allowlist: () =>
+      request<AllowlistEntry[]>("GET", "/api/installation/allowlist"),
+    addToAllowlist: (email: string) =>
+      request<void>("POST", "/api/installation/allowlist", { email }),
+    removeFromAllowlist: (email: string) =>
+      request<void>("POST", "/api/installation/allowlist/remove", { email }),
 
     workspace: (workspaceId: string) =>
       request<Workspace>("GET", workspace(workspaceId)),

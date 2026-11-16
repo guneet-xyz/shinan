@@ -71,6 +71,7 @@ describe("decide", () => {
       "member.add",
       "member.change-role",
       "member.remove",
+      "member.invite",
       "workspace.change-settings",
     ] as const) {
       expect(allowed(action, stale)).toEqual({
@@ -80,6 +81,25 @@ describe("decide", () => {
     }
     expect(allowed("workspace.read", stale)).toEqual({ allowed: true })
     expect(allowed("member.leave", stale)).toEqual({ allowed: true })
+    expect(allowed("invitation.withdraw", stale)).toEqual({ allowed: true })
+  })
+
+  it("keeps invitations to workspace owners", () => {
+    for (const action of [
+      "invitation.read",
+      "member.invite",
+      "invitation.withdraw",
+    ] as const) {
+      expect(allowed(action, owner)).toEqual({ allowed: true })
+      expect(allowed(action, contributor)).toEqual({
+        allowed: false,
+        reason: "role",
+      })
+      expect(allowed(action, ownersAgent)).toEqual({
+        allowed: false,
+        reason: "people-only",
+      })
+    }
   })
 
   it("checks the role before re-authentication", () => {
@@ -97,6 +117,7 @@ describe("decide", () => {
         "member.leave",
         "security-log.read",
         "workspace.change-settings",
+        "member.invite",
       ] as const) {
         expect(allowed(action, ownersAgent)).toEqual({
           allowed: false,
@@ -156,12 +177,14 @@ describe("decide", () => {
       }
     })
 
-    it("leaves account creation, set-up and sending email to Shinan", () => {
+    it("leaves account creation, sign-in, set-up and sending email to Shinan", () => {
       for (const action of [
         "person.create",
         "installation.set-up",
         "email.deliver",
         "email.prune",
+        "sign-in",
+        "account.recover",
       ] as const) {
         expect(allowed(action, { kind: "shinan" })).toEqual({ allowed: true })
         expect(allowed(action, { kind: "person" })).toEqual({
@@ -169,6 +192,76 @@ describe("decide", () => {
           reason: "actor",
         })
       }
+    })
+  })
+
+  describe("sign-in methods and sessions", () => {
+    it("asks for re-authentication to add or remove GitHub", () => {
+      expect(
+        allowed("sign-in-method.change", {
+          kind: "person",
+          reauthenticated: true,
+        }),
+      ).toEqual({ allowed: true })
+      expect(
+        allowed("sign-in-method.change", {
+          kind: "person",
+          reauthenticated: false,
+        }),
+      ).toEqual({ allowed: false, reason: "reauthentication" })
+      expect(allowed("sign-in-method.change", ownersAgent)).toEqual({
+        allowed: false,
+        reason: "actor",
+      })
+    })
+
+    it("lets people end their sessions and answer invitations without it", () => {
+      for (const action of [
+        "sign-in-session.end",
+        "invitation.respond",
+      ] as const) {
+        expect(
+          allowed(action, { kind: "person", reauthenticated: false }),
+        ).toEqual({ allowed: true })
+        expect(allowed(action, ownersAgent)).toEqual({
+          allowed: false,
+          reason: "actor",
+        })
+      }
+    })
+  })
+
+  describe("the email allowlist", () => {
+    const operator: Requester = {
+      kind: "person",
+      operator: true,
+      reauthenticated: true,
+    }
+
+    it("is kept by installation operators only", () => {
+      for (const action of ["allowlist.read", "allowlist.change"] as const) {
+        expect(allowed(action, operator)).toEqual({ allowed: true })
+        expect(
+          allowed(action, { kind: "person", reauthenticated: true }),
+        ).toEqual({ allowed: false, reason: "role" })
+        expect(allowed(action, { kind: "shinan" })).toEqual({
+          allowed: false,
+          reason: "actor",
+        })
+        expect(allowed(action, { ...ownersAgent, operator: true })).toEqual({
+          allowed: false,
+          reason: "actor",
+        })
+      }
+    })
+
+    it("changes only with re-authentication", () => {
+      expect(
+        allowed("allowlist.change", { ...operator, reauthenticated: false }),
+      ).toEqual({ allowed: false, reason: "reauthentication" })
+      expect(
+        allowed("allowlist.read", { ...operator, reauthenticated: false }),
+      ).toEqual({ allowed: true })
     })
   })
 

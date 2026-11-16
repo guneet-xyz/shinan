@@ -13,6 +13,11 @@ export interface Context {
   request?: RequestInfo
   /** The job queue, for operations that add jobs, such as sending email. */
   jobs?: JobQueue
+  /**
+   * The installation's public address, such as `https://shinan.guneet.dev`,
+   * for links in the emails operations send.
+   */
+  installationUrl?: string
 }
 
 /** Facts about the request, recorded in the security log (identity §11). */
@@ -29,7 +34,8 @@ declare const scopeBrand: unique symbol
  * Actions a workspace scope can be for: the workspace actions, and creating
  * the workspace, whose first owner acts in it straight away.
  */
-export type WorkspaceScopeAction = WorkspaceAction | "workspace.create"
+export type WorkspaceScopeAction =
+  WorkspaceAction | "workspace.create" | "invitation.respond"
 
 /**
  * Proof that the permission check passed for one action in one workspace.
@@ -50,6 +56,7 @@ export interface WorkspaceScope<
   readonly origin: EventOrigin
   readonly request: RequestInfo
   readonly jobs: JobQueue | undefined
+  readonly installationUrl: string | undefined
 }
 
 /** Proof that the permission check passed for an installation action. */
@@ -63,4 +70,5 @@ export interface InstallationScope<
   readonly origin: EventOrigin
   readonly request: RequestInfo
   readonly jobs: JobQueue | undefined
+  readonly installationUrl: string | undefined
 }

@@ -28,8 +28,13 @@ export interface WorkspaceRule {
 export interface InstallationRule {
   level: "installation"
   access: Access
+  /** Any person may take the action. */
   people: boolean
+  /** Installation operators may take it (identity §12). */
+  operators?: boolean
   shinan: boolean
+  /** Sensitive actions need a recent sign-in (identity §3.3). */
+  reauthentication?: boolean
 }
 
 export type Access = "read" | "write"
@@ -54,12 +59,81 @@ export const rules = deepFreeze({
     people: false,
     shinan: true,
   },
-  /** Create a person's account; the sign-in flow (M1-4) does this. */
+  /**
+   * Create a person's account. Only the sign-in operations do this, when an
+   * allowlisted address first opens a magic link (identity §3.2).
+   */
   "person.create": {
     level: "installation",
     access: "write",
     people: false,
     shinan: true,
+  },
+  /**
+   * The sign-in layer's own steps, taken as Shinan before anyone is signed
+   * in: sending magic links, opening them, starting sign-in sessions and
+   * the first start (identity §3).
+   */
+  "sign-in": {
+    level: "installation",
+    access: "write",
+    people: false,
+    shinan: true,
+  },
+  /**
+   * The operator's server commands for recovery (identity §3.4): ending a
+   * person's sign-in sessions and changing their email address.
+   */
+  "account.recover": {
+    level: "installation",
+    access: "write",
+    people: false,
+    shinan: true,
+  },
+  /** A person ends their own sign-in sessions (identity §3.3). */
+  "sign-in-session.end": {
+    level: "installation",
+    access: "write",
+    people: true,
+    shinan: false,
+  },
+  /**
+   * Add or remove GitHub as a sign-in method: with re-authentication
+   * (identity §3.3).
+   */
+  "sign-in-method.change": {
+    level: "installation",
+    access: "write",
+    people: true,
+    shinan: false,
+    reauthentication: true,
+  },
+  /** A person accepts or declines an invitation to their address (§5.2). */
+  "invitation.respond": {
+    level: "installation",
+    access: "write",
+    people: true,
+    shinan: false,
+  },
+  /** Operators read the email allowlist (identity §3.2). */
+  "allowlist.read": {
+    level: "installation",
+    access: "read",
+    people: false,
+    operators: true,
+    shinan: false,
+  },
+  /**
+   * Operators add and remove addresses, with re-authentication: it decides
+   * who can have an account at all (identity §3.2).
+   */
+  "allowlist.change": {
+    level: "installation",
+    access: "write",
+    people: false,
+    operators: true,
+    shinan: false,
+    reauthentication: true,
   },
   /** Send a queued email and record how it ended; the worker does this. */
   "email.deliver": {
@@ -136,6 +210,33 @@ export const rules = deepFreeze({
     agents: "people",
     reauthentication: true,
   },
+  /** Workspace owners see the workspace's invitations (identity §5.1). */
+  "invitation.read": {
+    level: "workspace",
+    access: "read",
+    roles: ["owner"],
+    agents: "people",
+    reauthentication: false,
+  },
+  /**
+   * Invite someone, or send an invitation again: workspace owners, with
+   * re-authentication (identity §3.3, §5.1).
+   */
+  "member.invite": {
+    level: "workspace",
+    access: "write",
+    roles: ["owner"],
+    agents: "people",
+    reauthentication: true,
+  },
+  /** Withdraw a pending invitation (identity §5.1, §5.2). */
+  "invitation.withdraw": {
+    level: "workspace",
+    access: "write",
+    roles: ["owner"],
+    agents: "people",
+    reauthentication: false,
+  },
   /** A member leaves the workspace themselves (identity §5.3). */
   "member.leave": {
     level: "workspace",
@@ -178,6 +279,8 @@ export interface Requester {
   scopes?: readonly Scope[]
   /** For people, whether they signed in again recently. */
   reauthenticated?: boolean
+  /** For people, whether they are an installation operator. */
+  operator?: boolean
 }
 
 /**
@@ -186,9 +289,16 @@ export interface Requester {
  */
 export function decide(rule: Rule, requester: Requester): Decision {
   if (rule.level === "installation") {
-    if (requester.kind === "person" && rule.people) return allow
-    if (requester.kind === "shinan" && rule.shinan) return allow
-    return refuse("actor")
+    if (requester.kind === "shinan")
+      return rule.shinan ? allow : refuse("actor")
+    if (requester.kind !== "person") return refuse("actor")
+    if (!rule.people && !(rule.operators && requester.operator)) {
+      return refuse(rule.operators ? "role" : "actor")
+    }
+    if (rule.reauthentication && !requester.reauthenticated) {
+      return refuse("reauthentication")
+    }
+    return allow
   }
 
   if (requester.kind === "shinan") return refuse("actor")
