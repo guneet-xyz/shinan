@@ -14,12 +14,12 @@ Phase 1a is built in four milestones. Each is deployed to `shinan.guneet.dev`
 (with the owner's approval) before the next starts, and the owner reviews scope
 at the end of each ([roadmap 3.3](roadmap.md#33-build-milestones)).
 
-| Milestone | Contents | Trial use |
-|---|---|---|
-| **M1. Empty installation** | Sign-in (email magic link, GitHub), email sending through SES, one workspace, members and roles, first start, security log, deployment on Musashi, uptime monitoring | None; security checks |
-| **M2. Catalog** | Catalog entities and facts, catalog proposals and approval, wiki, start here, agent index, agent registration, MCP read and propose, skill | Catalog part of the trial |
-| **M3. Tasks and git hosts** | Tasks and subtasks, work links, calculated status, flags, GitHub App and Forgejo connections, webhooks and reconciliation, outside issues, timeline, Now screen, readiness report | Task part of the trial |
-| **M4. Presence** | OpenCode plugin, agent sessions and presence, attaching sessions to tasks, agents view | Trial fully running |
+| Milestone                   | Contents                                                                                                                                                                          | Trial use                 |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- |
+| **M1. Empty installation**  | Sign-in (email magic link, GitHub), email sending through SES, one workspace, members and roles, first start, security log, deployment on Musashi, uptime monitoring              | None; security checks     |
+| **M2. Catalog**             | Catalog entities and facts, catalog proposals and approval, wiki, start here, agent index, agent registration, MCP read and propose, skill                                        | Catalog part of the trial |
+| **M3. Tasks and git hosts** | Tasks and subtasks, work links, calculated status, flags, GitHub App and Forgejo connections, webhooks and reconciliation, outside issues, timeline, Now screen, readiness report | Task part of the trial    |
+| **M4. Presence**            | OpenCode plugin, agent sessions and presence, attaching sessions to tasks, agents view                                                                                            | Trial fully running       |
 
 The CLI and the workspace export can slip to G2; everything else in phase 1 may
 not ([roadmap 3.2](roadmap.md#32-cut-line)).
@@ -29,15 +29,15 @@ not ([roadmap 3.2](roadmap.md#32-cut-line)).
 One repository (this one), one pnpm workspace. Reason: one maintainer, shared
 types between server, web app, plugin and CLI, one CI.
 
-| Path | What it holds |
-|---|---|
-| `apps/server` | The single Node.js program (Hono, pg-boss): `web` and `worker` roles and the `migrate` command ([architecture 3.2](architecture.md#32-process-model)). HTTP routes, MCP endpoint, webhook intake and SSE live here. |
-| `apps/web` | The React single-page app (Vite), served as static files by `apps/server`. |
-| `packages/core` | The application layer: modules for identity, catalog, tasks, git hosts, agents, events and email. All permissions and rules live here; it imports no web framework ([architecture 2.1](architecture.md#21-decided-stack)). |
-| `packages/db` | Drizzle schema and migrations. |
-| `packages/api-client` | Typed client for the REST API, shared by the web app, CLI and plugin. |
-| `packages/cli`, `packages/opencode-plugin` | Built in M2/M4 (CLI may slip to G2). |
-| `deploy/` | Dockerfile, the reference Compose file (PostgreSQL, migrate, web, worker, local mail catcher) and the operator guide. |
+| Path                                       | What it holds                                                                                                                                                                                                              |
+| ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/server`                              | The single Node.js program (Hono, pg-boss): `web` and `worker` roles and the `migrate` command ([architecture 3.2](architecture.md#32-process-model)). HTTP routes, MCP endpoint, webhook intake and SSE live here.        |
+| `apps/web`                                 | The React single-page app (Vite), served as static files by `apps/server`.                                                                                                                                                 |
+| `packages/core`                            | The application layer: modules for identity, catalog, tasks, git hosts, agents, events and email. All permissions and rules live here; it imports no web framework ([architecture 2.1](architecture.md#21-decided-stack)). |
+| `packages/db`                              | Drizzle schema and migrations.                                                                                                                                                                                             |
+| `packages/api-client`                      | Typed client for the REST API, shared by the web app, CLI and plugin.                                                                                                                                                      |
+| `packages/cli`, `packages/opencode-plugin` | Built in M2/M4 (CLI may slip to G2).                                                                                                                                                                                       |
+| `deploy/`                                  | Dockerfile, the reference Compose file (PostgreSQL, migrate, web, worker, local mail catcher) and the operator guide.                                                                                                      |
 
 ## 3. Tooling (proposed)
 
@@ -80,15 +80,15 @@ Library choices left open by architecture are settled in
 
 ## 5. M1 work packages
 
-| # | Package | Contents | Depends on |
-|---|---|---|---|
-| M1-1 | **Repository scaffold and CI** | pnpm workspace, TypeScript, Prettier, ESLint, Vitest, the folder layout above, GitHub Actions CI with PostgreSQL, reference Compose file for local development with a mail catcher, updated README | — |
-| M1-2 | **Core and database foundations** | Installation, people, workspaces, members and roles (owner, contributor), the application-layer pattern with permission checks, append-only events, the security log (never purged, D-049), migrations and the `migrate` command, `web`/`worker` roles and the job queue | M1-1 |
-| M1-3 | **Email** | The email sender behind a small interface, the AWS SES SDK implementation, the local mail catcher in development, throttling, retries and failure records ([architecture 9](architecture.md#9-email-and-notifications)) | M1-2 |
-| M1-4 | **Sign-in and accounts** | Email allowlist, email magic link, GitHub sign-in, first start through the one-time setup link ([identity 3.2](identity.md#32-who-can-have-an-account)), re-authentication, sign-in sessions, security alert emails, invitations to the one workspace | M1-2, M1-3 |
-| M1-5 | **Web app shell** | React app, sign-in pages, your account, workspace settings (members, roles, invitations, general settings), security log view | M1-2; screens finish with M1-4 |
-| M1-6 | **Security baseline** | Web hardening (headers, CSRF, cookies, rate limits), the security checklist that must pass before the first public deployment ([architecture 10](architecture.md#10-security)) | M1-4, M1-5 |
-| M1-7 | **Packaging and deployment preparation** | Multi-architecture image, release workflow pushing to the private registry, the `infra/musashi` stack PR, the DNS PR in `guneet/terraform`, the mon uptime tile PR. **These PRs prepare a deployment; nothing is deployed until the owner approves.** | M1-1; finishes after M1-6 |
+| #    | Package                                  | Contents                                                                                                                                                                                                                                                                 | Depends on                     |
+| ---- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------ |
+| M1-1 | **Repository scaffold and CI**           | pnpm workspace, TypeScript, Prettier, ESLint, Vitest, the folder layout above, GitHub Actions CI with PostgreSQL, reference Compose file for local development with a mail catcher, updated README                                                                       | —                              |
+| M1-2 | **Core and database foundations**        | Installation, people, workspaces, members and roles (owner, contributor), the application-layer pattern with permission checks, append-only events, the security log (never purged, D-049), migrations and the `migrate` command, `web`/`worker` roles and the job queue | M1-1                           |
+| M1-3 | **Email**                                | The email sender behind a small interface, the AWS SES SDK implementation, the local mail catcher in development, throttling, retries and failure records ([architecture 9](architecture.md#9-email-and-notifications))                                                  | M1-2                           |
+| M1-4 | **Sign-in and accounts**                 | Email allowlist, email magic link, GitHub sign-in, first start through the one-time setup link ([identity 3.2](identity.md#32-who-can-have-an-account)), re-authentication, sign-in sessions, security alert emails, invitations to the one workspace                    | M1-2, M1-3                     |
+| M1-5 | **Web app shell**                        | React app, sign-in pages, your account, workspace settings (members, roles, invitations, general settings), security log view                                                                                                                                            | M1-2; screens finish with M1-4 |
+| M1-6 | **Security baseline**                    | Web hardening (headers, CSRF, cookies, rate limits), the security checklist that must pass before the first public deployment ([architecture 10](architecture.md#10-security))                                                                                           | M1-4, M1-5                     |
+| M1-7 | **Packaging and deployment preparation** | Multi-architecture image, release workflow pushing to the private registry, the `infra/musashi` stack PR, the DNS PR in `guneet/terraform`, the mon uptime tile PR. **These PRs prepare a deployment; nothing is deployed until the owner approves.**                    | M1-1; finishes after M1-6      |
 
 M1-1 starts first. M1-2 follows; then M1-3, M1-4 and M1-5 run in parallel, then
 M1-6 and M1-7. M2 to M4 get their own package lists at each milestone review.

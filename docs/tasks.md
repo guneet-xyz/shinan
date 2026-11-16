@@ -35,13 +35,13 @@ Examples use `T-123` as a task ID. `T` stands for the workspace's own prefix
 These refine glossary terms; the [domain model and glossary](domain-model.md)
 now carries them. All are **proposed**.
 
-| Word | Meaning | Reason |
-|---|---|---|
-| **Merged** | A PR merged into the repository's default branch, or into a branch the git host connection marks as counting (for example a long-lived release branch). A commit counts as merged when it reaches such a branch by a direct push. | GitHub draws the same line for closing keywords (checked 2026-11-16, [GitHub docs](https://docs.github.com/en/issues/tracking-your-work-with-issues/using-issues/linking-a-pull-request-to-an-issue)). Without it, a stacked PR merged into another feature branch would count as finished work. |
-| **Merged elsewhere** | A PR merged into any other branch. It is neither active nor merged. The PR from the branch it merged into carries the work on, and should carry the marker too. | The work has not reached the code people use yet. |
-| **Active** | A `delivers` branch with no PR and not merged, a draft PR, or a PR ready for review. A PR stops being active when it is merged, merged elsewhere or closed without merging. | Status needs one word for "work still in flight"; the glossary asks to avoid "open" for tasks. |
-| **Confirmed link** | A work link that counts toward status. Links made by members' markers, agents' calls and people are confirmed when made; some are made **unconfirmed** ([6.4](#64-unconfirmed-links)). | Outsiders can write markers on public repositories. |
-| **Parent** and **subtask** | A task split into smaller tasks is their parent; each smaller task is a subtask ([2.1](#21-subtasks)). | Decided that subtasks exist (owner, O-21, [#25]). |
+| Word                       | Meaning                                                                                                                                                                                                                           | Reason                                                                                                                                                                                                                                                                                           |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Merged**                 | A PR merged into the repository's default branch, or into a branch the git host connection marks as counting (for example a long-lived release branch). A commit counts as merged when it reaches such a branch by a direct push. | GitHub draws the same line for closing keywords (checked 2026-11-16, [GitHub docs](https://docs.github.com/en/issues/tracking-your-work-with-issues/using-issues/linking-a-pull-request-to-an-issue)). Without it, a stacked PR merged into another feature branch would count as finished work. |
+| **Merged elsewhere**       | A PR merged into any other branch. It is neither active nor merged. The PR from the branch it merged into carries the work on, and should carry the marker too.                                                                   | The work has not reached the code people use yet.                                                                                                                                                                                                                                                |
+| **Active**                 | A `delivers` branch with no PR and not merged, a draft PR, or a PR ready for review. A PR stops being active when it is merged, merged elsewhere or closed without merging.                                                       | Status needs one word for "work still in flight"; the glossary asks to avoid "open" for tasks.                                                                                                                                                                                                   |
+| **Confirmed link**         | A work link that counts toward status. Links made by members' markers, agents' calls and people are confirmed when made; some are made **unconfirmed** ([6.4](#64-unconfirmed-links)).                                            | Outsiders can write markers on public repositories.                                                                                                                                                                                                                                              |
+| **Parent** and **subtask** | A task split into smaller tasks is their parent; each smaller task is a subtask ([2.1](#21-subtasks)).                                                                                                                            | Decided that subtasks exist (owner, O-21, [#25]).                                                                                                                                                                                                                                                |
 
 Issues are never `delivers` work items; they are `origin` or `related`.
 **Proposed.** Reason: an issue describes intent, not a change to the code, and
@@ -76,47 +76,47 @@ That practice works; Shinan keeps its rules and removes the manual parts. The
 except that coordination for trial projects moves into Shinan during the trial
 ([section 15](#15-during-the-trial)).
 
-| Today (issues in the `workspace` repository) | In Shinan | Status |
-|---|---|---|
-| A coordinating issue in the `workspace` repository links project issues and PRs and does not copy their progress. | A [task](#2-what-a-task-holds). Work on any git host links to it through work links. | Decided (D-001, D-004) |
-| Issue numbers are repository-scoped, so cross-repository work needs qualified references or full URLs. | A host-neutral task ID used in branch names and PR descriptions. | Decided (D-002) |
-| Branch `task/42-update-locations-agent-a`. | Branch `task/T-123-update-locations-agent-a`. | Proposed ([6.2](#62-markers)) |
-| `Closes #42` only in the PR that completes the issue; intermediate PRs merely reference it. | Work that needs several PRs is split into subtasks; a task is done when all its subtasks are done and every PR delivering it has merged. | Decided (owner, O-21, [#25]) ([2.1](#21-subtasks)) |
-| Project board columns moved by hand; no Markdown status mirror. | Status calculated from linked work and recorded events. | Decided (D-005; owner, O-4, [#25]) |
-| "Merely opening a PR or marking it ready is not task completion"; verify the outcome after merge. | `done` needs merged work, plus a recorded verification where the acceptance criteria need more than the merge. | Decided (owner, O-4, O-9, O-22, [#25]) ([7.4](#74-verification-and-done)) |
-| `human-effort` label plus a TL;DR comment. | The `needs a person` task flag with the same TL;DR as structured fields; agents may set it. | Decided (plan, Tasks pillar; owner, O-7, [#25]) ([8.3](#83-needs-a-person)) |
-| Deployment approval asked for in the conversation, never through `human-effort`; scope and revision recorded in the issue or PR. | A separate task flag, `awaiting deployment approval`. Approval is given in Shinan, or in the conversation and recorded by the agent. | Decided (owner, O-8, O-20, [#25]) ([8.4](#84-awaiting-deployment-approval)) |
-| One fixed set of labels per repository. | Task flags are managed per workspace; the built-in ones are defaults. | Decided (owner, O-8, [#25]) ([8.1](#81-managing-flags)) |
-| "Waiting on another issue or PR: link the dependency instead." | A dependency between tasks; the `blocked` flag is calculated from it. | Proposed ([section 9](#9-dependencies)) |
-| "Announce the agent/session identity in a comment if agents share an account." | The agent session claims the task through Shinan, so its identity is recorded. | Proposed ([section 10](#10-claims-assignees-and-agent-sessions)) |
-| "Assignment is not an atomic lock; recheck and coordinate overlaps." | Neither an assignee nor a claim is a lock. | Proposed ([section 10](#10-claims-assignees-and-agent-sessions)) |
-| Close a cross-repository coordinating issue by hand if the host cannot. | The task's status is calculated across hosts, so the task itself is never closed by hand. Origin issues on the hosts may still need closing ([5.3](#53-after-triage)). | Decided (D-005; owner, O-57, [#25]) |
-| Project board order says what comes next. | People rank `to do` tasks in a simple order. | Decided (owner, O-28, [#25]) ([2.2](#22-order-of-to-do-tasks)) |
+| Today (issues in the `workspace` repository)                                                                                     | In Shinan                                                                                                                                                              | Status                                                                      |
+| -------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| A coordinating issue in the `workspace` repository links project issues and PRs and does not copy their progress.                | A [task](#2-what-a-task-holds). Work on any git host links to it through work links.                                                                                   | Decided (D-001, D-004)                                                      |
+| Issue numbers are repository-scoped, so cross-repository work needs qualified references or full URLs.                           | A host-neutral task ID used in branch names and PR descriptions.                                                                                                       | Decided (D-002)                                                             |
+| Branch `task/42-update-locations-agent-a`.                                                                                       | Branch `task/T-123-update-locations-agent-a`.                                                                                                                          | Proposed ([6.2](#62-markers))                                               |
+| `Closes #42` only in the PR that completes the issue; intermediate PRs merely reference it.                                      | Work that needs several PRs is split into subtasks; a task is done when all its subtasks are done and every PR delivering it has merged.                               | Decided (owner, O-21, [#25]) ([2.1](#21-subtasks))                          |
+| Project board columns moved by hand; no Markdown status mirror.                                                                  | Status calculated from linked work and recorded events.                                                                                                                | Decided (D-005; owner, O-4, [#25])                                          |
+| "Merely opening a PR or marking it ready is not task completion"; verify the outcome after merge.                                | `done` needs merged work, plus a recorded verification where the acceptance criteria need more than the merge.                                                         | Decided (owner, O-4, O-9, O-22, [#25]) ([7.4](#74-verification-and-done))   |
+| `human-effort` label plus a TL;DR comment.                                                                                       | The `needs a person` task flag with the same TL;DR as structured fields; agents may set it.                                                                            | Decided (plan, Tasks pillar; owner, O-7, [#25]) ([8.3](#83-needs-a-person)) |
+| Deployment approval asked for in the conversation, never through `human-effort`; scope and revision recorded in the issue or PR. | A separate task flag, `awaiting deployment approval`. Approval is given in Shinan, or in the conversation and recorded by the agent.                                   | Decided (owner, O-8, O-20, [#25]) ([8.4](#84-awaiting-deployment-approval)) |
+| One fixed set of labels per repository.                                                                                          | Task flags are managed per workspace; the built-in ones are defaults.                                                                                                  | Decided (owner, O-8, [#25]) ([8.1](#81-managing-flags))                     |
+| "Waiting on another issue or PR: link the dependency instead."                                                                   | A dependency between tasks; the `blocked` flag is calculated from it.                                                                                                  | Proposed ([section 9](#9-dependencies))                                     |
+| "Announce the agent/session identity in a comment if agents share an account."                                                   | The agent session claims the task through Shinan, so its identity is recorded.                                                                                         | Proposed ([section 10](#10-claims-assignees-and-agent-sessions))            |
+| "Assignment is not an atomic lock; recheck and coordinate overlaps."                                                             | Neither an assignee nor a claim is a lock.                                                                                                                             | Proposed ([section 10](#10-claims-assignees-and-agent-sessions))            |
+| Close a cross-repository coordinating issue by hand if the host cannot.                                                          | The task's status is calculated across hosts, so the task itself is never closed by hand. Origin issues on the hosts may still need closing ([5.3](#53-after-triage)). | Decided (D-005; owner, O-57, [#25])                                         |
+| Project board order says what comes next.                                                                                        | People rank `to do` tasks in a simple order.                                                                                                                           | Decided (owner, O-28, [#25]) ([2.2](#22-order-of-to-do-tasks))              |
 
 ## 2. What a task holds
 
 A task is the story of one piece of work, from intent to verified outcome
 ([glossary](domain-model.md#task)).
 
-| Field | Meaning | Status |
-|---|---|---|
-| Task ID | Stable, host-neutral, never reused ([section 3](#3-task-ids)). | Decided (D-002) |
-| Title | Short name for people. | Proposed |
-| Intent | What and why, in plain words. | Decided (plan, Tasks pillar) |
-| Acceptance criteria | A checklist. A criterion can be marked as a person's step (as today's `**Owner (human effort):**` lines are) or as **verify after merge** ([7.4](#74-verification-and-done)). | Decided that criteria exist (plan, Tasks pillar); markings proposed, reason: they keep today's practice and drive verification |
-| Decisions | Decisions made along the way. Lasting ones are promoted to a `decision` catalog entity ([catalog](catalog.md)). | Decided that decisions are held (plan, Tasks pillar); promotion proposed by the glossary |
-| Origin | Where the intent started: Shinan, an outside issue or PR, a conversation (with a short summary), or a parent task. | Decided (D-003); parent origin proposed |
-| Parent and subtasks | The task this one was split from, and the tasks split from this one ([2.1](#21-subtasks)). | Decided (owner, O-21, [#25]) |
-| Task status | Calculated ([section 7](#7-calculated-status)). | Decided (D-005; owner, O-4, [#25]) |
-| Task flags | The workspace's flags; by default `needs a person`, `awaiting deployment approval`, `on hold`, `blocked` ([section 8](#8-manual-states-and-task-flags)). | Decided (owner, O-8, [#25]) |
-| Verification records | How `done` is reached where the merge is not enough ([7.4](#74-verification-and-done)). | Decided (owner, O-4, O-10, [#25]) |
-| Rank | Position in the workspace's order of `to do` tasks ([2.2](#22-order-of-to-do-tasks)). | Decided (owner, O-28, [#25]) |
-| Assignees | Members responsible. | Proposed (glossary) |
-| Attached agent sessions | Sessions that have claimed the task. | Decided (plan, Integration points: the plugin will "attach the session to its task") |
-| Work links | Links to PRs, issues, branches and commits ([section 6](#6-linking-work)). | Decided (D-002, D-004) |
-| Dependencies | Tasks this one waits for ([section 9](#9-dependencies)). | Proposed |
-| Related catalog entities | What the task touches. | Proposed (glossary) |
-| Comments, progress updates and timeline | Discussion in Shinan; events from every host. | Decided (plan, Timeline pillar); comment and progress update proposed (glossary) |
+| Field                                   | Meaning                                                                                                                                                                       | Status                                                                                                                         |
+| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| Task ID                                 | Stable, host-neutral, never reused ([section 3](#3-task-ids)).                                                                                                                | Decided (D-002)                                                                                                                |
+| Title                                   | Short name for people.                                                                                                                                                        | Proposed                                                                                                                       |
+| Intent                                  | What and why, in plain words.                                                                                                                                                 | Decided (plan, Tasks pillar)                                                                                                   |
+| Acceptance criteria                     | A checklist. A criterion can be marked as a person's step (as today's `**Owner (human effort):**` lines are) or as **verify after merge** ([7.4](#74-verification-and-done)). | Decided that criteria exist (plan, Tasks pillar); markings proposed, reason: they keep today's practice and drive verification |
+| Decisions                               | Decisions made along the way. Lasting ones are promoted to a `decision` catalog entity ([catalog](catalog.md)).                                                               | Decided that decisions are held (plan, Tasks pillar); promotion proposed by the glossary                                       |
+| Origin                                  | Where the intent started: Shinan, an outside issue or PR, a conversation (with a short summary), or a parent task.                                                            | Decided (D-003); parent origin proposed                                                                                        |
+| Parent and subtasks                     | The task this one was split from, and the tasks split from this one ([2.1](#21-subtasks)).                                                                                    | Decided (owner, O-21, [#25])                                                                                                   |
+| Task status                             | Calculated ([section 7](#7-calculated-status)).                                                                                                                               | Decided (D-005; owner, O-4, [#25])                                                                                             |
+| Task flags                              | The workspace's flags; by default `needs a person`, `awaiting deployment approval`, `on hold`, `blocked` ([section 8](#8-manual-states-and-task-flags)).                      | Decided (owner, O-8, [#25])                                                                                                    |
+| Verification records                    | How `done` is reached where the merge is not enough ([7.4](#74-verification-and-done)).                                                                                       | Decided (owner, O-4, O-10, [#25])                                                                                              |
+| Rank                                    | Position in the workspace's order of `to do` tasks ([2.2](#22-order-of-to-do-tasks)).                                                                                         | Decided (owner, O-28, [#25])                                                                                                   |
+| Assignees                               | Members responsible.                                                                                                                                                          | Proposed (glossary)                                                                                                            |
+| Attached agent sessions                 | Sessions that have claimed the task.                                                                                                                                          | Decided (plan, Integration points: the plugin will "attach the session to its task")                                           |
+| Work links                              | Links to PRs, issues, branches and commits ([section 6](#6-linking-work)).                                                                                                    | Decided (D-002, D-004)                                                                                                         |
+| Dependencies                            | Tasks this one waits for ([section 9](#9-dependencies)).                                                                                                                      | Proposed                                                                                                                       |
+| Related catalog entities                | What the task touches.                                                                                                                                                        | Proposed (glossary)                                                                                                            |
+| Comments, progress updates and timeline | Discussion in Shinan; events from every host.                                                                                                                                 | Decided (plan, Timeline pillar); comment and progress update proposed (glossary)                                               |
 
 Every member of the workspace sees every task, including tasks whose work is in
 private repositories; the links themselves stay protected by the git host's
@@ -142,22 +142,22 @@ parent is **top-level**. The tasks under one top-level task form its **tree**.
 
 The rest of this section is **proposed**:
 
-| Rule | Reason |
-|---|---|
-| A subtask is an ordinary task with a parent. It has its own ID, title, intent, acceptance criteria, work links, flags, claims, comments and status. | Everything that works for a task works for a subtask, at every depth, with no second set of rules. |
-| A subtask's ID comes from the same sequence as every other task, for example `T-124` under `T-123`, and `T-130` under `T-124`. There is no special form such as `T-123.1.2`. | Branch names and PR markers keep one short shape at any depth ([6.2](#62-markers)), and a subtask can be moved to another parent or made top-level without its ID changing. |
-| A task has at most one parent. | One task, one place in one tree; a task needed by two pieces of work is a [dependency](#9-dependencies), not a shared subtask. |
-| A task can never be its own ancestor. Moving a task under itself or under one of its descendants is refused. | That would make a loop, and the [status roll-up](#73-rules) could never finish. |
-| All tasks in a tree are in the same workspace. | Nothing is shared between workspaces except the person (glossary). |
-| A task in `triage` can neither have nor be a subtask. Accept it first. | Triage decides whether the work is taken on at all. |
-| People and agents can create subtasks, move a task under another parent, or make a subtask top-level. A task always moves with all its descendants. Each change is an event on the task, its old parent and its new parent. | Agents split work today when they divide it between sessions; moving a whole branch of the tree keeps its parts together; the timeline shows every change. |
-| A new subtask takes its parent's assignees if none are given. Its origin is "split from" the parent. Outside origins stay on the task that had them. | The person responsible for the whole is responsible for its parts unless someone says otherwise. |
-| A cancelled subtask, with everything under it, is ignored when its parent's status is calculated. If every subtask of a task is cancelled, the task is calculated as one without subtasks. | Cancelling a part means it is no longer needed. |
-| Cancelling a task also cancels all its unfinished descendants, at every depth, each with an event. Reopening the task does not reopen them; a person reopens the ones still needed. | Descendants exist only for their ancestors; reopening should not resurrect parts someone already decided to drop. |
-| Adding a subtask anywhere under a `done` task moves that task, and every `done` ancestor above it, back by the [rules](#73-rules). Agents are told to create a follow-up task instead unless the outcome was wrong. | Status stays calculated; finished stories stay finished by convention. |
-| Task flags do not roll up. A task's page shows its descendants' flags ([human experience](human-experience.md)). | A flag describes one task; copying it upwards would be a second copy to keep in sync. |
-| Order between subtasks uses [dependencies](#9-dependencies), at any depth. | One mechanism for order. |
-| There is no depth limit. Agents are asked to split only as far as each subtask has its own PR, session or check; deeper trees are a smell, not an error. | The owner chose any depth (owner, N-1, [#25]); a convention keeps trees legible (owner, O-86, [#25]) without a rule that would block real work. |
+| Rule                                                                                                                                                                                                                        | Reason                                                                                                                                                                      |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A subtask is an ordinary task with a parent. It has its own ID, title, intent, acceptance criteria, work links, flags, claims, comments and status.                                                                         | Everything that works for a task works for a subtask, at every depth, with no second set of rules.                                                                          |
+| A subtask's ID comes from the same sequence as every other task, for example `T-124` under `T-123`, and `T-130` under `T-124`. There is no special form such as `T-123.1.2`.                                                | Branch names and PR markers keep one short shape at any depth ([6.2](#62-markers)), and a subtask can be moved to another parent or made top-level without its ID changing. |
+| A task has at most one parent.                                                                                                                                                                                              | One task, one place in one tree; a task needed by two pieces of work is a [dependency](#9-dependencies), not a shared subtask.                                              |
+| A task can never be its own ancestor. Moving a task under itself or under one of its descendants is refused.                                                                                                                | That would make a loop, and the [status roll-up](#73-rules) could never finish.                                                                                             |
+| All tasks in a tree are in the same workspace.                                                                                                                                                                              | Nothing is shared between workspaces except the person (glossary).                                                                                                          |
+| A task in `triage` can neither have nor be a subtask. Accept it first.                                                                                                                                                      | Triage decides whether the work is taken on at all.                                                                                                                         |
+| People and agents can create subtasks, move a task under another parent, or make a subtask top-level. A task always moves with all its descendants. Each change is an event on the task, its old parent and its new parent. | Agents split work today when they divide it between sessions; moving a whole branch of the tree keeps its parts together; the timeline shows every change.                  |
+| A new subtask takes its parent's assignees if none are given. Its origin is "split from" the parent. Outside origins stay on the task that had them.                                                                        | The person responsible for the whole is responsible for its parts unless someone says otherwise.                                                                            |
+| A cancelled subtask, with everything under it, is ignored when its parent's status is calculated. If every subtask of a task is cancelled, the task is calculated as one without subtasks.                                  | Cancelling a part means it is no longer needed.                                                                                                                             |
+| Cancelling a task also cancels all its unfinished descendants, at every depth, each with an event. Reopening the task does not reopen them; a person reopens the ones still needed.                                         | Descendants exist only for their ancestors; reopening should not resurrect parts someone already decided to drop.                                                           |
+| Adding a subtask anywhere under a `done` task moves that task, and every `done` ancestor above it, back by the [rules](#73-rules). Agents are told to create a follow-up task instead unless the outcome was wrong.         | Status stays calculated; finished stories stay finished by convention.                                                                                                      |
+| Task flags do not roll up. A task's page shows its descendants' flags ([human experience](human-experience.md)).                                                                                                            | A flag describes one task; copying it upwards would be a second copy to keep in sync.                                                                                       |
+| Order between subtasks uses [dependencies](#9-dependencies), at any depth.                                                                                                                                                  | One mechanism for order.                                                                                                                                                    |
+| There is no depth limit. Agents are asked to split only as far as each subtask has its own PR, session or check; deeper trees are a smell, not an error.                                                                    | The owner chose any depth (owner, N-1, [#25]); a convention keeps trees legible (owner, O-86, [#25]) without a rule that would block real work.                             |
 
 How a task's status is rolled up from its subtasks is in [7.3](#73-rules).
 Which PRs deliver which subtask is set by markers that name the subtask's own
@@ -183,18 +183,18 @@ priority levels. **Decided** (owner, O-28, [#25]). The details are
 
 ## 3. Task IDs
 
-| Rule | Status | Reason |
-|---|---|---|
-| Every task has an ID, used in branch names and PR descriptions. | Decided (D-002) | Issue numbers mean something only inside one repository. |
-| Each workspace has its own prefix, not a fixed `T-`. | Decided (owner, O-6, [#25]) | Markers stay unambiguous whatever repositories are connected. |
-| An ID is `<PREFIX>-<number>`, for example `T-123`. | Proposed | Short, readable, and the shape people already know from other trackers. |
-| IDs are unique within the workspace and never reused, even after a task is cancelled. | Proposed (glossary) | A reused ID would make old branches and PRs point at the wrong story. |
-| The number counts up from 1 within the workspace, shared by tasks and subtasks. | Proposed | Short numbers are easy to say and type; one sequence keeps subtask IDs the same shape. |
-| A prefix is 1 to 5 letters, chosen when the workspace is created, and unique within the Shinan installation. Two or more letters are recommended. | Proposed | Longer prefixes make accidental matches rarer. |
-| `GH`, `CVE` and `GHSA` are not allowed as prefixes. | Proposed | GitHub already turns `GH-26` into a link to issue 26 of the same repository (checked 2026-11-16, [GitHub docs](https://docs.github.com/en/get-started/writing-on-github/working-with-advanced-formatting/autolinked-references-and-urls)); `CVE-` and `GHSA-` identifiers of security advisories appear often in branch names and descriptions of dependency updates. |
-| If a workspace changes its prefix, the old prefix keeps working as an alias forever and is never given to another workspace. | Proposed | Old branch names and PR descriptions cannot be rewritten. |
-| IDs are shown in upper case. Branch names are matched without regard to case; everything else needs upper case ([6.2](#62-markers)). | Proposed | Many people write branch names in lower case (`task/t-123-...`), but in prose a lower-case `t-2` or `ui-2` is usually something else. |
-| A task cannot move to another workspace. A new task is created there and linked as related. | Proposed | Its ID belongs to its workspace; moving it would break markers. |
+| Rule                                                                                                                                              | Status                      | Reason                                                                                                                                                                                                                                                                                                                                                                |
+| ------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Every task has an ID, used in branch names and PR descriptions.                                                                                   | Decided (D-002)             | Issue numbers mean something only inside one repository.                                                                                                                                                                                                                                                                                                              |
+| Each workspace has its own prefix, not a fixed `T-`.                                                                                              | Decided (owner, O-6, [#25]) | Markers stay unambiguous whatever repositories are connected.                                                                                                                                                                                                                                                                                                         |
+| An ID is `<PREFIX>-<number>`, for example `T-123`.                                                                                                | Proposed                    | Short, readable, and the shape people already know from other trackers.                                                                                                                                                                                                                                                                                               |
+| IDs are unique within the workspace and never reused, even after a task is cancelled.                                                             | Proposed (glossary)         | A reused ID would make old branches and PRs point at the wrong story.                                                                                                                                                                                                                                                                                                 |
+| The number counts up from 1 within the workspace, shared by tasks and subtasks.                                                                   | Proposed                    | Short numbers are easy to say and type; one sequence keeps subtask IDs the same shape.                                                                                                                                                                                                                                                                                |
+| A prefix is 1 to 5 letters, chosen when the workspace is created, and unique within the Shinan installation. Two or more letters are recommended. | Proposed                    | Longer prefixes make accidental matches rarer.                                                                                                                                                                                                                                                                                                                        |
+| `GH`, `CVE` and `GHSA` are not allowed as prefixes.                                                                                               | Proposed                    | GitHub already turns `GH-26` into a link to issue 26 of the same repository (checked 2026-11-16, [GitHub docs](https://docs.github.com/en/get-started/writing-on-github/working-with-advanced-formatting/autolinked-references-and-urls)); `CVE-` and `GHSA-` identifiers of security advisories appear often in branch names and descriptions of dependency updates. |
+| If a workspace changes its prefix, the old prefix keeps working as an alias forever and is never given to another workspace.                      | Proposed                    | Old branch names and PR descriptions cannot be rewritten.                                                                                                                                                                                                                                                                                                             |
+| IDs are shown in upper case. Branch names are matched without regard to case; everything else needs upper case ([6.2](#62-markers)).              | Proposed                    | Many people write branch names in lower case (`task/t-123-...`), but in prose a lower-case `t-2` or `ui-2` is usually something else.                                                                                                                                                                                                                                 |
+| A task cannot move to another workspace. A new task is created there and linked as related.                                                       | Proposed                    | Its ID belongs to its workspace; moving it would break markers.                                                                                                                                                                                                                                                                                                       |
 
 A repository is connected to only one workspace in the first version
 (**Decided**, owner, O-59, [#25]), so a marker is always resolved within that
@@ -206,13 +206,13 @@ A task starts where the intent starts, not where the code lands (D-003: every
 story needs one home, even when its first chapter was written elsewhere).
 **Decided.**
 
-| Where the intent starts | How the task is created | Starting status | Status |
-|---|---|---|---|
-| A person in Shinan | Created in the web app. | `to do` | Proposed |
-| A conversation between a person and an agent | The agent creates the task through MCP or the CLI, with origin "conversation" and a short summary of the request (not the transcript). | `to do` | Proposed. Reason: the request is the intent; the transcript stays in the coding tool, as tool transcripts stay out of the `workspace` repository today. |
-| Splitting an existing task | A person or agent creates a subtask ([2.1](#21-subtasks)). | `to do` | Decided (owner, O-21, [#25]) |
-| An outside issue on a git host | Shinan creates it automatically ([section 5](#5-triage-of-outside-issues)), unless the repository's "turn new issues into tasks" setting is off. | `triage`, or `to do` if a member opened it | Decided (D-003; owner, NO-2, [#26]); starting status proposed |
-| A PR from an outside actor with no task ID | Shinan creates it automatically, like an outside issue, under the same setting. The PR is the task's `origin`; when a person accepts the task, the PR also becomes a confirmed `delivers` link. | `triage` | Proposed. Reason: the PR is where that intent starts (D-003), and accepting the task is the person's confirmation that this PR is the work. |
+| Where the intent starts                      | How the task is created                                                                                                                                                                         | Starting status                            | Status                                                                                                                                                  |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A person in Shinan                           | Created in the web app.                                                                                                                                                                         | `to do`                                    | Proposed                                                                                                                                                |
+| A conversation between a person and an agent | The agent creates the task through MCP or the CLI, with origin "conversation" and a short summary of the request (not the transcript).                                                          | `to do`                                    | Proposed. Reason: the request is the intent; the transcript stays in the coding tool, as tool transcripts stay out of the `workspace` repository today. |
+| Splitting an existing task                   | A person or agent creates a subtask ([2.1](#21-subtasks)).                                                                                                                                      | `to do`                                    | Decided (owner, O-21, [#25])                                                                                                                            |
+| An outside issue on a git host               | Shinan creates it automatically ([section 5](#5-triage-of-outside-issues)), unless the repository's "turn new issues into tasks" setting is off.                                                | `triage`, or `to do` if a member opened it | Decided (D-003; owner, NO-2, [#26]); starting status proposed                                                                                           |
+| A PR from an outside actor with no task ID   | Shinan creates it automatically, like an outside issue, under the same setting. The PR is the task's `origin`; when a person accepts the task, the PR also becomes a confirmed `delivers` link. | `triage`                                   | Proposed. Reason: the PR is where that intent starts (D-003), and accepting the task is the person's confirmation that this PR is the work.             |
 
 Shinan has no integrations with other trackers such as Multica, Linear or Plane;
 tasks never come from them. **Decided** (owner, O-97, [#25], amending D-010).
@@ -244,11 +244,11 @@ Checked in this order; the first row that matches applies. All **proposed**
 except where marked. The rows apply only where the repository's "turn new
 issues into tasks" setting is on (see below).
 
-| Issue | Result | Reason |
-|---|---|---|
-| Opened by a member or their agent and carrying a known task ID (for example an issue an agent opened for a task, [6.6](#66-repository-issues-for-people)) | No new task. It links to that task as `related`. | Decided for issues made for people (D-004: avoids duplicate issues). Because agents share their member's git host account (D-017), an issue an agent opens for an existing task arrives from the member's account; without this rule it would become a second task for the same story. |
-| Opened by an outside actor (an account not linked to a member) | New task in `triage`, even if it mentions a task ID | Someone in the team must decide whether to take it on (proposed by the glossary). Outsiders' mentions are ignored (owner, O-25, [#25]). |
-| Opened by a member or their agent, directly on the host | New task in `to do`, assigned to that member | The member already decided; triage would ask them to approve their own request. Shinan cannot tell the member from their agent here (D-017), and does not need to. |
+| Issue                                                                                                                                                     | Result                                              | Reason                                                                                                                                                                                                                                                                                 |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Opened by a member or their agent and carrying a known task ID (for example an issue an agent opened for a task, [6.6](#66-repository-issues-for-people)) | No new task. It links to that task as `related`.    | Decided for issues made for people (D-004: avoids duplicate issues). Because agents share their member's git host account (D-017), an issue an agent opens for an existing task arrives from the member's account; without this rule it would become a second task for the same story. |
+| Opened by an outside actor (an account not linked to a member)                                                                                            | New task in `triage`, even if it mentions a task ID | Someone in the team must decide whether to take it on (proposed by the glossary). Outsiders' mentions are ignored (owner, O-25, [#25]).                                                                                                                                                |
+| Opened by a member or their agent, directly on the host                                                                                                   | New task in `to do`, assigned to that member        | The member already decided; triage would ask them to approve their own request. Shinan cannot tell the member from their agent here (D-017), and does not need to.                                                                                                                     |
 
 Issues that already exist when a repository is first connected are **not**
 imported automatically. A person can import them explicitly, in a batch, into
@@ -297,11 +297,11 @@ The [triage inbox](domain-model.md#supporting-terms) lists tasks in `triage`
 (Decided: plan, phase 2; required before migration, owner, O-78, [#25]). A
 person can:
 
-| Action | Effect | Status |
-|---|---|---|
-| Accept | Status becomes `to do`. The person can set assignees, intent and acceptance criteria. An outside PR that is the origin becomes a confirmed `delivers` link. | Proposed |
+| Action                      | Effect                                                                                                                                                                 | Status                                                                                                   |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| Accept                      | Status becomes `to do`. The person can set assignees, intent and acceptance criteria. An outside PR that is the origin becomes a confirmed `delivers` link.            | Proposed                                                                                                 |
 | Merge into an existing task | The outside issue or PR is linked to the existing task as another `origin`. The triage task is cancelled with a pointer to the surviving task. Its ID is never reused. | Proposed. Reason: each reporter's item should be updated when the work is done, so each stays an origin. |
-| Cancel | Manual status `cancelled`, with a reason. | Proposed |
+| Cancel                      | Manual status `cancelled`, with a reason.                                                                                                                              | Proposed                                                                                                 |
 
 Leaving triage is a manual state change made by people only
 ([glossary](domain-model.md#task-status-task-flags-and-manual-states)).
@@ -368,19 +368,19 @@ is `origin`, `delivers` or `related` (glossary, proposed). A PR delivers the
 task (or subtask) whose ID it names; there is no "completes" or "part"
 attribute (owner, O-21, [#25]).
 
-| How a link is made ("how made") | Role | Status |
-|---|---|---|
-| Task ID in a branch name | `delivers` | Proposed |
-| `Shinan-Task: T-123` line in a PR description | `delivers` | Proposed |
-| `Shinan-Task: T-123` trailer in a commit pushed straight to a counting branch | `delivers` | Proposed |
-| Any other mention of a task ID or task address by a member in a PR title or description | `related` | Proposed |
-| A mention of a task ID by a member in a comment on an issue or PR on the git host | `related`; shown on the task page, never affects status | Decided (owner, O-25, [#25]) |
-| A mention by an outside actor anywhere (title, description, issue, comment), other than a `delivers` marker | Nothing | Decided for comments (owner, O-25, [#25]); proposed elsewhere, reason: the same risk applies to every place an outsider can write |
-| A `delivers` marker by an outside actor | `delivers`, **unconfirmed** ([6.4](#64-unconfirmed-links)) | Decided (owner, O-24, [#25]) |
-| A member's PR whose host closing reference (`Closes #42`) names a task's `origin` issue, without a task marker | `delivers`, **unconfirmed** | Proposed |
-| An agent's call through MCP or the CLI | As the agent says | Decided that agents link PRs directly (D-004) |
-| A person in Shinan | As the person says | Proposed |
-| Shinan, for an outside issue or PR | `origin` | Decided (D-003) |
+| How a link is made ("how made")                                                                                | Role                                                       | Status                                                                                                                            |
+| -------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Task ID in a branch name                                                                                       | `delivers`                                                 | Proposed                                                                                                                          |
+| `Shinan-Task: T-123` line in a PR description                                                                  | `delivers`                                                 | Proposed                                                                                                                          |
+| `Shinan-Task: T-123` trailer in a commit pushed straight to a counting branch                                  | `delivers`                                                 | Proposed                                                                                                                          |
+| Any other mention of a task ID or task address by a member in a PR title or description                        | `related`                                                  | Proposed                                                                                                                          |
+| A mention of a task ID by a member in a comment on an issue or PR on the git host                              | `related`; shown on the task page, never affects status    | Decided (owner, O-25, [#25])                                                                                                      |
+| A mention by an outside actor anywhere (title, description, issue, comment), other than a `delivers` marker    | Nothing                                                    | Decided for comments (owner, O-25, [#25]); proposed elsewhere, reason: the same risk applies to every place an outsider can write |
+| A `delivers` marker by an outside actor                                                                        | `delivers`, **unconfirmed** ([6.4](#64-unconfirmed-links)) | Decided (owner, O-24, [#25])                                                                                                      |
+| A member's PR whose host closing reference (`Closes #42`) names a task's `origin` issue, without a task marker | `delivers`, **unconfirmed**                                | Proposed                                                                                                                          |
+| An agent's call through MCP or the CLI                                                                         | As the agent says                                          | Decided that agents link PRs directly (D-004)                                                                                     |
+| A person in Shinan                                                                                             | As the person says                                         | Proposed                                                                                                                          |
+| Shinan, for an outside issue or PR                                                                             | `origin`                                                   | Decided (D-003)                                                                                                                   |
 
 A PR, branch or comment that names several task IDs gets one link per task.
 **Proposed.** Reason: small fixes sometimes finish two tasks at once, a work
@@ -510,11 +510,11 @@ Work often needs more than one PR: a change in a Forgejo infrastructure
 repository and another in a GitHub application repository, or a large change
 split into steps.
 
-| Situation | What to do | Status |
-|---|---|---|
-| One PR | Link it to the task. | Decided (D-002, D-004) |
+| Situation                                                                                    | What to do                                                                                               | Status                                                                                                   |
+| -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| One PR                                                                                       | Link it to the task.                                                                                     | Decided (D-002, D-004)                                                                                   |
 | Several PRs whose number and order are not settled, or that are worked by different sessions | Split the task into subtasks, one per PR or step, before the first PR merges. Each PR names its subtask. | Decided that big work is split into subtasks (owner, O-21, [#25]); "before the first PR merges" proposed |
-| Several PRs that are all known up front and worked together | Either use subtasks, or link all the PRs to one task and publish every branch or draft PR early. | Proposed |
+| Several PRs that are all known up front and worked together                                  | Either use subtasks, or link all the PRs to one task and publish every branch or draft PR early.         | Proposed                                                                                                 |
 
 Reason for the timing: a task without subtasks is done when every PR linked to
 it has merged. Shinan cannot know that another PR is still to come, so if the
@@ -531,10 +531,10 @@ outside actors' markers (owner, O-24, [#25]). Reason: on public repositories
 anyone can open a PR from a fork that names `T-123`; if that counted, an
 outsider could move a task to `in review` or reopen a `done` one.
 
-| Made by | Who can confirm | Status | Reason |
-|---|---|---|---|
-| A `delivers` marker from a git host account not linked to any member (an outside actor) | A person (workspace owner or contributor), in Shinan | Decided (owner, O-24, [#25]) that a member confirms; "a person, not an agent" proposed | The text was written by an outsider; an agent reading it could be steered by it. |
-| A member's host closing reference to a task's `origin` issue, without a task marker | A person, or an agent session acting for a member | Proposed | The PR comes from the team; the only question is whether it is the delivering work, which an agent working on the task can judge. |
+| Made by                                                                                 | Who can confirm                                      | Status                                                                                 | Reason                                                                                                                            |
+| --------------------------------------------------------------------------------------- | ---------------------------------------------------- | -------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| A `delivers` marker from a git host account not linked to any member (an outside actor) | A person (workspace owner or contributor), in Shinan | Decided (owner, O-24, [#25]) that a member confirms; "a person, not an agent" proposed | The text was written by an outsider; an agent reading it could be steered by it.                                                  |
+| A member's host closing reference to a task's `origin` issue, without a task marker     | A person, or an agent session acting for a member    | Proposed                                                                               | The PR comes from the team; the only question is whether it is the delivering work, which an agent working on the task can judge. |
 
 All **proposed**:
 
@@ -595,11 +595,11 @@ own account, on their own hardware.
 
 What this document adds, all **proposed**:
 
-| Action a person can request from a task | What the agent does |
-|---|---|
-| Open a repository issue for this task ([6.6](#66-repository-issues-for-people)) | Opens it in the repository the person names, with the task ID and address in the description, and links it as `related`. |
-| Comment on, or close, an origin issue or an issue made for people ([5.3](#53-after-triage)) | Posts the person's text, or closes the issue with a short comment linking the delivering PRs. |
-| Anything else on a git host, written as free text | Treats it as an ordinary nudge from that person and does it if it can. |
+| Action a person can request from a task                                                     | What the agent does                                                                                                      |
+| ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Open a repository issue for this task ([6.6](#66-repository-issues-for-people))             | Opens it in the repository the person names, with the task ID and address in the description, and links it as `related`. |
+| Comment on, or close, an origin issue or an issue made for people ([5.3](#53-after-triage)) | Posts the person's text, or closes the issue with a short comment linking the delivering PRs.                            |
+| Anything else on a git host, written as free text                                           | Treats it as an ordinary nudge from that person and does it if it can.                                                   |
 
 - The request is a nudge **from the person** to **their own** agent sessions
   only, delivered in `queue` mode, so it does not interrupt a step in progress.
@@ -626,14 +626,14 @@ status except the manual ones the glossary allows (`cancelled`, and leaving
 
 ### 7.1 Inputs
 
-| Input | Used for | Status |
-|---|---|---|
-| State of each **confirmed** `delivers` work item: active (branch without PR, draft PR, PR ready for review), merged, merged elsewhere, closed without merging | Main status | Decided that linked work drives status (D-005); the states are proposed |
-| Status of each subtask that is not cancelled | Parent's status | Decided (owner, O-21, [#25]) |
-| Attached agent sessions | `to do` versus `in progress` | Decided (owner, O-4, [#25]) |
-| Acceptance criteria marked verify after merge, and verification records | `verifying` versus `done` | Decided (owner, O-4, O-9, O-22, [#25]) |
-| An outside origin not yet accepted | `triage` | Decided (D-003) |
-| Manual `cancelled` | Replaces status | Proposed (glossary) |
+| Input                                                                                                                                                         | Used for                     | Status                                                                  |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- | ----------------------------------------------------------------------- |
+| State of each **confirmed** `delivers` work item: active (branch without PR, draft PR, PR ready for review), merged, merged elsewhere, closed without merging | Main status                  | Decided that linked work drives status (D-005); the states are proposed |
+| Status of each subtask that is not cancelled                                                                                                                  | Parent's status              | Decided (owner, O-21, [#25])                                            |
+| Attached agent sessions                                                                                                                                       | `to do` versus `in progress` | Decided (owner, O-4, [#25])                                             |
+| Acceptance criteria marked verify after merge, and verification records                                                                                       | `verifying` versus `done`    | Decided (owner, O-4, O-9, O-22, [#25])                                  |
+| An outside origin not yet accepted                                                                                                                            | `triage`                     | Decided (D-003)                                                         |
+| Manual `cancelled`                                                                                                                                            | Replaces status              | Proposed (glossary)                                                     |
 
 Unconfirmed links, `related` links, issues, CI checks, reviews, comments and
 task flags do not change status. They appear beside it or on the timeline.
@@ -699,19 +699,19 @@ implement the decisions cited in [7.1](#71-inputs).
 **A task without subtasks** (or whose subtasks are all cancelled). Status is
 the first row that matches.
 
-| # | Condition | Status |
-|---|---|---|
-| 1 | A person has set `cancelled` | `cancelled` |
-| 2 | The task came from an outside issue or PR and has not been accepted | `triage` |
-| 3 | There is active `delivers` work, and every active item is a PR ready for review | `in review` |
-| 4 | There is active `delivers` work | `in progress` |
-| 5 | The current verification is `failed` | `in progress` |
-| 6 | At least one `delivers` item has merged, and no acceptance criterion is marked verify after merge | `done` |
-| 7 | At least one `delivers` item has merged, and the current verification is `passed` and covers every criterion marked verify after merge | `done` |
-| 8 | No `delivers` item has merged, the task has at least one acceptance criterion, and the current verification is `passed` and covers every acceptance criterion | `done` |
-| 9 | At least one `delivers` item has merged | `verifying` |
-| 10 | An agent session is attached | `in progress` |
-| 11 | Otherwise | `to do` |
+| #   | Condition                                                                                                                                                     | Status        |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
+| 1   | A person has set `cancelled`                                                                                                                                  | `cancelled`   |
+| 2   | The task came from an outside issue or PR and has not been accepted                                                                                           | `triage`      |
+| 3   | There is active `delivers` work, and every active item is a PR ready for review                                                                               | `in review`   |
+| 4   | There is active `delivers` work                                                                                                                               | `in progress` |
+| 5   | The current verification is `failed`                                                                                                                          | `in progress` |
+| 6   | At least one `delivers` item has merged, and no acceptance criterion is marked verify after merge                                                             | `done`        |
+| 7   | At least one `delivers` item has merged, and the current verification is `passed` and covers every criterion marked verify after merge                        | `done`        |
+| 8   | No `delivers` item has merged, the task has at least one acceptance criterion, and the current verification is `passed` and covers every acceptance criterion | `done`        |
+| 9   | At least one `delivers` item has merged                                                                                                                       | `verifying`   |
+| 10  | An agent session is attached                                                                                                                                  | `in progress` |
+| 11  | Otherwise                                                                                                                                                     | `to do`       |
 
 **A task with subtasks** (at least one subtask that is not cancelled), at any
 depth. Its **parts** are the statuses of its **direct** subtasks that are not
@@ -721,16 +721,16 @@ has merged. Each direct subtask's status is itself calculated by these rules,
 so a task deep in the tree rolls up through every level above it. Status is the
 first row that matches.
 
-| # | Condition | Status |
-|---|---|---|
-| P1 | A person has set `cancelled` | `cancelled` |
-| P2 | The task's current verification is `failed` | `in progress` |
-| P3 | Every part is `to do` | `in progress` if an agent session is attached to the task, otherwise `to do` |
-| P4 | Any part is `to do` or `in progress` | `in progress` |
-| P5 | Any part is `in review` | `in review` |
-| P6 | Any part is `verifying` | `verifying` |
-| P7 | Every part is `done`, and either no acceptance criterion of the task is marked verify after merge, or the current verification is `passed` and covers every such criterion | `done` |
-| P8 | Otherwise (every part is `done`) | `verifying` |
+| #   | Condition                                                                                                                                                                  | Status                                                                       |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| P1  | A person has set `cancelled`                                                                                                                                               | `cancelled`                                                                  |
+| P2  | The task's current verification is `failed`                                                                                                                                | `in progress`                                                                |
+| P3  | Every part is `to do`                                                                                                                                                      | `in progress` if an agent session is attached to the task, otherwise `to do` |
+| P4  | Any part is `to do` or `in progress`                                                                                                                                       | `in progress`                                                                |
+| P5  | Any part is `in review`                                                                                                                                                    | `in review`                                                                  |
+| P6  | Any part is `verifying`                                                                                                                                                    | `verifying`                                                                  |
+| P7  | Every part is `done`, and either no acceptance criterion of the task is marked verify after merge, or the current verification is `passed` and covers every such criterion | `done`                                                                       |
+| P8  | Otherwise (every part is `done`)                                                                                                                                           | `verifying`                                                                  |
 
 How the roll-up works at any depth, all **proposed**:
 
@@ -850,12 +850,12 @@ it needs, and the built-in ones are defaults. **Decided** (owner, O-8, [#25]).
 
 The built-in flags:
 
-| Flag | Kind | Who sets it | Who clears it | Status |
-|---|---|---|---|---|
-| `needs a person` | Manual | An agent or a person, with the TL;DR fields | A person, or the agent after it confirms the step is done | Decided (owner, O-7, [#25]); TL;DR fields and clearing rule proposed ([8.3](#83-needs-a-person)) |
-| `awaiting deployment approval` | Manual | Whoever asks for approval | A recorded approval or decline | Decided (owner, O-8, O-20, [#25]) ([8.4](#84-awaiting-deployment-approval)) |
-| `on hold` | Manual | A person | A person | Proposed (glossary) ([8.6](#86-on-hold)) |
-| `blocked` | Calculated from [dependencies](#9-dependencies) | Never set by hand | Calculated | Proposed (glossary) |
+| Flag                           | Kind                                            | Who sets it                                 | Who clears it                                             | Status                                                                                           |
+| ------------------------------ | ----------------------------------------------- | ------------------------------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `needs a person`               | Manual                                          | An agent or a person, with the TL;DR fields | A person, or the agent after it confirms the step is done | Decided (owner, O-7, [#25]); TL;DR fields and clearing rule proposed ([8.3](#83-needs-a-person)) |
+| `awaiting deployment approval` | Manual                                          | Whoever asks for approval                   | A recorded approval or decline                            | Decided (owner, O-8, O-20, [#25]) ([8.4](#84-awaiting-deployment-approval))                      |
+| `on hold`                      | Manual                                          | A person                                    | A person                                                  | Proposed (glossary) ([8.6](#86-on-hold))                                                         |
+| `blocked`                      | Calculated from [dependencies](#9-dependencies) | Never set by hand                           | Calculated                                                | Proposed (glossary)                                                                              |
 
 How workspace flags work, all **proposed**:
 
@@ -1011,16 +1011,16 @@ does not hear about is not a pause.
 
 A task can **depend on** other tasks in the same workspace. **Proposed.**
 
-| Rule | Status | Reason |
-|---|---|---|
-| `blocked` is shown while any dependency is not `done`. It is calculated, never set by hand. | Proposed (glossary) | Today's practice: "waiting on another issue or PR: link the dependency instead", and waiting is not `human-effort`. |
-| A dependency that is `cancelled` does not unblock the task. It shows "dependency cancelled" until a person removes or replaces the dependency. | Proposed | Cancelling a prerequisite rarely means the dependent work can go ahead unchanged; a person should decide. |
-| Dependencies that would form a loop are refused. The check counts each task as waiting for its subtasks, so a loop through the tree is found too (for example `T-130` depending on `T-131`, while `T-131` waits for its subtask `T-140`, which depends on `T-130`). | Proposed | A loop can never be unblocked, whether it runs through dependencies, subtasks or both. |
-| A task cannot depend on any of its ancestors or descendants. | Proposed | A task already waits for all its descendants; a descendant waiting for its ancestor could never finish. |
-| Any other tasks may depend on each other, at any depth and in any trees: siblings, to set their order, or tasks in different trees. | Proposed | Subtasks need an order at every level, and work in one tree can wait for work in another; dependencies already express both. |
-| Dependencies stay inside one workspace. | Proposed | Nothing is shared between workspaces except the person (glossary). |
-| `blocked` does not stop work. Agents may prepare work on a blocked task but should not merge work that relies on the unfinished dependency. | Proposed | Today agents continue work that the blocker does not affect. |
-| When a dependency becomes `done` or `cancelled`, sessions attached to dependent tasks get a [task notice](#114-task-notices). | Proposed | The waiting agent should not have to poll. |
+| Rule                                                                                                                                                                                                                                                                | Status              | Reason                                                                                                                       |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `blocked` is shown while any dependency is not `done`. It is calculated, never set by hand.                                                                                                                                                                         | Proposed (glossary) | Today's practice: "waiting on another issue or PR: link the dependency instead", and waiting is not `human-effort`.          |
+| A dependency that is `cancelled` does not unblock the task. It shows "dependency cancelled" until a person removes or replaces the dependency.                                                                                                                      | Proposed            | Cancelling a prerequisite rarely means the dependent work can go ahead unchanged; a person should decide.                    |
+| Dependencies that would form a loop are refused. The check counts each task as waiting for its subtasks, so a loop through the tree is found too (for example `T-130` depending on `T-131`, while `T-131` waits for its subtask `T-140`, which depends on `T-130`). | Proposed            | A loop can never be unblocked, whether it runs through dependencies, subtasks or both.                                       |
+| A task cannot depend on any of its ancestors or descendants.                                                                                                                                                                                                        | Proposed            | A task already waits for all its descendants; a descendant waiting for its ancestor could never finish.                      |
+| Any other tasks may depend on each other, at any depth and in any trees: siblings, to set their order, or tasks in different trees.                                                                                                                                 | Proposed            | Subtasks need an order at every level, and work in one tree can wait for work in another; dependencies already express both. |
+| Dependencies stay inside one workspace.                                                                                                                                                                                                                             | Proposed            | Nothing is shared between workspaces except the person (glossary).                                                           |
+| `blocked` does not stop work. Agents may prepare work on a blocked task but should not merge work that relies on the unfinished dependency.                                                                                                                         | Proposed            | Today agents continue work that the blocker does not affect.                                                                 |
+| When a dependency becomes `done` or `cancelled`, sessions attached to dependent tasks get a [task notice](#114-task-notices).                                                                                                                                       | Proposed            | The waiting agent should not have to poll.                                                                                   |
 
 Waiting on something outside the workspace (for example an upstream project's
 issue in a repository no git host connection covers) is shown as a `related`
@@ -1108,19 +1108,19 @@ the `steer` or `queue` mode, owner, O-31, [#25]) is owned by
 
 ### 11.1 When a nudge is created
 
-| Source | Creates a nudge? | Status | Reason |
-|---|---|---|---|
-| A comment on the task by a member (workspace owner or contributor) | Yes, unless the person marks it "note only" | Decided (plan; owner, O-26, [#25]) | People sometimes write notes for other people; interrupting the agent for those wastes its work. |
-| An explicit nudge (a message to a chosen session) | Yes | Proposed | A person may want to reach one of several attached sessions. |
-| A person's action that the agent must hear about: answering a deployment approval request in Shinan, clearing `needs a person`, setting `on hold`, cancelling the task (or an ancestor) | Yes. The nudge is **from that person**; Shinan writes the message text for them. | Proposed | The agent is waiting for, or must react to, exactly these, and they come from a person, as the glossary's definition of a nudge requires. |
-| A person edits the task's intent or acceptance criteria | Yes, from that person; Shinan writes a short message naming what changed (not the whole text), and the agent reads the task again | Proposed | Intent and criteria are the main way the owner steers, and an agent working from old criteria wastes work ([human experience](human-experience.md)). An agent's own edits nudge no one. |
-| A person releases an agent session from the task ([section 10](#10-claims-assignees-and-agent-sessions)) | Yes, from that person, to the released session only | Proposed | The agent must know it is no longer attached, so it stops working on the task. |
-| Setting or clearing a custom flag | No | Proposed | Custom flags have no behaviour ([8.1](#81-managing-flags)); the person can comment. |
-| Something that happens without a person's action in Shinan: a PR closed on the host, a dependency becoming `done`, a linked PR merged | Not a nudge; a [task notice](#114-task-notices) | Proposed | The glossary defines a nudge as a message from a person, and these carry no one's authority. |
-| A progress update or comment by an agent | No | Proposed (glossary for progress updates) | Agents nudging agents can loop; agents coordinate through progress updates they read when they check in. |
-| A person asks for a git host action on the task ([6.7](#67-git-host-actions-a-person-asks-for)) | Yes, a queued nudge from that person to their own agent sessions only | Decided (owner, N-3, [#25]) | The action must run under the requester's own git host account. |
-| A comment or review on a linked PR or issue on the git host | No, in the first version. A member's mention of a task ID there makes a `related` link only (owner, O-25, [#25]). | Proposed; **open** for later | Agents share their person's git host account (D-017), so Shinan often cannot tell whether a host comment came from the person or from the agent itself. Nudging on it would make agents nudge themselves. |
-| An outside issue's text, or comments by outside actors | Never | Proposed | Anyone can write them; delivering them as instructions would let strangers steer agents. |
+| Source                                                                                                                                                                                  | Creates a nudge?                                                                                                                  | Status                                   | Reason                                                                                                                                                                                                    |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A comment on the task by a member (workspace owner or contributor)                                                                                                                      | Yes, unless the person marks it "note only"                                                                                       | Decided (plan; owner, O-26, [#25])       | People sometimes write notes for other people; interrupting the agent for those wastes its work.                                                                                                          |
+| An explicit nudge (a message to a chosen session)                                                                                                                                       | Yes                                                                                                                               | Proposed                                 | A person may want to reach one of several attached sessions.                                                                                                                                              |
+| A person's action that the agent must hear about: answering a deployment approval request in Shinan, clearing `needs a person`, setting `on hold`, cancelling the task (or an ancestor) | Yes. The nudge is **from that person**; Shinan writes the message text for them.                                                  | Proposed                                 | The agent is waiting for, or must react to, exactly these, and they come from a person, as the glossary's definition of a nudge requires.                                                                 |
+| A person edits the task's intent or acceptance criteria                                                                                                                                 | Yes, from that person; Shinan writes a short message naming what changed (not the whole text), and the agent reads the task again | Proposed                                 | Intent and criteria are the main way the owner steers, and an agent working from old criteria wastes work ([human experience](human-experience.md)). An agent's own edits nudge no one.                   |
+| A person releases an agent session from the task ([section 10](#10-claims-assignees-and-agent-sessions))                                                                                | Yes, from that person, to the released session only                                                                               | Proposed                                 | The agent must know it is no longer attached, so it stops working on the task.                                                                                                                            |
+| Setting or clearing a custom flag                                                                                                                                                       | No                                                                                                                                | Proposed                                 | Custom flags have no behaviour ([8.1](#81-managing-flags)); the person can comment.                                                                                                                       |
+| Something that happens without a person's action in Shinan: a PR closed on the host, a dependency becoming `done`, a linked PR merged                                                   | Not a nudge; a [task notice](#114-task-notices)                                                                                   | Proposed                                 | The glossary defines a nudge as a message from a person, and these carry no one's authority.                                                                                                              |
+| A progress update or comment by an agent                                                                                                                                                | No                                                                                                                                | Proposed (glossary for progress updates) | Agents nudging agents can loop; agents coordinate through progress updates they read when they check in.                                                                                                  |
+| A person asks for a git host action on the task ([6.7](#67-git-host-actions-a-person-asks-for))                                                                                         | Yes, a queued nudge from that person to their own agent sessions only                                                             | Decided (owner, N-3, [#25])              | The action must run under the requester's own git host account.                                                                                                                                           |
+| A comment or review on a linked PR or issue on the git host                                                                                                                             | No, in the first version. A member's mention of a task ID there makes a `related` link only (owner, O-25, [#25]).                 | Proposed; **open** for later             | Agents share their person's git host account (D-017), so Shinan often cannot tell whether a host comment came from the person or from the agent itself. Nudging on it would make agents nudge themselves. |
+| An outside issue's text, or comments by outside actors                                                                                                                                  | Never                                                                                                                             | Proposed                                 | Anyone can write them; delivering them as instructions would let strangers steer agents.                                                                                                                  |
 
 ### 11.2 To whom
 
@@ -1188,12 +1188,12 @@ agent never hears that its PR was closed or that the task it waited for is
 done; making these nudges would blur the rule that a nudge carries a person's
 authority.
 
-| Notice | Sent when |
-|---|---|
-| PR closed | A `delivers` PR linked to the task is closed without merging by any actor other than an attached session acting through Shinan ([6.5](#65-when-a-pr-closes-without-merging)). |
-| PR merged | A `delivers` PR linked to the task merges. |
-| Dependency finished | A task this one depends on becomes `done` or `cancelled` ([section 9](#9-dependencies)). |
-| Unconfirmed link | An outside actor's marker links a PR to the task ([6.4](#64-unconfirmed-links)), so the agent knows it does not count yet. |
+| Notice              | Sent when                                                                                                                                                                     |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PR closed           | A `delivers` PR linked to the task is closed without merging by any actor other than an attached session acting through Shinan ([6.5](#65-when-a-pr-closes-without-merging)). |
+| PR merged           | A `delivers` PR linked to the task merges.                                                                                                                                    |
+| Dependency finished | A task this one depends on becomes `done` or `cancelled` ([section 9](#9-dependencies)).                                                                                      |
+| Unconfirmed link    | An outside actor's marker links a PR to the task ([6.4](#64-unconfirmed-links)), so the agent knows it does not count yet.                                                    |
 
 All **proposed**:
 
@@ -1218,25 +1218,25 @@ Everything that happens to a task is an [event](domain-model.md#event) credited
 to an actor. The task produces these kinds (**proposed**); git host events and
 presence events are listed by their owning documents.
 
-| Event | Typical actor |
-|---|---|
-| Task created (with origin) | Person, agent session, or Shinan |
-| Accepted, merged into another task, cancelled, reopened | Person |
-| Subtask added, moved under another parent (with its descendants), made top-level | Person or agent session |
-| Git host action requested, and its result | Person; agent session |
-| Rank changed | Person |
-| Title, intent, acceptance criteria or decisions changed | Person or agent session |
-| Work link added, removed, confirmed or dismissed (with "how made") | Person, agent session, or Shinan |
-| Marker edited on a finished PR (warning; no change) | Shinan |
-| Status changed (with the cause) | Shinan |
-| Task flag set, changed or cleared; flag added to or removed from the workspace | Person, agent session, or Shinan (`blocked`) |
-| Deployment approval requested, approved, declined, made stale | Agent session; person; agent session reporting a conversation approval |
-| Verification recorded | Person or agent session |
-| Dependency added or removed | Person or agent session |
-| Session claimed or released; assignee changed | Agent session; person; Shinan |
-| Comment or progress update added | Person; agent session |
-| Nudge created, delivered, undeliverable, withdrawn, cancelled | Person; Shinan |
-| Task notice sent, delivered, undeliverable, cancelled | Shinan |
+| Event                                                                            | Typical actor                                                          |
+| -------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| Task created (with origin)                                                       | Person, agent session, or Shinan                                       |
+| Accepted, merged into another task, cancelled, reopened                          | Person                                                                 |
+| Subtask added, moved under another parent (with its descendants), made top-level | Person or agent session                                                |
+| Git host action requested, and its result                                        | Person; agent session                                                  |
+| Rank changed                                                                     | Person                                                                 |
+| Title, intent, acceptance criteria or decisions changed                          | Person or agent session                                                |
+| Work link added, removed, confirmed or dismissed (with "how made")               | Person, agent session, or Shinan                                       |
+| Marker edited on a finished PR (warning; no change)                              | Shinan                                                                 |
+| Status changed (with the cause)                                                  | Shinan                                                                 |
+| Task flag set, changed or cleared; flag added to or removed from the workspace   | Person, agent session, or Shinan (`blocked`)                           |
+| Deployment approval requested, approved, declined, made stale                    | Agent session; person; agent session reporting a conversation approval |
+| Verification recorded                                                            | Person or agent session                                                |
+| Dependency added or removed                                                      | Person or agent session                                                |
+| Session claimed or released; assignee changed                                    | Agent session; person; Shinan                                          |
+| Comment or progress update added                                                 | Person; agent session                                                  |
+| Nudge created, delivered, undeliverable, withdrawn, cancelled                    | Person; Shinan                                                         |
+| Task notice sent, delivered, undeliverable, cancelled                            | Shinan                                                                 |
 
 ## 13. Conventions agents follow
 
@@ -1348,12 +1348,12 @@ the [roadmap](roadmap.md) (owner, O-70, [#25]).
 
 What this means for tasks (**proposed** unless marked):
 
-| Work | Where it starts | How it appears in Shinan |
-|---|---|---|
-| Cross-project coordination for a trial project | A task created in Shinan, by a person or an agent, with subtasks for the parts in each repository | A native task; nothing in the `workspace` repository's issues |
-| Work inside mon and easyshell | The project's own repository issue, as today | An outside issue that becomes a task in `to do` (opened by a member, [5.1](#51-which-issues-become-tasks)); PRs name that task's ID |
-| Work inside Shinan | A GitHub issue, or a task in Shinan with the intent and acceptance criteria also in the PR description (O-74) | An outside issue opened by a member, or a native task. Trial findings are issues in `guneet-xyz/shinan`, so they can be recorded even when Shinan is down ([roadmap](roadmap.md)) |
-| Everything else | Unchanged, in the `workspace` repository's issues | Not seen |
+| Work                                           | Where it starts                                                                                               | How it appears in Shinan                                                                                                                                                          |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Cross-project coordination for a trial project | A task created in Shinan, by a person or an agent, with subtasks for the parts in each repository             | A native task; nothing in the `workspace` repository's issues                                                                                                                     |
+| Work inside mon and easyshell                  | The project's own repository issue, as today                                                                  | An outside issue that becomes a task in `to do` (opened by a member, [5.1](#51-which-issues-become-tasks)); PRs name that task's ID                                               |
+| Work inside Shinan                             | A GitHub issue, or a task in Shinan with the intent and acceptance criteria also in the PR description (O-74) | An outside issue opened by a member, or a native task. Trial findings are issues in `guneet-xyz/shinan`, so they can be recorded even when Shinan is down ([roadmap](roadmap.md)) |
+| Everything else                                | Unchanged, in the `workspace` repository's issues                                                             | Not seen                                                                                                                                                                          |
 
 - The rules of this document apply to trial tasks in full. Reason: the trial is
   meant to test them.
@@ -1373,17 +1373,17 @@ document uses, including [task notice](domain-model.md#task-notice).
 
 ## Dependencies on other documents
 
-| Document | What this document needs from it |
-|---|---|
-| [Domain model and glossary](domain-model.md) | The terms used here. |
-| [Git host integrations](git-hosts.md) | Reading markers, PR states and merges, comments, reconciliation and freshness thresholds; holding the per-repository settings this document defines: automated accounts, counting branches and "turn new issues into tasks"; revert detection. |
-| [Agent integrations](agent-integrations.md) | Claim and release calls, including release after 24 hours with no report or call for every presence source; nudge and task notice delivery, acknowledgement and modes; the `Shinan-Session` key; reading workspace flags; tools for the agent actions this document allows (editing tasks, dependencies, moving subtasks, confirming closing-reference links, custom flags, reading the `to do` order); teaching the conventions in [section 13](#13-conventions-agents-follow); delivering git host action requests (N-3); requesting a new agent session. |
-| [Identity, agents and permissions](identity.md) | Who may comment, nudge, triage, cancel, confirm links, rank, manage flags and release sessions; applying "contributors may give deployment approval" and deciding whether answering needs a fresh sign-in; how a deployment approval given in Shinan is protected and how an agent-reported one is shown. |
-| [Human experience](human-experience.md) | Task page with subtasks at any depth, how a rolled-up status is explained, ranking per level, flag management including "show in Needs you", the deployment approval setting, triage inbox, unlinked work, unconfirmed links, origin issue reminders, status freshness, nudge and task notice outcomes, the "ask for a session" and "release" actions. |
-| [Catalog](catalog.md) | Promoting task decisions to `decision` entities; linking tasks to catalog entities. |
-| [Architecture and operations](architecture.md) | The [task address](architecture.md#36-task-address) used in markers; how status is recalculated and stored, including the bottom-up roll-up ([7.3](#73-rules)). |
-| [Roadmap and migration](roadmap.md) | Which phase each rule here belongs to; how active coordinating issues in the `workspace` repository become tasks at migration; which repositories have "turn new issues into tasks" off in the trial. |
-| `workspace` repository | A note in its collaboration rules at trial start, saying coordination for trial projects lives in Shinan (O-73). A separate PR there. |
+| Document                                        | What this document needs from it                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [Domain model and glossary](domain-model.md)    | The terms used here.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| [Git host integrations](git-hosts.md)           | Reading markers, PR states and merges, comments, reconciliation and freshness thresholds; holding the per-repository settings this document defines: automated accounts, counting branches and "turn new issues into tasks"; revert detection.                                                                                                                                                                                                                                                                                                              |
+| [Agent integrations](agent-integrations.md)     | Claim and release calls, including release after 24 hours with no report or call for every presence source; nudge and task notice delivery, acknowledgement and modes; the `Shinan-Session` key; reading workspace flags; tools for the agent actions this document allows (editing tasks, dependencies, moving subtasks, confirming closing-reference links, custom flags, reading the `to do` order); teaching the conventions in [section 13](#13-conventions-agents-follow); delivering git host action requests (N-3); requesting a new agent session. |
+| [Identity, agents and permissions](identity.md) | Who may comment, nudge, triage, cancel, confirm links, rank, manage flags and release sessions; applying "contributors may give deployment approval" and deciding whether answering needs a fresh sign-in; how a deployment approval given in Shinan is protected and how an agent-reported one is shown.                                                                                                                                                                                                                                                   |
+| [Human experience](human-experience.md)         | Task page with subtasks at any depth, how a rolled-up status is explained, ranking per level, flag management including "show in Needs you", the deployment approval setting, triage inbox, unlinked work, unconfirmed links, origin issue reminders, status freshness, nudge and task notice outcomes, the "ask for a session" and "release" actions.                                                                                                                                                                                                      |
+| [Catalog](catalog.md)                           | Promoting task decisions to `decision` entities; linking tasks to catalog entities.                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| [Architecture and operations](architecture.md)  | The [task address](architecture.md#36-task-address) used in markers; how status is recalculated and stored, including the bottom-up roll-up ([7.3](#73-rules)).                                                                                                                                                                                                                                                                                                                                                                                             |
+| [Roadmap and migration](roadmap.md)             | Which phase each rule here belongs to; how active coordinating issues in the `workspace` repository become tasks at migration; which repositories have "turn new issues into tasks" off in the trial.                                                                                                                                                                                                                                                                                                                                                       |
+| `workspace` repository                          | A note in its collaboration rules at trial start, saying coordination for trial projects lives in Shinan (O-73). A separate PR there.                                                                                                                                                                                                                                                                                                                                                                                                                       |
 
 ## Open questions
 

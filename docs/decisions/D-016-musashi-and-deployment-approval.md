@@ -47,7 +47,7 @@ Musashi already runs the owner's public applications.
   owner's approval.
 - **Decided (owner):** deployments happen as needed, each with its own
   approval ([D-039](D-039-deploy-as-needed.md)); `awaiting deployment
-  approval` is its own task flag ([D-028](D-028-task-flags.md)); no built-in
+approval` is its own task flag ([D-028](D-028-task-flags.md)); no built-in
   backups for now ([D-038](D-038-no-built-in-backups.md)).
 - Where and how deployment approval is given: see the domain model's
   [deployment approval](../domain-model.md#deployment-approval) and
