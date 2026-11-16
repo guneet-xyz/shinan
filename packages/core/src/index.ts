@@ -55,9 +55,11 @@ export { deliverEmail, EmailRetryError } from "./email/deliver.js"
 export type { DeliveryOutcome, EmailAttempt } from "./email/deliver.js"
 export {
   emailRecordRetentionDays,
+  lostEmailGraceMinutes,
   pruneEmailDeliveries,
 } from "./email/prune.js"
-export { emailLimits, emailQueue } from "./email/queue.js"
+export type { PruneResult } from "./email/prune.js"
+export { EmailQueueError, emailLimits, emailQueue } from "./email/queue.js"
 export type { EmailJob } from "./email/queue.js"
 // Message templates are pure functions, so they bypass no check. The core
 // operations that send them (M1-4) queue them with the internal `queueEmail`.

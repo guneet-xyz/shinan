@@ -293,7 +293,10 @@ export const emailDeliveries = pgTable(
     kind: emailKindEnum("kind").notNull(),
     /** Stored in lower case. */
     recipient: text("recipient").notNull(),
-    /** The network address of the request that caused it, for throttling. */
+    /**
+     * For magic links, the network address of the request that caused it
+     * (an IPv6 address as its /64), for throttling.
+     */
     networkAddress: inet("network_address"),
     status: emailStatusEnum("status").notNull().default("queued"),
     attempts: integer("attempts").notNull().default(0),
