@@ -1,12 +1,14 @@
 # Architecture and operations
 
 Status: **draft for review** ([issue #11](https://github.com/guneet-xyz/shinan/issues/11)).
-Updated with the owner's answers in [issue #25](https://github.com/guneet-xyz/shinan/issues/25).
+Updated with the owner's answers in [issue #25](https://github.com/guneet-xyz/shinan/issues/25)
+and the integration review in [issue #26](https://github.com/guneet-xyz/shinan/issues/26).
 
 This document describes how Shinan is built and run: the technology stack
 (D-020), the parts of the system and how they talk, where data lives, how the
 catalog's Markdown and its agent index stay in sync (D-006), how
-git host events come in, how agents and plugins reach Shinan, email, security
+git host events come in, how agents and plugins reach Shinan, email and
+notifications, the task address, security
 for a public app with sign-in (D-015), deployment on Musashi at
 `shinan.guneet.dev` (D-016), self-hosting (D-012), observability, and the
 accepted risk of having no backups.
@@ -21,25 +23,18 @@ tool lists or screens. It links to them instead (see
 Every statement is marked:
 
 - **Decided**: follows from an accepted plan decision, or from an owner answer
-  in [issue #25](https://github.com/guneet-xyz/shinan/issues/25), written
-  "Decided (owner, O-n)" or "Decided (owner, N-n)" for the follow-up batch. The [decision log](decisions/) maps O-n to decision
-  records.
+  in [issue #25](https://github.com/guneet-xyz/shinan/issues/25) (written
+  "Decided (owner, O-n)" or "N-n") or in the integration review
+  [#26](https://github.com/guneet-xyz/shinan/issues/26) (written "NO-n"). The [decision log](decisions/README.md) maps
+  the answers to decision records.
 - **Proposed**: suggested here, with a reason.
 - **Open**: not settled; listed under [Open questions](#open-questions).
 
-Terms follow the [domain model and glossary](domain-model.md) (in review in
-[PR #14](https://github.com/guneet-xyz/shinan/pull/14), read at `8bb5d65`). In
+Terms follow the [domain model and glossary](domain-model.md). In
 particular, a **Shinan installation** is one running copy of Shinan; a
 **workspace** is a team's container inside it. "Sync" is used only for the
 catalog Markdown and its index; keeping up with git hosts is
 **reconciliation**.
-
-Sibling drafts were read at their latest commits on 2026-11-16 (domain model
-`0e4bfcd`, catalog `78d6bb1`, tasks `fae89ac`, identity `03207c7`, git hosts
-`98333b8`, agent integrations `88acc1d`, roadmap `820f2a6`). They include the
-owner's first eleven batches of answers but not the follow-up batch (N-1 to
-N-11); where they still differ, this document follows the answers and lists the
-difference under [Dependencies](#dependencies-on-other-documents).
 
 External facts were checked against primary sources on **2026-11-16**. Facts
 about Musashi and its services come from the `workspace` repository's catalog at
@@ -56,8 +51,8 @@ action was taken.
 | Storage | PostgreSQL for everything, including the job queue. No Redis, no file storage in the first version. |
 | Catalog (D-006) | **Decided:** each revision's Markdown text is the source of truth, stored in PostgreSQL only; no Git mirror for now (owner, O-11, O-12, N-5). Changes are applied as text edits; the index is built only from stored text. |
 | Git hosts | Webhooks are verified, stored and acknowledged at once, then processed by the worker. Reconciliation catches anything missed. Shinan writes to GitHub only as its app and never writes to Forgejo (owner, O-1, O-51, N-4). |
-| Agents | A remote MCP endpoint at `/mcp`, a REST API for the CLI and plugins, and a server-sent event stream for nudge offers. Long-lived agent tokens sent as a bearer header (owner, O-44). All connections go out from the agent's machine. |
-| Email | **Decided:** Shinan sends email from the first version, for magic links and invitations, through the AWS SES SDK (owner, O-41, O-48, N-6). |
+| Agents | A remote MCP endpoint at `/mcp`, a REST API for the CLI and plugins, and a server-sent event stream for nudge offers. One long-lived token per agent, obtained by a browser approval and accepted at every agent endpoint (owner, O-44, NO-1). All connections go out from the agent's machine. |
+| Email and notifications | **Decided:** Shinan sends email from the first version (magic links, invitations, security alerts) through the AWS SES SDK (owner, O-41, O-48, N-6). This document owns sending notifications, email first (owner, NO-3). |
 | Security | Threat model and controls for a public app holding infrastructure details, with the owner's accepted risks stated plainly. |
 | Musashi | A new `shinan` stack following Musashi's rules; deployed as needed, each deployment with its own approval (owner, O-83). |
 | Backups | **Decided:** none built in, no backup target and no recovery objectives for now; an accepted risk (owner, O-62 to O-64). |
@@ -214,13 +209,13 @@ PostgreSQL `LISTEN`/`NOTIFY`
 | Caller | Endpoint | Credential | Status |
 |---|---|---|---|
 | Person in a browser | Pages, REST API, live stream | Sign-in session cookie, after GitHub sign-in or an email magic link | Methods decided (owner, N-7) |
-| Coding tool (MCP) | `/mcp` | Agent token as `Authorization: Bearer` | Long-lived tokens decided (owner, O-44); transport proposed ([8.1](#81-mcp-server)) |
-| CLI, plugin | REST API, plugin stream | The same agent token | Proposed |
+| Coding tool (MCP) | `/mcp` | Agent token as `Authorization: Bearer` | Decided (owner, O-44, NO-1) ([8.1](#81-mcp-server)) |
+| CLI, plugin | REST API, plugin stream | The same agent token | Decided (owner, NO-1) |
 | GitHub | Webhook intake, one app-level URL | The GitHub App's webhook secret | Proposed ([6.1](#61-webhook-intake)) |
 | Forgejo | Webhook intake, one URL per Forgejo webhook | That webhook's secret | Proposed ([6.1](#61-webhook-intake)) |
 | Worker, to GitHub | GitHub API | GitHub App installation tokens only | Decided (owner, O-1, O-51) |
 | Worker, to Forgejo | Forgejo API, reading only | The connecting person's own Forgejo token, any scope | Decided (owner, O-53, O-54, N-4) |
-| Worker, to email | AWS SES API through the AWS SDK | A send-only IAM access key | Decided (owner, N-6); credential proposed ([section 9](#9-email)) |
+| Worker, to email | AWS SES API through the AWS SDK | A send-only IAM access key | Decided (owner, N-6); credential proposed ([section 9](#9-email-and-notifications)) |
 
 On GitHub, Shinan writes only as its app and stores no per-person GitHub
 tokens (**Decided**, owner, O-1). On Forgejo, Shinan makes no writes at all:
@@ -241,7 +236,7 @@ item and coding tool).
   git host connections cover. A repository can be covered by only one workspace
   in the first version (**Decided**, owner, O-59), so this gives the same
   isolation as per-workspace copies. Reason: one model shared with the glossary
-  and the git hosts draft.
+  and the [git hosts](git-hosts.md) document.
 - **Proposed:** events, including events about work items, belong to the
   workspace whose connection produced them.
 - **Proposed:** every workspace-owned table has a `workspace_id` column, and all
@@ -277,10 +272,41 @@ details:
 - **Installation settings:** the email allowlist that decides who can have an
   account (**Decided**, owner, O-48; joining a workspace still needs an
   invitation); the GitHub sign-in credentials; the SES settings
-  ([section 9](#9-email)); and which private network hosts outgoing requests
-  may reach ([10.1](#101-threats-and-controls)).
+  ([section 9](#9-email-and-notifications)); and the hosts that are exceptions
+  to the private-address rule (owner, N-12; [10.1](#101-threats-and-controls)).
+- **Who the operators are,** and how the allowlist starts, follow
+  [identity](identity.md) §3.2 and §12: the installation's configuration names
+  the operators and the first allowlisted addresses (see
+  [section 12](#12-self-hosting)).
 - On `shinan.guneet.dev` the owner is the only installation operator and the
   only workspace owner.
+
+### 3.6 Task address
+
+[Tasks and work](tasks.md) and [git host integrations](git-hosts.md) use a
+**task address** in markers, PR descriptions, backlinks and emails, and leave
+its shape to this document and [human experience](human-experience.md).
+
+**Proposed:**
+
+- The task address is `https://<installation address>/t/<task ID>`, for
+  example `https://shinan.guneet.dev/t/T-124`. Reason: short enough to write
+  next to a task ID in a PR description, and stable whatever the page looks
+  like.
+- **The task ID alone finds the workspace.** Task prefixes are unique within an
+  installation, and a retired prefix is never given to another workspace
+  ([tasks](tasks.md) §3), so the address needs no workspace part. Reason: a
+  workspace name in the address would break if the workspace were renamed.
+- **Old prefixes keep working.** An address with a workspace's former prefix
+  redirects to the task's current ID. The ID is matched without regard to case
+  and redirected to the upper-case form.
+- **Sign-in first.** The address always needs sign-in; someone who is not a
+  member of the task's workspace gets the same "not found" answer as for a task
+  that does not exist (identity's uniform answers). Git host integrations
+  already keep it out of public repositories (O-56).
+- **Never changes.** The address is kept for as long as the installation exists,
+  including for cancelled tasks. Page layout behind it is owned by
+  [human experience](human-experience.md).
 
 ## 4. Storage
 
@@ -308,11 +334,12 @@ needs uploads; catalog pages are text and work items are links. **Open** until
 | Tasks, subtasks, comments, progress updates, manual states, task flag definitions | No | Forever | Proposed |
 | Workspaces, people, members, invitations, email allowlist, agents, token hashes | No | Until deleted | Proposed |
 | Events (the timeline) | Partly: git host events can be re-read by reconciliation within what each host's API returns | Forever, except purge | Proposed |
-| Security log | No | Forever (**Decided**, owner, O-47) | Installation-level entries cannot be purged by anyone (**Decided**, owner, N-8); see [4.4](#44-purge) |
+| Security log | No | Forever (**Decided**, owner, O-47) | No entry can ever be purged (**Decided**, owner, N-8, N-13); see [4.4](#44-purge) |
 | Repositories and work items (cached state) | Yes, by reconciliation | Kept while covered | Proposed |
 | Raw webhook deliveries | Not needed after processing | 14 days, then deleted | Proposed. Reason: long enough to replay after a bug fix; follows "link, don't copy" (D-001). |
 | Presence | No, but short-lived by nature | Current state plus presence events | Proposed |
 | Job records, including sent email metadata | Not needed | 7 days after completion | Proposed. Reason: enough to debug recent failures. |
+| Notification records (what was sent to whom, when, outcome; no message body) | Not needed | 90 days | Proposed. Reason: a person can see why they received something; long enough to explain a missed notification. |
 | GitHub App private key, webhook secrets, Forgejo tokens | No (must be re-entered) | Until removed | Proposed; encrypted, see [10.3](#103-secrets-and-credentials) |
 
 ### 4.3 Events
@@ -329,8 +356,7 @@ recalculating on every page view would be slow.
 
 ### 4.4 Purge
 
-The glossary asks whether events can be redacted; the [catalog](catalog.md)
-draft calls the operation **purge**. This document uses **purge** for all of it.
+The glossary and the [catalog](catalog.md) call this operation **purge**.
 
 **Who:** only workspace owners can purge, including operational records about
 their workspace (raw webhook deliveries, job records); installation operators
@@ -349,12 +375,13 @@ workspace:
 - Copies outside Shinan's control are reported, not assumed clean: workspace
   exports downloaded earlier ([5.5](#55-export-and-import)), and the host's own
   backups, if any. The purge screen says so.
-- **Security log:** kept forever (owner, O-47). Installation-level entries
-  cannot be purged by anyone (**Decided**, owner, N-8, [#25](https://github.com/guneet-xyz/shinan/issues/25)). **Proposed:** workspace-level
-  entries are not purgeable either; the final rule is owned by
-  [identity](identity.md). Reason: a log that its subjects can erase proves
-  little. It holds structured entries (actor, time, network address, action),
-  not free text, so leaked secrets should not reach it.
+- **Security log:** kept forever (owner, O-47), and no entry, installation-level
+  or workspace-level, can ever be purged (**Decided**, owner, N-8, N-13,
+  [#25](https://github.com/guneet-xyz/shinan/issues/25)). A person's deletion
+  request therefore cannot remove their security-log entries; this is the
+  residual risk [identity](identity.md) §11 states. The log holds structured
+  entries (actor, time, network address, action), not free text, so leaked
+  secrets should not reach it.
 - **Application logs** (process output collected by Docker) are outside the
   app's reach. They carry IDs, not workspace content (see
   [section 13](#13-observability)), so there is nothing to purge there.
@@ -428,7 +455,7 @@ indexing (**Proposed**).
   index from the latest revisions, and the agent index reports that it is
   behind until done. **Proposed.**
 - **Serving the agent index.** Every answer names the catalog revision it came
-  from (catalog draft), so agents and plugins can cache and ask "what changed
+  from (catalog document), so agents and plugins can cache and ask "what changed
   since revision N". **Proposed.**
 - **Fact checks.** A recheck that changes only the last-checked time is still a
   text edit and a new revision, and also an event. **Proposed.** Reason: no fact
@@ -441,7 +468,7 @@ is under 25 MB of revision text a year; ten times more, from frequent rechecks,
 is still well under a gigabyte. **Proposed:** store full text per revision; revisit
 only if measured growth requires it.
 
-### 5.4 Import
+### 5.4 Importing the `workspace` repository's catalog
 
 **Proposed:** a one-time importer reads a folder of Markdown with frontmatter,
 such as the `workspace` repository's catalog, and creates catalog proposals for
@@ -455,15 +482,17 @@ into an empty workspace are in the first version (**Decided**, owner, O-75; the
 [roadmap](roadmap.md) needs them for its exit and rollback criterion).
 **Proposed** machinery:
 
-- **Started by a workspace owner,** built by the worker, and offered as a
-  single download behind sign-in. The export is recorded in the security log.
+- **Started by a workspace owner** after re-authentication ([identity](identity.md)
+  §3.3), built by the worker, and offered as a single download behind sign-in.
+  The export is recorded in the security log.
 - **Contents:** the catalog's Markdown documents at the latest revision, the
   revision history, catalog proposals, tasks with their subtasks, work links,
   comments and events, as Markdown and JSON files. **Not included:** git host
   credentials, webhook secrets and token hashes, which are set up again after
   an import.
 - **Import** recreates the workspace in an empty one, on the same or another
-  installation, and runs the round-trip test ([5.2](#52-the-invariant)) on the
+  installation, started by a workspace owner of the empty workspace after
+  re-authentication, and runs the round-trip test ([5.2](#52-the-invariant)) on the
   imported catalog.
 - Reason: with no Git mirror (N-5) and no backups (O-62), a recent export is the
   only copy of a workspace that a person can take off the machine
@@ -521,7 +550,7 @@ write-back. This section owns the machinery.
 GitHub keeps deliveries for redelivery for only 3 days
 ([GitHub docs](https://docs.github.com/en/webhooks/testing-and-troubleshooting-webhooks/redelivering-webhooks),
 checked 2026-11-16), and Forgejo does not retry. **Proposed** machinery (the
-layers and intervals are the git hosts draft's):
+layers and intervals are the [git hosts](git-hosts.md) document's):
 
 - **Scheduled jobs per git host connection,** one per reconciliation layer, each
   with its own stored watermark.
@@ -563,9 +592,11 @@ slow, and a click or an MCP call should not fail because of them.
 | Offer and withdraw nudge deliveries, including git host actions a person asks for (N-3) | A nudge is created or withdrawn | [Tasks](tasks.md), [agent integrations](agent-integrations.md) |
 | Build a workspace export; run an import | A workspace owner asks | This document ([5.5](#55-export-and-import)) |
 | Rebuild or verify the agent index (round-trip test) | Release, daily | This document ([5.2](#52-the-invariant)) |
-| Send email (magic links, invitations) | Sign-in or invitation request | This document ([section 9](#9-email)); content by [identity](identity.md) |
+| Send email (magic links, invitations, security alerts) | Sign-in, invitation, or a security event identity names | This document ([section 9](#9-email-and-notifications)); content by [identity](identity.md) |
+| Build notifications (phase 2) | A new event that human experience's rules turn into a notification | This document ([9.3](#93-notifications-phase-2)); what is sent by [human experience](human-experience.md) |
+| Send daily notification summaries (phase 2) | Daily, per person, at their chosen hour | This document ([9.3](#93-notifications-phase-2)) |
 | Automatic fact checks by Shinan, if adopted | Schedule | [Catalog](catalog.md), [git hosts](git-hosts.md) |
-| Prune raw webhooks and old job records | Daily | This document ([4.2](#42-kinds-of-data)) |
+| Prune raw webhooks, old job records and old notification records | Daily | This document ([4.2](#42-kinds-of-data)) |
 
 ## 8. How agents, the MCP server and plugins reach Shinan
 
@@ -596,25 +627,31 @@ sit behind NAT, firewalls or tailnets. The agent-facing parts of
   is in the request and the database.
 - **Tokens.** Agent tokens are long-lived and last until revoked (**Decided**,
   owner, O-44). An agent is per person, coding tool and machine (**Decided**,
-  owner, O-40), so each machine's coding tool has its own agent and token.
-  **Proposed:**
-  - The token is obtained once per agent through identity's browser-approval
-    registration, run by the plugin or the CLI in the shape of the OAuth device
-    authorization grant (RFC 8628: show a link and short code, the person
-    approves in the browser, the tool receives the token). Better Auth has a
-    device authorization plugin that implements this grant (docs, checked
-    2026-11-16). Reason: agent integrations needs one approval to cover the
-    plugin, MCP and the CLI on a machine, and headless runs (the agent integrations draft notes that Claude Code's
-    `claude -p` cannot run an OAuth flow).
-  - The token reaches the MCP endpoint as an `Authorization: Bearer` header.
-    OpenCode supports this with `oauth: false` and a `headers` entry that reads
-    an environment variable (OpenCode MCP docs above). Installing the plugin
-    also sets up MCP and the skill (owner, O-36), so the plugin writes that
-    configuration without putting the token itself in a project file.
-  - **MCP's OAuth authorization flow is not used in the first version.** Reason:
-    with long-lived tokens (O-44) there is nothing to refresh, the device-style
-    registration already covers every component on a machine, and acting as a
-    full OAuth authorization server is extra attack surface.
+  owner, O-40). How an agent gets its token is settled (**Decided**, owner, NO-1,
+  [#26](https://github.com/guneet-xyz/shinan/issues/26)); [identity](identity.md)
+  owns the flow and this document the transport:
+  - **Browser approval, started from the plugin or the CLI.** The tool asks
+    Shinan to connect, shows a link (and a short code for machines without a
+    browser), the person signs in, chooses or creates the agent for this tool
+    and machine, and approves; the tool then receives the token. The exchange
+    has the shape of the OAuth device authorization grant (RFC 8628); Better
+    Auth has a device authorization plugin that implements that grant (docs,
+    checked 2026-11-16). One approval covers the plugin, MCP and the CLI on the
+    machine, and headless runs work.
+  - **A hand-made token as the fallback.** The person creates the token in the
+    web app after re-authentication, sees it once, and places it on the machine,
+    for example as an environment variable the coding tool sends as a header.
+  - **One token per agent, accepted at every agent endpoint** of the
+    installation: `/mcp`, the REST API and the plugin stream. It is not accepted
+    by any other installation.
+  - **No MCP-specific OAuth sign-in in the first version.** It may come later,
+    only if a coding tool needs it.
+  - **Transport (Proposed):** the token is sent as an `Authorization: Bearer`
+    header. OpenCode supports this for remote MCP servers with `oauth: false`
+    and a `headers` entry that reads an environment variable (OpenCode MCP docs
+    above). Installing the plugin also sets up MCP and the skill (owner, O-36),
+    so the plugin writes that configuration without putting the token itself in
+    a project file.
 - **Required checks.** Validate the `Origin` header and check that
   `MCP-Protocol-Version`, `Mcp-Method` and `Mcp-Name` match the request body, as
   the 2026-07-28 transport requires; reject tokens in query strings.
@@ -638,7 +675,7 @@ history.
 ### 8.3 Plugins
 
 **Proposed** transport for the OpenCode plugin (and later others); the delivery
-states and the "one owner at a time" rules are the agent integrations draft's:
+states and the "one owner at a time" rules are the [agent integrations](agent-integrations.md) document's:
 
 - **Reports go up as normal requests.** Presence changes and heartbeats are
   POSTed with the agent session ID and a sequence number, so repeats and
@@ -670,41 +707,84 @@ such devices (VM, MacBook, and so on) is provided (**Decided**, owner, O-1).
 stream for start requests, with its own credential from identity. Reason: no
 inbound ports on users' machines. Details belong to phase 3.
 
-## 9. Email
+## 9. Email and notifications
 
-Shinan sends email from the first version, for magic-link sign-in and
-invitations (**Decided**, owner, O-41, O-48), through the **AWS SES SDK**, not
-SMTP (**Decided**, owner, N-6, [#25](https://github.com/guneet-xyz/shinan/issues/25)). What the messages say, link lifetimes and who may receive
-them are owned by [identity](identity.md).
+This document owns **sending**: channels, delivery, retries and failures. What
+is sent and each person's settings are owned by
+[human experience](human-experience.md) for notifications and by
+[identity](identity.md) for sign-in and security messages (**Decided**, owner, NO-3, [#26](https://github.com/guneet-xyz/shinan/issues/26)).
+Email is the first channel, through the **AWS SES SDK**, not SMTP (**Decided**,
+owner, N-6, [#25](https://github.com/guneet-xyz/shinan/issues/25)).
 
-### 9.1 How Shinan sends
+### 9.1 What Shinan sends
 
-**Proposed:**
+| Message | When | What it says, and to whom | Status |
+|---|---|---|---|
+| Email magic link | First version | [Identity](identity.md) §3.1 | Decided (owner, O-41, N-7) |
+| Invitation | First version | [Identity](identity.md) §5.2 | Decided (owner, O-48) |
+| Security alerts: sign-in from a browser not seen before, GitHub added or removed as a sign-in method, an agent token approved | First version | [Identity](identity.md) §3.3 | Proposed by identity |
+| Notifications: Needs you items and replies to a person's own comments, immediately or as a daily summary | Phase 2 (plan, sections 5 and 10) | [Human experience](human-experience.md), "Notifications" | Decided that they are phase 2 (plan); content proposed by human experience |
+
+### 9.2 How Shinan sends
+
+**Proposed**, for every message:
 
 - **SES API through the AWS SDK for JavaScript,** called by the worker. The
-  sender sits behind a small interface in the code, so another provider (for
-  example SMTP for a self-hoster without SES) can be added later without
-  touching callers. Reason: N-6 decides SES for the first version; the
-  interface keeps self-hosting open (D-012) without building a second sender
-  now.
-- **Sent by the worker,** queued in the same transaction as the sign-in or
-  invitation request and picked up at once (`LISTEN`/`NOTIFY`). Reason: SES
-  latency or an outage must not block the web request.
-- **Only to allowlisted addresses.** A magic link is sent only if the address is
-  on the installation's allowlist (O-48), and the page answers the same either
-  way. Reason: stops the sign-in form from being used to send mail to anyone,
-  and does not reveal who has an account.
-- **Throttled** per address and per network address. Reason: limits floods and
-  cost.
-- **Delivery recorded.** Each message's outcome (accepted by SES, rejected) is
-  recorded without its body, and failures show as installation health. Bounces
-  and complaints after acceptance are not handled in the first version; the
-  `guneet.dev` configuration set's suppression is the only protection today
-  (email catalog entry).
-- **If email is down,** GitHub sign-in still works; magic links and new
-  invitations wait (N-7).
+  sender sits behind a small channel interface, so another channel (for
+  example chat) or another email provider (for example SMTP for a self-hoster
+  without SES) can be added later without touching callers. Reason: N-6 decides
+  SES for the first version; the interface keeps self-hosting open (D-012).
+- **Sent by the worker,** queued in the same transaction as the change that
+  causes it and picked up at once (`LISTEN`/`NOTIFY`). Reason: SES latency or
+  an outage must not block a web request.
+- **Only to verified addresses.** Every message goes to the email address an
+  account was created with, which Shinan itself verified ([identity](identity.md)
+  §3.2). A magic link is sent only if the address is on the email allowlist
+  (O-48), and the sign-in page answers the same either way. Reason: the sign-in
+  form cannot be used to send mail to anyone, and it does not reveal who has
+  an account.
+- **Throttled** per recipient and, for sign-in requests, per network address.
+  Reason: limits floods and cost.
+- **Retries:** temporary SES errors (throttling, service errors) are retried
+  with backoff for up to an hour; magic links are not retried after their own
+  expiry. Permanent rejections are not retried.
+- **Failures are visible.** Each message's outcome (accepted by SES, rejected,
+  given up) is recorded without its body. Failures show as installation health
+  for the operator and, for notifications, in the person's account settings.
+  Bounces and complaints after SES has accepted a message are not handled in
+  the first version; the `guneet.dev` configuration set's suppression is the
+  only protection today (email catalog entry).
+- **Content stays short.** Messages carry a title, the workspace, a task ID
+  where there is one, and a link that needs sign-in (task links use the
+  [task address](#36-task-address)); never fact values, comment text or
+  tokens. Reason: email leaves the signed-in app, and the workspace holds
+  infrastructure details (D-015); human experience proposes the same for
+  notifications.
+- **If email is down,** GitHub sign-in still works; magic links, invitations
+  and alerts wait or fail visibly (N-7).
 
-### 9.2 On `shinan.guneet.dev`
+### 9.3 Notifications (phase 2)
+
+**Proposed** machinery; the rules for what is sent and the person's settings
+are human experience's:
+
+1. When an event is recorded, a job applies human experience's notification
+   rules and creates one **notification record** per recipient (who, what
+   item, why). The same item is never notified twice to the same person.
+2. Records for people who want immediate notifications are sent at once,
+   unless the person is in their quiet hours; those wait until the quiet hours
+   end. Deployment approval requests follow human experience's rule (sent
+   immediately unless the person turned them off).
+3. Records for people who chose a daily summary are collected, and one email
+   per person per day lists them, at the hour the person chose.
+4. If the item no longer needs the person when the message would go out (for
+   example the approval was already given), it is dropped from the message.
+   Reason: notifications should bring a person back only for what still needs
+   them.
+5. Records are kept for 90 days ([4.2](#42-kinds-of-data)) so a person can see
+   what was sent and why.
+
+### 9.4 On `shinan.guneet.dev`
 
 **Proposed**, following path A of the `workspace` repository's SES sender
 onboarding runbook (the SDK path proven by Walls; runbook verified 2026-11-07):
@@ -735,13 +815,13 @@ owner's accepted risks.
 | An agent token is stolen from a machine | Long-lived until revoked (**Decided**, owner, O-44). Controls: hashes only in storage; a recognizable prefix for leak scanning; per-machine agents (O-40) so one machine is revoked alone; "last used" shown; never logged; header only | **Accepted risk:** a stolen token works until someone notices and revokes it |
 | Forged or replayed webhooks | HMAC verified before parsing, unique delivery IDs, size limits ([6.1](#61-webhook-intake)) | Proposed |
 | One workspace sees another's data | [3.4](#34-workspace-isolation) | Proposed |
-| Text written by strangers steers an agent (prompt injection) | Outside issues become tasks automatically (D-003), so text from anyone reaches agents through MCP. Controls: (1) outside text never creates nudges ([tasks](tasks.md)), enforced in the shared application layer; (2) machine-readable trust labels ([8.1](#81-mcp-server)); (3) an agent cannot claim or act on a task in `triage` until a member accepts it; (4) the skill tells agents to treat outside text as data. Mentions by outside accounts are ignored (owner, O-25) | (1), (4) from sibling documents; (2), (3) proposed here, (3) needs [tasks](tasks.md) to adopt it |
-| An agent is steered into leaking what it reads | Every member, and so every member's agent, can read the whole workspace (owner, O-2, O-43). Injected text could get an agent to post infrastructure details on a public issue with its own git host credentials. Controls: read-only agent tokens where writing is not needed ([identity](identity.md)); bulk reads in the security log; trust labels; no secrets in the catalog (owner, O-2; the catalog only records where a secret lives) | Residual risk while agents share their person's git host account (D-017) |
+| Text written by strangers steers an agent (prompt injection) | Outside issues become tasks automatically (D-003), so text from anyone reaches agents through MCP. Controls: (1) outside text never creates nudges ([tasks](tasks.md)), enforced in the shared application layer; (2) machine-readable trust labels ([8.1](#81-mcp-server)); (3) an agent cannot claim a task in `triage` until a member accepts it ([tasks](tasks.md) §10); agents may still suggest a triage action in a progress update; (4) the skill tells agents to treat outside text as data. Mentions by outside accounts are ignored (owner, O-25) | (1), (3) adopted in [tasks](tasks.md); (4) in [agent integrations](agent-integrations.md); (2) proposed here |
+| An agent is steered into leaking what it reads | Every member, and so every member's agent, can read the whole workspace (owner, O-2, O-43). Injected text could get an agent to post infrastructure details on a public issue with its own git host credentials. Controls: read-only tokens (the two `read` scopes) where writing is not needed ([identity](identity.md) §7.2); bulk reads in the security log; trust labels; no secrets in the catalog (owner, O-2; the catalog only records where a secret lives) | Residual risk while agents share their person's git host account (D-017) |
 | A Forgejo token with broad rights leaks | Shinan accepts any Forgejo token (**Decided**, owner, O-54) and only reads with it (**Decided**, owner, N-4, [#25](https://github.com/guneet-xyz/shinan/issues/25)). A token is not limited by how Shinan uses it: a site administrator's broad token can act as any user on that Forgejo, and the owner is a site administrator of `git.guneet.dev`. Controls: encrypted at rest, usable only by the worker ([10.3](#103-secrets-and-credentials)), never shown again, never logged, never given to agents; the connect screen suggests a read-only token | **Accepted risk:** whoever gets the database and the worker's key gets whatever the token allows |
 | A workspace export leaks | Only workspace owners can export; recorded in the security log; no credentials in the export; no secrets in the catalog (O-2) | Proposed; a downloaded file is outside Shinan's control |
-| Email is abused | Magic links only to allowlisted addresses; throttling; uniform answers ([9.1](#91-how-shinan-sends)) | Proposed |
+| Email is abused | Magic links only to allowlisted addresses; messages only to verified account addresses; throttling; uniform answers ([9.2](#92-how-shinan-sends)) | Proposed |
 | Malicious Markdown or HTML in the wiki | Raw HTML stripped or sanitized; strict Content Security Policy | Proposed |
-| Shinan tricked into calling internal addresses | Anyone can enter any Forgejo address to connect (**Decided**, owner, N-7, [#25](https://github.com/guneet-xyz/shinan/issues/25)). Outgoing requests to private, loopback and link-local addresses are refused unless the installation operator allows a specific host, and redirects are checked the same way | Proposed. Reason: on Musashi, private addresses reach other services |
+| Shinan tricked into calling internal addresses | Anyone can enter any Forgejo address to connect (owner, N-7). The rule is **decided**: Shinan contacts only the address entered, over HTTPS, refuses addresses that resolve to private, loopback or link-local ranges, re-checks on every request, and an installation operator may allow specific hosts (owner, N-12; [identity](identity.md) §3.5). **Mechanism (Proposed):** every outgoing request resolves the host name, checks every resolved address, and connects to the address it checked, so a DNS answer cannot change between the check and the connection; redirects are checked the same way before they are followed; the operator's exceptions are an installation setting ([3.5](#35-shinan-installation)) | Rule decided (owner, N-12); mechanism proposed. Reason: on Musashi, private addresses reach other services |
 | Cross-site request forgery | Same-site cookies plus a CSRF token or origin check on state-changing requests | Proposed |
 | Vulnerable dependencies | Lockfiles; automated update PRs; critical advisories patched within 7 days; images rebuilt on base image updates | Proposed |
 | Tampered CLI or plugin | Releases publish checksums and build provenance attestations ([12](#12-self-hosting)) | Proposed |
@@ -910,7 +990,7 @@ is **Proposed**). None of it is done by this document.
 | Registering the GitHub App and installing it on `guneet-xyz` | Credentials ([git hosts](git-hosts.md)) |
 | GitHub sign-in credentials | Credentials ([identity](identity.md)) |
 | Forgejo token (read-only use) and webhook | Credentials ([git hosts](git-hosts.md)) |
-| SES IAM user and access key | Credentials ([9.2](#92-on-shinanguneetdev)) |
+| SES IAM user and access key | Credentials ([9.4](#94-on-shinanguneetdev)) |
 | Metrics scraping by Musashi's monitoring agent (O-69) | Deployment of the monitoring stack |
 
 ## 12. Self-hosting
@@ -922,18 +1002,23 @@ licensing (D-013); this section makes sure nothing blocks it. All **proposed**:
   (PostgreSQL, migrate, web, worker), an operator guide, and the CLI and plugin
   with published checksums and attestations.
 - **Requirements:** PostgreSQL (supported major versions listed per release), an
-  HTTPS reverse proxy, an AWS SES account for magic links and invitations in
-  the first version ([9.1](#91-how-shinan-sends)), and a public URL if webhooks
-  are wanted.
+  HTTPS reverse proxy, an AWS SES account for email in the first version
+  ([9.2](#92-how-shinan-sends)), and a public URL if webhooks are wanted.
 - **Configuration:** environment variables, with `*_FILE` variants for secrets.
 - **Reconciliation-only mode:** an installation git hosts cannot reach still
   works, with freshness limited to the reconciliation intervals.
-- **First start:** the first person is created through a one-time setup link
-  printed to the installation's own log, and the email allowlist starts with
-  that person. Reason: only someone with server access can claim a fresh
-  installation.
+- **First start:** the installation's configuration names the operators and
+  the first addresses on the email allowlist, as [identity](identity.md) §3.2
+  and §12 propose; the first operator then signs in with an email magic link
+  (so SES must be configured before first use) or with GitHub followed by an
+  email link. Reason: only someone who controls the configuration can claim a
+  fresh installation, and one rule is kept in identity.
+- **Deployment approval:** D-016's rule that every deployment needs the
+  owner's approval covers only `shinan.guneet.dev`. Self-hosters set their own
+  rules. **Proposed.** Reason: D-016 is about the owner's installation on
+  Musashi.
 - **GitHub App per installation,** registered through GitHub's manifest flow
-  (git hosts draft).
+  ([git hosts](git-hosts.md)).
 - **Installation operator:** see [3.5](#35-shinan-installation).
 - **No telemetry:** a self-hosted installation never contacts the Shinan project.
 - **Backups:** none built in (owner, O-62); the operator guide says plainly that
@@ -1011,20 +1096,17 @@ What it means today:
 
 ## Dependencies on other documents
 
-Differences listed here are for the integration review; this document follows
-the owner's answers.
-
-| Document | What this document needs from it, and known differences |
+| Document | What this document needs from it |
 |---|---|
-| [Domain model and glossary](domain-model.md) | Terms used throughout. Should confirm "Shinan installation" and its operator ([3.5](#35-shinan-installation)) and adopt **purge** ([4.4](#44-purge)). **Mismatch:** its draft (`0e4bfcd`) still lists Forgejo and password sign-in and a viewer role, which N-7 and N-11 remove. |
-| [Catalog](catalog.md) | Operations applied as text edits ([5.2](#52-the-invariant)); per-operation conflicts and the check for secret-looking values; custom type definitions (O-17). **Mismatch:** its draft (`78d6bb1`) still has the always-on Git mirror, its layout and mirror rewriting on purge, which N-5 removes. |
-| [Tasks and work](tasks.md) | Status rules including subtasks at any depth (O-21, N-1); nudge sources; adopting "agents cannot claim tasks in `triage`" ([10.1](#101-threats-and-controls)). |
-| [Identity, agents and permissions](identity.md) | Sign-in by GitHub and magic link only (N-7); email allowlist (O-48); purge rights (O-50) and workspace-level security-log entries ([4.4](#44-purge)); deletion requests against a log kept forever (O-47). **Mismatches:** its draft (`03207c7`) still has password and Forgejo sign-in (N-7) and a viewer role (N-11). It obtains agent tokens through MCP's OAuth authorization-code flow with a once-shown fallback token, while [8.1](#81-mcp-server) proposes a device-style browser approval run by the plugin or CLI and no MCP OAuth; the integration review should settle one flow. |
-| [Git host integrations](git-hosts.md) | GitHub App, installation token only (O-1, O-51); webhooks per O-55; reconciliation layers; mentions creating `related` links (O-25). **Mismatch:** its draft (`98333b8`) still has Shinan writing backlinks on Forgejo as the connecting person, which N-4 removes. |
-| [Agent integrations](agent-integrations.md) | Stream offers and answers ([8.3](#83-plugins)); trust label fields; the plugin writing MCP configuration (O-36); token storage on machines; git host actions as queued nudges (N-3); subagents claiming tasks (N-2). |
-| [Human experience](human-experience.md) | Pages; how freshness and connection health are shown; export download. |
-| [Roadmap and migration](roadmap.md) | The no-backup risk before migration (O-62); export and import (O-75, [5.5](#55-export-and-import)); security checklist gate; deploying as needed (O-83). **Mismatch:** its draft (`820f2a6`) still has the Git mirror covering the catalog, a viewer test account and a weekly safety record of open trial tasks, which N-5, N-11 and N-10 remove. |
-| [Decision log](decisions/) | Records for the O-n and N-n answers cited here. |
+| [Domain model and glossary](domain-model.md) | Terms used throughout, including Shinan installation, installation operator and purge. Entries for **task address** ([3.6](#36-task-address)), **trust label** ([8.1](#81-mcp-server)) and **workspace export** ([5.5](#55-export-and-import)) (I-9 in [#26](https://github.com/guneet-xyz/shinan/issues/26)). |
+| [Catalog](catalog.md) | Operations applied as text edits ([5.2](#52-the-invariant)); per-operation conflicts and the check for secret-looking values; type schema documents for custom types (O-17). |
+| [Tasks and work](tasks.md) | Status rules including subtasks at any depth; nudge sources; task ID prefixes unique within an installation ([3.6](#36-task-address)). |
+| [Identity, agents and permissions](identity.md) | Sign-in methods and the email allowlist; the agent token flow (NO-1); who may export, import and purge; the security alerts it asks for ([9.1](#91-what-shinan-sends)); the private-address rule (N-12); operators and the allowlist named in configuration ([section 12](#12-self-hosting)). |
+| [Git host integrations](git-hosts.md) | GitHub App and installation token; read-only Forgejo connections; webhook setup; reconciliation layers and intervals; use of the task address in backlinks. |
+| [Agent integrations](agent-integrations.md) | Stream offers and answers ([8.3](#83-plugins)); trust label field names and skill wording; the plugin starting the token approval and writing MCP configuration. |
+| [Human experience](human-experience.md) | Pages behind the task address; notification rules and personal settings ([9.3](#93-notifications-phase-2)); export and import screens; how freshness and connection health are shown. |
+| [Roadmap and migration](roadmap.md) | The no-backup risk before migration (O-62); export and import (O-75); the security checklist gate; notifications in phase 2. |
+| [Decision log](decisions/README.md) | Records for the answers cited here, including NO-1 and NO-3. |
 
 ## Open questions
 
@@ -1036,21 +1118,15 @@ the owner's answers.
 3. **Alerting.** How does the owner learn about email failures or stalled
    reconciliation while the fleet has no alerting?
    ([section 13](#13-observability))
-4. **Security log and deletion requests.** The log is kept forever (O-47) and
-   installation-level entries cannot be purged (N-8); how a person's deletion
-   request is handled is for [identity](identity.md). ([4.4](#44-purge))
-5. **Agent token flow.** Device-style approval ([8.1](#81-mcp-server)) or MCP's
-   OAuth flow (identity draft); settle in the integration review.
-6. **Resource use.** Real memory, disk and revision growth on Musashi, measured
+4. **Resource use.** Real memory, disk and revision growth on Musashi, measured
    during the proof of concept. ([11.2](#112-shinan-stack), [5.3](#53-how-sync-works))
-7. **CI cost.** GitHub Actions minutes for ARM64 builds in a private repository.
-8. **Uploads.** Confirm no attachments are needed in the first version.
-9. **Retention numbers.** Raw webhooks 14 days, job records 7 days.
-10. **Public pages.** If any page must be readable without sign-in, the
+5. **CI cost.** GitHub Actions minutes for ARM64 builds in a private repository.
+6. **Uploads.** Confirm no attachments are needed in the first version.
+7. **Retention numbers.** Raw webhooks 14 days, job records 7 days,
+   notification records 90 days.
+8. **Public pages.** If any page must be readable without sign-in, the
     single-page app needs server rendering for it.
 
 ## Decisions needed from the owner
 
-None. The follow-up answers (N-1 to N-11) settled the two questions this
-document had raised: there is no Git mirror for now (N-5), and email goes
-through the AWS SES SDK (N-6).
+None.
