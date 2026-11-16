@@ -1,7 +1,7 @@
 # Tasks and work
 
 Status: **draft for review** ([issue #6](https://github.com/guneet-xyz/shinan/issues/6)).
-Updated with the owner's answers in [#25] (2026-11-16).
+Updated with the owner's answers in [#25], including batch 12 (2026-11-16).
 
 This document says how a task lives in Shinan: how it is created, identified
 and split into subtasks, how work on GitHub and Forgejo is linked to it, how
@@ -21,7 +21,7 @@ Every rule is marked:
 
 - **Decided**: follows from an accepted decision or approved plan content in
   the [plan](plan.md), or from the owner's answers in [#25]. Owner answers are
-  cited as "owner, O-n, [#25]".
+  cited as "owner, O-n, [#25]" or "owner, N-n, [#25]" (batch 12).
 - **Proposed**: suggested here, with a reason. The owner confirms or changes it.
 - **Open**: not settled. Listed under [open questions](#open-questions).
 
@@ -130,30 +130,37 @@ the timeline keeps every change visible.
 
 A task can have subtasks; big work is split into subtasks. A task is done when
 all its subtasks are done and every PR linked to it as delivering work is
-merged. **Decided** (owner, O-21, [#25]). This replaces the earlier
-`Completes` / `Part of` proposal and reverses the glossary's "no subtasks for
-now".
+merged. **Decided** (owner, O-21, [#25]). Subtasks can nest to any depth: a
+subtask can have subtasks of its own. **Decided** (owner, N-1, [#25]). This
+replaces the earlier `Completes` / `Part of` proposal and reverses the
+glossary's "no subtasks for now".
+
+A task's **descendants** are its subtasks, their subtasks, and so on down; its
+**ancestors** are its parent, its parent's parent, and so on up. A task with no
+parent is **top-level**. The tasks under one top-level task form its **tree**.
 
 The rest of this section is **proposed**:
 
 | Rule | Reason |
 |---|---|
-| A subtask is an ordinary task with a parent. It has its own ID, title, intent, acceptance criteria, work links, flags, claims, comments and status. | Everything that works for a task works for a subtask, with no second set of rules. |
-| A subtask's ID comes from the same sequence as every other task, for example `T-124` under `T-123`. There is no special form such as `T-123.1`. | Branch names and PR markers keep one shape ([6.2](#62-markers)), and a subtask can be moved to another parent or made a top-level task without its ID changing. |
-| **One level only** in the first version: a subtask cannot have subtasks of its own. | Small and legible over configurable (owner, O-86, [#25]); one level covers splitting big work, and status stays easy to explain. Allowing more levels later is easy; removing them once trees exist is not. This is an [owner decision](#decisions-needed-from-the-owner). |
-| A parent and its subtasks are in the same workspace. | Nothing is shared between workspaces except the person (glossary). |
+| A subtask is an ordinary task with a parent. It has its own ID, title, intent, acceptance criteria, work links, flags, claims, comments and status. | Everything that works for a task works for a subtask, at every depth, with no second set of rules. |
+| A subtask's ID comes from the same sequence as every other task, for example `T-124` under `T-123`, and `T-130` under `T-124`. There is no special form such as `T-123.1.2`. | Branch names and PR markers keep one short shape at any depth ([6.2](#62-markers)), and a subtask can be moved to another parent or made top-level without its ID changing. |
+| A task has at most one parent. | One task, one place in one tree; a task needed by two pieces of work is a [dependency](#9-dependencies), not a shared subtask. |
+| A task can never be its own ancestor. Moving a task under itself or under one of its descendants is refused. | That would make a loop, and the [status roll-up](#73-rules) could never finish. |
+| All tasks in a tree are in the same workspace. | Nothing is shared between workspaces except the person (glossary). |
 | A task in `triage` can neither have nor be a subtask. Accept it first. | Triage decides whether the work is taken on at all. |
-| People and agents can create subtasks, move a task under a parent, or make a subtask a top-level task. Each is an event on both tasks. | Agents split work today when they divide it between sessions; the timeline shows every change. |
-| A new subtask takes its parent's assignees if none are given. Its origin is "split from" the parent. Outside origins stay on the parent. | The person responsible for the whole is responsible for its parts unless someone says otherwise. |
-| A cancelled subtask is ignored when the parent's status is calculated. If every subtask is cancelled, the parent is calculated as a task without subtasks. | Cancelling a part means it is no longer needed. |
-| Cancelling a parent also cancels its unfinished subtasks, each with an event. Reopening the parent does not reopen them. | Subtasks exist only for their parent; reopening should not resurrect parts someone already decided to drop. |
-| Adding a subtask to a `done` parent moves the parent back by the [rules](#73-rules). Agents are told to create a follow-up task instead unless the parent's outcome was wrong. | Status stays calculated; finished stories stay finished by convention. |
-| Task flags do not roll up. A parent's page shows its subtasks' flags ([human experience](human-experience.md)). | A flag describes one task; copying it upwards would be a second copy to keep in sync. |
-| Ordering between subtasks uses [dependencies](#9-dependencies). | One mechanism for order. |
+| People and agents can create subtasks, move a task under another parent, or make a subtask top-level. A task always moves with all its descendants. Each change is an event on the task, its old parent and its new parent. | Agents split work today when they divide it between sessions; moving a whole branch of the tree keeps its parts together; the timeline shows every change. |
+| A new subtask takes its parent's assignees if none are given. Its origin is "split from" the parent. Outside origins stay on the task that had them. | The person responsible for the whole is responsible for its parts unless someone says otherwise. |
+| A cancelled subtask, with everything under it, is ignored when its parent's status is calculated. If every subtask of a task is cancelled, the task is calculated as one without subtasks. | Cancelling a part means it is no longer needed. |
+| Cancelling a task also cancels all its unfinished descendants, at every depth, each with an event. Reopening the task does not reopen them; a person reopens the ones still needed. | Descendants exist only for their ancestors; reopening should not resurrect parts someone already decided to drop. |
+| Adding a subtask anywhere under a `done` task moves that task, and every `done` ancestor above it, back by the [rules](#73-rules). Agents are told to create a follow-up task instead unless the outcome was wrong. | Status stays calculated; finished stories stay finished by convention. |
+| Task flags do not roll up. A task's page shows its descendants' flags ([human experience](human-experience.md)). | A flag describes one task; copying it upwards would be a second copy to keep in sync. |
+| Order between subtasks uses [dependencies](#9-dependencies), at any depth. | One mechanism for order. |
+| There is no depth limit. Agents are asked to split only as far as each subtask has its own PR, session or check; deeper trees are a smell, not an error. | The owner chose any depth (owner, N-1, [#25]); a convention keeps trees legible (owner, O-86, [#25]) without a rule that would block real work. |
 
-How a parent's status is calculated from its subtasks is in
-[7.3](#73-rules). Which PRs deliver which subtask is set by markers that name
-the subtask's own ID ([6.2](#62-markers)).
+How a task's status is rolled up from its subtasks is in [7.3](#73-rules).
+Which PRs deliver which subtask is set by markers that name the subtask's own
+ID ([6.2](#62-markers)).
 
 ### 2.2 Order of `to do` tasks
 
@@ -161,9 +168,11 @@ People can rank `to do` tasks to say what comes next: a simple order with no
 priority levels. **Decided** (owner, O-28, [#25]). The details are
 **proposed**:
 
-- The workspace has one order of top-level tasks. Subtasks are ordered within
-  their parent. Reason: the parent's place in the order already says when its
-  parts come up.
+- The workspace has one order of top-level tasks. At every depth, a task's
+  subtasks have their own order within it. A task moved to another parent goes
+  to the bottom of its new parent's order, keeping the order of its own
+  subtasks. Reason: a task's place in its parent's order already says when its
+  parts come up, so one order per level is enough at any depth.
 - A new task goes to the bottom. A task keeps its place while it is worked on,
   so it comes back to the same place if its work is closed. Only `to do` tasks
   are shown in order. Reason: the order is about what to start next.
@@ -235,7 +244,7 @@ except where marked.
 
 | Issue | Result | Reason |
 |---|---|---|
-| Opened by a member or their agent and carrying Shinan's own marker (an issue created from a task, see [git host integrations](git-hosts.md#9-what-shinan-writes-back)) or a known task ID | No new task. It links to that task as `related`. | Decided for issues made for people (D-004: avoids duplicate issues). Because agents share their member's git host account (D-017), an issue an agent opens for an existing task arrives from the member's account; without this rule it would become a second task for the same story. |
+| Opened by a member or their agent and carrying a known task ID (for example an issue an agent opened for a task, [6.6](#66-repository-issues-for-people)) | No new task. It links to that task as `related`. | Decided for issues made for people (D-004: avoids duplicate issues). Because agents share their member's git host account (D-017), an issue an agent opens for an existing task arrives from the member's account; without this rule it would become a second task for the same story. |
 | Opened by an outside actor (an account not linked to a member) | New task in `triage`, even if it mentions a task ID | Someone in the team must decide whether to take it on (proposed by the glossary). Outsiders' mentions are ignored (owner, O-25, [#25]). |
 | Opened by a member or their agent, directly on the host | New task in `to do`, assigned to that member | The member already decided; triage would ask them to approve their own request. Shinan cannot tell the member from their agent here (D-017), and does not need to. |
 
@@ -293,11 +302,12 @@ issues is **open**.
     carries the host's closing reference (`Closes #42`), so the host closes the
     issue at merge ([6.2](#62-markers)).
   - Otherwise the agent or person who finishes the task closes or comments on
-    the origin issue with their own git host tools. Anything a person wants
-    done on a git host is done by them or by an agent on their own hardware,
-    never by Shinan as that person (owner, O-1, [#25]).
+    the origin issue with their own git host tools. Shinan never does it for
+    them: it writes nothing on Forgejo, and on GitHub only as its own app
+    (owner, O-1, N-4, [#25]).
   - A `done` or `cancelled` task shows any origin issues still open on the host
-    as a reminder.
+    as a reminder. From the reminder, the person can ask their own agent to
+    close or comment on the issue ([6.7](#67-git-host-actions-a-person-asks-for)).
 - The origin issue's own state never drives task status. If its author closes
   it while the task is in `triage`, the task shows "origin closed" and offers
   cancel; Shinan does not cancel on its own. **Proposed.** Reason: an outside
@@ -391,8 +401,9 @@ fix/t-124                               # also matches; case does not matter her
 - A bare number never matches, so today's `task/42-...` branches do not link by
   accident.
 - Branches from listed bot accounts are not searched ([5.1](#51-which-issues-become-tasks)).
-- A branch marker also lets the plugin claim the task automatically, if it can
-  be claimed (owner, O-35, [#25]; [section 10](#10-claims-assignees-and-agent-sessions)).
+- A branch marker also lets the plugin claim the task automatically for a
+  top-level agent session, if the task can be claimed (owner, O-35, N-2,
+  [#25]; [section 10](#10-claims-assignees-and-agent-sessions)).
 
 **PR descriptions and commit trailers (proposed):** one scheme for both.
 
@@ -407,8 +418,8 @@ Shinan-Task: T-124 https://shinan.guneet.dev/t/T-124
   written in upper case. Reason: one form for agents to write and Shinan to
   read, and lower-case look-alikes are common in prose.
 - The key is namespaced (`Shinan-Task`, not `Task`). The agent session part
-  uses the same `Shinan-` scheme, with its key named by
-  [agent integrations](agent-integrations.md) (for example `Shinan-Session`).
+  uses the same `Shinan-` scheme; [agent integrations](agent-integrations.md)
+  names it (its draft proposes `Shinan-Session: <agent session ID>`).
   Reason: other tools use plain words as trailer keys, and a namespaced key is
   unlikely to clash; agent integrations asked for one scheme for both.
 - The key is not the hosts' `Closes` or `Fixes`. Reason: both GitHub and
@@ -419,8 +430,10 @@ Shinan-Task: T-124 https://shinan.guneet.dev/t/T-124
   [Forgejo](https://forgejo.org/docs/latest/user/collaboration/linked-references/));
   reusing them for tasks would confuse readers about which tracker acts.
 - The address is written next to the ID in PR descriptions. Reason: people
-  reading the PR on the host can click it without any host setup, and git host
-  integrations then skips its own backlink (owner, O-56, [#25]). GitHub can
+  reading the PR on the host can click it without any host setup. On Forgejo
+  it is the only way the PR points to its task, because Shinan writes nothing
+  on Forgejo (owner, N-4, [#25]); on GitHub it also saves Shinan's backlink
+  (owner, O-56, [#25]). GitHub can
   turn a prefix such as `T-` into a link through custom autolinks configured
   per repository (checked 2026-11-16,
   [GitHub docs](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/managing-repository-settings/configuring-autolinks-to-reference-external-resources)).
@@ -532,14 +545,45 @@ of the story.
 Agent-driven work links PRs directly; repository issues are created only when
 people need them there (D-004: avoids duplicate issues). **Decided.** Examples
 of need: a public project whose users follow issues, or a collaborator who
-works only on the host. When a person asks for one, Shinan creates it with its
-own GitHub App identity, noting who asked (owner, O-1, [#25]); details are in
-[git host integrations](git-hosts.md#9-what-shinan-writes-back).
+works only on the host. Shinan never creates such an issue itself: it makes no
+writes on Forgejo, and on GitHub it writes only as its app, for backlinks
+(owner, O-1, N-4, [#25]). A person who wants one asks their own agent, as in
+[6.7](#67-git-host-actions-a-person-asks-for), and the agent opens it with its
+own git host tools.
 
 Such an issue links to the task as `related` and carries the task ID and link in
 its description ([5.1](#51-which-issues-become-tasks)). Its state on the host
 does not drive task status. **Proposed.** Reason: it is a window onto the task
 for people on the host, not a second place where the work is tracked.
+
+### 6.7 Git host actions a person asks for
+
+Git host actions a person asks for reach that person's own agent sessions as a
+queued nudge; if none is running, the request waits. **Decided** (owner, N-3,
+[#25]). Reason: Shinan stores no per-person git host tokens and does not act as
+a person on any host (O-1, N-4), so the action must run under the requester's
+own account, on their own hardware.
+
+What this document adds, all **proposed**:
+
+| Action a person can request from a task | What the agent does |
+|---|---|
+| Open a repository issue for this task ([6.6](#66-repository-issues-for-people)) | Opens it in the repository the person names, with the task ID and address in the description, and links it as `related`. |
+| Comment on, or close, an origin issue or an issue made for people ([5.3](#53-after-triage)) | Posts the person's text, or closes the issue with a short comment linking the delivering PRs. |
+| Anything else on a git host, written as free text | Treats it as an ordinary nudge from that person and does it if it can. |
+
+- The request is a nudge **from the person** to **their own** agent sessions
+  only, delivered in `queue` mode, so it does not interrupt a step in progress.
+  Delivery is owned by [agent integrations](agent-integrations.md).
+- If the person has no agent session running, the request waits like any nudge
+  with no target ([11.2](#112-to-whom)), until they start one: by hand before
+  phase 3, or through the launcher on their registered hardware in phase 3
+  (O-1).
+- The agent answers with a progress update that links to the result. The
+  request, and the result, are events on the task.
+- Reason for the short list: the two named actions are the ones this document
+  already needs (D-004 and O-57); a free-text request covers the rest without
+  Shinan having to model git host actions.
 
 ## 7. Calculated status
 
@@ -617,11 +661,11 @@ stateDiagram-v2
 
 ### 7.3 Rules
 
-Only confirmed links count. The **current verification** is the latest
-verification record made after the most recent merge of the task's own
-`delivers` work, or of any of its subtasks' work (or the latest record at all,
-if nothing has merged). The rules below are **proposed**; they implement the
-decisions cited in [7.1](#71-inputs).
+Only confirmed links count. The **current verification** of a task is the
+latest verification record on that task made after the most recent merge of
+`delivers` work linked to it or to any of its descendants (or the latest record
+at all, if nothing has merged). The rules below are **proposed**; they
+implement the decisions cited in [7.1](#71-inputs).
 
 **A task without subtasks** (or whose subtasks are all cancelled). Status is
 the first row that matches.
@@ -640,26 +684,47 @@ the first row that matches.
 | 10 | An agent session is attached | `in progress` |
 | 11 | Otherwise | `to do` |
 
-**A parent** (a task with at least one subtask that is not cancelled). Its
-**parts** are each such subtask's status, plus the parent's own work if it has
-any `delivers` links: `in review` or `in progress` by rules 3 and 4 while it is
-active, `done` once all of it has merged. Status is the first row that matches.
+**A task with subtasks** (at least one subtask that is not cancelled), at any
+depth. Its **parts** are the statuses of its **direct** subtasks that are not
+cancelled, plus its own work if it has any `delivers` links: `in review` or
+`in progress` by rules 3 and 4 while that work is active, `done` once all of it
+has merged. Each direct subtask's status is itself calculated by these rules,
+so a task deep in the tree rolls up through every level above it. Status is the
+first row that matches.
 
 | # | Condition | Status |
 |---|---|---|
 | P1 | A person has set `cancelled` | `cancelled` |
-| P2 | The parent's current verification is `failed` | `in progress` |
-| P3 | Every part is `to do` | `in progress` if an agent session is attached to the parent, otherwise `to do` |
+| P2 | The task's current verification is `failed` | `in progress` |
+| P3 | Every part is `to do` | `in progress` if an agent session is attached to the task, otherwise `to do` |
 | P4 | Any part is `to do` or `in progress` | `in progress` |
 | P5 | Any part is `in review` | `in review` |
 | P6 | Any part is `verifying` | `verifying` |
-| P7 | Every part is `done`, and either no acceptance criterion of the parent is marked verify after merge, or the current verification is `passed` and covers every such criterion | `done` |
+| P7 | Every part is `done`, and either no acceptance criterion of the task is marked verify after merge, or the current verification is `passed` and covers every such criterion | `done` |
 | P8 | Otherwise (every part is `done`) | `verifying` |
 
-A parent cannot be finished by verification alone while a subtask is
-unfinished (owner, O-21, [#25]: done when all subtasks are done). Its own
-verify-after-merge criteria are for checks of the whole, such as an end-to-end
-test once every part has merged.
+How the roll-up works at any depth, all **proposed**:
+
+- **Bottom up.** Status is calculated from the deepest tasks upwards. A change
+  anywhere (a PR merging, a verification, a subtask added, moved or cancelled)
+  recalculates that task and then each ancestor in turn, stopping at the first
+  ancestor whose status does not change. Reason: only the changed path needs
+  work, and the result is the same as recalculating the whole tree.
+- **It always finishes.** Because a task can never be its own ancestor
+  ([2.1](#21-subtasks)), every path upwards ends at a top-level task. Reason:
+  without that rule, a roll-up could go round for ever.
+- **Only direct subtasks are parts.** A grandchild affects a task only through
+  its parent's status. Reason: each level then reads the same way, and a
+  task's status can be explained by listing its direct parts.
+- **Each change is an event** on every task whose status changed, naming the
+  cause, for example "subtask T-130 done, so T-124 done, so T-123 verifying".
+  Reason: people must be able to see why a top-level task moved because of
+  something deep in its tree.
+
+A task with subtasks cannot be finished by verification alone while any of its
+subtasks is unfinished (owner, O-21, [#25]: done when all subtasks are done).
+Its own verify-after-merge criteria are for checks of the whole, such as an
+end-to-end test once every part has merged.
 
 Notes on the rules:
 
@@ -799,8 +864,8 @@ How workspace flags work, all **proposed**:
 **Proposed** (glossary). A person cancels with a reason. Linked PRs that are
 still active are **not** closed by Shinan; the task shows a warning that active
 work is linked to a cancelled task. Reason: Shinan does not manage git host
-work (D-001); the person decides on the host. Cancelling a parent cancels its
-unfinished subtasks ([2.1](#21-subtasks)). A cancelled task can be reopened by
+work (D-001); the person decides on the host. Cancelling a task cancels all its
+unfinished descendants, at every depth ([2.1](#21-subtasks)). A cancelled task can be reopened by
 a person; status is then calculated again.
 
 ### 8.3 Needs a person
@@ -902,9 +967,9 @@ A task can **depend on** other tasks in the same workspace. **Proposed.**
 |---|---|---|
 | `blocked` is shown while any dependency is not `done`. It is calculated, never set by hand. | Proposed (glossary) | Today's practice: "waiting on another issue or PR: link the dependency instead", and waiting is not `human-effort`. |
 | A dependency that is `cancelled` does not unblock the task. It shows "dependency cancelled" until a person removes or replaces the dependency. | Proposed | Cancelling a prerequisite rarely means the dependent work can go ahead unchanged; a person should decide. |
-| Dependencies that would form a loop are refused. | Proposed | A loop can never be unblocked. |
-| A task cannot depend on its own parent or its own subtask. | Proposed | A parent already waits for its subtasks; a subtask waiting for its parent could never finish. |
-| Subtasks of one parent may depend on each other, to set their order. | Proposed | Subtasks need an order; dependencies already express it. |
+| Dependencies that would form a loop are refused. The check counts each task as waiting for its subtasks, so a loop through the tree is found too (for example `T-130` depending on `T-131`, while `T-131` waits for its subtask `T-140`, which depends on `T-130`). | Proposed | A loop can never be unblocked, whether it runs through dependencies, subtasks or both. |
+| A task cannot depend on any of its ancestors or descendants. | Proposed | A task already waits for all its descendants; a descendant waiting for its ancestor could never finish. |
+| Any other tasks may depend on each other, at any depth and in any trees: siblings, to set their order, or tasks in different trees. | Proposed | Subtasks need an order at every level, and work in one tree can wait for work in another; dependencies already express both. |
 | Dependencies stay inside one workspace. | Proposed | Nothing is shared between workspaces except the person (glossary). |
 | `blocked` does not stop work. Agents may prepare work on a blocked task but should not merge work that relies on the unfinished dependency. | Proposed | Today agents continue work that the blocker does not affect. |
 | When a dependency becomes `done`, sessions attached to dependent tasks are told. | Proposed; delivery form **open** ([open question 4](#open-questions)) | The waiting agent should not have to poll. |
@@ -930,16 +995,21 @@ cannot calculate the flag.
   person's intent.
 - **Automatic claims.** The plugin claims automatically when the checkout's
   branch carries a task marker, only for tasks that can be claimed and are not
-  `done`. **Decided** (owner, O-35, [#25]); the plugin side is in
+  `done`, and only for top-level agent sessions, never for subagents.
+  **Decided** (owner, O-35, N-2, [#25]); the plugin side is in
   [agent integrations](agent-integrations.md).
 - **Release after silence.** A session silent for 24 hours is released from its
   task, and claims it again when it resumes. **Decided** (owner, O-32, [#25]).
   Releasing is an event, and status is recalculated ([rule 10](#73-rules)).
-- **Subagents and subtasks.** Every subagent is its own agent session
-  (owner, O-37, [#25]). A coordinating session that splits work may claim the
-  parent; each subagent claims its own subtask. **Proposed.** Reason: subtasks
-  give each subagent a task of its own while keeping "one task per session",
-  and the coordinating session gets the parent's nudges.
+- **Subagents and subtasks.** Every subagent is its own agent session, and it
+  is attached to a task only by claiming one itself (owner, O-37, N-2, [#25]).
+  A subagent's claim on a subtask needs nothing special: it is an ordinary
+  claim. A coordinating session that splits work may stay unattached, as
+  [agent integrations](agent-integrations.md) proposes, or claim the task it
+  split; each subagent claims its own subtask, at whatever depth. **Proposed.**
+  Reason: subtasks give each subagent a task of its own while keeping "one task
+  per session"; claiming the split task lets the coordinating session receive
+  its nudges directly.
 - **Neither a claim nor an assignee is a lock.** Several sessions may claim one
   task. The claiming session is told who else is attached, and sessions agree
   how to divide the work in progress updates, each on its own branch.
@@ -972,13 +1042,13 @@ the `steer` or `queue` mode, owner, O-31, [#25]) is owned by
 
 | Source | Creates a nudge? | Status | Reason |
 |---|---|---|---|
-| A comment on the task by a workspace owner or contributor | Yes, unless the person marks it "note only" | Decided (plan; owner, O-26, [#25]) | People sometimes write notes for other people; interrupting the agent for those wastes its work. |
+| A comment on the task by a member (workspace owner or contributor) | Yes, unless the person marks it "note only" | Decided (plan; owner, O-26, [#25]) | People sometimes write notes for other people; interrupting the agent for those wastes its work. |
 | An explicit nudge (a message to a chosen session) | Yes | Proposed | A person may want to reach one of several attached sessions. |
 | A person's action that the agent must hear about: answering a deployment approval request in Shinan, clearing `needs a person`, setting `on hold` | Yes. The nudge is **from that person**; Shinan writes the message text for them. | Proposed | The agent is waiting for, or must react to, exactly these, and they come from a person, as the glossary's definition of a nudge requires. |
 | Setting or clearing a custom flag | No | Proposed | Custom flags have no behaviour ([8.1](#81-managing-flags)); the person can comment. |
 | Something that happens without a person's action in Shinan: a PR closed on the host, a dependency becoming `done`, a linked PR merged | Not a nudge; how the session hears is **open** ([open question 4](#open-questions)) | Open | The glossary defines a nudge as a message from a person. |
 | A progress update or comment by an agent | No | Proposed (glossary for progress updates) | Agents nudging agents can loop; agents coordinate through progress updates they read when they check in. |
-| A viewer | Viewers cannot comment or nudge | Proposed | The glossary's viewer role only reads. |
+| A person asks for a git host action on the task ([6.7](#67-git-host-actions-a-person-asks-for)) | Yes, a queued nudge from that person to their own agent sessions only | Decided (owner, N-3, [#25]) | The action must run under the requester's own git host account. |
 | A comment or review on a linked PR or issue on the git host | No, in the first version. A member's mention of a task ID there makes a `related` link only (owner, O-25, [#25]). | Proposed; **open** for later | Agents share their person's git host account (D-017), so Shinan often cannot tell whether a host comment came from the person or from the agent itself. Nudging on it would make agents nudge themselves. |
 | An outside issue's text, or comments by outside actors | Never | Proposed | Anyone can write them; delivering them as instructions would let strangers steer agents. |
 
@@ -988,11 +1058,16 @@ the `steer` or `queue` mode, owner, O-31, [#25]) is owned by
   person chose, with one delivery per session (glossary). **Proposed.** Reason:
   normally there is one; when there are several, all should hear about a change
   of direction.
-- A nudge on a parent with no session attached to the parent itself goes to the
-  sessions attached to its subtasks. **Proposed.** Reason: a comment on the
-  parent is about the whole work, and whoever is working on it should hear;
-  with subagents on subtasks (O-37), the parent often has no session of its
-  own.
+- A nudge on a task with no session attached to the task itself goes to the
+  sessions attached to its nearest descendants that have sessions: on each
+  path down the tree, the first task with a session. **Proposed.** Reason: a
+  comment on a task is about the whole of its work, and whoever is working on
+  it should hear; with subagents on subtasks (O-37, N-2), the split task often
+  has no session of its own. Stopping at the first session on each path
+  reaches the session that coordinates that part, which can pass it on, without
+  flooding every helper below it. A request for a git host action
+  ([6.7](#67-git-host-actions-a-person-asks-for)) never follows this rule: it
+  goes only to the requester's own sessions.
 - A nudge that reaches no session waits on the task, and the next session that
   claims the task gets a delivery for it, but only if the nudge was never
   delivered to any session. **Decided** (owner, O-27, [#25]). Reason: an
@@ -1013,7 +1088,8 @@ the `steer` or `queue` mode, owner, O-31, [#25]) is owned by
 
 - A nudge carries the message, the person it is from, the task ID and a link.
   It is an instruction from a signed-in member, with that member's authority.
-  **Proposed.** Reason: only workspace owners and contributors can nudge, so
+  **Proposed.** Reason: only members can nudge (there is no read-only role,
+  owner, N-11, [#25]), so
   the agent can treat it as it would treat the same words typed by that person
   in its conversation. The one exception is deployment approval, which a nudge
   never grants ([8.4](#84-awaiting-deployment-approval)).
@@ -1040,7 +1116,8 @@ presence events are listed by their owning documents.
 |---|---|
 | Task created (with origin) | Person, agent session, or Shinan |
 | Accepted, merged into another task, cancelled, reopened | Person |
-| Subtask added, moved under a parent, made top-level | Person or agent session |
+| Subtask added, moved under another parent (with its descendants), made top-level | Person or agent session |
+| Git host action requested, and its result | Person; agent session |
 | Rank changed | Person |
 | Title, intent, acceptance criteria or decisions changed | Person or agent session |
 | Work link added, removed, confirmed or dismissed (with "how made") | Person, agent session, or Shinan |
@@ -1086,9 +1163,13 @@ All are **proposed**, following the sections above.
     record the verification, naming the criteria covered and the evidence.
 12. Answer nudges with a progress update.
 13. Prefer a follow-up task over linking new work to a `done` task.
-14. When the person asked for a handoff at "ready for review", stop there; the
+14. Do the git host actions a person requests from a task
+    ([6.7](#67-git-host-actions-a-person-asks-for)) with your own tools, and
+    reply with a link to the result.
+15. When the person asked for a handoff at "ready for review", stop there; the
     task stays `in review`.
-15. Pick the next task from the top of the `to do` order; do not reorder it.
+16. Pick the next task from the top of the `to do` order; do not reorder it.
+17. Split work only as deep as each subtask has its own PR, session or check.
 
 ## 14. Worked examples
 
@@ -1163,7 +1244,7 @@ What this means for tasks (**proposed** unless marked):
 |---|---|---|
 | Cross-project coordination for a trial project | A task created in Shinan, by a person or an agent, with subtasks for the parts in each repository | A native task; nothing in the `workspace` repository's issues |
 | Work inside mon and easyshell | The project's own repository issue, as today | An outside issue that becomes a task in `to do` (opened by a member, [5.1](#51-which-issues-become-tasks)); PRs name that task's ID |
-| Work inside Shinan | A task in Shinan; the PR description carries the intent and acceptance criteria as well (O-74) | A native task. Repository issues in `guneet-xyz/shinan` are only for trial findings, which must be recordable even when Shinan is down ([roadmap](roadmap.md)) |
+| Work inside Shinan | A GitHub issue, or a task in Shinan with the intent and acceptance criteria also in the PR description (O-74) | An outside issue opened by a member, or a native task. Trial findings are issues in `guneet-xyz/shinan`, so they can be recorded even when Shinan is down ([roadmap](roadmap.md)) |
 | Everything else | Unchanged, in the `workspace` repository's issues | Not seen |
 
 - The rules of this document apply to trial tasks in full. Reason: the trial is
@@ -1171,76 +1252,51 @@ What this means for tasks (**proposed** unless marked):
 - The `workspace` repository's collaboration rules need a note for trial
   projects at trial start, saying their coordination now lives in Shinan. That
   is a separate PR in the `workspace` repository, not part of this document.
-- What agents do if Shinan is down during the trial, now that coordination for
-  trial projects lives only there, is for the [roadmap](roadmap.md) to settle.
-  This document suggests that agents keep working on their branches and PRs,
-  with the task ID already in the branch name, and record decisions and
-  progress in the PR description until Shinan is back. Reason: the git host
-  stays the record of the code work (D-001), and markers let Shinan catch up
-  by reconciliation.
+- If Shinan is down, agents carry on with the task ID in branch names and PR
+  descriptions, and reconciliation links the work afterwards, as the
+  [roadmap](roadmap.md) proposes. This document adds that agents also note
+  decisions and progress in the PR description until Shinan is back. Reason:
+  the git host stays the record of the code work (D-001).
 
 ## Changes this document needs in the glossary
 
-The [domain model and glossary](domain-model.md) is in review. This document
-depends on these changes, which should be made there:
+The [domain model and glossary](domain-model.md) (read at `0e4bfcd`) already
+follows most of this document. These changes remain:
 
-1. **Subtasks**: replace "no subtasks in the first version" with subtasks as
-   decided (O-21), add **parent** and **subtask**, and "split from a parent" as
-   an origin ([2.1](#21-subtasks)).
-2. **Task flags are managed per workspace**, with the built-ins as defaults
-   (O-8) ([8.1](#81-managing-flags)).
-3. **Rank** as a task attribute (O-28) ([2.2](#22-order-of-to-do-tasks)).
-4. **Nudge**: a nudge that reaches no session waits for the next claiming
-   session, if never delivered to any session (O-27); `delivered` means
-   acknowledged (O-30).
-5. Remove **outside tool** from the supporting terms and its open question
-   (O-97).
-6. Add **unconfirmed link** (and confirm, dismiss) ([6.4](#64-unconfirmed-links)),
-   and members' comment mentions as a "how made" for `related` links (O-25).
-7. Add **merged**, **merged elsewhere** and **active**
-   ([words used](#words-used-in-this-document)), and state that issues are
-   never `delivers` work items.
-8. Widen `origin` from "the outside issue the task came from" to "the outside
-   issue or PR where the task's intent started; a task can have several".
-9. Add the status **`verifying`** (O-9) ([7.2](#72-statuses)).
-10. Add **verification record** and the acceptance-criterion marking **verify
-    after merge** ([7.4](#74-verification-and-done)). It is not called "check
-    after merge" because the glossary keeps "check" for fact checks and CI
-    checks.
-11. Add **unlinked work** ([section 4](#4-creating-tasks)).
-12. Record the D-005 reading as decided (O-4), including verification covering
-    every criterion as a way to reach `done`.
-13. `needs a person`: agents may set and clear it (O-7).
-14. `awaiting deployment approval`: decided (O-8); a decline also clears it;
-    an approval given in the conversation and recorded by the agent counts
-    (O-20) ([8.4](#84-awaiting-deployment-approval)).
-15. Per-workspace task ID prefixes are decided (O-6).
-16. Narrow `in review` to "every active `delivers` item is a PR ready for
-    review" ([7.3](#73-rules)).
-17. Mark glossary open question 3 (several `delivers` links, PR closed without
-    merging) as answered here, and question 1 (outside tools) as closed by
-    O-97.
+1. **Subtasks nest to any depth** (owner, N-1, [#25]). This answers its open
+   question 1, including that a subtask can move to another parent (with its
+   descendants). Add **ancestor**, **descendant**, **top-level task** and
+   **tree** ([2.1](#21-subtasks)).
+2. **Workspace-managed flags**: its open question 2 is answered in
+   [8.1](#81-managing-flags). A workspace may remove any flag, including a
+   built-in one; built-in behaviour cannot be redefined or given to custom
+   flags; custom flags are manual and never change status or nudge. This
+   matches its recommendation.
+3. **No viewer role** (owner, N-11, [#25]): workspace roles are owner and
+   contributor; every member may comment and nudge.
+4. **Nudge targets**: a nudge on a task with no session of its own goes to the
+   nearest descendants' sessions ([11.2](#112-to-whom)); a git host action a
+   person asks for is a queued nudge to that person's own sessions only
+   (owner, N-3, [#25]; [6.7](#67-git-host-actions-a-person-asks-for)).
+5. **Order**: one order of top-level `to do` tasks, and an order within each
+   task for its subtasks, at every depth ([2.2](#22-order-of-to-do-tasks)).
 
 ## Dependencies on other documents
 
-| Document | What this document needs from it |
+Sibling drafts were read on 2026-11-16 at the commits shown. None of them had
+applied the owner's batch 12 answers (N-1 to N-11) yet.
+
+| Document (commit read) | What this document needs from it, and remaining mismatches |
 |---|---|
-| [Domain model and glossary](domain-model.md) | The terms used here, and the changes listed above. |
-| [Git host integrations](git-hosts.md) (PR #21) | Reading markers, PR states and merges, reconciliation and freshness thresholds, per-repository bot account lists, revert detection, and recognising issues that carry Shinan's marker. Points where its current draft should follow this document: |
-| | 1. **Marker syntax** is now one scheme, `Shinan-Task: T-123`, for PR descriptions and commit trailers; `Completes`, `Part of` and `Shinan-Task-Part` are gone (O-21). |
-| | 2. **Comments**: a member's mention of a task ID in a comment makes a `related` link; outsiders' mentions are ignored (O-25). Its comment rows should say so; edits and deletions of comments are re-read. |
-| | 3. **Outside actors' mentions** in titles, descriptions and issues make no link; only their `delivers` markers make unconfirmed links (O-24). The connector must mark each mention with whether its author is a member. |
-| | 4. **A closing reference to an `origin` issue** in a member's PR makes an unconfirmed `delivers` link (no scope any more). |
-| | 5. **Subtasks**: markers name the subtask's own ID; nothing special is needed in the connector. |
-| | 6. Rules already agreed and unchanged: trailers on commits that belong to a PR are ignored; marker-made `delivers` links are fixed once a PR is finished; branch name matching; `GH`, `CVE` and `GHSA` reserved; "merged" means a counting branch; Shinan writes nothing to origin issues (O-57); backlinks skipped when the description has the task address (O-56). |
-| | 7. **Comments as nudges** (its open question 8): not in the first version ([11.1](#111-when-a-nudge-is-created)). |
-| [Agent integrations](agent-integrations.md) (PR #23) | Claim and release calls; nudge delivery, acknowledgement and modes; how sessions hear about events that are not nudges (open question 4); the session part of markers, named in the `Shinan-` scheme ([6.2](#62-markers)); reading workspace flags and their descriptions; teaching the conventions in [section 13](#13-conventions-agents-follow); requesting a new agent session. Mismatches in its current draft: it says a coordinating session "stays unattached", while this document lets it claim the parent and gives subagents subtasks (O-21, O-37); its list of tasks that cannot be claimed automatically matches [section 10](#10-claims-assignees-and-agent-sessions). |
-| [Identity, agents and permissions](identity.md) (PR #24) | Who may comment, nudge, triage, cancel, confirm links, rank, manage flags and approve; how a deployment approval given in Shinan is protected and how an agent-reported approval is shown. Visibility is settled: every member sees everything (O-43). |
-| [Human experience](human-experience.md) (PR #16) | Task page with subtasks and their flags, how a parent's status is explained, ranking, flag management screens, triage inbox, unlinked work list, unconfirmed links and how to confirm them, origin issues still open on `done` tasks, board, display of status freshness, nudge delivery states and the "ask for a session" action. |
+| [Domain model and glossary](domain-model.md) (`0e4bfcd`) | The terms used here, and the [changes listed above](#changes-this-document-needs-in-the-glossary). Mismatch: it still has the viewer role (N-11), and its open questions 1 and 2 are answered here. |
+| [Git host integrations](git-hosts.md) (`98333b8`) | Reading markers, PR states and merges, comments, reconciliation and freshness thresholds, per-repository bot account lists, revert detection. Its marker and comment rules now follow this document. Mismatches: it still posts backlinks on Forgejo through the connecting member's account, while Shinan now makes no writes on Forgejo (owner, N-4, [#25]); this document relies on N-4 in [5.3](#53-after-triage), [6.2](#62-markers) and [6.6](#66-repository-issues-for-people). It does not yet say that a member's closing reference to an `origin` issue makes an unconfirmed `delivers` link ([6.1](#61-work-links)). |
+| [Agent integrations](agent-integrations.md) (`88acc1d`) | Claim and release calls; nudge delivery, acknowledgement and modes; how sessions hear about events that are not nudges (open question 4); the `Shinan-Session` key; reading workspace flags and their descriptions; teaching the conventions in [section 13](#13-conventions-agents-follow); delivering git host action requests (N-3). Answers to its questions for this document: which git host actions a person can request ([6.7](#67-git-host-actions-a-person-asks-for)); a subagent's claim on a subtask needs nothing special ([section 10](#10-claims-assignees-and-agent-sessions)); agents may set a custom flag when the workspace allows it ([8.1](#81-managing-flags)). Mismatches: it says nudges for a task go to the parent agent session, which passes them on, while this document sends a nudge on a task with no session of its own to the nearest descendants' sessions ([11.2](#112-to-whom)); it says a coordinating session "stays unattached", while this document also allows it to claim the task it split. |
+| [Identity, agents and permissions](identity.md) (`03207c7`) | Who may comment, nudge, triage, cancel, confirm links, rank, manage flags and approve; how a deployment approval given in Shinan is protected and how an agent-reported approval is shown. Visibility is settled: every member sees everything (O-43); roles are owner and contributor (N-11). |
+| [Human experience](human-experience.md) (`3ab0d4e`) | Task page with subtasks at any depth and their flags, how a status rolled up through several levels is explained, ranking per level, flag management screens, triage inbox, unlinked work list, unconfirmed links, origin issues still open on `done` tasks with a way to ask one's own agent, board, status freshness, nudge delivery states and the "ask for a session" action. Mismatches: it still has a viewer role (N-11), and leaves subtask depth to this document (now any depth, N-1). |
 | [Catalog](catalog.md) | Promoting task decisions to `decision` entities; linking tasks to catalog entities. |
-| [Architecture and operations](architecture.md) | Task URL shape; how status is recalculated and stored, including the parent rollup. |
-| [Roadmap and migration](roadmap.md) (PR #17) | Its §4.4 still keeps cross-project coordination for trial projects in `workspace` repository issues with a trial label; O-73 moves it into Shinan, as in [section 15](#15-during-the-trial). It should also settle what agents do if Shinan is down during the trial, which phase each rule here belongs to, and how active coordinating issues in the `workspace` repository become tasks at migration. |
-| [Decision log](decisions/) (PR #19) | Records for the owner's answers cited here (O-4, O-6 to O-10, O-20 to O-28, O-73, O-74, O-97) and for the remaining decision below. |
+| [Architecture and operations](architecture.md) | Task URL shape; how status is recalculated and stored, including the bottom-up roll-up through trees of any depth ([7.3](#73-rules)). |
+| [Roadmap and migration](roadmap.md) (`820f2a6`) | Which phase each rule here belongs to, and how active coordinating issues in the `workspace` repository become tasks at migration. Its §4.4 now matches [section 15](#15-during-the-trial). |
+| [Decision log](decisions/) (PR #19) | Records for the owner's answers cited here (O-4, O-6 to O-10, O-20 to O-28, O-73, O-74, O-97, N-1 to N-4, N-11). |
 | `workspace` repository | A note in its collaboration rules at trial start, saying coordination for trial projects lives in Shinan (O-73). A separate PR there. |
 
 ## Open questions
@@ -1270,8 +1326,6 @@ depends on these changes, which should be made there:
 
 ## Decisions needed from the owner
 
-| # | Decision | Recommended | Reason |
-|---|---|---|---|
-| 1 | How deep subtasks can nest ([2.1](#21-subtasks)) | One level in the first version: a subtask cannot have subtasks | Small and legible (O-86); covers splitting big work; easy to allow more later, hard to remove once trees exist. |
+None. The owner's answers in [#25] settle every decision this document raised.
 
 [#25]: https://github.com/guneet-xyz/shinan/issues/25
