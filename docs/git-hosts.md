@@ -1,8 +1,9 @@
 # Git host integrations
 
 Status: **draft for review** ([issue #8](https://github.com/guneet-xyz/shinan/issues/8)).
-Updated with the owner's answers in [issue #25][o], including the follow-up
-answers in batch 12 (written "N-n").
+Updated with the owner's answers in [issue #25][o] (O-1 to O-98, and the
+follow-up answers N-1 to N-13) and the answers to the integration review in
+[#26](https://github.com/guneet-xyz/shinan/issues/26) (NO-1 to NO-4).
 
 This document says how Shinan connects to GitHub and Forgejo: how a git host
 connection is made, including to any Forgejo instance, which webhooks Shinan
@@ -16,8 +17,8 @@ marker syntax), how actions are credited to people and agents, how people sign
 in, or how connections and credentials are stored. Those belong
 to the documents listed in [dependencies](#dependencies-on-other-documents).
 
-Terms follow the [domain model and glossary](domain-model.md) (in review in
-[PR #14](https://github.com/guneet-xyz/shinan/pull/14)). Two notes on words:
+Terms follow the [domain model and glossary](domain-model.md). Two notes on
+words:
 
 - In this document **token** always means a git host credential (a GitHub
   installation token or a Forgejo access token). It never means the agent
@@ -31,7 +32,9 @@ Each statement is marked:
 
 - **Decided**: follows from an accepted plan decision (D-nnn, in the
   [plan](plan.md#6-decisions-so-far)) or from the owner's answers in
-  [issue #25][o] (written "owner, O-n" or "owner, N-n").
+  [issue #25][o] (written "owner, O-n" or "owner, N-n") or in [#26](https://github.com/guneet-xyz/shinan/issues/26)
+  (written "owner, NO-n"). The [decision log](decisions/README.md) records
+  them as D-021 onwards.
 - **Proposed**: suggested here, with a reason. Needs review and owner approval.
 - **Open**: not settled. Listed under [open questions](#open-questions) or
   [decisions needed](#decisions-needed-from-the-owner).
@@ -117,7 +120,7 @@ holds (**proposed**, extending the domain model's attributes):
 | Backlink setting | GitHub only: whether backlinks are on, per repository ([section 9](#9-what-shinan-writes-back)). Forgejo connections have none. |
 | Counting branches | Per repository, the branches whose merges count as "merged" for [Tasks and work](tasks.md#62-markers); the default branch unless set. |
 | Automated accounts | Per repository, git host accounts such as dependency update tools whose issues and PRs skip triage or are ignored. Tasks and work defines what the setting does ([Tasks §5.1](tasks.md#51-which-issues-become-tasks)); it lives here because it names git host accounts per repository. |
-| Import issues | Per repository, whether new issues become tasks (on by default). Off is for shared repositories where most issues are unrelated, as [Roadmap §4.4](roadmap.md) proposes for the trial; issues there are still read for markers and links. Whether this fits D-003 is settled with that proposal. |
+| Turn new issues into tasks | Per repository, on by default; turned off for shared repositories where most issues are unrelated (for the trial: `infra/musashi`, `infra/anzen`, `guneet/terraform` and the `workspace` repository, [Roadmap §4.4](roadmap.md#44-tasks-during-the-trial)). **Decided** (owner, NO-2, [#26](https://github.com/guneet-xyz/shinan/issues/26)), amending D-003. This document holds the setting; [Tasks and work](tasks.md#51-which-issues-become-tasks) defines what it does. Markers and members' mentions in such repositories are still read. |
 | Set up by | The member who made the connection, and whose credential it depends on (Forgejo). |
 | Webhook state | Last delivery received, signature failures, failed deliveries seen. |
 | Reconciliation state | Per repository: last successful run of each layer, the watermark, last error. |
@@ -136,8 +139,15 @@ leaves the workspace or revokes the token, the connection becomes `failing`,
 and its page names the member and says that someone must reconnect.
 **Proposed**; reason: a silent stop would leave task status quietly stale.
 
-Who may create or remove a connection, and how its credentials are stored, is
-owned by [Identity, agents and permissions](identity.md) and
+Only workspace owners add Forgejo connections
+([Identity §9.3](identity.md#93-git-host-connections)), and the connection
+reads with that owner's own account. So a Forgejo repository that only a
+contributor can read cannot be connected. This is a known limitation, accepted
+for the first version, where the owner is the only member.
+
+Who may create or remove a connection
+([Identity §9.3](identity.md#93-git-host-connections)), and how its
+credentials are stored, is owned by [Identity, agents and permissions](identity.md) and
 [Architecture and operations](architecture.md). Credentials are stored
 encrypted (owner, O-54, [#25][o]).
 
@@ -387,20 +397,23 @@ anyone can enter any Forgejo address to connect. **Decided** (owner, N-7,
 | A webhook | Added by the member ([webhooks](#webhooks)). |
 | Network reach both ways | Shinan's server must reach the instance's API, and the instance must be allowed to deliver to Shinan (its `ALLOWED_HOST_LIST`). |
 
-**Proposed:**
+**Proposed** unless marked:
 
 - **Accounts are keyed by instance and user number.** A Forgejo account, for a
-  connection or for linking to a member (Identity), is identified by the
-  instance address and the account's numeric ID there. A username on one
-  instance never matches the same username on another. Reason: anyone can run
-  a Forgejo instance and create any username on it.
-- **Addresses entered by people are checked before Shinan calls them.**
-  Shinan follows [Architecture's rule](architecture.md) that outgoing requests
-  to private, loopback and link-local addresses are refused unless the
-  installation operator allows that host. Reason: without it, a Forgejo
-  address could make Shinan's server call internal services on Musashi.
-  `git.guneet.dev` is reached by its public address, or allowed by the
-  operator if Shinan reaches it internally.
+  connection or for linking to a member, is identified by the instance address
+  and the account's numeric ID there, as [Identity §3.5](identity.md#35-linking-git-host-accounts)
+  states. A username on one instance never matches the same username on
+  another. Reason: anyone can run a Forgejo instance and create any username
+  on it.
+- **Private addresses are refused.** Shinan refuses Forgejo addresses that
+  resolve to private, loopback or link-local networks by default; an
+  installation operator may allow specific hosts. **Decided** (owner, N-12,
+  [#25][o]; D-048). The rule is stated in
+  [Identity §3.5](identity.md#35-linking-git-host-accounts), and the mechanism
+  (checking redirects and DNS again on every request, operator exceptions as
+  an installation setting) in [Architecture](architecture.md). It applies to
+  every request a Forgejo connection makes. `git.guneet.dev` is reached by its
+  public address, or allowed by the operator if Shinan reaches it internally.
 
 ## 5. Events Shinan listens for
 
@@ -887,34 +900,14 @@ model, "words to avoid"). No GitLab facts were checked for this document.
 
 | Document | What this document needs from it |
 |---|---|
-| [Domain model and glossary](domain-model.md) (PR #14) | Terms used throughout; the [git host](domain-model.md#git-host) and [git host connection](domain-model.md#git-host-connection) attributes, extended in [section 2](#2-git-hosts-connections-and-repositories); the "backlink" term; subtasks (O-21, nesting to any depth, N-1) and per-person, per-tool, per-machine agents (O-40). |
-| [Tasks and work](tasks.md) (PR #20) | Marker syntax and every rule about which text makes which link, including subtasks, trailers and when marker-made links stop following edits ([§6](tasks.md#6-linking-work)); the written form of task IDs in comments (O-25); unconfirmed links and who confirms them ([§6.4](tasks.md#64-unconfirmed-links)); task status from linked work; the meaning of the automated-accounts, counting-branches and import-issues settings, which live on the connection here; the reminder for open origin issues (O-57). |
-| [Identity, agents and permissions](identity.md) (PR #24) | Sign-in (email magic link or GitHub only, N-7) and the email allowlist (O-48); linking members' GitHub and Forgejo accounts, with Forgejo accounts keyed by instance and user number; who may create, change and remove git host connections; verified account links (needed for mention links and outside-actor markers); turning connector evidence into an actor and attribution confidence (plan question 2); token age and replacement policy. |
-| [Agent integrations](agent-integrations.md) (PR #23) | Agent session marker syntax; delivering a person's git host requests to their own agent sessions as queued nudges (O-1, N-3). |
-| [Human experience](human-experience.md) (PR #16) | How work item and connection freshness, connection health, broad-token warnings, unconfirmed links, mention links and open origin issues are shown; the connection setup screens. |
-| [Architecture and operations](architecture.md) (PR #22) | Webhook endpoint, queueing, storage and retention of deliveries; encrypted credential storage (O-54); the rule for outgoing requests to private addresses; whether Forgejo on Musashi can deliver to Shinan on Musashi; any reverse-proxy rate limits; task address shape. |
-| [Roadmap and migration](roadmap.md) (PR #17) | Which repositories the trial covers (O-70); the import-issues setting it proposes; the event-capture requirement R2. It answers this document's GitHub organizations question: the trial needs only `guneet-xyz`. |
-| [Decision log](decisions/) (PR #19) | Records for the owner's answers cited here, mapped to D-nnn by that document (for example D-032 for O-1, D-033 for O-53/O-54 as changed by N-4, D-034 for sign-in as changed by N-7). |
-
-**Mismatches in sibling drafts** as fetched on 2026-11-16, after they applied
-batches 1 to 11 but before batch 12; listed for the integration review:
-
-- **Forgejo writes (N-4).** Agent integrations (88acc1d), Architecture
-  (d3ca54e), Human experience (3ab0d4e), Identity (03207c7) and the glossary
-  (0e4bfcd) still say Shinan's writes on Forgejo go through the connecting
-  person's account or are recognised by stored IDs. Forgejo is now read-only.
-  The glossary's backlink is "on a git host PR or issue"; here it is a GitHub
-  PR only.
-- **Forgejo and password sign-in (N-7).** The glossary, Identity, Architecture,
-  Roadmap (820f2a6) and Human experience still list Forgejo sign-in and
-  passwords. Architecture's open question on adding Forgejo instances to its
-  sign-in library is moot.
-- **Tasks and work (fae89ac)** §5.1 still matches issues "carrying Shinan's
-  own marker (an issue created from a task)". Shinan creates no issues (O-1);
-  such issues are opened by agents and carry the task ID, which the same row
-  already covers.
-- **Human experience** read this document at 87d9cf2 and lists a separate
-  `shinan` account as a mismatch; that is resolved here.
+| [Domain model and glossary](domain-model.md) | Terms used throughout; the [git host](domain-model.md#git-host) and [git host connection](domain-model.md#git-host-connection) attributes, extended in [section 2](#2-git-hosts-connections-and-repositories); the "backlink" term (a comment on a GitHub PR only); "automated account". |
+| [Tasks and work](tasks.md) | Marker syntax and every rule about which text makes which link ([§6](tasks.md#6-linking-work)); the written form of task IDs in comments (O-25); unconfirmed links and who confirms them ([§6.4](tasks.md#64-unconfirmed-links)); task status from linked work; the meaning of the automated-accounts, counting-branches and "turn new issues into tasks" settings, which live on the connection here (NO-2); the reminder for open origin issues (O-57). |
+| [Identity, agents and permissions](identity.md) | Linking members' GitHub and Forgejo accounts ([§3.5](identity.md#35-linking-git-host-accounts)), needed for mention links and outside-actor markers; the private-address rule (N-12); who may manage connections ([§9.3](identity.md#93-git-host-connections)); turning connector evidence into an actor and attribution confidence (plan question 2); token age and replacement policy. |
+| [Agent integrations](agent-integrations.md) | Agent session marker syntax; delivering a person's git host requests to their own agent sessions as queued nudges (O-1, N-3). |
+| [Human experience](human-experience.md) | How work item and connection freshness, connection health, broad-token warnings, unconfirmed links, mention links and open origin issues are shown; the connection setup screens. |
+| [Architecture and operations](architecture.md) | Webhook endpoint, queueing, storage and retention of deliveries; encrypted credential storage (O-54); the mechanism for refusing private addresses (N-12); whether Forgejo on Musashi can deliver to Shinan on Musashi; any reverse-proxy rate limits; the task address used in backlinks. |
+| [Roadmap and migration](roadmap.md) | Which repositories the trial covers (O-70) and which have "turn new issues into tasks" off (NO-2); the event-capture requirement R2. |
+| [Decision log](decisions/README.md) | Records for the owner's answers cited here, including the record for NO-2 that amends D-003. |
 
 ## Proposed in this document
 
@@ -926,7 +919,7 @@ Still proposed:
 2. The connector supplies attribution evidence and does not decide the actor;
    plan question 2 stays with Identity ([principle 5](#1-principles)).
 3. Connection attributes, health states and their detection, the automated
-   accounts, counting branches and import-issues settings, and repository records keyed by
+   accounts and counting branches settings, and repository records keyed by
    the host's stable ID ([section 2](#2-git-hosts-connections-and-repositories)).
 4. The GitHub App's permissions (no Administration, so no autolinks), sign-in
    through the same app with the user token discarded, and per-installation
@@ -934,9 +927,8 @@ Still proposed:
 5. Forgejo: a recommended (not required) read-only "Specific repositories"
    token, a breadth check with a warning, and token age shown
    ([section 4](#the-connection-token)).
-6. Connecting any Forgejo instance: a version check, accounts keyed by
-   instance and user number, and Architecture's private-address rule
-   ([section 4](#connecting-any-forgejo-instance)).
+6. Connecting any Forgejo instance: a version check, and accounts keyed by
+   instance and user number ([section 4](#connecting-any-forgejo-instance)).
 7. The event map, routing on `X-Forgejo-Event-Type`, delivery handling with
    repository filtering before storage, and event identity keys
    ([section 5](#5-events-shinan-listens-for)).
@@ -955,7 +947,7 @@ Still proposed:
 
 ### Owner decisions applied
 
-From [issue #25][o]:
+From [issue #25][o] and [#26](https://github.com/guneet-xyz/shinan/issues/26):
 
 | Answer | Effect here |
 |---|---|
@@ -976,6 +968,8 @@ From [issue #25][o]:
 | O-57 | No outcome comments; reminders instead ([section 9](#no-outcome-comments)). |
 | O-58 | No commit statuses or check runs ([section 9](#why-the-rest-is-never-written)). |
 | O-59 | One workspace per repository ([section 2](#one-workspace-per-repository-at-first)). |
+| N-12 | Forgejo addresses on private, loopback or link-local networks refused by default ([section 4](#connecting-any-forgejo-instance)). |
+| NO-2 | Per-repository "turn new issues into tasks" setting, on by default, held here and defined by Tasks ([section 2](#git-host-connection)). |
 
 ## Open questions
 
@@ -1004,9 +998,7 @@ From [issue #25][o]:
 
 ## Decisions needed from the owner
 
-None. The question raised last time (whether a Forgejo instance's email can
-satisfy the allowlist) no longer arises, because there is no Forgejo sign-in
-(N-7).
+None.
 
 ## Sources
 
