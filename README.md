@@ -57,9 +57,10 @@ The server reads its settings from environment variables:
 The server's commands, from `apps/server`:
 
 ```sh
+export DATABASE_URL=postgres://shinan@localhost:5432/shinan
+pnpm migrate   # prepare the database: migrations, job queue tables, installation record (overlapping runs take turns)
+pnpm worker    # worker role: background jobs (pg-boss); needs migrate first
 pnpm dev       # web role, restarting on changes
-pnpm worker    # worker role
-DATABASE_URL=postgres://shinan@localhost:5432/shinan pnpm migrate
 ```
 
 To run the production build: `pnpm build`, then `pnpm start` (the `web` role
@@ -77,10 +78,13 @@ pnpm build
 pnpm test
 ```
 
-Tests need PostgreSQL: start it with `pnpm services:up`. The database tests
-create a fresh database for each run on the server in `DATABASE_URL` (default
-`postgres://shinan@localhost:5432/shinan`), apply the migrations and drop it
-afterwards. Run one package's tests with, for example, `pnpm test --project db`.
+Tests need PostgreSQL: start it with `pnpm services:up`. Each package with
+database tests (`db`, `core` and `server`) gets a fresh database for each run
+on the server in `DATABASE_URL` (default
+`postgres://shinan@localhost:5432/shinan`), with the migrations applied, and
+drops it afterwards. Tests connect to it with `connectTestDatabase()` from
+`@shinan/db/testing`. Run one package's tests with, for example,
+`pnpm test --project db`.
 
 Workspace packages are resolved to their TypeScript source during development,
 type checking and tests (through the `@shinan/source` export condition), so
@@ -89,8 +93,13 @@ only production runs need `pnpm build`.
 ### Database migrations
 
 Change the schema in `packages/db/src/schema.ts`, then run `pnpm db:generate`
-in `packages/db` to write a migration to `packages/db/migrations`. The
-`migrate` command applies them.
+in `packages/db` to write a migration to `packages/db/migrations`. SQL that
+Drizzle does not model, such as triggers, goes in a custom migration:
+`pnpm db:generate --custom --name <name>`. The `migrate` command applies them.
+
+`packages/core` reaches the database only through `@shinan/db`, which also
+re-exports the Drizzle query helpers (`eq`, `and` and so on), so there is one
+copy of Drizzle.
 
 ## Releases
 

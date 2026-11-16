@@ -1,18 +1,19 @@
 import { serve } from "@hono/node-server"
 
-import { productName } from "@shinan/core"
-import { migrateDatabase } from "@shinan/db"
+import { productName, setUpInstallation, shinan } from "@shinan/core"
+import { createDatabase, migrateDatabase, withMigrationLock } from "@shinan/db"
 
 import { createApp } from "./app.js"
 import { readDatabaseUrl, readWebConfig } from "./config.js"
 import type { Env } from "./config.js"
+import { migrateJobQueue, startWorker } from "./jobs.js"
 
 export const usage = `Usage: shinan <command>
 
 Commands:
   web       Serve the API and, in production, the web app
   worker    Run background jobs
-  migrate   Apply database migrations, then exit`
+  migrate   Prepare the database (migrations, job queue, installation), then exit`
 
 /** Runs one CLI command and resolves to the process exit code. */
 export async function runCommand(
@@ -30,7 +31,7 @@ export async function runCommand(
       await runWeb(env)
       return 0
     case "worker":
-      await runWorker()
+      await runWorker(env)
       return 0
     case "migrate":
       await runMigrate(env)
@@ -67,17 +68,35 @@ async function runWeb(env: Env): Promise<void> {
   console.info(`${productName} web stopped`)
 }
 
-async function runWorker(): Promise<void> {
-  // The job queue (pg-boss) arrives with the first background jobs.
-  console.info(`${productName} worker started; no jobs are defined yet`)
-  await waitForShutdown()
+async function runWorker(env: Env): Promise<void> {
+  const databaseUrl = readDatabaseUrl(env)
+  const { db, pool } = createDatabase(databaseUrl)
+  try {
+    const worker = await startWorker({ databaseUrl, db })
+    console.info(`${productName} worker started`)
+    await waitForShutdown()
+    await worker.stop()
+  } finally {
+    await pool.end()
+  }
   console.info(`${productName} worker stopped`)
 }
 
 async function runMigrate(env: Env): Promise<void> {
+  const databaseUrl = readDatabaseUrl(env)
   console.info("Applying database migrations")
-  await migrateDatabase(readDatabaseUrl(env))
-  console.info("Database migrations applied")
+  await withMigrationLock(databaseUrl, async () => {
+    await migrateDatabase(databaseUrl)
+    await migrateJobQueue(databaseUrl)
+
+    const { db, pool } = createDatabase(databaseUrl)
+    try {
+      await setUpInstallation({ db, actor: shinan }, { name: productName })
+    } finally {
+      await pool.end()
+    }
+  })
+  console.info("Database ready")
 }
 
 function waitForShutdown(): Promise<NodeJS.Signals> {

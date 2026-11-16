@@ -1,1 +1,51 @@
+// Only operations are public. The check path (`inWorkspace`, `atInstallation`),
+// scopes and the event and security-log writers stay inside core, so the
+// pairing of each operation with its permission action lives here alone.
 export const productName = "Shinan"
+
+export { scopes, shinan, writtenActor } from "./actor.js"
+export type {
+  Actor,
+  AgentActor,
+  PersonActor,
+  Scope,
+  ShinanActor,
+} from "./actor.js"
+export type { Context, RequestInfo } from "./context.js"
+export {
+  CoreError,
+  ForbiddenError,
+  NotFoundError,
+  ReauthenticationRequiredError,
+  RuleViolationError,
+} from "./errors.js"
+export type { RefusalReason } from "./errors.js"
+export { listEvents } from "./events.js"
+export type { Event, Page } from "./events.js"
+export { decide, rules } from "./permissions.js"
+export type {
+  Access,
+  Action,
+  Decision,
+  InstallationAction,
+  Requester,
+  Rule,
+  WorkspaceAction,
+  WriteAction,
+} from "./permissions.js"
+export { listSecurityLog } from "./security-log-read.js"
+export type { SecurityLogEntry } from "./security-log-read.js"
+export { getInstallation, setUpInstallation } from "./identity/installation.js"
+export type { Installation } from "./identity/installation.js"
+export { createPerson } from "./identity/people.js"
+export type { NewPerson, Person } from "./identity/people.js"
+export { createWorkspace } from "./identity/workspaces.js"
+export type { Workspace } from "./identity/workspaces.js"
+export {
+  addMember,
+  changeRole,
+  leaveWorkspace,
+  listMembers,
+  removeMember,
+} from "./identity/members.js"
+export type { Member, MemberSummary } from "./identity/members.js"
