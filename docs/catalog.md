@@ -1,7 +1,7 @@
 # Catalog
 
 Status: **draft for review** ([issue #5](https://github.com/guneet-xyz/shinan/issues/5)).
-The owner's answers in [#25] (batches 1 to 12) are applied.
+The owner's answers in [#25] and the integration review findings in [#26] are applied.
 
 This document owns the catalog: entity types and type schemas, facts and fact
 states, provenance, editing and approval, and what the wiki and the agent index
@@ -117,10 +117,13 @@ lines, then a Markdown body.
 ### 2.2 Export: the exit path
 
 Without a Git mirror, the way to get the catalog out of Shinan, as plain files
-to read, keep or move elsewhere, is the export. A full export of a workspace
-is in the first version (owner, O-75, [#25]); its overall format, covering
-tasks and other records too, is owned by [architecture](architecture.md) and
-the [roadmap](roadmap.md). The catalog's part of it is **proposed** here:
+to read, keep or move elsewhere, is the **workspace export**: one full export
+of a workspace (catalog, tasks and their records), in the first version
+(owner, O-75, [#25]). There is no separate catalog-only export. A workspace
+owner starts it and downloads it ([architecture §5.5](architecture.md#55-export-and-import),
+[identity](identity.md)). Its overall format is owned by
+[architecture](architecture.md); the catalog's part of it is **proposed**
+here:
 
 | Path in the export | Content |
 |---|---|
@@ -141,7 +144,8 @@ the [roadmap](roadmap.md). The catalog's part of it is **proposed** here:
   path that roadmap criterion R15 tests.
 - An export holds everything in the catalog, because everyone in a workspace
   sees everything (owner, O-2, [#25]); it is exactly as sensitive as the
-  workspace. Who may export is owned by [identity](identity.md).
+  workspace. Only workspace owners may export, as [identity](identity.md)
+  sets out.
 - While there are no built-in backups (owner, O-62 to O-64, [#25]), the
   catalog exists only in Shinan's PostgreSQL database unless someone exports
   it. An export can serve as a manual copy; whether to take them regularly
@@ -1120,7 +1124,8 @@ approval and history mean nothing.
   data is rebuilt (mechanism: [architecture](architecture.md)).
   - **Decided (owner, O-50, [#25]):** only workspace owners can purge,
     including operational records about their workspace; installation
-    operators cannot.
+    operators cannot. Security-log entries are never purged (owner, N-13,
+    [#25]).
   - There is no Git mirror to rewrite (owner, N-5 and N-9, [#25]).
     **Proposed:** the purge screen warns that exports taken before the purge,
     and agents' model providers, may still hold the content, so a purged
@@ -1148,7 +1153,8 @@ trustworthy at a glance, per D-007):
   repository's catalog README files), with each type's schema document;
 - workspace-wide lists: discrepancies, facts due for recheck, known unknowns,
   recent changes, and catalog proposals waiting for catalog approval;
-- a way to export the catalog ([2.2](#22-export-the-exit-path)).
+- for workspace owners, a link to the workspace export
+  ([2.2](#22-export-the-exit-path)).
 
 ## 11. Start here
 
@@ -1327,23 +1333,54 @@ reliably, then extract the rest gradually, entity by entity, through ordinary
 catalog proposals. Reason: a lossless first import, then improvement through
 the normal flow, avoids a risky one-shot conversion.
 
+### 13.3 Mapping back, for a rollback
+
+The roadmap allows a rollback during the window after cutover: the catalog is
+taken from a workspace export back into a `workspace` repository pull request
+([roadmap §6.7](roadmap.md#67-rollback-and-emergency-access)). The export's layout ([2.2](#22-export-the-exit-path))
+is not the `workspace` repository's, so a **reverse conversion** turns the
+export's catalog into files that repository's checker (`scripts/check.py`)
+accepts. All rules here are **proposed**. Reason: a rollback must land in the
+format the `workspace` repository's people, agents and checker already use,
+without claiming more than Shinan recorded.
+
+| Shinan export | `workspace` repository |
+|---|---|
+| `catalog/project/<slug>.md`, `catalog/machine/<slug>.md`, `catalog/service/<slug>.md` | `catalog/projects/<slug>.md`, `catalog/machines/<slug>.md`, `catalog/services/<slug>.md` |
+| `catalog/runbook/<slug>.md`, `catalog/decision/<slug>.md` | `runbooks/<slug>.md`, `decisions/<slug>.md` (`decision_state` back to `status`) |
+| `policy`, `person` and `agent` entities, custom types, the start-here document, type schema documents | No matching entry files. Listed in a **rollback report** with their text, for a person to merge into the original documents (for example `docs/maintenance.md`) or leave out |
+| `id: machine/musashi`, `status`, `owner: person/guneet` | `id: musashi`, `status`, `owner: guneet` |
+| Fact checks | `last_verified`: the newest `checked` date among the entity's fact checks, or `null` if none; `verification_scope`: every fact check's date and scope, newest first, separated by semicolons (the form Musashi's entry already uses); `verification_source`: their sources in the same order |
+| Facts | A generated "Facts" section in the body: key, value, fact state and check date per fact; discrepancies shown as both values |
+| `checkout-on` relations | The "Locations" table |
+| `unknown` facts; `limits` | "Known unknowns" and "Verification limits" sections |
+| `secrets-in` relations | A sentence naming the secrets manager and item |
+| References such as `[Musashi](machine/musashi)` | Relative links such as `[Musashi](../machines/musashi.md)` |
+| `catalog/history.jsonl` | Not converted. Attached to the rollback task, so history is kept but not written into the repository |
+
+- The page-level `last_verified` keeps the newest date, but the scope lists
+  each fact check separately, so the page does not claim a whole-page check.
+  Reason: the `workspace` rule against claiming more than was checked.
+- The conversion is deterministic and can be run by a script or an agent. Its
+  output must pass `scripts/check.py`, and the migration rehearsal should run
+  it once (with roadmap criterion R14), so the rollback path is tested before
+  it is needed.
+
 ## Dependencies on other documents
 
-The sibling drafts were read on 2026-11-16 at the revisions below. They
-include the owner's answers up to batch 11 of [#25], but not yet batch 12
-(N-1 to N-11). Mismatches listed here are for the integration review.
+What this document still needs from other documents. Mismatches found by the
+integration review ([#26]) are fixed in the owning documents.
 
-| Document | What this document needs, and remaining mismatches |
+| Document | What this document needs |
 |---|---|
-| [Domain model and glossary](domain-model.md) ([PR #14](https://github.com/guneet-xyz/shinan/pull/14), `0e4bfcd`) | **Agrees:** `planned` (O-5), gated changes (O-3), custom types and type schemas (O-17), `service` as a deployment or shared service (O-16), agents per person, tool and machine (O-40), fact checks, `<type>/<slug>` IDs (O-15), purge (O-50). **Mismatches:** it still defines a Git mirror (removed, N-5 and N-9). **To add:** `via`, fact identity, not checked, the export's catalog layout ([2.2](#22-export-the-exit-path)). |
-| [Architecture and operations](architecture.md) ([PR #22](https://github.com/guneet-xyz/shinan/pull/22), `d3ca54e`) | **Agrees:** PostgreSQL revisions holding the full Markdown, index rebuilt in the same transaction (the D-006 invariant); per-operation conflict check; native catalog proposals; purge by workspace owners only, operators never (O-50); the security log is not purgeable. **Mismatches:** its 5.6 Git mirror, mirror pushes in the worker, and purge regenerating the mirror (all removed, N-5 and N-9). **Needs:** the catalog part of the full export, with history ([2.2](#22-export-the-exit-path)); the secret-looking-value check ([7.3](#73-a-check-for-secret-looking-values)); type schema documents in the parser and index. |
-| [Roadmap and migration](roadmap.md) ([PR #17](https://github.com/guneet-xyz/shinan/pull/17), `820f2a6`) | **Agrees:** gated catalog approval from the start (O-3), with R6 deciding a switch to strict; RM-6 trial seeding (O-71) and import provenance (O-14); the mapping in its 6.2; automatic fact checks in phase 2a. **Mismatches:** it relies on the Git mirror as the catalog's exit path, rollback source and break-glass copy, and as a mitigation for having no backups (removed, N-5 and N-9). The full export (O-75), with the catalog layout in [2.2](#22-export-the-exit-path), takes those roles; the break-glass copy then needs a regular export, which belongs to its backup review. |
-| [Identity, agents and permissions](identity.md) ([PR #24](https://github.com/guneet-xyz/shinan/pull/24), `03207c7`) | **Agrees:** everyone in a workspace sees the whole catalog (O-2, O-43); people-only approval; own-agent approval while one person uses Shinan (O-46). **Mismatches:** mentions of the catalog's Git mirror (removed, N-5 and N-9). **Needs:** who may export the catalog; the strict-setting switch; Shinan's token prefixes for the secret check. |
-| [Human experience](human-experience.md) ([PR #16](https://github.com/guneet-xyz/shinan/pull/16), `3ab0d4e`) | Wiki pages, freshness display (O-19), discrepancy display, editors, review list and recent changes feed, start-here presentation (O-18), pages for custom types and their schema documents (O-17). **Mismatches:** it describes and links the read-only Git mirror (removed, N-5 and N-9); an export action replaces the link. |
-| [Agent integrations](agent-integrations.md) | MCP and CLI operations for reading the index, type schemas and sending catalog proposals; delivering the agents' start-here path; the recheck-before-acting and documentation-impact conventions; agent review comments on proposals. |
-| [Tasks and work](tasks.md) | Links between tasks and entities; `planned` facts tied to tasks and what happens when a task is cancelled; promoting task decisions to `decision` entities; whether the documentation-impact obligation is part of "done". |
-| [Git host integrations](git-hosts.md) | Repository identity for `project` facts; which facts Shinan can check automatically, by reading only (Shinan makes no writes on Forgejo, owner, N-4, [#25]). |
-| [Decision log](decisions/) ([PR #19](https://github.com/guneet-xyz/shinan/pull/19)) | Records for the owner's answers cited here (O-2, O-3, O-5, O-11 to O-19, O-46, O-50, O-71, O-72, O-75, N-5, N-9), including the change to O-11's mirror. |
+| [Domain model and glossary](domain-model.md) | Terms used here. Entries for **workspace export**, **recent changes feed** and **approval mode** (the default and the strict setting, [8.2](#82-when-catalog-approval-is-needed)) are requested by [#26] (I-9). |
+| [Architecture and operations](architecture.md) | Storage of revisions as Markdown text and the index built from it (the D-006 invariant); per-operation conflicts; purge; the check for secret-looking values; type schema documents in the parser and index. Its workspace export ([§5.5](architecture.md#55-export-and-import)) should write the catalog in the layout of [2.2](#22-export-the-exit-path), including `history.jsonl`. |
+| [Identity, agents and permissions](identity.md) | Who may approve and switch the strict setting; workspace owners only for export and purge. Requested by [#26]: the written form of the fact check's `by` for each kind of actor (I-24); agents may comment on catalog proposals (I-22); Shinan's own token prefixes are blocked in catalog proposals from the first version (I-27). |
+| [Agent integrations](agent-integrations.md) | MCP and CLI tools to read the index and type schemas, send catalog proposals (rechecks included, which apply on their own unless the doubtful rule applies, I-36) and comment on them (I-33); delivering the agents' start-here path; the recheck-before-acting and documentation-impact conventions. |
+| [Human experience](human-experience.md) | Wiki pages, freshness, discrepancies, the editor, review list and recent changes feed, start-here presentation, pages for custom types and their schema documents, and the workspace export link for owners. A recorded check is always a catalog proposal (I-44); type schemas are changed through catalog proposals, not workspace settings (I-43). |
+| [Tasks and work](tasks.md) | Links between tasks and catalog entities; promoting task decisions to `decision` entities; telling the catalog when a task behind a `planned` fact is cancelled ([4.4](#44-fact-states)); whether the documentation-impact obligation is part of "done" ([8.4](#84-agents-documentation-impact-obligation)). |
+| [Git host integrations](git-hosts.md) | Repository identity for `project` facts; which facts Shinan can check automatically, by reading only (owner, N-4, [#25]). |
+| [Roadmap and migration](roadmap.md) | The rollback uses the reverse conversion in [13.3](#133-mapping-back-for-a-rollback), and the migration rehearsal runs it once (I-57). |
 
 ## Proposed in this document
 
@@ -1377,8 +1414,9 @@ include the owner's answers up to batch 11 of [#25], but not yet batch 12
     purge warnings about copies outside Shinan.
 14. [Wiki requirements](#10-the-wiki), [start-here](#11-start-here) details and
     the [agent index](#12-the-agent-index) content and rules.
-15. [Import provenance details](#131-provenance-of-imported-facts) and the
-    [mapping](#132-what-maps-where) from the `workspace` repository.
+15. [Import provenance details](#131-provenance-of-imported-facts), the
+    [mapping](#132-what-maps-where) from the `workspace` repository, and the
+    [reverse conversion for a rollback](#133-mapping-back-for-a-rollback).
 
 ## Open questions
 
@@ -1397,7 +1435,7 @@ include the owner's answers up to batch 11 of [#25], but not yet batch 12
 
 ## Decisions needed from the owner
 
-None. Every earlier question is answered in [#25]; the purge question about
-the Git mirror no longer applies (owner, N-5 and N-9, [#25]).
+None.
 
 [#25]: https://github.com/guneet-xyz/shinan/issues/25
+[#26]: https://github.com/guneet-xyz/shinan/issues/26
