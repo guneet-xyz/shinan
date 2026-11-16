@@ -105,10 +105,10 @@ The numbers are in each record's `evidence` field and in the mappings for
 | [D-047](D-047-installation-security-log-not-purgeable.md) | Installation-level security-log entries cannot be purged by anyone, for now | Accepted | 2026-11-16 | Amends D-035; amended by D-049 | Identity, agents and permissions |
 | [D-048](D-048-refuse-private-forgejo-addresses.md) | Shinan refuses Forgejo addresses on private, loopback or link-local networks by default | Accepted | 2026-11-16 | Amends D-044 | Identity, agents and permissions; Git host integrations; Architecture and operations |
 | [D-049](D-049-security-log-never-purged.md) | No security-log entry can ever be purged | Accepted | 2026-11-16 | Amends D-035, D-047 | Identity, agents and permissions; Architecture and operations; Human experience |
-| [D-050](D-050-agent-token-browser-approval.md) | Agents get their token by a browser approval started from the plugin or CLI; one token works at every agent endpoint | Accepted | 2026-11-16 | | Identity, agents and permissions; Architecture and operations; Agent integrations |
+| [D-050](D-050-agent-token-browser-approval.md) | Agents get their token by a browser approval started from the plugin or CLI; one token works at every agent endpoint | Accepted | 2026-11-16 | | Identity, agents and permissions; Architecture and operations; Agent integrations; Human experience |
 | [D-051](D-051-new-issues-setting.md) | Each repository has a "turn new issues into tasks" setting, on by default | Accepted | 2026-11-16 | Amends D-003 | Tasks and work; Git host integrations |
 | [D-052](D-052-notification-ownership.md) | Architecture owns sending notifications; human experience owns what is sent and personal settings | Accepted | 2026-11-16 | | Architecture and operations; Human experience |
-| [D-053](D-053-deployment-approval-events.md) | Deployment approval requests and answers are always recorded as task events | Accepted | 2026-11-16 | | Tasks and work |
+| [D-053](D-053-deployment-approval-events.md) | Deployment approval requests and answers are always recorded as task events | Accepted | 2026-11-16 | | Tasks and work; Agent integrations; Identity, agents and permissions; Human experience; Domain model and glossary |
 
 The full list of owning documents, with planned paths, is in each record.
 
@@ -369,10 +369,8 @@ are written in parallel, so the log needs one path with no second round trip.
 - **Decided (owner, O-95):** the Decision and Reasons sections of D-001 to
   D-020 quote the plan's wording exactly.
 - **Decided (owner, O-96, [#25](https://github.com/guneet-xyz/shinan/issues/25)):**
-  the plan's section 6 table stays as the approved snapshot, and one line
-  pointing to this index is added to it in a separate small pull request on
-  the plan (integration review I-63 on
-  [issue #26](https://github.com/guneet-xyz/shinan/issues/26)).
+  the plan's section 6 table stays as the approved snapshot, and a line under
+  its heading points to this index ([plan, section 6](../plan.md#6-decisions-so-far)).
 - **Decided (owner, O-98, [#25](https://github.com/guneet-xyz/shinan/issues/25)):**
   plan text that has no decision ID gets a record only when a document
   proposes changing it. [D-025](D-025-fact-state-planned.md) and
@@ -386,11 +384,9 @@ document to adopt, change or ignore.
 
 | Suggestion | For | Related record |
 |---|---|---|
-| Say what happens to the `workspace` repository's issue-per-task practice when it moves into Shinan (trial coordination already moves in, per [D-040](D-040-trial-coordination-in-shinan.md)). | [Roadmap and migration](../roadmap.md) | [D-004](D-004-link-prs-directly.md), [D-018](D-018-start-empty-migrate-later.md) |
 | Core flows work on both GitHub and Forgejo; features specific to one host may add to them but are not required. | [Git host integrations](../git-hosts.md) | [D-009](D-009-github-and-forgejo-first.md) |
 | Avoid depending on services that are only available as someone else's hosted product. | [Architecture and operations](../architecture.md) | [D-012](D-012-self-hostable.md) |
 | Avoid designs that rely on a particular pricing, licence or business model. | [Product overview](../product-overview.md) | [D-013](D-013-business-model-deferred.md) |
-| Say whether the owner's deployment approval rule applies to Shinan installations that others self-host. | [Architecture and operations](../architecture.md) | [D-016](D-016-musashi-and-deployment-approval.md), [D-012](D-012-self-hostable.md) |
 
 ## Dependencies on other documents
 
@@ -451,3 +447,7 @@ None.
   answers NO-1 to NO-4 on issue #26, in the decision log's integration-fix
   pull request for the same numbering reason as the issue #25 batch. D-003
   got `amended_by` (D-051) and a History line.
+- 2026-11-16: integration round 2 ([issue #26](https://github.com/guneet-xyz/shinan/issues/26#issuecomment-6918785395):
+  I-77, I-78). Index rows for D-050 and D-053 match their records; the plan
+  pointer (O-96) and the plan section 8 note (D-052) are recorded as done; two
+  suggestions adopted by Roadmap and Architecture were removed.
