@@ -24,7 +24,7 @@ Every statement is marked:
 
 - **Decided**: follows from an accepted plan decision (D-nnn), or from an
   owner answer in [issue #25](https://github.com/guneet-xyz/shinan/issues/25),
-  cited as "owner, O-n" or, for the follow-up answers in batch 12, "owner,
+  cited as "owner, O-n" or, for the follow-up answers in batches 12 and 13, "owner,
   N-n". The decision log maps these to decision records (D-021 onwards).
 - **Proposed**: suggested here, with a reason. The owner confirms or changes it.
 - **Open**: not settled. Listed under [open questions](#open-questions) or
@@ -62,7 +62,7 @@ statement says otherwise.
    checked against Shinan's records; Shinan's own writes are recognised only by
    stored item IDs ([section 8](#8-acting-for-and-attribution)).
 9. **The security log is kept forever and cannot be purged** (owner, O-47,
-   N-8); only workspace owners purge other workspace content (owner, O-50)
+   N-8, N-13); only workspace owners purge other workspace content (owner, O-50)
    ([section 11](#11-audit)).
 10. **A small first version**, in three stages (owner, O-49)
     ([section 13](#13-first-version-scope)).
@@ -103,11 +103,11 @@ remaining risk in one place.
 | T4 | An invitation link leaks | Bound to one email address; the invitee must sign in as an allowlisted person with that verified email; single use; expires ([5.2](#52-invitations)) | Whoever controls the invitee's email can accept it. |
 | T5 | A member sees what they cannot see on the git host | None inside a workspace, by decision (O-43); links to private repositories stay protected by the git host | Titles, summaries and events Shinan stores from private repositories are visible to every member and every member's agent. Separation needs separate workspaces ([9.2](#92-visibility-inside-a-workspace)). |
 | T6 | Wrong credit | Confidence levels; marker checks; Shinan's own GitHub writes recognised by stored IDs ([8](#8-acting-for-and-attribution)) | Attribution is not proof against the account holder (D-017). |
-| T7 | A Forgejo address entered by a person points somewhere harmful | Shinan reaches out only to the address entered, over HTTPS, refuses private, loopback and link-local addresses by default, and checks again on every request; a Forgejo identity is scoped to its instance ([3.5](#35-linking-git-host-accounts), [9.3](#93-git-host-connections)) | Anyone signed in can enter any address (N-7). Without the address checks, Shinan's server could be used to probe services that are only reachable from Musashi or the tailnet. A malicious instance can also claim any account on itself, which affects only credit for events from that instance. |
+| T7 | A Forgejo address entered by a person points somewhere harmful | Shinan reaches out only to the address entered, over HTTPS, refuses private, loopback and link-local addresses by default (N-12; an operator may allow specific hosts), and checks again on every request; a Forgejo identity is scoped to its instance ([3.5](#35-linking-git-host-accounts), [9.3](#93-git-host-connections)) | Anyone signed in can enter any address (N-7). Without the address checks, Shinan's server could be used to probe services that are only reachable from Musashi or the tailnet. A malicious instance can also claim any account on itself, which affects only credit for events from that instance. |
 | T8 | The public address is abused | Throttling of sign-in emails and failed token use; uniform errors ([10](#10-protections-for-a-public-installation)) | Sign-in emails can still be requested for allowlisted addresses up to the throttle, which is mostly a nuisance. |
 | T9 | A member's agent is steered by someone else | Nudges from other members are queued by default and framed as requests ([6.5](#65-nudges-from-other-people)) | An agent may still act on a well-phrased request from another member. |
 | T10 | Shinan's Forgejo token is stolen | Stored encrypted; never shown again, logged or given to agents; used only to read (N-4) ([9.3](#93-git-host-connections)) | Shinan accepts any Forgejo token (O-54). Shinan only reads, but the token's power is set on Forgejo: if a site administrator connects with a broad token, anyone who steals it can act as any user on that instance. |
-| T11 | An insider or the operator misuses access | Security log kept forever and not purgeable; operators cannot purge (O-47, O-50, N-8) ([11](#11-audit), [12](#12-self-hosted-installations)) | An operator with database access can still read or change anything. |
+| T11 | An insider or the operator misuses access | Security log kept forever and not purgeable; operators cannot purge (O-47, O-50, N-8, N-13) ([11](#11-audit), [12](#12-self-hosted-installations)) | An operator with database access can still read or change anything. |
 | T12 | Data is lost | None in Shinan: no built-in backups for now (owner, O-62 to O-64) | The security log and everything else depend on host-level backups, which are paused on Musashi. "Forever" retention holds only as long as the disk does. |
 
 ### Principles
@@ -267,12 +267,13 @@ that activity on git hosts can be credited at all (D-017).
   repositories, the connection keeps its token ([9.3](#93-git-host-connections)).
   Reason: with no Forgejo sign-in, a token is the only proof of the account,
   and it works on any instance without registering Shinan there.
-  - Shinan contacts only the address entered, over HTTPS, and refuses
-    addresses that resolve to private, loopback or link-local ranges, checking
-    again on every request. Reason: an address anyone can type must not turn
-    Shinan's server into a way to reach services that are only visible from
-    Musashi or the tailnet (T7). Allowing exceptions is a
-    [decision for the owner](#decisions-needed-from-the-owner).
+  - **Decided (owner, N-12, [#25](https://github.com/guneet-xyz/shinan/issues/25)):**
+    Shinan contacts only the address entered, over HTTPS, and by default
+    refuses addresses that resolve to private, loopback or link-local ranges,
+    checking again on every request. An installation operator may allow
+    specific hosts. Reason: an address anyone can type must not turn Shinan's
+    server into a way to reach services that are only visible from Musashi or
+    the tailnet (T7).
   - A Forgejo identity is the instance address plus the account number. A
     malicious instance can claim any account on itself, but that only affects
     credit for events from that same instance.
@@ -926,17 +927,16 @@ kinds (**proposed**):
   network addresses, which are personal data.
 - Reads are recorded as per-token summaries and as bulk reads (agent index
   downloads, exports), not page by page.
-- **Decided (owner, O-47, N-8):** the security log is kept forever, and
-  installation-level entries cannot be purged by anyone.
-- **Decided (owner, O-50):** only workspace owners can purge workspace
+- **Decided (owner, O-47, N-8, N-13, [#25](https://github.com/guneet-xyz/shinan/issues/25)):**
+  the security log is kept forever, and no security-log entry can ever be
+  purged, by anyone: neither installation-level entries nor a workspace's
+  entries. A purge of other content is itself recorded there. Reason: it keeps
+  "forever" meaningful and stops an owner account taken over through T1 or T2
+  from erasing its own traces.
+- **Decided (owner, O-50, N-13):** only workspace owners can purge workspace
   content, including operational records about their workspace (raw webhook
-  deliveries, job records, logs); installation operators cannot purge.
-  **Proposed:** a workspace's security-log entries cannot be purged either,
-  even by its owners; a purge of other content is itself recorded there.
-  Reason: it keeps "forever" meaningful, matches N-8 for installation-level
-  entries and the architecture draft, and stops an owner account taken over
-  through T1 or T2 from erasing its own traces. Because this narrows O-50, it
-  is a [decision for the owner](#decisions-needed-from-the-owner).
+  deliveries, job records, logs), but not the security log; installation
+  operators cannot purge.
 - Residual risks: an operator with database access can still change entries;
   network addresses are kept forever; and with no built-in backups (O-62 to
   O-64) the log is only as durable as the host's disk.
@@ -961,7 +961,7 @@ kinds (**proposed**):
 **Decided (owner, O-49, [#25](https://github.com/guneet-xyz/shinan/issues/25)):**
 D-019 is read as "design now, build before the second member", in three
 stages. The contents below follow the owner's other answers (O-1, O-2, O-41,
-O-43, O-44, O-47, O-48, O-50, N-4, N-7, N-8, N-11). The viewer test account is
+O-43, O-44, O-47, O-48, O-50, N-4, N-7, N-8, N-11, N-12, N-13). The viewer test account is
 dropped from the first version (owner, N-11).
 
 | Built in version 1 | Designed now, built before a second member joins | Later |
@@ -1016,7 +1016,7 @@ below are batch 12 changes.
 | [Human experience](human-experience.md) (3ab0d4e) | Screens for email-link and GitHub sign-in, re-authentication, the allowlist, Forgejo linking by address and token, agent approval with machine, token last-use, the security log, attribution confidence, and the "everyone sees everything" warnings. **Mismatches:** viewer screens and notes (N-11); Forgejo and password sign-in (N-7). |
 | [Architecture and operations](architecture.md) (d3ca54e) | Email sending from version 1 (O-41), through the AWS SES API (N-6); throttling; token hashing and per-request checks; encrypted Forgejo tokens (O-54); outbound address checks for Forgejo; the security log kept forever and not purgeable. **Mismatches:** password hashing, Forgejo sign-in through a generic OAuth plugin, and "if email is down, password and git host sign-in still work" (N-7: only GitHub remains if email is down); the Git mirror (N-5). |
 | [Roadmap and migration](roadmap.md) (820f2a6) | The [first version scope](#13-first-version-scope); measuring attribution in the proof of concept; no backups before migration (O-62). **Mismatches:** sign-in methods (N-7); the viewer test account and its request to build viewer enforcement and invitations in M1 (dropped by N-11). |
-| [Decision log](decisions/) (46bd0d1) | Records for batch 12: N-7 changes D-034; N-4 changes D-033; N-8 and N-11 for this document's rules. |
+| [Decision log](decisions/) (46bd0d1) | Records for batches 12 and 13: N-7 changes D-034; N-4 changes D-033; N-13 narrows O-50 for the security log; N-8, N-11 and N-12 for this document's rules. |
 
 ## Sources checked
 
@@ -1043,7 +1043,7 @@ All checked on 2026-11-16.
   and [`ssh_key.go`](https://codeberg.org/forgejo/forgejo/src/tag/v16.0.5/models/asymkey/ssh_key.go);
   [Gitea pull request 17743](https://github.com/go-gitea/gitea/pull/17743).
 - The owner's answers, [issue #25](https://github.com/guneet-xyz/shinan/issues/25),
-  including batch 12.
+  including batches 12 and 13.
 - The `workspace` repository (read-only background): `docs/access-and-safety.md`,
   `docs/collaboration.md`, `catalog/services/forgejo.md`.
 
@@ -1070,10 +1070,5 @@ All checked on 2026-11-16.
 
 ## Decisions needed from the owner
 
-New questions raised by the batch 12 answers in
-[issue #25](https://github.com/guneet-xyz/shinan/issues/25):
-
-| # | Decision | Recommended option | Why, in one line |
-|---|---|---|---|
-| 1 | Forgejo addresses that resolve to private, loopback or link-local networks (N-7 lets anyone enter any address) | Refuse them by default; an operator may allow specific addresses | Otherwise any signed-in person could use Shinan's server to probe services reachable only from Musashi or the tailnet. |
-| 2 | Can workspace owners purge their workspace's security-log entries (O-50 lets them purge workspace records; N-8 covers only installation-level entries) | No: no security-log entry can be purged | Keeps "kept forever" (O-47) meaningful and stops a taken-over owner account from erasing its own traces. |
+None. The owner answered every decision this document raised (O-1 to O-98
+and N-1 to N-13 in [issue #25](https://github.com/guneet-xyz/shinan/issues/25)).
