@@ -1,7 +1,7 @@
 # Catalog
 
 Status: **draft for review** ([issue #5](https://github.com/guneet-xyz/shinan/issues/5)).
-The owner's answers in [#25] are applied.
+The owner's answers in [#25] (batches 1 to 12) are applied.
 
 This document owns the catalog: entity types and type schemas, facts and fact
 states, provenance, editing and approval, and what the wiki and the agent index
@@ -17,9 +17,9 @@ Every rule carries one of these markers:
 
 - **Decided**: follows from an accepted decision in the
   [plan](plan.md#6-decisions-so-far), which is cited and gives the reason.
-- **Decided (owner, O-n, [#25])**: the owner's answer to item O-n of the
-  consolidated decision checklist. The Decision log maps these to decision
-  records.
+- **Decided (owner, O-n or N-n, [#25])**: the owner's answer to item O-n of
+  the consolidated decision checklist, or to follow-up item N-n. The Decision
+  log maps these to decision records.
 - **Proposed**: suggested here, with a reason. Owner review confirms or changes
   it.
 - **Open**: not settled. Listed under [open questions](#open-questions).
@@ -40,8 +40,9 @@ reason says so. A full mapping is in
   each with structured fields at the top (frontmatter) and prose below. Every
   applied catalog revision **is** a set of Markdown documents; the wiki, the
   agent index and every query table are derived from them and can be rebuilt
-  from them alone. Revisions are stored in PostgreSQL and copied within
-  seconds to an always-on, read-only Git mirror.
+  from them alone. Revisions are stored in PostgreSQL only; there is no Git
+  mirror for now. A workspace's catalog can be exported as a folder of these
+  Markdown files and imported back without loss.
 - Structured fields hold **facts**, grouped under the **fact check** that last
   checked them. A fact check records when, by whom, what exactly was checked,
   what was not, and the source (D-007). Each fact has a fact state
@@ -61,7 +62,7 @@ reason says so. A full mapping is in
 
 | # | Principle | Status and reason |
 |---|---|---|
-| P1 | The Markdown documents are the source of truth. Every applied catalog revision is a set of Markdown documents; the wiki, the agent index, the Git mirror and all query tables are derived and rebuildable from them alone, and never edited directly. | **Decided** (D-006: people must be able to read it), and the "rebuildable from Markdown alone" reading confirmed (owner, O-11, [#25]). |
+| P1 | The Markdown documents are the source of truth. Every applied catalog revision is a set of Markdown documents; the wiki, the agent index, exports and all query tables are derived and rebuildable from them alone, and never edited directly. | **Decided** (D-006: people must be able to read it), and the "rebuildable from Markdown alone" reading confirmed (owner, O-11, [#25]). |
 | P2 | Every fact records its state, source and last-checked time. | **Decided** (D-007: trust is the main differentiator). |
 | P3 | Link, don't copy. A fact owned by another system is linked, not copied. | **Decided** (plan, "What Shinan does not do"). |
 | P4 | `unknown` is a valid answer. Missing, unreachable and not checked are recorded, never filled with guesses. | **Proposed**. Reason: the `workspace` repository's rule; a guessed fact is worse than a known gap because nobody rechecks it. |
@@ -87,21 +88,19 @@ lines, then a Markdown body.
   2. Changes are applied by producing new Markdown from the latest revision.
      Validation runs on the resulting Markdown, not on the operations that
      produced it.
-  3. The wiki, the agent index, search, the Git mirror and every list or table
-     used for queries are derived. Deleting them all and re-parsing the
+  3. The wiki, the agent index, search, exports and every list or table used
+     for queries are derived. Deleting them all and re-parsing the
      Markdown rebuilds them exactly.
 
   Reason: D-006 rejected "a structured-data-first catalog, with pages
   generated from a database"; these three rules keep the Markdown the real
   record even though it is stored in a database.
-- **Decided (owner, O-11, [#25]):** revisions are stored in **PostgreSQL**,
-  with a **read-only Git mirror that is always kept current**: each applied
-  revision appears in the mirror within seconds as a readable commit, for
-  cloning, searching with plain tools, reading history and leaving Shinan.
-  How the mirror is written is owned by [architecture](architecture.md).
+- **Decided (owner, O-11 as changed by N-5 and N-9, [#25]):** revisions are
+  stored in **PostgreSQL only**. There is **no Git mirror for now**; it is left
+  for later. How revisions are stored is owned by
+  [architecture](architecture.md).
 - **Decided (owner, O-12, [#25]):** catalog proposals and review happen inside
-  Shinan. The mirror is never written to by people or agents
-  ([8.7](#87-no-edits-outside-shinan)).
+  Shinan ([8.7](#87-no-edits-outside-shinan)).
 - Catalog proposals, approvals, comments and events are not catalog content.
   They are separate records about changes to it, like pull requests beside a
   repository, and are not expected to be rebuildable from the Markdown.
@@ -115,32 +114,40 @@ lines, then a Markdown body.
   parse the same way everywhere. Nested values are allowed because facts carry
   state and provenance.
 
-### 2.2 The Git mirror's layout
+### 2.2 Export: the exit path
 
-**Proposed** (the content and layout belong here; the mechanics to
-[architecture](architecture.md)):
+Without a Git mirror, the way to get the catalog out of Shinan, as plain files
+to read, keep or move elsewhere, is the export. A full export of a workspace
+is in the first version (owner, O-75, [#25]); its overall format, covering
+tasks and other records too, is owned by [architecture](architecture.md) and
+the [roadmap](roadmap.md). The catalog's part of it is **proposed** here:
 
-| Path in the mirror | Content |
+| Path in the export | Content |
 |---|---|
-| `README.md` | Generated: what the mirror is, that it is read-only, and where to propose changes. |
-| `start-here.md` | The [start-here document](#11-start-here). |
-| `schemas/<type>.md` | One [type schema document](#39-custom-types-and-type-schema-documents) per custom type, and per built-in type the workspace has extended. |
-| `<type>/<slug>.md` | One file per entity, so the entity ID `machine/musashi` is the path `machine/musashi.md`. |
+| `catalog/README.md` | Generated: what the export is, the workspace, the catalog revision it was taken at, and that changes are made only through catalog proposals in Shinan. |
+| `catalog/start-here.md` | The [start-here document](#11-start-here). |
+| `catalog/schemas/<type>.md` | One [type schema document](#39-custom-types-and-type-schema-documents) per custom type, and per built-in type the workspace has extended. |
+| `catalog/<type>/<slug>.md` | One file per entity, so the entity ID `machine/musashi` is the path `catalog/machine/musashi.md`. |
+| `catalog/history.jsonl` | Every catalog revision: the document's ID, its full Markdown, the time, the author, the approver (if any) and the catalog proposal it came from. |
 
-- One commit per applied catalog proposal, with the proposal's explanation as
-  the message, and its author, approver (if any) and related task in the
-  message body. **Proposed.** Reason: the mirror's history then reads like the
-  `workspace` repository's history does today.
-- Importing the mirror's files into an empty workspace reproduces the catalog
-  exactly. **Proposed.** Reason: the mirror is also the exit path and the
-  rollback copy that roadmap criterion R15 tests.
-- The mirror repository must be private, readable only by people who may read
-  the workspace. **Proposed.** Reason: everyone in a workspace sees everything
-  (owner, O-2, [#25]), so the mirror is exactly as sensitive as the workspace;
-  its access is owned by [identity](identity.md).
-- The mirror is the only copy of the catalog outside Shinan's database while
-  there are no built-in backups (owner, O-62, [#25]). It keeps the Markdown
-  and its history, but not catalog proposals, comments or events.
+- The Markdown files are exactly the latest revision's text, so they read like
+  the `workspace` repository's catalog does today. **Proposed.** Reason: the
+  exit path should not need Shinan to be readable.
+- History is included as one machine-readable file rather than as Git
+  commits. **Proposed.** Reason: nothing is lost on exit (P7), without
+  building the mirror the owner left for later.
+- Importing an export into an empty workspace reproduces the catalog
+  exactly, including its history. **Proposed.** Reason: this is the rollback
+  path that roadmap criterion R15 tests.
+- An export holds everything in the catalog, because everyone in a workspace
+  sees everything (owner, O-2, [#25]); it is exactly as sensitive as the
+  workspace. Who may export is owned by [identity](identity.md).
+- While there are no built-in backups (owner, O-62 to O-64, [#25]), the
+  catalog exists only in Shinan's PostgreSQL database unless someone exports
+  it. An export can serve as a manual copy; whether to take them regularly
+  belongs to the roadmap's backup review before migration.
+- If a Git mirror is added later, it should use this same layout, so exports
+  and the mirror stay interchangeable. **Proposed.**
 
 ### 2.3 Entity fields
 
@@ -190,7 +197,7 @@ are not facts about the world, so they carry no fact state.
   References must resolve; validation blocks broken ones. **Proposed.** Reason:
   the `workspace` repository's checker catches missing link targets, which has
   kept its entries consistent. The same links also work as relative paths in
-  the Git mirror.
+  an [export](#22-export-the-exit-path).
 - Links to owning sources are ordinary URLs. Where the source is versioned,
   prefer a link pinned to a revision (a commit) in fact checks.
   **Proposed.** Reason: "the file said X at revision Y" stays true; "the file
@@ -490,7 +497,7 @@ with the "small and legible over configurable" principle (owner, O-86,
 [#25]).
 
 A **type schema document** is a Markdown document like an entity, with the ID
-`schema/<type>`, stored in the catalog and the Git mirror. Its frontmatter
+`schema/<type>`, stored in the catalog (and in exports). Its frontmatter
 lists the keys; its body explains the type for people and agents.
 
 ```markdown
@@ -863,7 +870,7 @@ cannot be compared that way and invites running outdated instructions.
 
 **Decided (owner, O-2 and O-43, [#25]):** there is no restricted level in the
 catalog. Every member of a workspace, and every agent acting for one, can read
-the whole catalog, its history, its proposals and its Git mirror.
+the whole catalog, its history, its proposals and any export of it.
 Consequences:
 
 - Sensitive but non-secret details, such as internal addresses and host key
@@ -896,10 +903,12 @@ catalog records **where a secret lives**, not the secret.
 
 ### 7.3 A check for secret-looking values
 
-Even with no secrets allowed, a value can slip in by mistake, and in Shinan
-it would spread fast: within seconds to the Git mirror, whose clones keep it,
-to every member, and to the model providers of any agent that reads it. So a
-light check still makes sense. **Proposed:**
+Even with no secrets allowed, a value can slip in by mistake. Once applied,
+it is shown to every member of the workspace, sent to the model provider of
+every agent that reads it (which cannot be recalled), kept in revision history
+until someone purges it, and copied into any export taken meanwhile. A light
+check before applying is much cheaper than cleaning up afterwards.
+**Proposed:**
 
 - **Block** a catalog proposal when any of its text (fact values, `note`,
   fact check `scope`, `source` and `limits`, entity fields, the body, the
@@ -913,8 +922,8 @@ light check still makes sense. **Proposed:**
 - The check is a safety net, not a guarantee; secrets stay the team's job.
 
 Reason: blocking only near-certain matches costs almost nothing, while one
-leaked secret would have to be purged, removed from the mirror and rotated
-(see [section 9](#9-history-and-purge)).
+leaked secret would have to be purged, rotated at its source, and chased
+through any exports (see [section 9](#9-history-and-purge)).
 
 ## 8. Editing and approval
 
@@ -1084,17 +1093,19 @@ latest revision. **Proposed.**
 
 ### 8.7 No edits outside Shinan
 
-**Decided (owner, O-12, [#25]):** the Git mirror is read-only; the catalog is
-changed only through catalog proposals in Shinan. **Proposed:** the mirror's
-generated README says so, and Shinan overwrites anything pushed to the mirror
-by anyone else. Reason: there must be one path to change the source of truth,
-or catalog approval and history mean nothing.
+**Decided (owner, O-12, [#25]):** the catalog is changed only through catalog
+proposals in Shinan. **Proposed:** editing an export changes nothing in
+Shinan; an export comes back only by importing it into an empty workspace
+([2.2](#22-export-the-exit-path)), and imports for the migration arrive as
+catalog proposals ([section 13](#13-mapping-from-the-workspace-repositorys-catalog)).
+Reason: there must be one path to change the source of truth, or catalog
+approval and history mean nothing.
 
 ## 9. History and purge
 
 - Every applied proposal creates a new **catalog revision**, the full Markdown
   of the documents it changed, an event credited to its author (and approver),
-  which appears on the entity's timeline, and a commit in the Git mirror.
+  which appears on the entity's timeline.
   **Proposed.** Reason: events are the glossary's single record of what
   happened; revisions let anyone see an entity as it was.
 - Revisions are not edited. A revert is a new proposal. **Proposed.** Reason:
@@ -1110,11 +1121,11 @@ or catalog approval and history mean nothing.
   - **Decided (owner, O-50, [#25]):** only workspace owners can purge,
     including operational records about their workspace; installation
     operators cannot.
-  - **Proposed:** a catalog purge also rewrites the Git mirror's history to
-    remove the content, and the purge screen warns that clones made before the
-    purge still hold it, so a purged secret must be rotated at its source.
-    Reason: the mirror is always current (owner, O-11, [#25]), so leaving the
-    content in its history would undo the purge for anyone who can read it.
+  - There is no Git mirror to rewrite (owner, N-5 and N-9, [#25]).
+    **Proposed:** the purge screen warns that exports taken before the purge,
+    and agents' model providers, may still hold the content, so a purged
+    secret must be rotated at its source. Reason: a purge cleans Shinan, not
+    copies that already left it.
 - How revisions are stored: [architecture](architecture.md).
 
 ## 10. The wiki
@@ -1137,7 +1148,7 @@ trustworthy at a glance, per D-007):
   repository's catalog README files), with each type's schema document;
 - workspace-wide lists: discrepancies, facts due for recheck, known unknowns,
   recent changes, and catalog proposals waiting for catalog approval;
-- a link to the Git mirror.
+- a way to export the catalog ([2.2](#22-export-the-exit-path)).
 
 ## 11. Start here
 
@@ -1307,7 +1318,7 @@ checked when only one fact was verified", and D-007):
 | `docs/skills.md`, `.opencode/skills/*` (workspace-navigate, -maintain, -task, -audit) | Not imported. Replaced by Shinan's skill ([agent integrations](agent-integrations.md)); any workspace-specific rule they contain becomes a `policy` |
 | `integrations/opencode/*` | Not imported. Replaced by setup instructions for Shinan's MCP server, skill and plugin ([agent integrations](agent-integrations.md)) |
 | `scripts/check.py`, tests | Replaced by validation on every catalog proposal; not imported |
-| Pull requests changing catalog files; `CHANGELOG.md` | Catalog proposals; revisions, events and Git mirror commits. The changelog and Git history stay in the archived repository. |
+| Pull requests changing catalog files; `CHANGELOG.md` | Catalog proposals; revisions and events. The changelog and Git history stay in the archived repository. |
 | Forgejo issues | Tasks ([tasks](tasks.md)) |
 
 Extracting facts from prose cannot be fully automatic. **Proposed:** import
@@ -1318,28 +1329,28 @@ the normal flow, avoids a risky one-shot conversion.
 
 ## Dependencies on other documents
 
-The sibling drafts were read on 2026-11-16 at the revisions below, before
-their authors applied [#25]. Mismatches listed here are for the integration
-review; most should disappear as each document applies the same answers.
+The sibling drafts were read on 2026-11-16 at the revisions below. They
+include the owner's answers up to batch 11 of [#25], but not yet batch 12
+(N-1 to N-11). Mismatches listed here are for the integration review.
 
 | Document | What this document needs, and remaining mismatches |
 |---|---|
-| [Domain model and glossary](domain-model.md) ([PR #14](https://github.com/guneet-xyz/shinan/pull/14), `8bb5d65`) | **Mismatches:** fact state `proposed` → `planned` (O-5); catalog approval rule says strict, now gated classes only (O-3); `service` wording ("other things depend on") should become "a running deployment or shared service" (O-16); entity types are no longer a fixed list (O-17); agent per person, tool and machine (O-40). **To add:** fact check, fact identity, cardinality, `via`, type schema and type schema document, catalog revision, Git mirror, start-here document, recheck interval, not checked; entity IDs written `<type>/<slug>` (O-15). |
-| [Architecture and operations](architecture.md) ([PR #22](https://github.com/guneet-xyz/shinan/pull/22), `5ce42de`) | **Agrees:** PostgreSQL revisions holding the full Markdown, index rebuilt in the same transaction (the D-006 invariant); per-operation conflict check; native catalog proposals; the term **purge**. **Mismatches:** its 5.5 export is "optional, off by default" and excludes restricted content; now an always-on read-only mirror (O-11) with no restricted content (O-2). Its purge rights include installation operators; now workspace owners only (O-50). **Needs:** writing the mirror within seconds in the layout of [2.2](#22-the-git-mirrors-layout); rewriting mirror history on purge ([9](#9-history-and-purge)); the secret-looking-value check ([7.3](#73-a-check-for-secret-looking-values)); type schema documents in the parser and index. |
-| [Roadmap and migration](roadmap.md) ([PR #17](https://github.com/guneet-xyz/shinan/pull/17), `6e4f795`) | **Agrees:** RM-6 trial seeding (O-71) and import provenance (O-14); the mapping in its 6.2; automatic fact checks in phase 2a. **Mismatches:** its 4.6 and decision 8 switch to the relaxed approval setting after two trial weeks; now gated classes from the start (O-3), so the owner's weekly approval batch shrinks to gated changes. Its export (RM-2, R15) is now the always-on Git mirror. |
-| [Identity, agents and permissions](identity.md) ([PR #24](https://github.com/guneet-xyz/shinan/pull/24), `fcaea3a`) | **Agrees:** every member reads the whole catalog (now decided, O-2, O-43); people-only approval; own-agent approval while one person uses Shinan (O-46). **Needs:** who may read the Git mirror (the same people as the workspace); workspace owners only for purge (O-50); the strict-setting switch; Shinan's token prefixes for the secret check. |
-| [Human experience](human-experience.md) ([PR #16](https://github.com/guneet-xyz/shinan/pull/16), `2ff4925`) | Wiki pages, freshness display (O-19), discrepancy display, editors, review list and recent changes feed, start-here presentation (O-18). **Needs:** pages for custom types and their schema documents (O-17); a link to the Git mirror. |
+| [Domain model and glossary](domain-model.md) ([PR #14](https://github.com/guneet-xyz/shinan/pull/14), `0e4bfcd`) | **Agrees:** `planned` (O-5), gated changes (O-3), custom types and type schemas (O-17), `service` as a deployment or shared service (O-16), agents per person, tool and machine (O-40), fact checks, `<type>/<slug>` IDs (O-15), purge (O-50). **Mismatches:** it still defines a Git mirror (removed, N-5 and N-9). **To add:** `via`, fact identity, not checked, the export's catalog layout ([2.2](#22-export-the-exit-path)). |
+| [Architecture and operations](architecture.md) ([PR #22](https://github.com/guneet-xyz/shinan/pull/22), `d3ca54e`) | **Agrees:** PostgreSQL revisions holding the full Markdown, index rebuilt in the same transaction (the D-006 invariant); per-operation conflict check; native catalog proposals; purge by workspace owners only, operators never (O-50); the security log is not purgeable. **Mismatches:** its 5.6 Git mirror, mirror pushes in the worker, and purge regenerating the mirror (all removed, N-5 and N-9). **Needs:** the catalog part of the full export, with history ([2.2](#22-export-the-exit-path)); the secret-looking-value check ([7.3](#73-a-check-for-secret-looking-values)); type schema documents in the parser and index. |
+| [Roadmap and migration](roadmap.md) ([PR #17](https://github.com/guneet-xyz/shinan/pull/17), `820f2a6`) | **Agrees:** gated catalog approval from the start (O-3), with R6 deciding a switch to strict; RM-6 trial seeding (O-71) and import provenance (O-14); the mapping in its 6.2; automatic fact checks in phase 2a. **Mismatches:** it relies on the Git mirror as the catalog's exit path, rollback source and break-glass copy, and as a mitigation for having no backups (removed, N-5 and N-9). The full export (O-75), with the catalog layout in [2.2](#22-export-the-exit-path), takes those roles; the break-glass copy then needs a regular export, which belongs to its backup review. |
+| [Identity, agents and permissions](identity.md) ([PR #24](https://github.com/guneet-xyz/shinan/pull/24), `03207c7`) | **Agrees:** everyone in a workspace sees the whole catalog (O-2, O-43); people-only approval; own-agent approval while one person uses Shinan (O-46). **Mismatches:** mentions of the catalog's Git mirror (removed, N-5 and N-9). **Needs:** who may export the catalog; the strict-setting switch; Shinan's token prefixes for the secret check. |
+| [Human experience](human-experience.md) ([PR #16](https://github.com/guneet-xyz/shinan/pull/16), `3ab0d4e`) | Wiki pages, freshness display (O-19), discrepancy display, editors, review list and recent changes feed, start-here presentation (O-18), pages for custom types and their schema documents (O-17). **Mismatches:** it describes and links the read-only Git mirror (removed, N-5 and N-9); an export action replaces the link. |
 | [Agent integrations](agent-integrations.md) | MCP and CLI operations for reading the index, type schemas and sending catalog proposals; delivering the agents' start-here path; the recheck-before-acting and documentation-impact conventions; agent review comments on proposals. |
 | [Tasks and work](tasks.md) | Links between tasks and entities; `planned` facts tied to tasks and what happens when a task is cancelled; promoting task decisions to `decision` entities; whether the documentation-impact obligation is part of "done". |
-| [Git host integrations](git-hosts.md) | Repository identity for `project` facts; which facts Shinan can check automatically. |
-| [Decision log](decisions/) ([PR #19](https://github.com/guneet-xyz/shinan/pull/19)) | Records for the owner's answers cited here (O-2, O-3, O-5, O-11 to O-19, O-46, O-50), including the record clarifying D-006 (O-11). |
+| [Git host integrations](git-hosts.md) | Repository identity for `project` facts; which facts Shinan can check automatically, by reading only (Shinan makes no writes on Forgejo, owner, N-4, [#25]). |
+| [Decision log](decisions/) ([PR #19](https://github.com/guneet-xyz/shinan/pull/19)) | Records for the owner's answers cited here (O-2, O-3, O-5, O-11 to O-19, O-46, O-50, O-71, O-72, O-75, N-5, N-9), including the change to O-11's mirror. |
 
 ## Proposed in this document
 
 1. [Principles](#1-principles) P4 to P7, including "catalog content is context,
    not authorization".
-2. A limited YAML subset for frontmatter; the [Git mirror's layout](#22-the-git-mirrors-layout)
-   and commit format; [entity fields](#23-entity-fields) as bookkeeping, not
+2. A limited YAML subset for frontmatter; the catalog's
+   [export layout, with history](#22-export-the-exit-path); [entity fields](#23-entity-fields) as bookkeeping, not
    facts.
 3. [Body rules](#25-body): current-state claims become facts; dated history
    stays in prose; generated sections are not hand-written.
@@ -1363,7 +1374,7 @@ review; most should disappear as each document applies the same answers.
 12. The [documentation-impact obligation](#84-agents-documentation-impact-obligation)
     for agents.
 13. [History](#9-history-and-purge): revisions, reverts, retired entities, and
-    purge rewriting the mirror.
+    purge warnings about copies outside Shinan.
 14. [Wiki requirements](#10-the-wiki), [start-here](#11-start-here) details and
     the [agent index](#12-the-agent-index) content and rules.
 15. [Import provenance details](#131-provenance-of-imported-facts) and the
@@ -1386,11 +1397,7 @@ review; most should disappear as each document applies the same answers.
 
 ## Decisions needed from the owner
 
-All earlier decisions are answered in [#25]. The answers raise one new
-question:
-
-| # | Decision | Recommended | Reason |
-|---|---|---|---|
-| 1 | When a catalog purge happens, should Shinan also rewrite the Git mirror's history (a force-push), so the purged content leaves the mirror? ([9](#9-history-and-purge)) | Yes, and warn that existing clones keep it, so secrets must still be rotated | An always-on mirror would otherwise keep exactly what the purge removed, for anyone who can read it. |
+None. Every earlier question is answered in [#25]; the purge question about
+the Git mirror no longer applies (owner, N-5 and N-9, [#25]).
 
 [#25]: https://github.com/guneet-xyz/shinan/issues/25
