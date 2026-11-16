@@ -18,6 +18,7 @@ describe("readWebConfig", () => {
     expect(config).toMatchObject({
       host: "127.0.0.1",
       port: 3000,
+      internal: { host: "127.0.0.1", port: 3001 },
       webDistDir: undefined,
       installationUrl: "http://localhost:5173",
       operators: [],
@@ -25,6 +26,7 @@ describe("readWebConfig", () => {
       sessions: { idleMinutes: 60, maxHours: 24 },
     })
     expect(config.sessionSecret.length).toBeGreaterThanOrEqual(32)
+    expect(config.trustedProxies.any).toBe(false)
   })
 
   it("serves the built web app in production, and needs its settings there", () => {
@@ -74,6 +76,29 @@ describe("readWebConfig", () => {
       github: { clientId: "Iv1.abc", clientSecret: "github-secret" },
       sessions: { idleMinutes: 30, maxHours: 12 },
     })
+  })
+
+  it("reads the internal listener and trusted proxies", () => {
+    const config = readWebConfig({
+      NODE_ENV: "development",
+      INTERNAL_HOST: "0.0.0.0",
+      INTERNAL_PORT: "9100",
+      SHINAN_TRUSTED_PROXIES: "172.20.0.0/16, ::1",
+    })
+    expect(config.internal).toEqual({ host: "0.0.0.0", port: 9100 })
+    expect(config.trustedProxies.has("172.20.3.4")).toBe(true)
+    expect(config.trustedProxies.has("::1")).toBe(true)
+    expect(config.trustedProxies.has("172.21.0.1")).toBe(false)
+
+    expect(() =>
+      readWebConfig({ NODE_ENV: "development", INTERNAL_PORT: "3000" }),
+    ).toThrow("INTERNAL_PORT must differ from PORT")
+    expect(() =>
+      readWebConfig({
+        NODE_ENV: "development",
+        SHINAN_TRUSTED_PROXIES: "caddy",
+      }),
+    ).toThrow("SHINAN_TRUSTED_PROXIES")
   })
 
   it("reads secrets from files", () => {

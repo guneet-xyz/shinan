@@ -130,6 +130,12 @@ export {
   throttleAddress,
 } from "./email/queue.js"
 export type { EmailJob } from "./email/queue.js"
+export { pruneRateLimits, rateLimits, takeRateLimit } from "./rate-limits.js"
+export type {
+  RateLimit,
+  RateLimitName,
+  RateLimitOutcome,
+} from "./rate-limits.js"
 // Message templates are pure functions, so they bypass no check. The core
 // operations that send them queue them with the internal `queueEmail`.
 export {

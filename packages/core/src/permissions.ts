@@ -149,6 +149,16 @@ export const rules = deepFreeze({
     people: false,
     shinan: true,
   },
+  /**
+   * Count requests against rate limits and delete old counts (architecture
+   * §10.1). Shinan does this for every request, before anyone is signed in.
+   */
+  "rate-limit": {
+    level: "installation",
+    access: "write",
+    people: false,
+    shinan: true,
+  },
   /** Any person on the installation can create a workspace (identity §4). */
   "workspace.create": {
     level: "installation",

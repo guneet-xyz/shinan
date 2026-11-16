@@ -608,3 +608,17 @@ export const emailDeliveries = pgTable(
     index("email_deliveries_status_created_at").on(t.status, t.createdAt),
   ],
 )
+
+/**
+ * Request counts for rate limits (architecture §10.1), shared by every `web`
+ * process: one row per limit and network address (or other key), counting
+ * requests in a fixed window that starts with the first one. Rows are
+ * disposable: old windows are deleted, and the table is unlogged, so a
+ * database crash simply resets the counts.
+ */
+export const rateLimits = pgTable("rate_limits", {
+  /** The limit's name and what it counts by, such as `sign-in-link:192.0.2.1`. */
+  key: text("key").primaryKey(),
+  windowStart: timestamp("window_start", { withTimezone: true }).notNull(),
+  count: integer("count").notNull(),
+})

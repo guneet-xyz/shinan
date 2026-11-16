@@ -126,6 +126,29 @@ describe("worker", () => {
     expect(prune?.cron).toBe("30 * * * *")
     const signIn = await worker.boss.getSchedule(queues.signInPrune)
     expect(signIn?.cron).toBe("15 * * * *")
+    const rateLimits = await worker.boss.getSchedule(queues.rateLimitPrune)
+    expect(rateLimits?.cron).toBe("20 * * * *")
+  })
+
+  it("prunes rate-limit counts", async () => {
+    worker = await startWorker({
+      databaseUrl,
+      db,
+      emailSender,
+      pollingIntervalSeconds: 0.5,
+    })
+    const id = await worker.boss.send(queues.rateLimitPrune)
+
+    await vi.waitFor(
+      async () => {
+        const [job] = await worker!.boss.findJobs(queues.rateLimitPrune, {
+          id: id!,
+        })
+        expect(job?.state).toBe("completed")
+        expect(job?.output).toEqual({ deleted: expect.any(Number) as number })
+      },
+      { timeout: 10_000, interval: 200 },
+    )
   })
 
   it("prunes expired sign-in records", async () => {

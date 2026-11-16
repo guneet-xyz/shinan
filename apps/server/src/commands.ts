@@ -12,12 +12,17 @@ import {
   shinan,
   syncOperators,
 } from "@shinan/core"
-import { createDatabase, migrateDatabase, withMigrationLock } from "@shinan/db"
+import {
+  checkDatabase,
+  createDatabase,
+  migrateDatabase,
+  withMigrationLock,
+} from "@shinan/db"
 import { createSesSender, createSmtpSender } from "@shinan/email"
 import type { EmailSender } from "@shinan/email"
 
 import type { SignIn } from "./api/sign-in.js"
-import { createApp } from "./app.js"
+import { createApp, createInternalApp } from "./app.js"
 import { readDatabaseUrl, readEmailConfig, readWebConfig } from "./config.js"
 import type { EmailConfig, Env } from "./config.js"
 import { connectJobQueue, migrateJobQueue, startWorker } from "./jobs.js"
@@ -95,9 +100,20 @@ async function runWeb(env: Env): Promise<void> {
       signIn,
       jobs,
       installationUrl: config.installationUrl,
+      trustedProxies: config.trustedProxies,
       webDistDir: config.webDistDir,
     })
-    await serveUntilShutdown(app.fetch, config)
+    const internal = createInternalApp({
+      checkDatabase: () => checkDatabase(pool),
+    })
+    await serveUntilShutdown([
+      { name: "web", fetch: app.fetch, ...config },
+      {
+        name: "internal (health checks)",
+        fetch: internal.fetch,
+        ...config.internal,
+      },
+    ])
   } finally {
     await closeWeb({ signIn, jobs, pool })
   }
@@ -188,23 +204,31 @@ async function runAccountCommand(args: string[], env: Env): Promise<number> {
   }
 }
 
-async function serveUntilShutdown(
-  fetch: (request: Request) => Response | Promise<Response>,
-  config: { host: string; port: number },
-): Promise<void> {
-  const server = serve(
-    { fetch, hostname: config.host, port: config.port },
-    (info) => {
+interface Listener {
+  name: string
+  fetch: (request: Request) => Response | Promise<Response>
+  host: string
+  port: number
+}
+
+async function serveUntilShutdown(listeners: Listener[]): Promise<void> {
+  const servers = listeners.map(({ name, fetch, host, port }) =>
+    serve({ fetch, hostname: host, port }, (info) => {
       console.info(
-        `${productName} web listening on http://${info.address}:${info.port}`,
+        `${productName} ${name} listening on http://${info.address}:${info.port}`,
       )
-    },
+    }),
   )
 
   await waitForShutdown()
-  await new Promise<void>((resolve, reject) => {
-    server.close((error) => (error ? reject(error) : resolve()))
-  })
+  await Promise.all(
+    servers.map(
+      (server) =>
+        new Promise<void>((resolve, reject) => {
+          server.close((error) => (error ? reject(error) : resolve()))
+        }),
+    ),
+  )
 }
 
 async function runWorker(env: Env): Promise<void> {

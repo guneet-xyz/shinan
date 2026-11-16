@@ -4,11 +4,24 @@ import { fileURLToPath } from "node:url"
 import { isEmailAddress } from "@shinan/core"
 import type { EmailFrom } from "@shinan/email"
 
+import { parseTrustedProxies } from "./client-address.js"
+import type { TrustedProxies } from "./client-address.js"
+
 export type Env = Record<string, string | undefined>
 
 export interface WebConfig {
   host: string
   port: number
+  /**
+   * The internal listener for health checks (architecture §13), which the
+   * reverse proxy never routes to.
+   */
+  internal: { host: string; port: number }
+  /**
+   * Proxies whose `X-Forwarded-For` header gives the client's address
+   * (`SHINAN_TRUSTED_PROXIES`); nobody by default.
+   */
+  trustedProxies: TrustedProxies
   /** Built web app to serve, or undefined to serve only the API. */
   webDistDir: string | undefined
   /**
@@ -86,9 +99,17 @@ export function readWebConfig(
     )
   }
 
+  const port = readPort(env.PORT ?? "3000", "PORT")
+  const internalPort = readPort(env.INTERNAL_PORT ?? "3001", "INTERNAL_PORT")
+  if (internalPort === port && port !== 0) {
+    throw new Error("INTERNAL_PORT must differ from PORT")
+  }
+
   return {
     host: env.HOST ?? "127.0.0.1",
-    port: readPort(env.PORT ?? "3000", "PORT"),
+    port,
+    internal: { host: env.INTERNAL_HOST ?? "127.0.0.1", port: internalPort },
+    trustedProxies: parseTrustedProxies(env.SHINAN_TRUSTED_PROXIES ?? ""),
     webDistDir: production
       ? (env.WEB_DIST_DIR ?? defaultWebDistDir)
       : env.WEB_DIST_DIR,

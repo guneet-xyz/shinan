@@ -15,14 +15,6 @@ export class BadRequestError extends Error {
   override name = "BadRequestError"
 }
 
-/** Too many attempts from one network address; try again later. */
-export class TooManyAttemptsError extends Error {
-  override name = "TooManyAttemptsError"
-  constructor() {
-    super("Too many attempts. Wait a minute and try again.")
-  }
-}
-
 export function errorResponse(
   c: Context,
   status: ContentfulStatusCode,
@@ -65,12 +57,6 @@ export function handleError(error: Error, c: Context) {
       error: "conflict",
       message: error.message,
       rule: error.rule,
-    })
-  }
-  if (error instanceof TooManyAttemptsError) {
-    return errorResponse(c, 429, {
-      error: "too-many-requests",
-      message: error.message,
     })
   }
   if (error instanceof BadRequestError) {
