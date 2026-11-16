@@ -8,7 +8,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "dev": "SHINAN_PLACEHOLDER_PERSON=${SHINAN_PLACEHOLDER_PERSON:-dev} tsx watch --conditions=@shinan/source src/cli.ts web",
+    "dev": "NODE_ENV=development SHINAN_PLACEHOLDER_PERSON=${SHINAN_PLACEHOLDER_PERSON-dev} tsx watch --conditions=@shinan/source src/cli.ts web",
     "migrate": "tsx --conditions=@shinan/source src/cli.ts migrate",
     "start": "NODE_ENV=production node dist/cli.js web",
     "typecheck": "tsc --noEmit",

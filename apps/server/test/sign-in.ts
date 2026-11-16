@@ -10,14 +10,14 @@ import type { SignIn } from "../src/api/sign-in.js"
 export const testSignIn: SignIn = {
   currentPerson(request) {
     const personId = request.headers.get("x-test-person")
-    if (!personId) return Promise.resolve(null)
+    if (!personId) return Promise.resolve({ person: null })
     const person: PersonActor = {
       kind: "person",
       personId,
       reauthenticated:
         request.headers.get("x-test-reauthenticated") !== "false",
     }
-    return Promise.resolve(person)
+    return Promise.resolve({ person })
   },
 }
 

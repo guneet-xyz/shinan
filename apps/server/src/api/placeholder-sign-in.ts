@@ -2,7 +2,7 @@
 //
 // Development needs a signed-in person to use the web app before there is a
 // way to sign in. This makes every request the same person, picked by the
-// SHINAN_PLACEHOLDER_PERSON setting, and refuses to run in production.
+// SHINAN_PLACEHOLDER_PERSON setting, and runs only with NODE_ENV=development.
 
 import {
   createPerson,
@@ -12,9 +12,10 @@ import {
   shinan,
 } from "@shinan/core"
 import type { PersonActor } from "@shinan/core"
-import { eq, schema } from "@shinan/db"
+import { and, eq, schema } from "@shinan/db"
 import type { Database } from "@shinan/db"
 
+import { requireDevelopment } from "../config.js"
 import type { SignIn } from "./sign-in.js"
 
 /**
@@ -27,11 +28,7 @@ export async function placeholderSignIn(
   handle: string,
   env: { NODE_ENV?: string },
 ): Promise<SignIn> {
-  if (env.NODE_ENV === "production") {
-    throw new Error(
-      "SHINAN_PLACEHOLDER_PERSON is for development only and cannot be used in production",
-    )
-  }
+  requireDevelopment(env)
 
   const personId = await findOrCreatePerson(db, handle)
   const person: PersonActor = {
@@ -47,14 +44,19 @@ export async function placeholderSignIn(
   console.warn(
     `Placeholder sign-in: every request is signed in as "${handle}" (development only)`,
   )
-  return { currentPerson: () => Promise.resolve(person) }
+  return { currentPerson: () => Promise.resolve({ person }) }
 }
 
+/**
+ * The placeholder only ever uses a person it created itself (email address
+ * `<handle>@localhost`), never someone who happens to have the handle.
+ */
 async function findOrCreatePerson(db: Database, handle: string) {
+  const email = `${handle}@localhost`
   try {
     const person = await createPerson(
       { db, actor: shinan },
-      { handle, name: handle, email: `${handle}@localhost` },
+      { handle, name: handle, email },
     )
     return person.id
   } catch (error) {
@@ -64,8 +66,15 @@ async function findOrCreatePerson(db: Database, handle: string) {
     const [person] = await db
       .select({ id: schema.people.id })
       .from(schema.people)
-      .where(eq(schema.people.handle, handle))
-    if (!person) throw error
+      .where(
+        and(eq(schema.people.handle, handle), eq(schema.people.email, email)),
+      )
+    if (!person) {
+      throw new Error(
+        `The handle "${handle}" belongs to a person the placeholder did not create; choose another SHINAN_PLACEHOLDER_PERSON`,
+        { cause: error },
+      )
+    }
     return person.id
   }
 }

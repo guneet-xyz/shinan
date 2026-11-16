@@ -45,8 +45,10 @@ pnpm dev           # API on http://localhost:3000, web app on http://localhost:5
 
 Until sign-in exists (M1-4), `pnpm dev` signs every request in as a
 **placeholder person** (handle `dev`, with a "Development" workspace), set by
-`SHINAN_PLACEHOLDER_PERSON`. It is refused when `NODE_ENV` is `production`,
-and is removed when sign-in arrives.
+`SHINAN_PLACEHOLDER_PERSON` (an empty value turns it off). It runs only when
+`NODE_ENV` is exactly `development`, which `pnpm dev` sets, and is refused
+otherwise. It never signs in as a person it did not create itself, and it is
+removed when sign-in arrives.
 
 `pnpm services:down` stops the services. If a port is taken, set
 `SHINAN_DB_PORT`, `SHINAN_SMTP_PORT` or `SHINAN_MAILPIT_PORT` before
@@ -57,23 +59,23 @@ The server reads its settings from environment variables. A secret can
 instead be read from a file: set `NAME_FILE` to its path rather than `NAME`
 (for example `DATABASE_URL_FILE`, `SES_SECRET_ACCESS_KEY_FILE`).
 
-| Variable                    | Default                              | Meaning                                                                |
-| --------------------------- | ------------------------------------ | ---------------------------------------------------------------------- |
-| `DATABASE_URL`              | none (tests use the local service)   | PostgreSQL connection string (secret)                                  |
-| `HOST`                      | `127.0.0.1`                          | Address the `web` role listens on                                      |
-| `PORT`                      | `3000`                               | Port the `web` role listens on                                         |
-| `NODE_ENV`                  | unset                                | `production` serves the built web app and requires SES                 |
-| `WEB_DIST_DIR`              | `apps/web/dist` in production        | Directory of the built web app to serve                                |
-| `EMAIL_TRANSPORT`           | `smtp`, except in production (none)  | `ses`, or `smtp` for the local mail catcher (not in production)        |
-| `EMAIL_FROM`                | `shinan@localhost` for `smtp`        | From address; required for `ses`                                       |
-| `EMAIL_FROM_NAME`           | `Shinan`                             | From display name                                                      |
-| `SES_REGION`                | none                                 | AWS region of the SES identity, such as `us-east-1`                    |
-| `SES_ACCESS_KEY_ID`         | none (the AWS SDK's default chain)   | Access key of the send-only IAM user (secret)                          |
-| `SES_SECRET_ACCESS_KEY`     | none (the AWS SDK's default chain)   | Its secret key (secret)                                                |
-| `SES_CONFIGURATION_SET`     | none                                 | SES configuration set, such as `guneet-dev`                            |
-| `SMTP_HOST`                 | `127.0.0.1`                          | Mail catcher host, for `smtp`                                          |
-| `SMTP_PORT`                 | `1025`                               | Mail catcher port, for `smtp`                                          |
-| `SHINAN_PLACEHOLDER_PERSON` | `dev` in `pnpm dev`, otherwise unset | Development only, until M1-4: the handle every request is signed in as |
+| Variable                    | Default                              | Meaning                                                                                              |
+| --------------------------- | ------------------------------------ | ---------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`              | none (tests use the local service)   | PostgreSQL connection string (secret)                                                                |
+| `HOST`                      | `127.0.0.1`                          | Address the `web` role listens on                                                                    |
+| `PORT`                      | `3000`                               | Port the `web` role listens on                                                                       |
+| `NODE_ENV`                  | unset (`development` in `pnpm dev`)  | `production` serves the built web app and requires SES; `development` allows the placeholder person  |
+| `WEB_DIST_DIR`              | `apps/web/dist` in production        | Directory of the built web app to serve                                                              |
+| `EMAIL_TRANSPORT`           | `smtp`, except in production (none)  | `ses`, or `smtp` for the local mail catcher (not in production)                                      |
+| `EMAIL_FROM`                | `shinan@localhost` for `smtp`        | From address; required for `ses`                                                                     |
+| `EMAIL_FROM_NAME`           | `Shinan`                             | From display name                                                                                    |
+| `SES_REGION`                | none                                 | AWS region of the SES identity, such as `us-east-1`                                                  |
+| `SES_ACCESS_KEY_ID`         | none (the AWS SDK's default chain)   | Access key of the send-only IAM user (secret)                                                        |
+| `SES_SECRET_ACCESS_KEY`     | none (the AWS SDK's default chain)   | Its secret key (secret)                                                                              |
+| `SES_CONFIGURATION_SET`     | none                                 | SES configuration set, such as `guneet-dev`                                                          |
+| `SMTP_HOST`                 | `127.0.0.1`                          | Mail catcher host, for `smtp`                                                                        |
+| `SMTP_PORT`                 | `1025`                               | Mail catcher port, for `smtp`                                                                        |
+| `SHINAN_PLACEHOLDER_PERSON` | `dev` in `pnpm dev`, otherwise unset | Development only, until M1-4: the handle every request is signed in as; needs `NODE_ENV=development` |
 
 In development the worker sends email to Mailpit; open http://localhost:8025
 to read it. Email is queued as a job in the same transaction as the change

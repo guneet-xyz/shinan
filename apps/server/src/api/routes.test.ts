@@ -489,6 +489,49 @@ describe("sign-in routes", () => {
   })
 })
 
+describe("headers from the sign-in layer", () => {
+  function cookies(): Headers {
+    const headers = new Headers()
+    headers.append("set-cookie", "session=refreshed; HttpOnly")
+    headers.append("set-cookie", "session_cache=x; HttpOnly")
+    return headers
+  }
+
+  it("are added to answers for signed-in people, including errors", async () => {
+    const signIn: SignIn = {
+      async currentPerson(request) {
+        const { person } = await testSignIn.currentPerson(request)
+        return { person, headers: cookies() }
+      },
+    }
+    const app = createApi({ db, signIn })
+
+    const ok = await app.request(ws("/members"), { headers: as(owner) })
+    expect(ok.status).toBe(200)
+    expect(ok.headers.getSetCookie()).toEqual([
+      "session=refreshed; HttpOnly",
+      "session_cache=x; HttpOnly",
+    ])
+
+    const missing = await app.request(`/workspaces/${crypto.randomUUID()}`, {
+      headers: as(owner),
+    })
+    expect(missing.status).toBe(404)
+    expect(missing.headers.getSetCookie()).toHaveLength(2)
+  })
+
+  it("are added when nobody is signed in", async () => {
+    const signIn: SignIn = {
+      currentPerson: () =>
+        Promise.resolve({ person: null, headers: cookies() }),
+    }
+    const response = await createApi({ db, signIn }).request("/account")
+
+    expect(response.status).toBe(401)
+    expect(response.headers.getSetCookie()).toHaveLength(2)
+  })
+})
+
 describe("unexpected errors", () => {
   it("answer a generic 500 and are logged", async () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {})
