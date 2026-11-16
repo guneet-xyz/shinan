@@ -22,83 +22,121 @@ import { isId } from "./validation.js"
 
 /**
  * Runs one workspace operation: in a transaction, checks that the actor may
- * take `action` in the workspace, then runs `work` with the resulting scope.
- * Every workspace operation goes through here, so there is one check path
- * whichever way the request arrived (identity §9.1).
+ * take `action` in the workspace, then runs `work` with a scope for that
+ * action. Every workspace operation goes through here, so there is one check
+ * path whichever way the request arrived (identity §9.1).
  *
  * Refusals are recorded in the security log after the transaction has rolled
  * back, so the record survives (identity §11). A non-member gets the same
  * answer as for a workspace that does not exist.
  */
-export async function inWorkspace<T>(
+export async function inWorkspace<A extends WorkspaceAction, T>(
   ctx: Context,
   workspaceId: string,
-  action: WorkspaceAction,
-  work: (scope: WorkspaceScope) => Promise<T>,
+  action: A,
+  work: (scope: WorkspaceScope<A>) => Promise<T>,
 ): Promise<T> {
   if (!isId(workspaceId)) throw new NotFoundError()
+  const id = workspaceId.toLowerCase()
   return withRefusalsRecorded(ctx, () =>
     ctx.db.transaction(async (tx) => {
-      const actor = await resolveWorkspaceActor(tx, ctx.actor, workspaceId)
-      if (!actor) throw new NotFoundError()
-      check(action, actor, requesterFor(ctx.actor, actor), workspaceId)
-      return work(workspaceScope(tx, ctx, workspaceId, actor))
+      const resolved = await resolveActor(tx, ctx.actor)
+      if (!resolved) throw new NotFoundError()
+      // An agent belongs to one workspace; anywhere else it is not a member,
+      // even where its person is (identity §4).
+      const foreignAgent =
+        ctx.actor.kind === "agent" && ctx.actor.workspaceId.toLowerCase() !== id
+      const actor = foreignAgent
+        ? resolved
+        : await withMembership(tx, resolved, id)
+      check(
+        action,
+        actor,
+        requesterFor(ctx.actor, actor),
+        id,
+        foreignAgent && ctx.actor.kind === "agent"
+          ? { agentWorkspaceId: ctx.actor.workspaceId.toLowerCase() }
+          : {},
+      )
+      return work({
+        ...scopeFields(ctx, tx, actor),
+        action,
+        workspaceId: id,
+      } as WorkspaceScope<A>)
     }),
   )
 }
 
 /** Like `inWorkspace`, for actions outside any workspace. */
-export async function atInstallation<T>(
+export async function atInstallation<A extends InstallationAction, T>(
   ctx: Context,
-  action: InstallationAction,
-  work: (scope: InstallationScope) => Promise<T>,
+  action: A,
+  work: (scope: InstallationScope<A>) => Promise<T>,
 ): Promise<T> {
   return withRefusalsRecorded(ctx, () =>
     ctx.db.transaction(async (tx) => {
       const actor = await resolveActor(tx, ctx.actor)
       if (!actor) throw new NotFoundError()
-      check(action, actor, requesterFor(ctx.actor, actor), null)
+      check(action, actor, requesterFor(ctx.actor, actor), null, {})
       return work({
-        tx,
-        actor,
-        origin: ctx.origin ?? "shinan_action",
-        request: ctx.request ?? {},
-      } as InstallationScope)
+        ...scopeFields(ctx, tx, actor),
+        action,
+      } as InstallationScope<A>)
     }),
   )
 }
 
 /**
- * A scope for a workspace created in this transaction, whose first owner is
- * the actor. Only workspace creation uses it.
+ * Creates a workspace with the actor as its first workspace owner, and
+ * returns a scope in it for recording the creation. This is the only way to
+ * get a workspace scope without the membership check, and it works only for
+ * a workspace it has just created.
  */
-export function newWorkspaceScope(
-  scope: InstallationScope,
-  workspaceId: string,
-  member: { id: string; role: "owner" },
-): WorkspaceScope {
+export async function createWorkspaceAsOwner(
+  installation: InstallationScope<"workspace.create">,
+  name: string,
+): Promise<{
+  workspace: typeof schema.workspaces.$inferSelect
+  member: typeof schema.members.$inferSelect
+  scope: WorkspaceScope<"workspace.create">
+}> {
+  const personId = installation.actor.personId
+  if (installation.action !== "workspace.create" || !personId) {
+    throw new Error("Only a person creating a workspace can use this")
+  }
+  const [workspace] = await installation.tx
+    .insert(schema.workspaces)
+    .values({ name })
+    .returning()
+  const [member] = await installation.tx
+    .insert(schema.members)
+    .values({ workspaceId: workspace!.id, personId, role: "owner" })
+    .returning()
+  const actor: ResolvedActor = {
+    ...installation.actor,
+    member: { id: member!.id, role: "owner" },
+  }
   return {
-    tx: scope.tx,
-    workspaceId,
-    actor: { ...scope.actor, member },
-    origin: scope.origin,
-    request: scope.request,
-  } as WorkspaceScope
+    workspace: workspace!,
+    member: member!,
+    scope: {
+      action: installation.action,
+      tx: installation.tx,
+      workspaceId: workspace!.id,
+      actor,
+      origin: installation.origin,
+      request: installation.request,
+    } as WorkspaceScope<"workspace.create">,
+  }
 }
 
-function workspaceScope(
-  tx: Transaction,
-  ctx: Context,
-  workspaceId: string,
-  actor: ResolvedActor,
-): WorkspaceScope {
+function scopeFields(ctx: Context, tx: Transaction, actor: ResolvedActor) {
   return {
     tx,
-    workspaceId,
     actor,
     origin: ctx.origin ?? "shinan_action",
     request: ctx.request ?? {},
-  } as WorkspaceScope
+  }
 }
 
 function requesterFor(actor: Actor, resolved: ResolvedActor): Requester {
@@ -115,10 +153,11 @@ function check(
   actor: ResolvedActor,
   requester: Requester,
   workspaceId: string | null,
+  details: Record<string, unknown>,
 ): void {
   const decision = decide(rules[action], requester)
   if (!decision.allowed) {
-    throw new Refusal(action, decision.reason, actor, workspaceId)
+    throw new Refusal(action, decision.reason, actor, workspaceId, details)
   }
 }
 
@@ -129,6 +168,7 @@ class Refusal extends Error {
     readonly reason: RefusalReason,
     readonly actor: ResolvedActor,
     readonly workspaceId: string | null,
+    readonly details: Record<string, unknown>,
   ) {
     super(`Refused ${action}: ${reason}`)
   }
@@ -157,6 +197,7 @@ async function withRefusalsRecorded<T>(
         ...(member || !error.workspaceId
           ? {}
           : { workspaceId: error.workspaceId }),
+        ...error.details,
       },
     })
     throw publicError(error.reason)
@@ -174,33 +215,30 @@ function publicError(reason: RefusalReason): Error {
   }
 }
 
-/**
- * Resolves the actor for a workspace: the person (or the agent's person) and
- * their current membership. Returns null when the actor's person does not
- * exist, or when an agent is used outside its own workspace.
- */
-async function resolveWorkspaceActor(
+/** Adds the person's current membership in the workspace, if any. */
+async function withMembership(
   tx: Transaction,
-  actor: Actor,
+  actor: ResolvedActor,
   workspaceId: string,
-): Promise<ResolvedActor | null> {
-  if (actor.kind === "agent" && actor.workspaceId !== workspaceId) return null
-  const resolved = await resolveActor(tx, actor)
-  if (!resolved?.personId) return resolved
-
+): Promise<ResolvedActor> {
+  if (!actor.personId) return actor
   const [member] = await tx
     .select({ id: schema.members.id, role: schema.members.role })
     .from(schema.members)
     .where(
       and(
         eq(schema.members.workspaceId, workspaceId),
-        eq(schema.members.personId, resolved.personId),
+        eq(schema.members.personId, actor.personId),
         isNull(schema.members.removedAt),
       ),
     )
-  return { ...resolved, member: member ?? null }
+  return { ...actor, member: member ?? null }
 }
 
+/**
+ * Checks the actor against the database. Returns null when the actor's
+ * person does not exist or an ID is malformed.
+ */
 async function resolveActor(
   tx: Transaction,
   actor: Actor,

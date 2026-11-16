@@ -5,6 +5,7 @@ import { inWorkspace } from "../authorize.js"
 import type { Context, WorkspaceScope } from "../context.js"
 import { NotFoundError, RuleViolationError } from "../errors.js"
 import { appendEvent } from "../events.js"
+import type { WriteScope } from "../events.js"
 import { recordSecurityEntry } from "../security-log.js"
 import { isId } from "../validation.js"
 
@@ -234,7 +235,7 @@ async function keepAnOwner(scope: WorkspaceScope): Promise<void> {
 }
 
 async function endMembership(
-  scope: WorkspaceScope,
+  scope: WriteScope,
   member: MemberSummary,
   event: { kind: string; summary: string },
 ): Promise<void> {
@@ -255,7 +256,7 @@ async function endMembership(
 
 /** Records a membership change as an event and in the security log. */
 async function record(
-  scope: WorkspaceScope,
+  scope: WriteScope,
   change: {
     kind: string
     memberId: string

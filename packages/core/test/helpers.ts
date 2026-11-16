@@ -10,7 +10,9 @@ import type { Person } from "../src/identity/people.js"
 
 type Db = Context["db"]
 
-export function testDatabase(): { db: Db; pool: { end(): Promise<void> } } {
+type Pool = ReturnType<typeof connectTestDatabase>["pool"]
+
+export function testDatabase(): { db: Db; pool: Pool } {
   return connectTestDatabase()
 }
 

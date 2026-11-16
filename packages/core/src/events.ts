@@ -2,7 +2,13 @@ import { and, desc, eq, lt, schema } from "@shinan/db"
 import type { EventSubject } from "@shinan/db"
 
 import { inWorkspace } from "./authorize.js"
-import type { Context, WorkspaceScope } from "./context.js"
+import type {
+  Context,
+  WorkspaceScope,
+  WorkspaceScopeAction,
+} from "./context.js"
+import { rules } from "./permissions.js"
+import type { WriteAction } from "./permissions.js"
 
 export interface NewEvent {
   kind: string
@@ -17,15 +23,25 @@ export interface NewEvent {
 
 export type Event = typeof schema.events.$inferSelect
 
+/** A workspace scope checked for an action that changes something. */
+export type WriteScope = WorkspaceScope<
+  Extract<WriteAction, WorkspaceScopeAction>
+>
+
 /**
  * Appends an event to the scope's workspace, credited to the scope's actor.
  * Events are never edited (architecture §4.3); the database refuses updates
  * and deletes. Returns null if an event with the same idempotency key exists.
+ * Only a scope checked for a write action may append: a read must not
+ * change the timeline.
  */
 export async function appendEvent(
-  scope: WorkspaceScope,
+  scope: WriteScope,
   event: NewEvent,
 ): Promise<Event | null> {
+  if (rules[scope.action].access !== "write") {
+    throw new Error(`${scope.action} is not a write action`)
+  }
   const [row] = await scope.tx
     .insert(schema.events)
     .values({

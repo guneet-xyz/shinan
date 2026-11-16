@@ -10,6 +10,8 @@ import type { RefusalReason } from "./errors.js"
  */
 export interface WorkspaceRule {
   level: "workspace"
+  /** Whether the action changes anything; only writes may append events. */
+  access: Access
   /** Roles allowed to take the action. */
   roles: readonly Role[]
   /**
@@ -25,9 +27,12 @@ export interface WorkspaceRule {
 /** Actions outside any workspace, at the level of the installation. */
 export interface InstallationRule {
   level: "installation"
+  access: Access
   people: boolean
   shinan: boolean
 }
+
+export type Access = "read" | "write"
 
 export type Rule = WorkspaceRule | InstallationRule
 
@@ -39,14 +44,30 @@ const anyRead: readonly Scope[] = ["catalog:read", "tasks:read"]
 
 export const rules = {
   /** Set up the installation record. */
-  "installation.set-up": { level: "installation", people: false, shinan: true },
+  "installation.set-up": {
+    level: "installation",
+    access: "write",
+    people: false,
+    shinan: true,
+  },
   /** Create a person's account; the sign-in flow (M1-4) does this. */
-  "person.create": { level: "installation", people: false, shinan: true },
+  "person.create": {
+    level: "installation",
+    access: "write",
+    people: false,
+    shinan: true,
+  },
   /** Any person on the installation can create a workspace (identity §4). */
-  "workspace.create": { level: "installation", people: true, shinan: false },
+  "workspace.create": {
+    level: "installation",
+    access: "write",
+    people: true,
+    shinan: false,
+  },
   /** Read the workspace: members, timeline (identity §5.1, first row). */
   "workspace.read": {
     level: "workspace",
+    access: "read",
     roles: ["owner", "contributor"],
     agents: anyRead,
     reauthentication: false,
@@ -57,18 +78,21 @@ export const rules = {
    */
   "member.add": {
     level: "workspace",
+    access: "write",
     roles: ["owner"],
     agents: "people",
     reauthentication: true,
   },
   "member.change-role": {
     level: "workspace",
+    access: "write",
     roles: ["owner"],
     agents: "people",
     reauthentication: true,
   },
   "member.remove": {
     level: "workspace",
+    access: "write",
     roles: ["owner"],
     agents: "people",
     reauthentication: true,
@@ -76,6 +100,7 @@ export const rules = {
   /** A member leaves the workspace themselves (identity §5.3). */
   "member.leave": {
     level: "workspace",
+    access: "write",
     roles: ["owner", "contributor"],
     agents: "people",
     reauthentication: false,
@@ -86,6 +111,7 @@ export const rules = {
    */
   "security-log.read": {
     level: "workspace",
+    access: "read",
     roles: ["owner", "contributor"],
     agents: "people",
     reauthentication: false,
@@ -97,6 +123,10 @@ export type WorkspaceAction = {
   [A in Action]: (typeof rules)[A] extends WorkspaceRule ? A : never
 }[Action]
 export type InstallationAction = Exclude<Action, WorkspaceAction>
+/** Actions that change something, and so may append events. */
+export type WriteAction = {
+  [A in Action]: (typeof rules)[A]["access"] extends "write" ? A : never
+}[Action]
 
 export type Decision =
   { allowed: true } | { allowed: false; reason: RefusalReason }

@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { and, eq, isNull, schema } from "@shinan/db"
 
 import { asAgent, asPerson, newPerson, testDatabase } from "../test/helpers.js"
+import type { AgentActor } from "./actor.js"
 import { NotFoundError } from "./errors.js"
 import { listEvents } from "./events.js"
 import {
@@ -152,6 +153,49 @@ describe("a person in two workspaces", () => {
     await expect(listMembers(agentOfOne, two)).rejects.toBeInstanceOf(
       NotFoundError,
     )
+  })
+
+  it("has agents whose attempts elsewhere are recorded at installation level", async () => {
+    const agentOfOne = asAgent(db, both, one)
+    const { agentId } = agentOfOne.actor as AgentActor
+    await expect(listMembers(agentOfOne, two)).rejects.toBeInstanceOf(
+      NotFoundError,
+    )
+
+    const entries = await db
+      .select()
+      .from(schema.securityLog)
+      .where(
+        and(
+          eq(schema.securityLog.actorAgentId, agentId),
+          eq(schema.securityLog.action, "request.refused"),
+        ),
+      )
+    expect(entries).toEqual([
+      expect.objectContaining({
+        workspaceId: null,
+        actorKind: "agent",
+        actorPersonId: both.id,
+        actorLabel: `${both.handle} via opencode-daedalus`,
+        details: {
+          action: "workspace.read",
+          reason: "not-member",
+          workspaceId: two,
+          agentWorkspaceId: one,
+        },
+      }),
+    ])
+    const twoLog = await listSecurityLog(asPerson(db, bob), two)
+    expect(twoLog.some((e) => e.actorAgentId === agentId)).toBe(false)
+  })
+
+  it("is found whatever the case of the workspace ID", async () => {
+    expect(
+      await listMembers(asPerson(db, both), two.toUpperCase()),
+    ).toHaveLength(2)
+    expect(
+      await listMembers(asAgent(db, both, one.toUpperCase()), one),
+    ).toHaveLength(2)
   })
 
   it("is not an owner in the workspace where they contribute", async () => {

@@ -1,9 +1,18 @@
-import { afterAll, describe, expect, it } from "vitest"
+import { afterAll, describe, expect, it, vi } from "vitest"
 
-import { asPerson, asShinan, newPerson, testDatabase } from "../test/helpers.js"
+import { sql } from "@shinan/db"
+
+import {
+  asPerson,
+  asShinan,
+  newPerson,
+  testDatabase,
+  uniqueHandle,
+} from "../test/helpers.js"
 import { inWorkspace } from "./authorize.js"
 import { RuleViolationError } from "./errors.js"
 import { appendEvent, listEvents } from "./events.js"
+import type { WriteScope } from "./events.js"
 import { getInstallation, setUpInstallation } from "./identity/installation.js"
 import { createPerson } from "./identity/people.js"
 import { createWorkspace } from "./identity/workspaces.js"
@@ -23,7 +32,7 @@ describe("events", () => {
     const [first, repeat] = await inWorkspace(
       ctx,
       workspace.id,
-      "workspace.read",
+      "member.add",
       async (scope) => [
         await appendEvent(scope, {
           kind: "test.happened",
@@ -49,11 +58,27 @@ describe("events", () => {
     expect(repeat).toBeNull()
   })
 
+  it("are appended only under a write action", async () => {
+    const person = await newPerson(db)
+    const ctx = asPerson(db, person)
+    const { workspace } = await createWorkspace(ctx, { name: "Reads" })
+
+    await expect(
+      inWorkspace(ctx, workspace.id, "workspace.read", (scope) =>
+        // A read scope does not type-check here; check the runtime guard too.
+        appendEvent(scope as unknown as WriteScope, {
+          kind: "test.read",
+          summary: "A read",
+        }),
+      ),
+    ).rejects.toThrow(/not a write action/)
+  })
+
   it("are listed newest first, a page at a time", async () => {
     const person = await newPerson(db)
     const ctx = asPerson(db, person)
     const { workspace } = await createWorkspace(ctx, { name: "Pages" })
-    await inWorkspace(ctx, workspace.id, "workspace.read", async (scope) => {
+    await inWorkspace(ctx, workspace.id, "member.add", async (scope) => {
       for (const n of [1, 2, 3]) {
         await appendEvent(scope, { kind: "test.n", summary: `${n}` })
       }
@@ -108,6 +133,41 @@ describe("createPerson", () => {
         email: "other@example.com",
       }),
     ).rejects.toMatchObject({ rule: "handle-taken" })
+  })
+
+  it("refuses a duplicate committed while it waits with a rule error", async () => {
+    const handle = uniqueHandle("race")
+    // Another connection inserts the same handle and has not committed, so
+    // createPerson's own check passes and its insert waits on the row.
+    const other = await pool.connect()
+    try {
+      await other.query("begin")
+      await other.query(
+        "insert into people (handle, name, email) values ($1, 'First', $2)",
+        [handle, `${handle}@example.com`],
+      )
+      const attempt = createPerson(asShinan(db), {
+        handle,
+        name: "Second",
+        email: `${handle}-2@example.com`,
+      })
+      await vi.waitFor(
+        async () => {
+          const { rows } = await db.execute<{ count: number }>(
+            sql`select count(*)::int as count from pg_stat_activity
+                where wait_event_type = 'Lock' and datname = current_database()
+                and query ilike '%insert into "people"%'`,
+          )
+          expect(rows[0]!.count).toBe(1)
+        },
+        { timeout: 3_000, interval: 20 },
+      )
+      await other.query("commit")
+      await expect(attempt).rejects.toMatchObject({ rule: "handle-taken" })
+    } finally {
+      await other.query("rollback").catch(() => {})
+      other.release()
+    }
   })
 
   it("checks the handle", async () => {

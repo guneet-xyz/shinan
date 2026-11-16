@@ -1,6 +1,6 @@
-import { schema } from "@shinan/db"
+import type { schema } from "@shinan/db"
 
-import { atInstallation, newWorkspaceScope } from "../authorize.js"
+import { atInstallation, createWorkspaceAsOwner } from "../authorize.js"
 import type { Context } from "../context.js"
 import { appendEvent } from "../events.js"
 import { recordSecurityEntry } from "../security-log.js"
@@ -20,26 +20,13 @@ export async function createWorkspace(
   const name = checkName(input.name, "The workspace name")
 
   return atInstallation(ctx, "workspace.create", async (installation) => {
-    const [workspace] = await installation.tx
-      .insert(schema.workspaces)
-      .values({ name })
-      .returning()
-    const [member] = await installation.tx
-      .insert(schema.members)
-      .values({
-        workspaceId: workspace!.id,
-        personId: installation.actor.personId!,
-        role: "owner",
-      })
-      .returning()
-
-    const scope = newWorkspaceScope(installation, workspace!.id, {
-      id: member!.id,
-      role: "owner",
-    })
+    const { workspace, member, scope } = await createWorkspaceAsOwner(
+      installation,
+      name,
+    )
     await appendEvent(scope, {
       kind: "workspace.created",
-      subjects: [{ type: "member", id: member!.id }],
+      subjects: [{ type: "member", id: member.id }],
       summary: `${scope.actor.label} created the workspace ${name}`,
       data: { name },
     })
@@ -49,8 +36,8 @@ export async function createWorkspace(
       outcome: "succeeded",
       actor: scope.actor,
       request: scope.request,
-      details: { name, memberId: member!.id, role: "owner" },
+      details: { name, memberId: member.id, role: "owner" },
     })
-    return { workspace: workspace!, member: member! }
+    return { workspace, member }
   })
 }
