@@ -182,7 +182,7 @@ describe("sign-in methods, sessions and invitations", () => {
     expect(
       await screen.findByRole("heading", { name: "Pending invitations" }),
     ).toBeTruthy()
-    await userEvent.click(screen.getByRole("button", { name: "Accept" }))
+    await userEvent.click(await screen.findByRole("button", { name: "Accept" }))
     expect(api.acceptInvitationById).toHaveBeenCalledWith("i1")
   })
 
