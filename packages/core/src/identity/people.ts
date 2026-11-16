@@ -24,11 +24,10 @@ export async function createPerson(
   ctx: Context,
   input: NewPerson,
 ): Promise<Person> {
-  const handle = checkHandle(input.handle)
-  const name = checkName(input.name, "A person's name")
-  const email = normalizeEmail(input.email)
-
   return atInstallation(ctx, "person.create", async (scope) => {
+    const handle = checkHandle(input.handle)
+    const name = checkName(input.name, "A person's name")
+    const email = normalizeEmail(input.email)
     const [existing] = await scope.tx
       .select({ handle: schema.people.handle })
       .from(schema.people)

@@ -43,8 +43,8 @@ export async function addMember(
   ctx: Context,
   input: { workspaceId: string; personId: string; role: Role },
 ): Promise<MemberSummary> {
-  const role = checkRole(input.role)
   return inWorkspace(ctx, input.workspaceId, "member.add", async (scope) => {
+    const role = checkRole(input.role)
     if (!isId(input.personId)) throw new NotFoundError()
     await lockMemberships(scope)
     const [person] = await scope.tx
@@ -100,12 +100,12 @@ export async function changeRole(
   ctx: Context,
   input: { workspaceId: string; memberId: string; role: Role },
 ): Promise<MemberSummary> {
-  const role = checkRole(input.role)
   return inWorkspace(
     ctx,
     input.workspaceId,
     "member.change-role",
     async (scope) => {
+      const role = checkRole(input.role)
       const member = await findCurrentMember(scope, input.memberId)
       if (member.role === role) return member
       if (member.role === "owner") await keepAnOwner(scope)

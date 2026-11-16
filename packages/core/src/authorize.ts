@@ -28,7 +28,9 @@ import { isId } from "./validation.js"
  *
  * Refusals are recorded in the security log after the transaction has rolled
  * back, so the record survives (identity §11). A non-member gets the same
- * answer as for a workspace that does not exist.
+ * answer as for a workspace that does not exist. Operations check their input
+ * inside `work`, after permission, so a refused request is always recorded
+ * whatever its input (identity §9.1 order).
  */
 export async function inWorkspace<A extends WorkspaceAction, T>(
   ctx: Context,

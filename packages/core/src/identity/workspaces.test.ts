@@ -96,6 +96,18 @@ describe("renameWorkspace", () => {
     ).rejects.toBeInstanceOf(InvalidInputError)
   })
 
+  it("checks permission before input, so refusals are recorded", async () => {
+    await expect(
+      renameWorkspace(asPerson(db, contributor), { workspaceId, name: " " }),
+    ).rejects.toBeInstanceOf(ForbiddenError)
+    const [entry] = await listSecurityLog(asPerson(db, owner), workspaceId)
+    expect(entry).toMatchObject({
+      action: "request.refused",
+      actorPersonId: contributor.id,
+      details: { action: "workspace.change-settings", reason: "role" },
+    })
+  })
+
   it("is for workspace owners who signed in again", async () => {
     await expect(
       renameWorkspace(asPerson(db, contributor), { workspaceId, name: "X" }),

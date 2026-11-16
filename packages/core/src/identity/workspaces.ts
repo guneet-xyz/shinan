@@ -29,9 +29,8 @@ export async function createWorkspace(
   ctx: Context,
   input: { name: string },
 ): Promise<{ workspace: Workspace; member: Member }> {
-  const name = checkName(input.name, "The workspace name")
-
   return atInstallation(ctx, "workspace.create", async (installation) => {
+    const name = checkName(input.name, "The workspace name")
     const { workspace, member, scope } = await createWorkspaceAsOwner(
       installation,
       name,
@@ -73,13 +72,12 @@ export async function renameWorkspace(
   ctx: Context,
   input: { workspaceId: string; name: string },
 ): Promise<WorkspaceDetails> {
-  const name = checkName(input.name, "The workspace name")
-
   return inWorkspace(
     ctx,
     input.workspaceId,
     "workspace.change-settings",
     async (scope) => {
+      const name = checkName(input.name, "The workspace name")
       const workspace = await findWorkspace(scope, { lock: true })
       const role = scope.actor.member!.role
       if (workspace.name === name) return { ...workspace, role }

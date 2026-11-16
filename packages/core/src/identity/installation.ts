@@ -16,8 +16,8 @@ export async function setUpInstallation(
   ctx: Context,
   input: { name: string },
 ): Promise<Installation> {
-  const name = checkName(input.name, "The installation name")
   return atInstallation(ctx, "installation.set-up", async (scope) => {
+    const name = checkName(input.name, "The installation name")
     const [created] = await scope.tx
       .insert(schema.installation)
       .values({ name })

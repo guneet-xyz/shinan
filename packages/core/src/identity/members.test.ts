@@ -331,6 +331,21 @@ describe("changeRole", () => {
     expect(owners).toHaveLength(1)
   })
 
+  it("checks permission before the role, so refusals are recorded", async () => {
+    await expect(
+      changeRole(asPerson(db, contributor), {
+        workspaceId,
+        memberId: contributorMemberId,
+        role: "viewer" as never,
+      }),
+    ).rejects.toBeInstanceOf(ForbiddenError)
+    const [entry] = await listSecurityLog(asPerson(db, owner), workspaceId)
+    expect(entry).toMatchObject({
+      action: "request.refused",
+      details: { action: "member.change-role", reason: "role" },
+    })
+  })
+
   it("is not allowed for contributors", async () => {
     await expect(
       changeRole(asPerson(db, contributor), {
