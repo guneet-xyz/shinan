@@ -8,7 +8,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "dev": "NODE_ENV=development SHINAN_PLACEHOLDER_PERSON=${SHINAN_PLACEHOLDER_PERSON-dev} tsx watch --conditions=@shinan/source src/cli.ts web",
+    "dev": "NODE_ENV=development tsx watch --conditions=@shinan/source src/cli.ts web",
     "migrate": "tsx --conditions=@shinan/source src/cli.ts migrate",
     "start": "NODE_ENV=production node dist/cli.js web",
     "typecheck": "tsc --noEmit",
@@ -20,6 +20,8 @@
     "@shinan/core": "workspace:*",
     "@shinan/db": "workspace:*",
     "@shinan/email": "workspace:*",
+    "better-auth": "1.7.25",
+    "drizzle-orm": "^0.45.4",
     "hono": "^4.13.18",
     "pg-boss": "^12.38.2"
   }

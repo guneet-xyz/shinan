@@ -3,14 +3,16 @@ import { afterAll, beforeEach, describe, expect, it, vi } from "vitest"
 import type * as Api from "@shinan/api-client"
 import {
   addMember,
-  createPerson,
   createWorkspace,
+  hashToken,
   setUpInstallation,
   shinan,
 } from "@shinan/core"
-import type { Person } from "@shinan/core"
+import type { JobQueue, Person } from "@shinan/core"
+import { and, eq, schema } from "@shinan/db"
 import { connectTestDatabase } from "@shinan/db/testing"
 
+import { insertPerson } from "../../test/people.js"
 import { as, testSignIn } from "../../test/sign-in.js"
 import { createApi } from "./routes.js"
 import type { SignIn } from "./sign-in.js"
@@ -21,7 +23,14 @@ afterAll(async () => {
   await pool.end()
 })
 
-const api = createApi({ db, signIn: testSignIn })
+// Emails stay queued in email_deliveries; no worker sends them here.
+const jobs: JobQueue = { send: () => Promise.resolve(null) }
+const api = createApi({
+  db,
+  signIn: testSignIn,
+  jobs,
+  installationUrl: "http://shinan.test",
+})
 
 let owner: Person
 let contributor: Person
@@ -29,13 +38,8 @@ let workspaceId: string
 let ownerMemberId: string
 let contributorMemberId: string
 
-let counter = 0
 async function newPerson(prefix: string): Promise<Person> {
-  const handle = `${prefix}-${process.pid}-${Date.now()}-${counter++}`
-  return createPerson(
-    { db, actor: shinan },
-    { handle, name: `Person ${handle}`, email: `${handle}@example.com` },
-  )
+  return insertPerson(db, prefix)
 }
 
 beforeEach(async () => {
@@ -112,7 +116,10 @@ describe("without sign-in", () => {
     await setUpInstallation({ db, actor: shinan }, { name: "Shinan" })
     const response = await call("/installation")
     expect(response.status).toBe(200)
-    expect(await response.json()).toEqual({ name: "Shinan" })
+    expect(await response.json()).toEqual({
+      name: "Shinan",
+      signInMethods: { github: false },
+    })
   })
 
   it("answers unknown paths with 404, not 401", async () => {
@@ -450,18 +457,218 @@ describe("security log", () => {
 })
 
 describe("invitations", () => {
-  it("are not available until sign-in and accounts arrive", async () => {
+  async function allowlist(email: string) {
+    await db
+      .insert(schema.emailAllowlist)
+      .values({ email })
+      .onConflictDoNothing()
+  }
+
+  /** The token in the newest invitation email to an address. */
+  async function invitationToken(email: string): Promise<string> {
+    const deliveries = await db
+      .select()
+      .from(schema.emailDeliveries)
+      .where(
+        and(
+          eq(schema.emailDeliveries.recipient, email),
+          eq(schema.emailDeliveries.kind, "invitation"),
+        ),
+      )
+    const message = deliveries.at(-1)!.message!
+    return /\/invitation#(\S+)/.exec(message.text)![1]!
+  }
+
+  it("are sent to allowlisted addresses by workspace owners", async () => {
+    const invitee = await newPerson("invitee")
+    await allowlist(invitee.email)
+    const response = await call(ws("/invitations"), {
+      body: { email: invitee.email.toUpperCase(), role: "contributor" },
+      headers: as(owner),
+    })
+    expect(response.status).toBe(201)
+    const invitation = await json<Api.Invitation>(response)
+    expect(invitation).toMatchObject({
+      email: invitee.email,
+      role: "contributor",
+      state: "pending",
+      invitedByHandle: owner.handle,
+    })
+    const listed = await json<Api.Invitation[]>(
+      await call(ws("/invitations"), { headers: as(owner) }),
+    )
+    expect(listed.map((i) => i.id)).toEqual([invitation.id])
+
+    // The link's token is stored only as a hash.
+    const token = await invitationToken(invitee.email)
+    const [row] = await db
+      .select()
+      .from(schema.invitations)
+      .where(eq(schema.invitations.id, invitation.id))
+    expect(row!.tokenHash).toBe(hashToken(token))
+  })
+
+  it("refuse an address that is not on the allowlist, saying what to do", async () => {
+    const response = await call(ws("/invitations"), {
+      body: { email: "not-allowed@example.com", role: "contributor" },
+      headers: as(owner),
+    })
+    expect(response.status).toBe(409)
+    const body = await json<Api.ErrorBody>(response)
+    expect(body.rule).toBe("not-allowlisted")
+    expect(body.message).toMatch(/installation operator/)
+  })
+
+  it("need a recent sign-in, and are for workspace owners only", async () => {
+    await allowlist("someone@example.com")
+    const stale = await call(ws("/invitations"), {
+      body: { email: "someone@example.com", role: "contributor" },
+      headers: as(owner, { reauthenticated: false }),
+    })
+    expect(stale.status).toBe(403)
+    expect(await json<Api.ErrorBody>(stale)).toMatchObject({
+      error: "reauthentication-required",
+    })
     for (const [method, path] of [
       ["GET", ws("/invitations")],
       ["POST", ws("/invitations")],
-      ["DELETE", ws(`/invitations/${crypto.randomUUID()}`)],
     ] as const) {
-      const response = await call(path, { method, headers: as(owner) })
-      expect(response.status, `${method} ${path}`).toBe(501)
-      expect(await json<Api.ErrorBody>(response)).toMatchObject({
-        error: "not-implemented",
+      const response = await call(path, {
+        method,
+        body:
+          method === "POST"
+            ? { email: "someone@example.com", role: "contributor" }
+            : undefined,
+        headers: as(contributor),
       })
+      expect(response.status, `${method} ${path}`).toBe(403)
     }
+  })
+
+  it("can be sent again with a new link, or withdrawn", async () => {
+    const invitee = await newPerson("invitee")
+    await allowlist(invitee.email)
+    const invitation = await json<Api.Invitation>(
+      await call(ws("/invitations"), {
+        body: { email: invitee.email, role: "owner" },
+        headers: as(owner),
+      }),
+    )
+    const first = await invitationToken(invitee.email)
+    const resent = await call(ws(`/invitations/${invitation.id}/resend`), {
+      method: "POST",
+      headers: as(owner),
+    })
+    expect(resent.status).toBe(200)
+    const second = await invitationToken(invitee.email)
+    expect(second).not.toBe(first)
+
+    const old = await call("/invitations/find", {
+      body: { token: first },
+      headers: as(invitee),
+    })
+    expect(old.status).toBe(404)
+
+    const withdrawn = await call(ws(`/invitations/${invitation.id}`), {
+      method: "DELETE",
+      headers: as(owner),
+    })
+    expect(withdrawn.status).toBe(204)
+    const gone = await call("/invitations/find", {
+      body: { token: second },
+      headers: as(invitee),
+    })
+    expect(gone.status).toBe(404)
+  })
+
+  it("are accepted by the invited person, signed in with that address", async () => {
+    const invitee = await newPerson("invitee")
+    const other = await newPerson("other")
+    await allowlist(invitee.email)
+    await call(ws("/invitations"), {
+      body: { email: invitee.email, role: "contributor" },
+      headers: as(owner),
+    })
+    const token = await invitationToken(invitee.email)
+
+    // A leaked link is useless to anyone else.
+    for (const path of ["/invitations/find", "/invitations/accept"]) {
+      const response = await call(path, {
+        body: { token },
+        headers: as(other),
+      })
+      expect(response.status, path).toBe(404)
+    }
+    // And needs sign-in.
+    expect((await call("/invitations/find", { body: { token } })).status).toBe(
+      401,
+    )
+
+    const found = await json<Api.InvitationForYou>(
+      await call("/invitations/find", {
+        body: { token },
+        headers: as(invitee),
+      }),
+    )
+    expect(found).toMatchObject({
+      workspaceId,
+      workspaceName: "Team",
+      invitedByHandle: owner.handle,
+      role: "contributor",
+    })
+    const pending = await json<Api.InvitationForYou[]>(
+      await call("/account/invitations", { headers: as(invitee) }),
+    )
+    expect(pending.map((i) => i.id)).toEqual([found.id])
+
+    const accepted = await call("/invitations/accept", {
+      body: { token },
+      headers: as(invitee, { reauthenticated: false }),
+    })
+    expect(accepted.status).toBe(200)
+    expect(await json<Api.AcceptedInvitation>(accepted)).toMatchObject({
+      workspaceId,
+    })
+    const members = await json<Api.Member[]>(
+      await call(ws("/members"), { headers: as(invitee) }),
+    )
+    expect(members.find((m) => m.personId === invitee.id)).toMatchObject({
+      role: "contributor",
+      invitedByHandle: owner.handle,
+    })
+    // Used once.
+    const again = await call("/invitations/accept", {
+      body: { token },
+      headers: as(invitee),
+    })
+    expect(again.status).toBe(404)
+  })
+
+  it("can be declined from Your account", async () => {
+    const invitee = await newPerson("invitee")
+    await allowlist(invitee.email)
+    const invitation = await json<Api.Invitation>(
+      await call(ws("/invitations"), {
+        body: { email: invitee.email, role: "contributor" },
+        headers: as(owner),
+      }),
+    )
+    const declined = await call(
+      `/account/invitations/${invitation.id}/decline`,
+      { method: "POST", headers: as(invitee) },
+    )
+    expect(declined.status).toBe(204)
+    const listed = await json<Api.Invitation[]>(
+      await call(ws("/invitations"), { headers: as(owner) }),
+    )
+    expect(listed.find((i) => i.id === invitation.id)?.state).toBe("declined")
+    const log = await json<Api.Page<Api.SecurityLogEntry>>(
+      await call(ws("/security-log"), { headers: as(owner) }),
+    )
+    expect(log.entries[0]).toMatchObject({
+      action: "invitation.declined",
+      actorPersonId: invitee.id,
+    })
   })
 })
 
@@ -499,6 +706,7 @@ describe("headers from the sign-in layer", () => {
 
   it("are added to answers for signed-in people, including errors", async () => {
     const signIn: SignIn = {
+      ...testSignIn,
       async currentPerson(request) {
         const { person } = await testSignIn.currentPerson(request)
         return { person, headers: cookies() }
@@ -522,6 +730,7 @@ describe("headers from the sign-in layer", () => {
 
   it("are added when nobody is signed in", async () => {
     const signIn: SignIn = {
+      ...testSignIn,
       currentPerson: () =>
         Promise.resolve({ person: null, headers: cookies() }),
     }
@@ -536,6 +745,7 @@ describe("unexpected errors", () => {
   it("answer a generic 500 and are logged", async () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {})
     const failing: SignIn = {
+      ...testSignIn,
       currentPerson: () => Promise.reject(new Error("database password: x")),
     }
     const response = await createApi({ db, signIn: failing }).request(

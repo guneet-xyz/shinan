@@ -11,62 +11,123 @@ import {
 } from "./config.js"
 
 describe("readWebConfig", () => {
+  const secret = "s".repeat(32)
+
   it("uses local defaults in development", () => {
-    expect(readWebConfig({})).toEqual({
+    const config = readWebConfig({ NODE_ENV: "development" })
+    expect(config).toMatchObject({
       host: "127.0.0.1",
       port: 3000,
       webDistDir: undefined,
-      placeholderPerson: undefined,
+      installationUrl: "http://localhost:5173",
+      operators: [],
+      github: undefined,
+      sessions: { idleMinutes: 60, maxHours: 24 },
     })
+    expect(config.sessionSecret.length).toBeGreaterThanOrEqual(32)
   })
 
-  it("serves the built web app in production", () => {
-    const config = readWebConfig({ NODE_ENV: "production" })
-
+  it("serves the built web app in production, and needs its settings there", () => {
+    const env = {
+      NODE_ENV: "production",
+      SHINAN_URL: "https://shinan.example",
+      SHINAN_OPERATORS: "Owner@Example.com, second@example.com",
+      SHINAN_SESSION_SECRET: secret,
+    }
+    const config = readWebConfig(env)
     expect(config.webDistDir).toMatch(/[/\\]web[/\\]dist$/)
+    expect(config.operators).toEqual([
+      "owner@example.com",
+      "second@example.com",
+    ])
+
+    for (const name of [
+      "SHINAN_URL",
+      "SHINAN_OPERATORS",
+      "SHINAN_SESSION_SECRET",
+    ] as const) {
+      expect(() => readWebConfig({ ...env, [name]: "" }), name).toThrow(name)
+    }
+    expect(() =>
+      readWebConfig({ ...env, SHINAN_URL: "http://shinan.example" }),
+    ).toThrow(/https/)
   })
 
   it("reads overrides", () => {
-    expect(
-      readWebConfig({
-        HOST: "0.0.0.0",
-        PORT: "8080",
-        WEB_DIST_DIR: "/srv",
-        NODE_ENV: "development",
-        SHINAN_PLACEHOLDER_PERSON: "dev",
-      }),
-    ).toEqual({
+    const config = readWebConfig({
+      HOST: "0.0.0.0",
+      PORT: "8080",
+      WEB_DIST_DIR: "/srv",
+      SHINAN_URL: "http://localhost:3000",
+      SHINAN_SESSION_SECRET: secret,
+      GITHUB_CLIENT_ID: "Iv1.abc",
+      GITHUB_CLIENT_SECRET: "github-secret",
+      SIGN_IN_SESSION_IDLE_MINUTES: "30",
+      SIGN_IN_SESSION_MAX_HOURS: "12",
+    })
+    expect(config).toMatchObject({
       host: "0.0.0.0",
       port: 8080,
       webDistDir: "/srv",
-      placeholderPerson: "dev",
+      installationUrl: "http://localhost:3000",
+      sessionSecret: secret,
+      github: { clientId: "Iv1.abc", clientSecret: "github-secret" },
+      sessions: { idleMinutes: 30, maxHours: 12 },
     })
   })
 
-  it("allows the placeholder sign-in only with NODE_ENV=development", () => {
-    for (const NODE_ENV of [
-      undefined,
-      "",
-      "production",
-      "prod",
-      "dev",
-      "test",
-    ]) {
-      expect(
-        () => readWebConfig({ NODE_ENV, SHINAN_PLACEHOLDER_PERSON: "dev" }),
-        String(NODE_ENV),
-      ).toThrow(/NODE_ENV=development/)
+  it("reads secrets from files", () => {
+    const files: Record<string, string> = {
+      "/run/secrets/session": `${secret}\n`,
+      "/run/secrets/github": "github-secret\n",
     }
+    const config = readWebConfig(
+      {
+        SHINAN_SESSION_SECRET_FILE: "/run/secrets/session",
+        GITHUB_CLIENT_ID: "Iv1.abc",
+        GITHUB_CLIENT_SECRET_FILE: "/run/secrets/github",
+      },
+      (path) => files[path]!,
+    )
+    expect(config.sessionSecret).toBe(secret)
+    expect(config.github?.clientSecret).toBe("github-secret")
   })
 
-  it("turns the placeholder sign-in off with an empty value", () => {
-    expect(
-      readWebConfig({ SHINAN_PLACEHOLDER_PERSON: "" }).placeholderPerson,
-    ).toBeUndefined()
+  it("uses the development session secret only with NODE_ENV=development", () => {
+    for (const NODE_ENV of [undefined, "", "production", "prod", "test"]) {
+      expect(
+        () =>
+          readWebConfig({
+            NODE_ENV,
+            SHINAN_URL: "https://x.example",
+            SHINAN_OPERATORS: "op@example.com",
+          }),
+        String(NODE_ENV),
+      ).toThrow(/SHINAN_SESSION_SECRET/)
+    }
+    expect(() => readWebConfig({ SHINAN_SESSION_SECRET: "too-short" })).toThrow(
+      /32 characters/,
+    )
   })
 
-  it("rejects an invalid port", () => {
-    expect(() => readWebConfig({ PORT: "web" })).toThrow(/PORT/)
+  it("needs both GitHub settings or neither", () => {
+    expect(() =>
+      readWebConfig({ NODE_ENV: "development", GITHUB_CLIENT_ID: "Iv1.abc" }),
+    ).toThrow(/GITHUB_CLIENT_SECRET/)
+  })
+
+  it("rejects bad values", () => {
+    const dev = { NODE_ENV: "development" }
+    expect(() => readWebConfig({ ...dev, PORT: "web" })).toThrow(/PORT/)
+    expect(() =>
+      readWebConfig({ ...dev, SHINAN_URL: "https://x.example/app" }),
+    ).toThrow(/origin/)
+    expect(() =>
+      readWebConfig({ ...dev, SHINAN_OPERATORS: "not-an-address" }),
+    ).toThrow(/SHINAN_OPERATORS/)
+    expect(() =>
+      readWebConfig({ ...dev, SIGN_IN_SESSION_IDLE_MINUTES: "0" }),
+    ).toThrow(/SIGN_IN_SESSION_IDLE_MINUTES/)
   })
 })
 

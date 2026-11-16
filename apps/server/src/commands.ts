@@ -1,23 +1,37 @@
 import { serve } from "@hono/node-server"
 
-import { productName, setUpInstallation, shinan } from "@shinan/core"
+import {
+  changeEmailOf,
+  endSessionsOf,
+  prepareSetupLink,
+  productName,
+  setUpInstallation,
+  setupLinkHours,
+  shinan,
+  syncOperators,
+} from "@shinan/core"
 import { createDatabase, migrateDatabase, withMigrationLock } from "@shinan/db"
 import { createSesSender, createSmtpSender } from "@shinan/email"
 import type { EmailSender } from "@shinan/email"
 
-import { placeholderSignIn } from "./api/placeholder-sign-in.js"
-import { noSignIn } from "./api/sign-in.js"
 import { createApp } from "./app.js"
 import { readDatabaseUrl, readEmailConfig, readWebConfig } from "./config.js"
 import type { EmailConfig, Env } from "./config.js"
-import { migrateJobQueue, startWorker } from "./jobs.js"
+import { connectJobQueue, migrateJobQueue, startWorker } from "./jobs.js"
+import { createBetterAuthSignIn } from "./sign-in/better-auth.js"
 
 export const usage = `Usage: shinan <command>
 
 Commands:
   web       Serve the API and, in production, the web app
   worker    Run background jobs
-  migrate   Prepare the database (migrations, job queue, installation), then exit`
+  migrate   Prepare the database (migrations, job queue, installation), then exit
+
+Recovery, for installation operators (recorded in the security log):
+  account end-sessions <handle>          End all of a person's sign-in sessions
+  account change-email <handle> <email>  Change a person's email address, add
+                                         it to the allowlist and end their
+                                         sign-in sessions`
 
 /** Runs one CLI command and resolves to the process exit code. */
 export async function runCommand(
@@ -25,6 +39,7 @@ export async function runCommand(
   env: Env,
 ): Promise<number> {
   const [command, ...rest] = args
+  if (command === "account") return runAccountCommand(rest, env)
   if (rest.length > 0) {
     console.error(`Unexpected arguments: ${rest.join(" ")}\n\n${usage}`)
     return 1
@@ -55,19 +70,88 @@ export async function runCommand(
 
 async function runWeb(env: Env): Promise<void> {
   const config = readWebConfig(env)
-  const { db, pool } = createDatabase(readDatabaseUrl(env))
+  const databaseUrl = readDatabaseUrl(env)
+  const { db, pool } = createDatabase(databaseUrl)
+  const jobs = await connectJobQueue(databaseUrl)
   try {
-    // Sign-in (M1-4) replaces this: until then nobody can sign in, except
-    // through the development placeholder.
-    const signIn = config.placeholderPerson
-      ? await placeholderSignIn(db, config.placeholderPerson, env)
-      : noSignIn
-    const app = createApp({ db, signIn, webDistDir: config.webDistDir })
+    await syncOperators({ db, actor: shinan }, { emails: config.operators })
+    await announceSetupLink(db, config)
+    const signIn = createBetterAuthSignIn({
+      db,
+      jobs,
+      installationUrl: config.installationUrl,
+      secret: config.sessionSecret,
+      github: config.github,
+      sessions: config.sessions,
+    })
+    const app = createApp({
+      db,
+      signIn,
+      jobs,
+      installationUrl: config.installationUrl,
+      webDistDir: config.webDistDir,
+    })
     await serveUntilShutdown(app.fetch, config)
   } finally {
+    await jobs.stop({ graceful: false })
     await pool.end()
   }
   console.info(`${productName} web stopped`)
+}
+
+/**
+ * Until the first operator account exists, prints a one-time setup link to
+ * this process's log, and nowhere else (architecture §12). Each start
+ * replaces the previous link. This is the one link Shinan ever logs.
+ */
+export async function announceSetupLink(
+  db: Parameters<typeof prepareSetupLink>[0]["db"],
+  config: { installationUrl: string; operators: string[] },
+): Promise<void> {
+  if (config.operators.length === 0) {
+    console.warn(
+      "SHINAN_OPERATORS is empty: nobody can claim this installation until it names an operator",
+    )
+    return
+  }
+  const token = await prepareSetupLink({ db, actor: shinan })
+  if (!token) return
+  console.info(
+    `First start: to create the first operator account, open this one-time setup link within ${setupLinkHours} hours (restart to get a new one):\n\n  ${config.installationUrl}/setup#${token}\n`,
+  )
+}
+
+/** The operator's recovery commands (identity §3.4). */
+async function runAccountCommand(args: string[], env: Env): Promise<number> {
+  const [action, handle, email, ...rest] = args
+  const valid =
+    rest.length === 0 &&
+    ((action === "end-sessions" && handle && !email) ||
+      (action === "change-email" && handle && email))
+  if (!valid) {
+    console.error(`Unexpected arguments: account ${args.join(" ")}\n\n${usage}`)
+    return 1
+  }
+  const { db, pool } = createDatabase(readDatabaseUrl(env))
+  const ctx = {
+    db,
+    actor: shinan,
+    request: { client: "shinan account command" },
+  }
+  try {
+    if (action === "end-sessions") {
+      const ended = await endSessionsOf(ctx, { handle: handle })
+      console.info(`Ended ${ended} sign-in sessions of ${handle}`)
+    } else {
+      await changeEmailOf(ctx, { handle: handle, email: email! })
+      console.info(
+        `Changed ${handle}'s email address to ${email}; their sign-in sessions have ended`,
+      )
+    }
+    return 0
+  } finally {
+    await pool.end()
+  }
 }
 
 async function serveUntilShutdown(

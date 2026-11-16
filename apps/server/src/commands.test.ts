@@ -34,7 +34,27 @@ describe("runCommand", () => {
   })
 
   it("requires DATABASE_URL to serve the web role", async () => {
-    await expect(runCommand(["web"], {})).rejects.toThrow(/DATABASE_URL/)
+    await expect(
+      runCommand(["web"], { NODE_ENV: "development" }),
+    ).rejects.toThrow(/DATABASE_URL/)
+  })
+
+  it("requires the sign-in settings to serve the web role in production", async () => {
+    const env = { DATABASE_URL: "postgres://unused", NODE_ENV: "production" }
+    await expect(runCommand(["web"], env)).rejects.toThrow(/SHINAN_URL/)
+  })
+
+  it("checks the recovery commands' arguments", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {})
+    for (const args of [
+      ["account"],
+      ["account", "end-sessions"],
+      ["account", "end-sessions", "ada", "extra"],
+      ["account", "change-email", "ada"],
+      ["account", "unknown", "ada"],
+    ]) {
+      await expect(runCommand(args, {}), args.join(" ")).resolves.toBe(1)
+    }
   })
 
   it("requires DATABASE_URL to run the worker", async () => {
