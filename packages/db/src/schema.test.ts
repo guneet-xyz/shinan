@@ -3,6 +3,7 @@ import { DatabaseError } from "pg"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 
 import {
+  emailDeliveries,
   events,
   installation,
   members,
@@ -211,6 +212,68 @@ describe("constraints", () => {
           name: "Upper",
           email: "Upper@example.com",
         }),
+      ),
+    ).toBe("23514")
+  })
+})
+
+describe("email deliveries", () => {
+  const queued = {
+    kind: "magic_link" as const,
+    recipient: "someone@example.com",
+    notAfter: new Date(Date.now() + 60_000),
+    message: { subject: "S", text: "T", html: "<p>T</p>" },
+  }
+
+  it("keep the message only while queued", async () => {
+    const [row] = await db
+      .insert(emailDeliveries)
+      .values(queued)
+      .returning({ id: emailDeliveries.id })
+
+    expect(
+      await errorCode(
+        db
+          .update(emailDeliveries)
+          .set({ status: "sent", finishedAt: new Date() })
+          .where(eq(emailDeliveries.id, row!.id)),
+      ),
+    ).toBe("23514")
+    expect(
+      await errorCode(
+        db.insert(emailDeliveries).values({ ...queued, message: null }),
+      ),
+    ).toBe("23514")
+
+    await db
+      .update(emailDeliveries)
+      .set({ status: "sent", finishedAt: new Date(), message: null })
+      .where(eq(emailDeliveries.id, row!.id))
+  })
+
+  it("are finished exactly when they are no longer queued", async () => {
+    expect(
+      await errorCode(
+        db
+          .insert(emailDeliveries)
+          .values({ ...queued, finishedAt: new Date() }),
+      ),
+    ).toBe("23514")
+    expect(
+      await errorCode(
+        db
+          .insert(emailDeliveries)
+          .values({ ...queued, status: "throttled", message: null }),
+      ),
+    ).toBe("23514")
+  })
+
+  it("store recipients in lower case", async () => {
+    expect(
+      await errorCode(
+        db
+          .insert(emailDeliveries)
+          .values({ ...queued, recipient: "Someone@example.com" }),
       ),
     ).toBe("23514")
   })
