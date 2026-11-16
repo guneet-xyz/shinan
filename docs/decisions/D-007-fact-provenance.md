@@ -42,7 +42,7 @@ Trust in the catalog is the main differentiator.
   ([plan, section 1](../plan.md#1-what-shinan-is)).
 - Proposed refinements: see the domain model's [fact](../domain-model.md#fact),
   [fact state](../domain-model.md#fact-state) and
-  [source and last checked](../domain-model.md#source-and-last-checked)
+  [fact check, source and freshness](../domain-model.md#fact-check-source-and-freshness)
   entries.
 - **Decided (owner, [D-025](D-025-fact-state-planned.md)):** the fact state
   `proposed` is renamed `planned`.
@@ -70,3 +70,4 @@ Trust in the catalog is the main differentiator.
   plan draft (commit `5c3330c`, 2026-11-16).
 - Approved with the plan on 2026-11-16 (merge commit `248a2c5`).
 - 2026-11-16: related decisions [D-025](D-025-fact-state-planned.md) recorded from [issue #25](https://github.com/guneet-xyz/shinan/issues/25); maintained sections updated.
+- 2026-11-16: fixed the link to the glossary's "Fact check, source and freshness" section (integration review I-60, [issue #26](https://github.com/guneet-xyz/shinan/issues/26)).

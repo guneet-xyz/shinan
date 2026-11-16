@@ -40,8 +40,8 @@ Owner's choice; no reason recorded.
 
 - **Decided:** D-010's "do not embed" still holds; its "integrate through
   their APIs" no longer applies.
-- **Decided:** the owner's answer lists the glossary's "outside tool" term as
-  affected; the [domain model](../domain-model.md) updates it.
+- **Decided:** the glossary's "outside tool" term was removed from the
+  [domain model](../domain-model.md).
 - Details: see the [product overview](../product-overview.md) and
   [tasks and work](../tasks.md).
 
@@ -67,3 +67,4 @@ None.
 - 2026-11-16: accepted by the owner on issue #25. Recorded in the decision
   log's pull request as part of the issue #25 batch (see
   [README, history](README.md#history)).
+- 2026-11-16: noted that the glossary removed the "outside tool" term (integration review I-61, [issue #26](https://github.com/guneet-xyz/shinan/issues/26)).

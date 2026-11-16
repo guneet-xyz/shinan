@@ -49,14 +49,16 @@ D-001 to D-020 were accepted with the plan
 [PR #2](https://github.com/guneet-xyz/shinan/pull/2)). D-021 to D-049 record
 the owner's answers on [issue #25](https://github.com/guneet-xyz/shinan/issues/25):
 O-numbers (batches 1 to 11) and N-numbers (batches 12 and 13, follow-up questions).
-The numbers are in each record's `evidence` field and in the
-[mapping](#owner-answers-on-issue-25).
+D-050 to D-053 record the owner's answers to the integration review on
+[issue #26](https://github.com/guneet-xyz/shinan/issues/26) (NO-numbers).
+The numbers are in each record's `evidence` field and in the mappings for
+[issue #25](#owner-answers-on-issue-25) and [issue #26](#owner-answers-on-issue-26).
 
 | ID | Decision | Status | Date | Amends / amended by | Owning documents |
 |---|---|---|---|---|---|
 | [D-001](D-001-above-git-hosts.md) | Shinan sits above git hosts and does not replace their issues or PRs | Accepted | 2026-11-16 | | Product overview, Git host integrations, Tasks and work |
 | [D-002](D-002-host-neutral-task-id.md) | The task is the core object and has a host-neutral task ID | Accepted | 2026-11-16 | | Tasks and work |
-| [D-003](D-003-task-starts-with-intent.md) | A task starts where the intent starts; outside issues become tasks automatically | Accepted | 2026-11-16 | | Tasks and work |
+| [D-003](D-003-task-starts-with-intent.md) | A task starts where the intent starts; outside issues become tasks automatically | Accepted | 2026-11-16 | Amended by D-051 | Tasks and work |
 | [D-004](D-004-link-prs-directly.md) | Agent-driven work links PRs directly; repository issues only when people need them | Accepted | 2026-11-16 | | Tasks and work |
 | [D-005](D-005-derived-task-status.md) | Task status is calculated from linked work | Accepted | 2026-11-16 | Amended by D-021 | Tasks and work |
 | [D-006](D-006-document-first-catalog.md) | The catalog is document-first, with a generated agent index | Accepted | 2026-11-16 | Amended by D-022 | Catalog |
@@ -98,11 +100,15 @@ The numbers are in each record's `evidence` field and in the
 | [D-042](D-042-no-writes-on-forgejo.md) | Shinan makes no writes on Forgejo; on GitHub it writes only as its app | Accepted | 2026-11-16 | Amends D-033 | Git host integrations |
 | [D-043](D-043-no-git-mirror-for-now.md) | No Git mirror of the catalog for now; revisions live in PostgreSQL only | Accepted | 2026-11-16 | Amends D-022 | Catalog; Architecture and operations |
 | [D-044](D-044-sign-in-magic-link-or-github.md) | Sign-in by email magic link or GitHub only; Forgejo only for connecting; email through the AWS SES API | Accepted | 2026-11-16 | Amends D-034; amended by D-048 | Identity, agents and permissions; Architecture and operations |
-| [D-045](D-045-no-viewer-role.md) | Workspace roles are workspace owner and contributor only; no viewer role | Accepted | 2026-11-16 | | Identity, agents and permissions; Roadmap and migration |
+| [D-045](D-045-no-viewer-role.md) | Workspace roles are workspace owner and contributor only; no viewer role | Accepted | 2026-11-16 | | Identity, agents and permissions; Roadmap and migration; Human experience; Domain model and glossary |
 | [D-046](D-046-subtasks-any-depth.md) | Subtasks can nest to any depth | Accepted | 2026-11-16 | Amends D-029 | Tasks and work |
 | [D-047](D-047-installation-security-log-not-purgeable.md) | Installation-level security-log entries cannot be purged by anyone, for now | Accepted | 2026-11-16 | Amends D-035; amended by D-049 | Identity, agents and permissions |
 | [D-048](D-048-refuse-private-forgejo-addresses.md) | Shinan refuses Forgejo addresses on private, loopback or link-local networks by default | Accepted | 2026-11-16 | Amends D-044 | Identity, agents and permissions; Git host integrations; Architecture and operations |
-| [D-049](D-049-security-log-never-purged.md) | No security-log entry can ever be purged | Accepted | 2026-11-16 | Amends D-035, D-047 | Identity, agents and permissions; Architecture and operations |
+| [D-049](D-049-security-log-never-purged.md) | No security-log entry can ever be purged | Accepted | 2026-11-16 | Amends D-035, D-047 | Identity, agents and permissions; Architecture and operations; Human experience |
+| [D-050](D-050-agent-token-browser-approval.md) | Agents get their token by a browser approval started from the plugin or CLI; one token works at every agent endpoint | Accepted | 2026-11-16 | | Identity, agents and permissions; Architecture and operations; Agent integrations |
+| [D-051](D-051-new-issues-setting.md) | Each repository has a "turn new issues into tasks" setting, on by default | Accepted | 2026-11-16 | Amends D-003 | Tasks and work; Git host integrations |
+| [D-052](D-052-notification-ownership.md) | Architecture owns sending notifications; human experience owns what is sent and personal settings | Accepted | 2026-11-16 | | Architecture and operations; Human experience |
+| [D-053](D-053-deployment-approval-events.md) | Deployment approval requests and answers are always recorded as task events | Accepted | 2026-11-16 | | Tasks and work |
 
 The full list of owning documents, with planned paths, is in each record.
 
@@ -153,6 +159,19 @@ which cite the O-number or N-number.
 | N-12 | [D-048](D-048-refuse-private-forgejo-addresses.md) |
 | N-13 | [D-049](D-049-security-log-never-purged.md) |
 | N-2, N-3, N-10 | No record; decided in the owning document |
+
+## Owner answers on issue #26
+
+Mapping from the owner's answers to the integration review's "Needs the
+owner" items ([issue #26](https://github.com/guneet-xyz/shinan/issues/26#issuecomment-6918513933))
+to decision records.
+
+| Owner answer | Record |
+|---|---|
+| NO-1 | [D-050](D-050-agent-token-browser-approval.md) |
+| NO-2 | [D-051](D-051-new-issues-setting.md) |
+| NO-3 | [D-052](D-052-notification-ownership.md) |
+| NO-4 | [D-053](D-053-deployment-approval-events.md) |
 
 ## Record format
 
@@ -352,7 +371,8 @@ are written in parallel, so the log needs one path with no second round trip.
 - **Decided (owner, O-96, [#25](https://github.com/guneet-xyz/shinan/issues/25)):**
   the plan's section 6 table stays as the approved snapshot, and one line
   pointing to this index is added to it in a separate small pull request on
-  the plan. That pull request is a follow-up and is not part of this one.
+  the plan (integration review I-63 on
+  [issue #26](https://github.com/guneet-xyz/shinan/issues/26)).
 - **Decided (owner, O-98, [#25](https://github.com/guneet-xyz/shinan/issues/25)):**
   plan text that has no decision ID gets a record only when a document
   proposes changing it. [D-025](D-025-fact-state-planned.md) and
@@ -375,14 +395,10 @@ document to adopt, change or ignore.
 ## Dependencies on other documents
 
 - [Domain model and glossary](../domain-model.md): the records use its terms
-  and link to its proposals. It is still in review
-  ([PR #14](https://github.com/guneet-xyz/shinan/pull/14)); because records only
-  link to it, its changes need no edits here unless an anchor moves.
-- [Domain model and glossary](../domain-model.md): add **decision record** as a
-  term ("a file in `docs/decisions/` recording a decision about Shinan
-  itself"), next to the `decision` entity it must not be confused with.
+  and link to its sections. Because records only link to it, its changes need
+  edits here only when a heading moves.
 - Each owning document named in a record specifies the details of that
-  decision. Planned paths:
+  decision:
   [product overview](../product-overview.md), [catalog](../catalog.md),
   [tasks and work](../tasks.md), [identity, agents and permissions](../identity.md),
   [git host integrations](../git-hosts.md),
@@ -395,7 +411,9 @@ document to adopt, change or ignore.
 
 ## Open questions
 
-None. The earlier open questions were answered by the owner on issue #25:
+None. The integration review's owner items were answered on issue #26
+(NO-1 to NO-4, [D-050](D-050-agent-token-browser-approval.md) to
+[D-053](D-053-deployment-approval-events.md)). The earlier open questions were answered by the owner on issue #25:
 acceptance (O-94), ownership of outside tracker integrations (O-97,
 [D-041](D-041-no-outside-tracker-integrations.md)), plan text without IDs
 (O-98), the domain model's owner decisions
@@ -428,3 +446,8 @@ None.
 - 2026-11-16: records D-048 and D-049 added for the owner's batch 13 answers
   (N-12, N-13) on issue #25, in this pull request for the same reason.
   Amended records (D-035, D-044, D-047) got `amended_by` and a History line.
+- 2026-11-16: integration review fixes ([issue #26](https://github.com/guneet-xyz/shinan/issues/26):
+  I-60, I-61, I-62, I-65). Records D-050 to D-053 added for the owner's
+  answers NO-1 to NO-4 on issue #26, in the decision log's integration-fix
+  pull request for the same numbering reason as the issue #25 batch. D-003
+  got `amended_by` (D-051) and a History line.

@@ -49,11 +49,10 @@ Musashi already runs the owner's public applications.
   approval ([D-039](D-039-deploy-as-needed.md)); `awaiting deployment
   approval` is its own task flag ([D-028](D-028-task-flags.md)); no built-in
   backups for now ([D-038](D-038-no-built-in-backups.md)).
-- Proposed refinements: see the domain model's
-  [supporting terms](../domain-model.md#supporting-terms) ("deployment
-  approval") and its
-  [decisions needed](../domain-model.md#decisions-needed-from-the-owner).
-  This record does not assume their outcome.
+- Where and how deployment approval is given: see the domain model's
+  [deployment approval](../domain-model.md#deployment-approval) and
+  [tasks and work](../tasks.md). Approval requests and answers are always
+  recorded as task events ([D-053](D-053-deployment-approval-events.md)).
 - **Open:** how DNS and deployment to Musashi are managed
   ([plan, question 6](../plan.md#7-open-questions)). Owned by
   [architecture and operations](../architecture.md).
@@ -81,3 +80,4 @@ Musashi already runs the owner's public applications.
 - Recorded as accepted from the owner's answers (commit `e46c560`, 2026-11-16)
   and approved with the plan on 2026-11-16 (merge commit `248a2c5`).
 - 2026-11-16: related decisions [D-028](D-028-task-flags.md), [D-038](D-038-no-built-in-backups.md), [D-039](D-039-deploy-as-needed.md) recorded from [issue #25](https://github.com/guneet-xyz/shinan/issues/25); maintained sections updated.
+- 2026-11-16: updated glossary pointers to the "Deployment approval" section and linked D-053 (integration review I-61 and NO-4, [issue #26](https://github.com/guneet-xyz/shinan/issues/26)).
