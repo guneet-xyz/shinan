@@ -123,7 +123,7 @@ describe("worker", () => {
     const heartbeat = await worker.boss.getSchedule(queues.heartbeat)
     expect(heartbeat?.cron).toBe("0 * * * *")
     const prune = await worker.boss.getSchedule(queues.emailPrune)
-    expect(prune?.cron).toBe("30 3 * * *")
+    expect(prune?.cron).toBe("30 * * * *")
   })
 
   it("prunes email records", async () => {
@@ -141,7 +141,10 @@ describe("worker", () => {
           id: id!,
         })
         expect(job?.state).toBe("completed")
-        expect(job?.output).toEqual({ deleted: expect.any(Number) as number })
+        expect(job?.output).toEqual({
+          lost: expect.any(Number) as number,
+          deleted: expect.any(Number) as number,
+        })
       },
       { timeout: 10_000, interval: 200 },
     )

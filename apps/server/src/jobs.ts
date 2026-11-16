@@ -24,7 +24,10 @@ const schema = "pgboss"
 export const queues = {
   /** A trivial scheduled job that shows the worker is running. */
   heartbeat: "heartbeat",
-  /** Deletes old email records, daily (architecture §4.2, §7). */
+  /**
+   * Hourly: gives up emails the job queue lost, removing their message, and
+   * deletes old email records (architecture §4.2, §7).
+   */
   emailPrune: "email-prune",
 } as const
 
@@ -114,10 +117,10 @@ export async function startWorker(options: WorkerOptions): Promise<Worker> {
   await boss.work(queues.heartbeat, polling, async () => heartbeat(options.db))
 
   await boss.createQueue(queues.emailPrune)
-  await boss.schedule(queues.emailPrune, "30 3 * * *")
-  await boss.work(queues.emailPrune, polling, async () => ({
-    deleted: await pruneEmailDeliveries({ db: options.db, actor: shinan }),
-  }))
+  await boss.schedule(queues.emailPrune, "30 * * * *")
+  await boss.work(queues.emailPrune, polling, async () =>
+    pruneEmailDeliveries({ db: options.db, actor: shinan }),
+  )
 
   await boss.work(
     emailQueue.name,
