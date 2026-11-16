@@ -48,6 +48,9 @@ Owner's choice; no reason recorded.
   workspace owners' purge rights cover other workspace content and records.
 - **Decided (owner, [D-043](D-043-no-git-mirror-for-now.md)):** purge has no
   Git mirror to reach.
+- **Decided (owner, [D-050](D-050-agent-token-browser-approval.md)):** agents
+  get their token by a browser approval started from the plugin or CLI, and
+  one token works at every agent endpoint.
 - Token handling, the security log and purge: see
   [identity, agents and permissions](../identity.md),
   [agent integrations](../agent-integrations.md),
@@ -80,3 +83,4 @@ None.
   [README, history](README.md#history)).
 - 2026-11-16: amended by [D-047](D-047-installation-security-log-not-purgeable.md) (owner answers, batch 12, on [issue #25](https://github.com/guneet-xyz/shinan/issues/25#issuecomment-6913152214)). Decision and Reasons unchanged; maintained sections updated.
 - 2026-11-16: amended by [D-049](D-049-security-log-never-purged.md) (owner answers, batch 13, on [issue #25](https://github.com/guneet-xyz/shinan/issues/25#issuecomment-6913301590)). Decision and Reasons unchanged; maintained sections updated.
+- 2026-11-16: related decision [D-050](D-050-agent-token-browser-approval.md) recorded from [issue #26](https://github.com/guneet-xyz/shinan/issues/26#issuecomment-6918513933); maintained sections updated.

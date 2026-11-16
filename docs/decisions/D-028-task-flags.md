@@ -46,6 +46,9 @@ Owner's choice; no reason recorded.
 - Built-in flags and who may set and clear each: see
   [tasks and work](../tasks.md) and the
   [domain model](../domain-model.md#task-status-task-flags-and-manual-states).
+- **Decided (owner, [D-053](D-053-deployment-approval-events.md)):**
+  deployment approval requests and answers are always recorded as task
+  events, so removing `awaiting deployment approval` keeps that record.
 - Managing flags per workspace: see [human experience](../human-experience.md).
 
 ## Alternatives considered
@@ -70,3 +73,4 @@ None.
 - 2026-11-16: accepted by the owner on issue #25. Recorded in the decision
   log's pull request as part of the issue #25 batch (see
   [README, history](README.md#history)).
+- 2026-11-16: related decision [D-053](D-053-deployment-approval-events.md) recorded from [issue #26](https://github.com/guneet-xyz/shinan/issues/26#issuecomment-6918513933); maintained sections updated.

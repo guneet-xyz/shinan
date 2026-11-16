@@ -57,9 +57,6 @@ Shinan host-neutral.
 
 - **Decided:** Shinan does not embed these tools; it connects to them through
   their APIs.
-- Proposed refinements: see the domain model's
-  [supporting terms](../domain-model.md#supporting-terms) ("outside tool") and
-  its [open questions](../domain-model.md#open-questions).
 - **Decided (owner, [D-041](D-041-no-outside-tracker-integrations.md)):** no
   integrations with these tools are planned, and no document owns them.
 
@@ -84,3 +81,4 @@ Shinan host-neutral.
   plan draft (commit `5c3330c`, 2026-11-16).
 - Approved with the plan on 2026-11-16 (merge commit `248a2c5`).
 - 2026-11-16: amended by [D-041](D-041-no-outside-tracker-integrations.md) (owner answers on [issue #25](https://github.com/guneet-xyz/shinan/issues/25)). Decision and Reasons unchanged; maintained sections updated.
+- 2026-11-16: removed the pointer to the glossary's "outside tool" term, which was dropped after D-041 (integration review I-61, [issue #26](https://github.com/guneet-xyz/shinan/issues/26)).

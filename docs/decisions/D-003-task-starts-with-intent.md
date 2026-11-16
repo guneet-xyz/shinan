@@ -8,7 +8,7 @@ evidence: https://github.com/guneet-xyz/shinan/issues/1
 supersedes: []
 superseded_by: []
 amends: []
-amended_by: []
+amended_by: [D-051]
 ---
 
 # D-003: A task starts where the intent starts; outside issues become tasks automatically
@@ -16,6 +16,7 @@ amended_by: []
 Status: **Accepted** by the owner on 2026-11-16, with the plan
 ([issue #1](https://github.com/guneet-xyz/shinan/issues/1),
 [PR #2](https://github.com/guneet-xyz/shinan/pull/2)).
+Amended by [D-051](D-051-new-issues-setting.md).
 
 ## Context
 
@@ -37,6 +38,9 @@ Every story needs one home, even when its first chapter was written elsewhere.
 
 - **Decided:** outside issues become tasks without anyone creating them by
   hand.
+- **Decided (owner, [D-051](D-051-new-issues-setting.md)):** only in
+  repositories whose "turn new issues into tasks" setting is on; it is on by
+  default and off for shared repositories.
 - **Decided:** a triage inbox is part of phase 2
   ([plan, section 10](../plan.md#10-phases-after-the-documents)).
 - Proposed refinements: see the domain model's
@@ -67,3 +71,4 @@ None in the plan.
 - Recorded as accepted ("agreed in conversation with the owner") in the first
   plan draft (commit `5c3330c`, 2026-11-16).
 - Approved with the plan on 2026-11-16 (merge commit `248a2c5`).
+- 2026-11-16: amended by [D-051](D-051-new-issues-setting.md) (owner answer NO-2 on [issue #26](https://github.com/guneet-xyz/shinan/issues/26#issuecomment-6918513933)). Decision and Reasons unchanged; maintained sections updated.
