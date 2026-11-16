@@ -1,6 +1,6 @@
 # Shinan: build plan for phase 1a
 
-Status: **draft for owner review** ([issue #51](https://github.com/guneet-xyz/shinan/issues/51)).
+Status: **approved by the owner on 2026-11-16** ([issue #51](https://github.com/guneet-xyz/shinan/issues/51)).
 
 This plan turns the approved documents into working software. It does not
 change any decision; where it proposes something the documents leave open, it
@@ -31,7 +31,7 @@ types between server, web app, plugin and CLI, one CI.
 
 | Path | What it holds |
 |---|---|
-| `apps/server` | The single Node.js program: `web` and `worker` roles and the `migrate` command ([architecture 3.2](architecture.md#32-process-model)). HTTP routes, MCP endpoint, webhook intake and SSE live here. |
+| `apps/server` | The single Node.js program (Hono, pg-boss): `web` and `worker` roles and the `migrate` command ([architecture 3.2](architecture.md#32-process-model)). HTTP routes, MCP endpoint, webhook intake and SSE live here. |
 | `apps/web` | The React single-page app (Vite), served as static files by `apps/server`. |
 | `packages/core` | The application layer: modules for identity, catalog, tasks, git hosts, agents, events and email. All permissions and rules live here; it imports no web framework ([architecture 2.1](architecture.md#21-decided-stack)). |
 | `packages/db` | Drizzle schema and migrations. |
@@ -55,8 +55,8 @@ types between server, web app, plugin and CLI, one CI.
   requires. Merging the release PR is the approval to release; it does not
   deploy anything.
 
-Library choices left open by architecture are listed in
-[section 8](#8-questions-for-the-owner).
+Library choices left open by architecture are settled in
+[section 8](#8-owner-answers).
 
 ## 4. How the work is done (proposed)
 
@@ -101,7 +101,8 @@ prepare the exact steps ([roadmap 3.4](roadmap.md#34-owner-actions-needed-in-pha
 
 1. Create the private `shinan` project on `cr.guneet.dev` with a push key (in
    this repository's GitHub secrets) and a pull key (in Obscuro for Musashi).
-2. Create the GitHub sign-in credentials ([identity](identity.md)).
+2. Register the private GitHub App owned by `guneet-xyz`, with sign-in only
+   for now ([identity](identity.md), [git hosts](git-hosts.md)).
 3. Create the SES send-only IAM user for `shinan@guneet.dev` and put its key in
    Obscuro.
 4. Approve the first deployment: the stack, the Caddy route and bridge, the
@@ -114,13 +115,14 @@ prepare the exact steps ([roadmap 3.4](roadmap.md#34-owner-actions-needed-in-pha
 - The trial itself, and the note in the `workspace` repository's collaboration
   rules, start at M2 as the roadmap says.
 
-## 8. Questions for the owner
+## 8. Owner answers
 
-Each has a recommendation; the answers become part of this plan.
+Decided by the owner on 2026-11-16 ([issue #51](https://github.com/guneet-xyz/shinan/issues/51)):
 
-1. **HTTP framework:** Hono or Fastify.
-2. **Job queue:** pg-boss or graphile-worker.
-3. **Code review gate:** reviewer agent plus CI merges code PRs, with the owner
-   reviewing at milestone checkpoints; or the owner reviews every PR.
-4. **GitHub sign-in credentials:** reuse the GitHub App planned for git host
-   connections (registered in M1 for sign-in only), or a separate OAuth app.
+1. **HTTP framework:** Hono.
+2. **Job queue:** pg-boss.
+3. **Code review gate:** a reviewer agent plus green CI merges code PRs; the
+   owner reviews each milestone as a whole and approves every deployment.
+4. **GitHub sign-in credentials:** reuse the private GitHub App planned for git
+   host connections. It is registered in M1 with sign-in only; repository
+   permissions are added in M3.
