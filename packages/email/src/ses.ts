@@ -77,7 +77,12 @@ export function createSesSender(options: SesOptions): EmailSender {
         const output = await client.send(command)
         return { ok: true, messageId: output.MessageId ?? null }
       } catch (error) {
-        return { ok: false, ...classifySesError(error) }
+        return {
+          ok: false,
+          ...classifySesError(error, {
+            defaultCredentials: options.credentials === undefined,
+          }),
+        }
       }
     },
     close() {
@@ -102,22 +107,38 @@ const temporarySesErrors = new Set([
 /**
  * Throttling and service errors are temporary; other answers from SES (a
  * rejected message, an unverified sender, bad credentials, paused sending)
- * are permanent. No answer at all (a network error or timeout) is temporary,
- * except missing credentials, which only configuration can fix.
+ * are permanent. No answer at all (a network error or timeout) is temporary.
+ * Failing to load credentials is permanent when keys were configured, since
+ * only configuration fixes that; with the AWS SDK's default chain it may be
+ * a brief failure of the instance metadata service or STS, so it is
+ * temporary.
  */
-export function classifySesError(error: unknown): {
+export function classifySesError(
+  error: unknown,
+  options: { defaultCredentials?: boolean } = {},
+): {
   temporary: boolean
   code: string
 } {
   const fields = (
     typeof error === "object" && error !== null ? error : {}
   ) as Record<string, unknown>
-  const code = safeCode(fields.name ?? fields.code, "UnknownError")
+  // Node.js socket errors are named just `Error`; their code (such as
+  // `ECONNRESET`) says more.
+  const name =
+    fields.name === undefined || fields.name === "Error"
+      ? (fields.code ?? fields.name)
+      : fields.name
+  const code = safeCode(name, "UnknownError")
   const metadata = fields.$metadata as { httpStatusCode?: number } | undefined
   const status = metadata?.httpStatusCode
 
   if (status === undefined) {
-    return { temporary: !/credential/i.test(code), code }
+    const credentials = /credential/i.test(code)
+    return {
+      temporary: !credentials || options.defaultCredentials === true,
+      code,
+    }
   }
   const temporary =
     temporarySesErrors.has(code) ||

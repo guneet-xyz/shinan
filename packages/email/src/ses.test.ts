@@ -128,6 +128,32 @@ describe("createSesSender", () => {
     expect(JSON.stringify(result)).not.toContain("person@example.com")
   })
 
+  it("retries credential failures only when using the default chain", async () => {
+    const failure = () => {
+      const error = new Error("Could not load credentials")
+      error.name = "CredentialsProviderError"
+      return Promise.reject(error)
+    }
+    const withKeys = createSesSender({
+      from: { address: "shinan@guneet.dev" },
+      region: "us-east-1",
+      credentials: { accessKeyId: "AKIDEXAMPLE", secretAccessKey: "secret" },
+      client: mockClient(failure).client,
+    })
+    const defaultChain = createSesSender({
+      from: { address: "shinan@guneet.dev" },
+      region: "us-east-1",
+      client: mockClient(failure).client,
+    })
+
+    await expect(withKeys.send(message)).resolves.toMatchObject({
+      temporary: false,
+    })
+    await expect(defaultChain.send(message)).resolves.toMatchObject({
+      temporary: true,
+    })
+  })
+
   it("destroys the client on close", async () => {
     const { client, destroy } = mockClient(() =>
       Promise.resolve({ $metadata: {} }),
@@ -192,7 +218,10 @@ describe("classifySesError", () => {
       code: "ECONNRESET",
     })
     reset.name = "Error"
-    expect(classifySesError(reset).temporary).toBe(true)
+    expect(classifySesError(reset)).toEqual({
+      temporary: true,
+      code: "ECONNRESET",
+    })
 
     const timeout = new Error("Request timed out")
     timeout.name = "TimeoutError"
@@ -202,11 +231,20 @@ describe("classifySesError", () => {
     })
   })
 
-  it("treats missing credentials as permanent", () => {
+  it("treats credential failures as permanent with configured keys", () => {
     const error = new Error("Could not load credentials from any providers")
     error.name = "CredentialsProviderError"
     expect(classifySesError(error)).toEqual({
       temporary: false,
+      code: "CredentialsProviderError",
+    })
+  })
+
+  it("treats credential failures as temporary with the default chain", () => {
+    const error = new Error("Failed to fetch instance metadata")
+    error.name = "CredentialsProviderError"
+    expect(classifySesError(error, { defaultCredentials: true })).toEqual({
+      temporary: true,
       code: "CredentialsProviderError",
     })
   })
