@@ -163,21 +163,42 @@ describe("operator recovery commands", () => {
     ).toMatchObject({ email: oldAddress })
   })
 
-  it("keep an operator's old address on the allowlist", async () => {
+  it("refuse an address still configured as an operator's, saying what to do", async () => {
     const person = await newPerson(db, "op")
     await db
       .insert(schema.installationOperators)
       .values({ email: person.email })
     await db.insert(schema.emailAllowlist).values({ email: person.email })
+    const newAddress = `${person.handle}-new@example.com`
+    const refused = changeEmailOf(asShinan(db), {
+      handle: person.handle,
+      email: newAddress,
+    })
+    await expect(refused).rejects.toMatchObject({ rule: "operator-address" })
+    await expect(refused).rejects.toThrow(
+      `Replace it there with ${newAddress} and restart Shinan`,
+    )
+    // Nothing changed.
+    const [unchanged] = await db
+      .select()
+      .from(schema.people)
+      .where(eq(schema.people.id, person.id))
+    expect(unchanged!.email).toBe(person.email)
+
+    // Once the configuration no longer names it, the command works and the
+    // old address loses access like anyone else's.
+    await db
+      .delete(schema.installationOperators)
+      .where(eq(schema.installationOperators.email, person.email))
     await changeEmailOf(asShinan(db), {
       handle: person.handle,
-      email: `${person.handle}-new@example.com`,
+      email: newAddress,
     })
     const [listed] = await db
       .select()
       .from(schema.emailAllowlist)
       .where(eq(schema.emailAllowlist.email, person.email))
-    expect(listed).toBeDefined()
+    expect(listed).toBeUndefined()
   })
 
   it("are for the server only, and need a person who exists", async () => {

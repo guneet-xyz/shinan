@@ -1,5 +1,5 @@
-import { eq, schema } from "@shinan/db"
-import type { Role } from "@shinan/db"
+import { and, eq, gt, schema, sql } from "@shinan/db"
+import type { Role, Transaction } from "@shinan/db"
 
 import {
   atInstallation,
@@ -7,7 +7,7 @@ import {
   inWorkspace,
 } from "../authorize.js"
 import type { Context, WorkspaceScope } from "../context.js"
-import { NotFoundError } from "../errors.js"
+import { NotFoundError, RuleViolationError } from "../errors.js"
 import { appendEvent } from "../events.js"
 import { recordSecurityEntry } from "../security-log.js"
 import { checkName } from "../validation.js"
@@ -22,8 +22,15 @@ export interface WorkspaceDetails extends Workspace {
 }
 
 /**
+ * How many workspaces one person may create in a day. Proposed: a modest
+ * limit, so one account cannot fill the installation (and its security log,
+ * which is kept forever) with workspaces.
+ */
+export const workspacesPerPersonPerDay = 10
+
+/**
  * Creates a workspace. Any person on the installation can, and becomes its
- * first workspace owner (identity §4).
+ * first workspace owner (identity §4), up to `workspacesPerPersonPerDay`.
  */
 export async function createWorkspace(
   ctx: Context,
@@ -31,6 +38,7 @@ export async function createWorkspace(
 ): Promise<{ workspace: Workspace; member: Member }> {
   return atInstallation(ctx, "workspace.create", async (installation) => {
     const name = checkName(input.name, "The workspace name")
+    await checkCreationLimit(installation.tx, installation.actor.personId!)
     const { workspace, member, scope } = await createWorkspaceAsOwner(
       installation,
       name,
@@ -117,4 +125,30 @@ async function findWorkspace(
   const [workspace] = await (options.lock ? query.for("update") : query)
   if (!workspace) throw new NotFoundError()
   return workspace
+}
+
+async function checkCreationLimit(
+  tx: Transaction,
+  personId: string,
+): Promise<void> {
+  // One person's creations take turns, so the count cannot be raced.
+  await tx.execute(
+    sql`select pg_advisory_xact_lock(hashtextextended(${`shinan:workspace-create:${personId}`}, 0))`,
+  )
+  const [row] = await tx
+    .select({ count: sql<number>`count(*)::int` })
+    .from(schema.securityLog)
+    .where(
+      and(
+        eq(schema.securityLog.action, "workspace.created"),
+        eq(schema.securityLog.actorPersonId, personId),
+        gt(schema.securityLog.occurredAt, sql`now() - interval '1 day'`),
+      ),
+    )
+  if (row!.count >= workspacesPerPersonPerDay) {
+    throw new RuleViolationError(
+      "workspace-limit",
+      `You can create at most ${workspacesPerPersonPerDay} workspaces a day`,
+    )
+  }
 }

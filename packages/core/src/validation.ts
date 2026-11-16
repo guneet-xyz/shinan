@@ -37,11 +37,24 @@ export function checkHandle(handle: string): string {
   return handle
 }
 
-/** Checks a name or title, returning it without surrounding spaces. */
+/** The longest name or title accepted, such as a workspace's name. */
+export const nameLengthLimit = 100
+
+/**
+ * Checks a name or title, returning it without surrounding spaces. Names are
+ * copied into events and the security log, which is kept forever, so they
+ * are kept short.
+ */
 export function checkName(value: string, what: string): string {
   const trimmed = value.trim()
   if (trimmed === "") {
     throw new InvalidInputError("name-blank", `${what} must not be blank`)
+  }
+  if ([...trimmed].length > nameLengthLimit) {
+    throw new InvalidInputError(
+      "name-too-long",
+      `${what} must be at most ${nameLengthLimit} characters`,
+    )
   }
   return trimmed
 }

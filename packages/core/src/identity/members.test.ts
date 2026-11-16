@@ -58,6 +58,26 @@ async function membersOf(workspace = workspaceId) {
 }
 
 describe("createWorkspace", () => {
+  it("refuses a name longer than 100 characters", async () => {
+    await expect(
+      createWorkspace(asPerson(db, owner), { name: "x".repeat(101) }),
+    ).rejects.toMatchObject({ rule: "name-too-long" })
+    const { workspace } = await createWorkspace(asPerson(db, owner), {
+      name: "é".repeat(100),
+    })
+    expect([...workspace.name]).toHaveLength(100)
+  })
+
+  it("lets one person create at most 10 workspaces a day", async () => {
+    const person = await newPerson(db)
+    for (let n = 0; n < 10; n++) {
+      await createWorkspace(asPerson(db, person), { name: `Workspace ${n}` })
+    }
+    await expect(
+      createWorkspace(asPerson(db, person), { name: "One too many" }),
+    ).rejects.toMatchObject({ rule: "workspace-limit" })
+  })
+
   it("makes the creator the first workspace owner", async () => {
     const person = await newPerson(db)
     const { workspace, member } = await createWorkspace(asPerson(db, person), {
