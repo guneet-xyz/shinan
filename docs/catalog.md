@@ -168,6 +168,7 @@ are not facts about the world, so they carry no fact state.
 | `owner` | yes | The entity owner: a reference to the `person` entity of the responsible member, or `unknown`. |
 | `replaced_by` | when retired, if any | Reference to the replacing entity. |
 | `aliases` | no | Former IDs, kept so old links still resolve. |
+| `imported_from` | set only by an import | Where the document came from in the source repository: a file path, with a section anchor when only part of a file was imported, and the revision, for example `catalog/machines/musashi.md@86bba32`. Never changed afterwards. |
 | `facts` | no | Facts grouped by fact check, see [section 4](#4-facts). |
 
 - **Proposed.** Reason: these are the `workspace` repository's required fields
@@ -176,6 +177,9 @@ are not facts about the world, so they carry no fact state.
   and `owner` as catalog bookkeeping rather than facts keeps every fact
   checkable against something outside the catalog; who changed them and when
   is still recorded in [history](#9-history-and-purge).
+- **Proposed:** `imported_from` records where an imported document came from.
+  Reason: provenance for readers, and the old path the
+  [rollback converter](#133-mapping-back-for-a-rollback) needs.
 - **Proposed:** the glossary defines the entity owner as a member. In the
   document it is written as the member's `person` entity, and validation warns
   when that entity is not linked to a current member (for example after
@@ -1295,6 +1299,11 @@ checked when only one fact was verified", and D-007):
 - **The importer** (person or agent session) is the author of the catalog
   proposal, not the checker. Last-checked times are never refreshed by the
   import.
+- **Original paths.** The importer sets `imported_from` on every document it
+  creates, including policies and the start-here document, with a section
+  anchor when only part of a file was used. Reason: the
+  [rollback converter](#133-mapping-back-for-a-rollback) writes documents back
+  to the same place.
 - Whether a scope "plainly covers" a fact is judged by the importing agent, per
   fact, and listed in the import report so the owner's spot check (roadmap
   R14) can see each judgment.
@@ -1337,50 +1346,116 @@ the normal flow, avoids a risky one-shot conversion.
 
 The roadmap allows a rollback during the window after cutover: the catalog is
 taken from a workspace export back into a `workspace` repository pull request
-([roadmap §6.7](roadmap.md#67-rollback-and-emergency-access)). The export's layout ([2.2](#22-export-the-exit-path))
-is not the `workspace` repository's, so a **reverse conversion** turns the
-export's catalog into files that repository's checker (`scripts/check.py`)
-accepts. All rules here are **proposed**. Reason: a rollback must land in the
-format the `workspace` repository's people, agents and checker already use,
-without claiming more than Shinan recorded.
+([roadmap §6.7](roadmap.md#67-rollback-and-emergency-access), which owns the
+process and links here for every mapping rule). The export's layout
+([2.2](#22-export-the-exit-path)) is not the `workspace` repository's, so a
+**rollback converter** turns the export's catalog back into files that
+repository's checker, `scripts/check.py`, accepts. This section is the
+complete rule set. All of it is **proposed**. Reason: a rollback must land in
+the format the `workspace` repository's people, agents and checker already
+use, lose nothing recorded since cutover, and never claim more than Shinan
+recorded.
 
-| Shinan export | `workspace` repository |
+**What `scripts/check.py` requires** (read at `86bba32`): every internal
+Markdown link in the repository resolves; files in `catalog/projects/`,
+`catalog/machines/` and `catalog/services/` have simple `key: value`
+frontmatter with `id` equal to the file name, `status` of `active`,
+`deprecated` or `retired`, `owner`, and `last_verified` as an ISO date or
+`null`; a dated entry needs a real `verification_scope` and
+`verification_source`.
+
+#### Which documents are written
+
+1. **Unchanged documents are left alone.** A document with no catalog
+   revision after the migration import (in `catalog/history.jsonl`) keeps its
+   file at the frozen cutover revision; the converter does not touch it.
+   Reason: a rewrite would turn an untouched entry into a large, meaningless
+   diff.
+2. **Changed and new documents are converted** to their old path:
+   - a document with `imported_from` ([2.3](#23-entity-fields)) naming a whole
+     file goes back to that path;
+   - a document created after cutover goes to its type's folder below, using
+     its slug as the file name.
+
+| Export | Old path |
 |---|---|
-| `catalog/project/<slug>.md`, `catalog/machine/<slug>.md`, `catalog/service/<slug>.md` | `catalog/projects/<slug>.md`, `catalog/machines/<slug>.md`, `catalog/services/<slug>.md` |
-| `catalog/runbook/<slug>.md`, `catalog/decision/<slug>.md` | `runbooks/<slug>.md`, `decisions/<slug>.md` (`decision_state` back to `status`) |
-| `policy`, `person` and `agent` entities, custom types, the start-here document, type schema documents | No matching entry files. Listed in a **rollback report** with their text, for a person to merge into the original documents (for example `docs/maintenance.md`) or leave out |
-| `id: machine/musashi`, `status`, `owner: person/guneet` | `id: musashi`, `status`, `owner: guneet` |
-| Fact checks | `last_verified`: the newest `checked` date among the entity's fact checks, or `null` if none; `verification_scope`: every fact check's date and scope, newest first, separated by semicolons (the form Musashi's entry already uses); `verification_source`: their sources in the same order |
-| Facts | A generated "Facts" section in the body: key, value, fact state and check date per fact; discrepancies shown as both values |
-| `checkout-on` relations | The "Locations" table |
-| `unknown` facts; `limits` | "Known unknowns" and "Verification limits" sections |
-| `secrets-in` relations | A sentence naming the secrets manager and item |
-| References such as `[Musashi](machine/musashi)` | Relative links such as `[Musashi](../machines/musashi.md)` |
-| `catalog/history.jsonl` | Not converted. Attached to the rollback task, so history is kept but not written into the repository |
+| `catalog/project/<slug>.md` | `catalog/projects/<slug>.md` |
+| `catalog/machine/<slug>.md` | `catalog/machines/<slug>.md` |
+| `catalog/service/<slug>.md` | `catalog/services/<slug>.md` |
+| `catalog/runbook/<slug>.md` | `runbooks/<slug>.md` |
+| `catalog/decision/<slug>.md` | `decisions/<slug>.md` |
 
-- The page-level `last_verified` keeps the newest date, but the scope lists
-  each fact check separately, so the page does not claim a whole-page check.
+3. **Documents with no old place are not converted:** `policy`, `person` and
+   `agent` entities; entities of custom types; type schema documents; the
+   start-here document; and any document whose `imported_from` names only a
+   part of a file (for example a policy taken from one section of
+   `docs/collaboration.md`). If they changed since cutover, they go to the
+   fallback folder below and are listed in the rollback report for a person to
+   merge into the original prose documents.
+
+#### How a converted document is written
+
+| Shinan | `workspace` repository |
+|---|---|
+| `id: machine/musashi` | `id: musashi` (the slug, which the import kept unchanged) |
+| `status` | `status`, same value |
+| `owner: person/guneet`, `owner: unknown` | `owner: guneet`, `owner: unknown` |
+| `decision_state`, `decided_on` (decisions) | `status`, `date`, as in the `workspace` decision template |
+| `title` | The page's first heading, if the body has none |
+| `summary` | Not written; the body's first paragraph already says what the thing is |
+| Fact checks | `last_verified`, `verification_scope` and `verification_source` describe **only the newest fact check** on the page: its date, its scope and its source, on one line each. With no dated fact check: `last_verified: null`, `verification_scope: Not yet verified`, `verification_source: unknown` (the template values) |
+| Facts | A generated section at the end of the body, `## Facts recorded in Shinan`, with one row per fact: key, value, fact state, date checked (or "not checked") and the fact check's source and scope. This is where every other fact keeps its own check date, as the `workspace` maintenance policy allows ("per-fact notes can preserve different verification times") |
+| Discrepancies | Both facts in that table, each with its own check, marked "discrepancy" |
+| `checkout-on` relations | A `### Locations` table inside that section, in the template's form: machine, checkout path, evidence and date |
+| `unknown` facts; `limits` | `### Known unknowns` and `### Verification limits` inside that section |
+| `secrets-in` relations | A row naming the secrets manager and the item; never a value |
+| The body | Kept as written in Shinan |
+| References to converted documents, such as `[Musashi](machine/musashi)` | Relative links to their old paths, such as `[Musashi](../machines/musashi.md)` |
+| References to documents that are not converted | Plain text: the title with the ID in code, so no link is broken |
+| `catalog/history.jsonl` and the export file | Not committed. Kept with the export archive, which the PR description names, so the history since cutover is not lost |
+
+- The page fields never claim a whole-page check: they describe one fact
+  check, and every other fact carries its own date in the generated section.
   Reason: the `workspace` rule against claiming more than was checked.
-- The conversion is deterministic and can be run by a script or an agent. Its
-  output must pass `scripts/check.py`, and the migration rehearsal should run
-  it once (with roadmap criterion R14), so the rollback path is tested before
-  it is needed.
+- Values are written on one line, so the frontmatter stays `key: value` as
+  `scripts/check.py` requires.
+
+#### Documents that still fail `scripts/check.py`
+
+After converting, the converter runs `scripts/check.py` on the result.
+**Proposed:** every document that has no old place (rule 3) or still fails the
+check is committed **unchanged, in the export's format**, under a clearly
+marked folder `shinan-export/` at the top of the repository, with a
+`README.md` saying it is a copy from Shinan awaiting manual merging. The same
+rollback PR adds `shinan-export` to the ignored directories in
+`scripts/check.py`, and the rollback report lists each such document and the
+check error. People then merge them by hand in later PRs. Reason: a rollback
+happens under time pressure, so it should never wait on hand edits or lose
+content; an ignored, clearly named folder keeps everything in the repository
+and keeps the checker passing for the rest.
+
+#### Testing
+
+The converter is deterministic and can be run by a script or an agent. The
+migration rehearsal (roadmap criterion R14) runs it once on a rehearsal
+workspace with at least one changed entity, one new entity, one unchanged
+entity and one custom-type entity, and checks that `scripts/check.py` passes
+and that the unchanged entity produces no diff.
 
 ## Dependencies on other documents
 
-What this document still needs from other documents. Mismatches found by the
-integration review ([#26]) are fixed in the owning documents.
+What this document still needs from other documents:
 
 | Document | What this document needs |
 |---|---|
-| [Domain model and glossary](domain-model.md) | Terms used here. Entries for **workspace export**, **recent changes feed** and **approval mode** (the default and the strict setting, [8.2](#82-when-catalog-approval-is-needed)) are requested by [#26] (I-9). |
-| [Architecture and operations](architecture.md) | Storage of revisions as Markdown text and the index built from it (the D-006 invariant); per-operation conflicts; purge; the check for secret-looking values; type schema documents in the parser and index. Its workspace export ([§5.5](architecture.md#55-export-and-import)) should write the catalog in the layout of [2.2](#22-export-the-exit-path), including `history.jsonl`. |
-| [Identity, agents and permissions](identity.md) | Who may approve and switch the strict setting; workspace owners only for export and purge. Requested by [#26]: the written form of the fact check's `by` for each kind of actor (I-24); agents may comment on catalog proposals (I-22); Shinan's own token prefixes are blocked in catalog proposals from the first version (I-27). |
-| [Agent integrations](agent-integrations.md) | MCP and CLI tools to read the index and type schemas, send catalog proposals (rechecks included, which apply on their own unless the doubtful rule applies, I-36) and comment on them (I-33); delivering the agents' start-here path; the recheck-before-acting and documentation-impact conventions. |
-| [Human experience](human-experience.md) | Wiki pages, freshness, discrepancies, the editor, review list and recent changes feed, start-here presentation, pages for custom types and their schema documents, and the workspace export link for owners. A recorded check is always a catalog proposal (I-44); type schemas are changed through catalog proposals, not workspace settings (I-43). |
+| [Domain model and glossary](domain-model.md) | The terms used here, including workspace export, recent changes feed and strict setting. |
+| [Architecture and operations](architecture.md) | Revisions stored as Markdown text and the index built from it (the D-006 invariant); per-operation conflicts; purge; the check for secret-looking values; type schema documents in the parser and index. Its workspace export ([§5.5](architecture.md#55-export-and-import)) writes the catalog in the layout of [2.2](#22-export-the-exit-path), including `history.jsonl`. |
+| [Identity, agents and permissions](identity.md) | Who may approve and switch the strict setting; workspace owners only for export and purge; the written form of an actor in a fact check's `by` ([identity §8.7](identity.md#87-how-an-actor-is-written-in-text)); Shinan's token prefixes for the secret check. |
+| [Agent integrations](agent-integrations.md) | MCP and CLI tools to read the index and type schemas, send catalog proposals and rechecks, and comment on proposals; delivering the agents' start-here path; the recheck-before-acting and documentation-impact conventions. |
+| [Human experience](human-experience.md) | Wiki pages, freshness, discrepancies, the editor, review list and recent changes feed, start-here presentation, pages for custom types and their schema documents, and the workspace export link for owners. |
 | [Tasks and work](tasks.md) | Links between tasks and catalog entities; promoting task decisions to `decision` entities; telling the catalog when a task behind a `planned` fact is cancelled ([4.4](#44-fact-states)); whether the documentation-impact obligation is part of "done" ([8.4](#84-agents-documentation-impact-obligation)). |
 | [Git host integrations](git-hosts.md) | Repository identity for `project` facts; which facts Shinan can check automatically, by reading only (owner, N-4, [#25]). |
-| [Roadmap and migration](roadmap.md) | The rollback uses the reverse conversion in [13.3](#133-mapping-back-for-a-rollback), and the migration rehearsal runs it once (I-57). |
+| [Roadmap and migration](roadmap.md) | The rollback process, which uses the converter in [13.3](#133-mapping-back-for-a-rollback), and the rehearsal run of it (R14). |
 
 ## Proposed in this document
 
