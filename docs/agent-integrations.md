@@ -504,9 +504,9 @@ All are **proposed**, with reasons.
   formats are in the [tasks document](tasks.md), "Markers".
 - **Required here:** PR descriptions, and commit messages the agent writes,
   also name the agent session, so that git host items can be credited
-  (D-017). The line follows the tasks document's namespaced trailer scheme
-  (`Shinan-…`), for example `Shinan-Session: <agent session ID>`. The final
-  name is agreed with the tasks document. The checks that make it count are in
+  (D-017). The line follows the tasks document's namespaced trailer scheme:
+  `Shinan-Session: <agent session ID>` (proposed; the tasks document leaves the
+  key name to this document). The checks that make it count are in
   the identity document, "Checking markers". Reason: agents share their
   person's git host account, so Shinan needs its own evidence.
 
