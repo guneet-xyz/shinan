@@ -1,3 +1,5 @@
+import { isIP } from "node:net"
+
 import { schema } from "@shinan/db"
 import type { Database, SecurityOutcome, Transaction } from "@shinan/db"
 
@@ -36,8 +38,17 @@ export async function recordSecurityEntry(
     actorLabel: entry.actor.label,
     confidence: entry.actor.confidence,
     subjectPersonId: entry.subjectPersonId ?? null,
-    networkAddress: entry.request.networkAddress ?? null,
+    networkAddress: networkAddress(entry.request.networkAddress),
     client: entry.request.client ?? null,
     details: entry.details ?? {},
   })
+}
+
+/**
+ * Only a valid IP address is stored. Anything else is dropped rather than
+ * failing the insert, which would turn every refusal and sensitive action
+ * into a database error.
+ */
+function networkAddress(value: string | undefined): string | null {
+  return value !== undefined && isIP(value) !== 0 ? value : null
 }

@@ -1,6 +1,6 @@
-import { afterAll, beforeEach, describe, expect, it } from "vitest"
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest"
 
-import { and, eq, schema } from "@shinan/db"
+import { and, eq, schema, sql } from "@shinan/db"
 
 import {
   asAgent,
@@ -239,21 +239,60 @@ describe("changeRole", () => {
     const memberOf = (person: Person) =>
       members.find((m) => m.personId === person.id)!.id
 
-    // Each owner tries to lower the other at the same time.
-    const results = await Promise.allSettled([
-      changeRole(asPerson(db, owner), {
+    // Hold the workspace's lock from another connection, so both requests
+    // are certain to overlap: each passes the permission check, then waits.
+    const holder = await pool.connect()
+    try {
+      await holder.query("begin")
+      await holder.query("select id from workspaces where id = $1 for update", [
         workspaceId,
-        memberId: memberOf(contributor),
-        role: "contributor",
-      }),
-      changeRole(asPerson(db, contributor), {
-        workspaceId,
-        memberId: memberOf(owner),
-        role: "contributor",
-      }),
-    ])
+      ])
+      const { rows } = await holder.query<{ pid: number }>(
+        "select pg_backend_pid() as pid",
+      )
+      const holderPid = rows[0]!.pid
 
-    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1)
+      const attempts = Promise.allSettled([
+        changeRole(asPerson(db, owner), {
+          workspaceId,
+          memberId: memberOf(contributor),
+          role: "contributor",
+        }),
+        changeRole(asPerson(db, contributor), {
+          workspaceId,
+          memberId: memberOf(owner),
+          role: "contributor",
+        }),
+      ])
+      await vi.waitFor(
+        async () => {
+          // Asked on another connection: inside the holder's transaction,
+          // pg_stat_activity would keep showing its first snapshot.
+          const waiting = await db.execute<{ count: number }>(
+            sql`with recursive blocked(pid) as (
+                  select pid from pg_stat_activity
+                  where ${holderPid}::int = any(pg_blocking_pids(pid))
+                  union
+                  select a.pid from pg_stat_activity a
+                  join blocked b on b.pid = any(pg_blocking_pids(a.pid))
+                )
+                select count(*)::int as count from blocked`,
+          )
+          expect(waiting.rows[0]!.count).toBe(2)
+        },
+        { timeout: 3_000, interval: 20 },
+      )
+      await holder.query("commit")
+
+      const results = await attempts
+      expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1)
+      const [refused] = results.filter((r) => r.status === "rejected")
+      expect(refused?.reason).toMatchObject({ rule: "role-changed" })
+    } finally {
+      await holder.query("rollback").catch(() => {})
+      holder.release()
+    }
+
     const owners = (await listMembers(asPerson(db, owner), workspaceId)).filter(
       (m) => m.role === "owner",
     )
@@ -451,6 +490,61 @@ describe("the security log", () => {
     }
     const all = await listSecurityLog(asPerson(db, owner), workspaceId)
     expect(all.some((e) => e.subjectPersonId === someone.id)).toBe(true)
+  })
+
+  it("hides other people's network details from contributors", async () => {
+    await expect(
+      removeMember(asPerson(db, contributor), {
+        workspaceId,
+        memberId: contributorMemberId,
+      }),
+    ).rejects.toBeInstanceOf(ForbiddenError)
+
+    const entries = await listSecurityLog(
+      asPerson(db, contributor),
+      workspaceId,
+    )
+    const byOwner = entries.filter((e) => e.actorPersonId === owner.id)
+    const own = entries.filter((e) => e.actorPersonId === contributor.id)
+    expect(byOwner.length).toBeGreaterThan(0)
+    expect(own.length).toBeGreaterThan(0)
+    for (const entry of byOwner) {
+      expect(entry).toMatchObject({ networkAddress: null, client: null })
+    }
+    for (const entry of own) {
+      expect(entry).toMatchObject({
+        networkAddress: "192.0.2.10",
+        client: "test",
+      })
+    }
+
+    const asOwner = await listSecurityLog(asPerson(db, owner), workspaceId)
+    expect(
+      asOwner.filter((e) => e.actorPersonId === owner.id).at(0),
+    ).toMatchObject({ networkAddress: "192.0.2.10" })
+  })
+
+  it("drops a network address that is not an IP address", async () => {
+    const ctx = asPerson(db, owner)
+    ctx.request = { networkAddress: "not-an-address", client: "test" }
+    await changeRole(ctx, {
+      workspaceId,
+      memberId: contributorMemberId,
+      role: "owner",
+    })
+    const [entry] = await listSecurityLog(asPerson(db, owner), workspaceId)
+    expect(entry).toMatchObject({
+      action: "member.role-changed",
+      networkAddress: null,
+    })
+
+    const stranger = await newPerson(db)
+    await expect(
+      listMembers(
+        { ...asPerson(db, stranger), request: { networkAddress: "::zz" } },
+        workspaceId,
+      ),
+    ).rejects.toBeInstanceOf(NotFoundError)
   })
 
   it("is not readable by agents", async () => {

@@ -10,14 +10,16 @@ export type SecurityLogEntry = typeof schema.securityLog.$inferSelect
 /**
  * The workspace's security log, newest first. Workspace owners see every
  * entry; contributors see only entries they made or that are about them
- * (identity §5.1, §11).
+ * (identity §5.1, §11). On entries about a contributor that someone else
+ * made, the other person's network address and client are hidden: they are
+ * personal data (identity §11).
  */
 export async function listSecurityLog(
   ctx: Context,
   workspaceId: string,
   page: Page = {},
 ): Promise<SecurityLogEntry[]> {
-  return inWorkspace(ctx, workspaceId, "security-log.read", (scope) => {
+  return inWorkspace(ctx, workspaceId, "security-log.read", async (scope) => {
     // The rule admits only people, who always have a person ID.
     const personId = scope.actor.personId!
     const ownEntriesOnly =
@@ -27,7 +29,7 @@ export async function listSecurityLog(
             eq(schema.securityLog.actorPersonId, personId),
             eq(schema.securityLog.subjectPersonId, personId),
           )
-    return scope.tx
+    const rows = await scope.tx
       .select()
       .from(schema.securityLog)
       .where(
@@ -41,5 +43,11 @@ export async function listSecurityLog(
       )
       .orderBy(desc(schema.securityLog.id))
       .limit(pageSize(page))
+    if (!ownEntriesOnly) return rows
+    return rows.map((row) =>
+      row.actorPersonId === personId
+        ? row
+        : { ...row, networkAddress: null, client: null },
+    )
   })
 }

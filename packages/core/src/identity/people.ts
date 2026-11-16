@@ -2,6 +2,7 @@ import { eq, or, schema } from "@shinan/db"
 
 import { atInstallation } from "../authorize.js"
 import type { Context } from "../context.js"
+import { violatedUniqueConstraint } from "../database-errors.js"
 import { RuleViolationError } from "../errors.js"
 import { recordSecurityEntry } from "../security-log.js"
 import { checkHandle, checkName, normalizeEmail } from "../validation.js"
@@ -34,19 +35,20 @@ export async function createPerson(
       .where(
         or(eq(schema.people.handle, handle), eq(schema.people.email, email)),
       )
-    if (existing) {
-      throw existing.handle === handle
-        ? new RuleViolationError("handle-taken", "That handle is taken")
-        : new RuleViolationError(
-            "email-taken",
-            "That email address has an account",
-          )
-    }
+    if (existing) throw taken(existing.handle === handle ? "handle" : "email")
 
+    // A concurrent request can still take the handle or address first; the
+    // database's unique constraints catch that.
     const [person] = await scope.tx
       .insert(schema.people)
       .values({ handle, name, email })
       .returning()
+      .catch((error: unknown) => {
+        const constraint = violatedUniqueConstraint(error)
+        if (constraint === "people_handle_unique") throw taken("handle")
+        if (constraint === "people_email_unique") throw taken("email")
+        throw error
+      })
     await recordSecurityEntry(scope.tx, {
       workspaceId: null,
       action: "account.created",
@@ -58,4 +60,10 @@ export async function createPerson(
     })
     return person!
   })
+}
+
+function taken(what: "handle" | "email"): RuleViolationError {
+  return what === "handle"
+    ? new RuleViolationError("handle-taken", "That handle is taken")
+    : new RuleViolationError("email-taken", "That email address has an account")
 }
