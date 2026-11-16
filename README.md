@@ -114,7 +114,8 @@ recorded in the security log:
 ```sh
 node dist/cli.js account end-sessions <handle>           # end all of a person's sign-in sessions
 node dist/cli.js account change-email <handle> <email>   # change their address and allowlist it; remove the old one from the allowlist,
-                                                         # withdraw invitations pending for it, end their sessions
+                                                         # withdraw invitations pending for it, end their sessions. For an address in
+                                                         # SHINAN_OPERATORS, replace it there and restart first.
 ```
 
 ### Web app and API

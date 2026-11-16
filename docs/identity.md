@@ -174,7 +174,10 @@ How each method works, **proposed** unless marked:
   signs in only when the person clicks, with the token in the link's
   fragment. Reason: mail scanners that fetch links would otherwise use the
   link up (or sign in themselves), and the token stays out of server and
-  proxy logs. The reply to a request for a link is sent before Shinan
+  proxy logs. Opening links is limited per network address like asking for
+  them (5 a minute); only the first refusal in each minute is recorded, so a
+  flood does not fill the security log. The reply to a request for a link is
+  sent before Shinan
   decides whether the address may have one, so it takes the same time either
   way (§10); the deciding work still uses the database, which a determined
   observer of the server's load might notice.
@@ -221,9 +224,14 @@ an **email allowlist** decides who can have an account on an installation. Joini
   itself rather than trusting the address GitHub reports.
   - **Proposed (M1-4):** the GitHub account is linked only when that link is
     opened in the same browser that signed in with GitHub, within 15 minutes,
-    for the address entered there. Reason: otherwise someone could start with
-    their own GitHub account, enter another person's address, and get their
-    GitHub account linked when that person opens the link.
+    for the address entered on that step. Reason: otherwise someone could
+    start with their own GitHub account, enter another person's address, and
+    get their GitHub account linked when that person opens the link. Any
+    other sign-in in that browser drops the waiting GitHub sign-in.
+    Residual risk: someone who deliberately uses the email step in another
+    person's unattended browser within those 15 minutes can link that
+    person's GitHub account to their own account, which lets them sign in as
+    themselves with it; it gives them nothing of the other person's.
   - **Proposed (M1-4):** the new account's handle is made from the address's
     local part (lowercase letters, digits and hyphens, with a number added if
     it is taken), and its name starts as the handle. Reason: the account is
@@ -283,9 +291,11 @@ recorded. Reason: email is the root of every account (O-41, N-7), and the
 operator command saves a sole owner whose email account is lost.
 
 **Proposed (M1-4):** the operator's command also, in the same step, removes
-the old address from the email allowlist (unless the configuration names it
-as an operator's) and withdraws the invitations still pending for it; it
-adds the new address to the allowlist. Withdrawn invitations are not moved
+the old address from the email allowlist and withdraws the invitations still
+pending for it; it adds the new address to the allowlist. The command refuses
+an address the configuration still names as an operator's: operator rights
+come from the address, so the operator first replaces it in the
+configuration and restarts, then runs the command. Withdrawn invitations are not moved
 to the new address; a workspace owner invites it again. Reason: the lost
 mailbox may be in someone else's hands, and otherwise they could open a link
 to the old address, get a new account with it, and accept the person's
@@ -342,7 +352,9 @@ connections and members, and people are invited to them.
 
 - Any person on an installation can create a workspace and becomes its
   workspace owner. Reason: the allowlist already decides who is a person;
-  operators can restrict this.
+  operators can restrict this. **Proposed (M1-4):** at most 10 a day per
+  person, with names of at most 100 characters. Reason: workspace names go
+  into events and the security log, which is kept forever.
 - A workspace always has at least one workspace owner. The last workspace
   owner cannot leave or lower their own role.
 - The boundary rule from the glossary applies everywhere: agents, tokens,
