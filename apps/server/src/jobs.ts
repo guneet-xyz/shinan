@@ -8,10 +8,12 @@ import {
   getInstallation,
   jobQueues,
   pruneEmailDeliveries,
+  pruneRateLimits,
   pruneSignInRecords,
   shinan,
 } from "@shinan/core"
 import type { EmailJob } from "@shinan/core"
+import { databaseErrorCode } from "@shinan/db"
 import type { Database } from "@shinan/db"
 import type { EmailSender } from "@shinan/email"
 
@@ -35,6 +37,8 @@ export const queues = {
    * too long for an email address (identity §3.2, §3.3).
    */
   signInPrune: "sign-in-prune",
+  /** Hourly: deletes rate-limit counts whose windows have ended. */
+  rateLimitPrune: "rate-limit-prune",
 } as const
 
 /**
@@ -128,6 +132,12 @@ export async function startWorker(options: WorkerOptions): Promise<Worker> {
     pruneSignInRecords({ db: options.db, actor: shinan }),
   )
 
+  await boss.createQueue(queues.rateLimitPrune)
+  await boss.schedule(queues.rateLimitPrune, "20 * * * *")
+  await boss.work(queues.rateLimitPrune, polling, async () => ({
+    deleted: await pruneRateLimits({ db: options.db, actor: shinan }),
+  }))
+
   await boss.createQueue(queues.emailPrune)
   await boss.schedule(queues.emailPrune, "30 * * * *")
   await boss.work(queues.emailPrune, polling, async () =>
@@ -203,6 +213,11 @@ function errorCode(error: unknown): string {
     : "Error"
 }
 
+/**
+ * The job queue's own errors, such as a lost database connection, by code
+ * only: their messages can quote a query's values (architecture §10.3).
+ * pg-boss reconnects by itself.
+ */
 function logError(error: Error) {
-  console.error("Job queue error:", error)
+  console.error(`Job queue error: ${databaseErrorCode(error)}`)
 }
