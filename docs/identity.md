@@ -14,8 +14,6 @@ internet needs. It stays conceptual: it says what must be true and why. The
 that makes it true (D-020).
 
 It uses the terms of the [domain model and glossary](domain-model.md) exactly.
-Terms this document needs but the glossary lacks are listed under
-[proposed glossary additions](#proposed-glossary-additions).
 
 ## How to read this document
 
@@ -1078,17 +1076,11 @@ dropped from the first version (owner, N-11).
 | The security log, kept forever and not purgeable, readable by the workspace owner; purge of other content limited to workspace owners wherever purge is built | | |
 | Attribution: which account counts, confidence levels, marker checks, corrections, Shinan's GitHub writes recognised by the app's account, written actor forms ([8.7](#87-how-an-actor-is-written-in-text)) | | |
 
-## Proposed glossary additions
+## Glossary terms
 
-**Proposed** for the [domain model and glossary](domain-model.md), with this
-document as owner. Reason: one vocabulary needs one home. The glossary already
-has re-authentication, launcher token, email allowlist and email magic link;
-two terms remain:
-
-| Term | Definition |
-|---|---|
-| Handle | A person's or agent's short, unchangeable name used when an actor is written in text ([8.7](#87-how-an-actor-is-written-in-text)). |
-| Read-only token | An agent token with only the two `read` scopes. A choice of scopes, not a role. |
+The [domain model and glossary](domain-model.md) now carries the terms this
+document introduced, including handle, read-only token, re-authentication,
+launcher token, email allowlist and email magic link.
 
 ## Dependencies on other documents
 
@@ -1096,7 +1088,7 @@ Current needs only.
 
 | Document | What this document needs from it |
 |---|---|
-| [Domain model and glossary](domain-model.md) | The two [terms above](#proposed-glossary-additions). |
+| [Domain model and glossary](domain-model.md) | The terms used here. |
 | [Tasks and work](tasks.md) | Claims released on removal or revocation, manual release, the deployment approval setting, and approval records as task events, as it defines them. |
 | [Git host integrations](git-hosts.md) | Whether people other than the app's owner can authorize the private GitHub App for sign-in ([open question 10](#open-questions)). |
 | [Agent integrations](agent-integrations.md) | Trust labels whose `author` uses the written forms of [8.7](#87-how-an-actor-is-written-in-text); framing of nudges from other members; the launcher setup guide (O-1). |
