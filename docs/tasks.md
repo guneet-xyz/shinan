@@ -32,9 +32,8 @@ Examples use `T-123` as a task ID. `T` stands for the workspace's own prefix
 
 ### Words used in this document
 
-These refine glossary terms and are listed under
-[glossary changes](#changes-this-document-needs-in-the-glossary). All are
-**proposed**.
+These refine glossary terms; the [domain model and glossary](domain-model.md)
+now carries them. All are **proposed**.
 
 | Word | Meaning | Reason |
 |---|---|---|
@@ -1369,19 +1368,14 @@ What this means for tasks (**proposed** unless marked):
 
 ## Changes this document needs in the glossary
 
-The [domain model and glossary](domain-model.md) carries every term this
-document uses except one:
-
-- **Task notice**: a message from Shinan, not from a person, to the sessions
-  attached to a task about something no person did in Shinan. It never carries
-  a person's authority and never waits for the next claimant
-  ([11.4](#114-task-notices)).
+None. The [domain model and glossary](domain-model.md) carries every term this
+document uses, including [task notice](domain-model.md#task-notice).
 
 ## Dependencies on other documents
 
 | Document | What this document needs from it |
 |---|---|
-| [Domain model and glossary](domain-model.md) | The terms used here, and the [task notice](#changes-this-document-needs-in-the-glossary) term. |
+| [Domain model and glossary](domain-model.md) | The terms used here. |
 | [Git host integrations](git-hosts.md) | Reading markers, PR states and merges, comments, reconciliation and freshness thresholds; holding the per-repository settings this document defines: automated accounts, counting branches and "turn new issues into tasks"; revert detection. |
 | [Agent integrations](agent-integrations.md) | Claim and release calls, including release after 24 hours with no report or call for every presence source; nudge and task notice delivery, acknowledgement and modes; the `Shinan-Session` key; reading workspace flags; tools for the agent actions this document allows (editing tasks, dependencies, moving subtasks, confirming closing-reference links, custom flags, reading the `to do` order); teaching the conventions in [section 13](#13-conventions-agents-follow); delivering git host action requests (N-3); requesting a new agent session. |
 | [Identity, agents and permissions](identity.md) | Who may comment, nudge, triage, cancel, confirm links, rank, manage flags and release sessions; applying "contributors may give deployment approval" and deciding whether answering needs a fresh sign-in; how a deployment approval given in Shinan is protected and how an agent-reported one is shown. |

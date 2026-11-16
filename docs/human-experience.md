@@ -1312,7 +1312,7 @@ What this document relies on other documents for.
 
 | Document | What this document needs from it |
 |---|---|
-| [Domain model and glossary](domain-model.md) | All terms, including task notices once added there. |
+| [Domain model and glossary](domain-model.md) | All terms, including task notices. |
 | [Tasks and work](tasks.md) | Status rules behind each explanation; required fields for `needs a person` and deployment approval requests, what makes an approval stale, and the "contributors may give deployment approval" setting; when nudges and task notices are created and where they go; batching of waiting nudges; releasing an agent session by hand; triage actions and the "turn new issues into tasks" setting; unlinked work; unconfirmed links; rules for workspace-defined flags, including "show in Needs you"; task ID prefixes and their aliases; which git host actions a person can ask for. |
 | [Agent integrations](agent-integrations.md) | Presence thresholds (`unresponsive`, the 30-minute display threshold, the 24-hour release, the 30-day end); waiting reasons; delivery holders and outcomes for nudges and task notices; the "reply to nudge" tool; delivering git host action requests; the ready-made start prompt; connect instructions per coding tool; the device setup guide's content and the launcher (phase 3); whether an agent session can be stopped from Shinan. |
 | [Identity, agents and permissions](identity.md) | What each role may do, including who may give deployment approval and which actions need re-authentication; the token approval flow and read-only tokens; removal effects; who may create workspaces; the email allowlist and invitations; nudges from other members and the per-agent opt-out; who may export, import and purge. |
