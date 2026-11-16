@@ -58,6 +58,24 @@ async function membersOf(workspace = workspaceId) {
 }
 
 describe("createWorkspace", () => {
+  it("refuses control and text-direction characters in a name", async () => {
+    for (const name of [
+      "Team\u202Eevil",
+      "Line\nbreak",
+      "Bell\u0007",
+      "A\u2066b",
+    ]) {
+      await expect(
+        createWorkspace(asPerson(db, owner), { name }),
+        JSON.stringify(name),
+      ).rejects.toMatchObject({ rule: "name-characters" })
+    }
+    const { workspace } = await createWorkspace(asPerson(db, owner), {
+      name: "Équipe 東京 — ops",
+    })
+    expect(workspace.name).toBe("Équipe 東京 — ops")
+  })
+
   it("refuses a name longer than 100 characters", async () => {
     await expect(
       createWorkspace(asPerson(db, owner), { name: "x".repeat(101) }),

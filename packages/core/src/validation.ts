@@ -37,6 +37,29 @@ export function checkHandle(handle: string): string {
   return handle
 }
 
+/**
+ * Control characters, and the marks and overrides that change text
+ * direction: names appear in emails and screens, where these could hide or
+ * reorder what a reader sees (such as U+202E, right-to-left override).
+ */
+function hasHiddenCharacters(value: string): boolean {
+  for (const char of value) {
+    const code = char.codePointAt(0)!
+    if (
+      code < 0x20 ||
+      (code >= 0x7f && code <= 0x9f) ||
+      code === 0x061c ||
+      code === 0x200e ||
+      code === 0x200f ||
+      (code >= 0x202a && code <= 0x202e) ||
+      (code >= 0x2066 && code <= 0x2069)
+    ) {
+      return true
+    }
+  }
+  return false
+}
+
 /** The longest name or title accepted, such as a workspace's name. */
 export const nameLengthLimit = 100
 
@@ -49,6 +72,12 @@ export function checkName(value: string, what: string): string {
   const trimmed = value.trim()
   if (trimmed === "") {
     throw new InvalidInputError("name-blank", `${what} must not be blank`)
+  }
+  if (hasHiddenCharacters(trimmed)) {
+    throw new InvalidInputError(
+      "name-characters",
+      `${what} must not contain control or text-direction characters`,
+    )
   }
   if ([...trimmed].length > nameLengthLimit) {
     throw new InvalidInputError(
