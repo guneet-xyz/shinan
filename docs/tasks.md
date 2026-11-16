@@ -259,7 +259,8 @@ flood triage on day one.
 
 **Turn new issues into tasks.** Each repository has this setting, on by
 default and turned off for shared repositories. Git host integrations holds
-the setting; this document defines it. **Decided** (owner, NO-2, [#26]),
+the setting; this document defines it. **Decided** (owner, NO-2, [#26];
+[D-051](decisions/D-051-new-issues-setting.md)),
 narrowing D-003 ("outside issues become tasks automatically") for those
 repositories. Reason: in shared repositories such as `infra/musashi`, most
 issues belong to work Shinan is not tracking, and every unrelated rollout issue
@@ -471,9 +472,9 @@ Shinan-Task: T-124 https://shinan.guneet.dev/t/T-124
   tracker setting (checked 2026-11-16,
   [Forgejo docs](https://forgejo.org/docs/latest/user/collaboration/linked-references/#external-trackers)),
   which also changes what `#` references mean in that repository. So the
-  written address is the only form that works everywhere. The URL shape shown
-  here is illustrative; [architecture](architecture.md) and
-  [human experience](human-experience.md) own it.
+  written address is the only form that works everywhere. The address shape,
+  `https://<installation address>/t/<task ID>`, is defined in
+  [architecture §3.6](architecture.md#36-task-address).
 - Commit trailers count only on commits that reach a counting branch by a
   direct push. Commits that belong to a PR, including ones copied into the
   default branch by a squash or rebase merge, are ignored; the PR's own markers
@@ -949,7 +950,8 @@ and the owner usually gives it in the conversation with the agent that asks.
 Deployment approval requests and answers are always recorded as task events,
 whether or not the workspace keeps the `awaiting deployment approval` flag; the
 flag can be removed like any other ([8.1](#81-managing-flags)). **Decided**
-(owner, NO-4, [#26]). Reason: the record is what O-20 and D-016 rely on; the
+(owner, NO-4, [#26]; [D-053](decisions/D-053-deployment-approval-events.md)).
+Reason: the record is what O-20 and D-016 rely on; the
 flag is only how a waiting request is shown.
 
 What is asked and what an approval covers (taken from today's policy;
@@ -1367,37 +1369,26 @@ What this means for tasks (**proposed** unless marked):
 
 ## Changes this document needs in the glossary
 
-These are terms or rules from this document that the
-[domain model and glossary](domain-model.md) does not yet carry:
+The [domain model and glossary](domain-model.md) carries every term this
+document uses except one:
 
-1. **Ancestor**, **descendant**, **top-level task** and **tree**, and the order
-   of `to do` tasks per level: one order of top-level tasks and an order of
-   subtasks within each task ([2.1](#21-subtasks), [2.2](#22-order-of-to-do-tasks)).
-2. **Nudge targets**: a nudge on a task with no session of its own goes to the
-   nearest descendants' sessions, and waits only when no session is attached
-   anywhere below it ([11.2](#112-to-whom)).
-3. **Unconfirmed link**: its second source, a member's host closing reference
-   to an `origin` issue, and who may confirm each kind ([6.4](#64-unconfirmed-links)).
-4. **Task notice**: a message from Shinan, not from a person, about something
-   no person did in Shinan ([11.4](#114-task-notices)).
-5. **Turn new issues into tasks**: the per-repository setting (owner, NO-2,
-   [#26]; [5.1](#51-which-issues-become-tasks)).
-6. **Automated account** and **task address** ([5.1](#51-which-issues-become-tasks),
-   [6.2](#62-markers)).
+- **Task notice**: a message from Shinan, not from a person, to the sessions
+  attached to a task about something no person did in Shinan. It never carries
+  a person's authority and never waits for the next claimant
+  ([11.4](#114-task-notices)).
 
 ## Dependencies on other documents
 
 | Document | What this document needs from it |
 |---|---|
-| [Domain model and glossary](domain-model.md) | The terms used here, and the [changes listed above](#changes-this-document-needs-in-the-glossary). |
-| [Git host integrations](git-hosts.md) | Reading markers, PR states and merges, comments, reconciliation and freshness thresholds; holding the per-repository settings this document defines: automated accounts, counting branches and "turn new issues into tasks" (NO-2), with the same name; revert detection. |
+| [Domain model and glossary](domain-model.md) | The terms used here, and the [task notice](#changes-this-document-needs-in-the-glossary) term. |
+| [Git host integrations](git-hosts.md) | Reading markers, PR states and merges, comments, reconciliation and freshness thresholds; holding the per-repository settings this document defines: automated accounts, counting branches and "turn new issues into tasks"; revert detection. |
 | [Agent integrations](agent-integrations.md) | Claim and release calls, including release after 24 hours with no report or call for every presence source; nudge and task notice delivery, acknowledgement and modes; the `Shinan-Session` key; reading workspace flags; tools for the agent actions this document allows (editing tasks, dependencies, moving subtasks, confirming closing-reference links, custom flags, reading the `to do` order); teaching the conventions in [section 13](#13-conventions-agents-follow); delivering git host action requests (N-3); requesting a new agent session. |
 | [Identity, agents and permissions](identity.md) | Who may comment, nudge, triage, cancel, confirm links, rank, manage flags and release sessions; applying "contributors may give deployment approval" and deciding whether answering needs a fresh sign-in; how a deployment approval given in Shinan is protected and how an agent-reported one is shown. |
 | [Human experience](human-experience.md) | Task page with subtasks at any depth, how a rolled-up status is explained, ranking per level, flag management including "show in Needs you", the deployment approval setting, triage inbox, unlinked work, unconfirmed links, origin issue reminders, status freshness, nudge and task notice outcomes, the "ask for a session" and "release" actions. |
 | [Catalog](catalog.md) | Promoting task decisions to `decision` entities; linking tasks to catalog entities. |
-| [Architecture and operations](architecture.md) | Task address format, including how old prefixes resolve; how status is recalculated and stored, including the bottom-up roll-up ([7.3](#73-rules)). |
+| [Architecture and operations](architecture.md) | The [task address](architecture.md#36-task-address) used in markers; how status is recalculated and stored, including the bottom-up roll-up ([7.3](#73-rules)). |
 | [Roadmap and migration](roadmap.md) | Which phase each rule here belongs to; how active coordinating issues in the `workspace` repository become tasks at migration; which repositories have "turn new issues into tasks" off in the trial. |
-| [Decision log](decisions/README.md) | A record for NO-2, amending D-003, and for NO-4. |
 | `workspace` repository | A note in its collaboration rules at trial start, saying coordination for trial projects lives in Shinan (O-73). A separate PR there. |
 
 ## Open questions
