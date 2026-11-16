@@ -1,18 +1,19 @@
 # Git host integrations
 
 Status: **draft for review** ([issue #8](https://github.com/guneet-xyz/shinan/issues/8)).
-Updated with the owner's answers in [issue #25][o].
+Updated with the owner's answers in [issue #25][o], including the follow-up
+answers in batch 12 (written "N-n").
 
 This document says how Shinan connects to GitHub and Forgejo: how a git host
-connection is made, what Shinan needs from a host so people can sign in with
-it, which webhooks Shinan listens for, how it reads the hosts' APIs, where it
+connection is made, including to any Forgejo instance, which webhooks Shinan
+listens for, how it reads the hosts' APIs, where it
 looks for task markers, how it catches up when webhooks are missed
 (reconciliation), how it stays inside rate limits, and what it writes back to
 the hosts and under which identity.
 
 It does not decide what linked work means for a task (task status, link roles,
-marker syntax), how actions are credited to people and agents, how sign-in
-works as a whole, or how connections and credentials are stored. Those belong
+marker syntax), how actions are credited to people and agents, how people sign
+in, or how connections and credentials are stored. Those belong
 to the documents listed in [dependencies](#dependencies-on-other-documents).
 
 Terms follow the [domain model and glossary](domain-model.md) (in review in
@@ -21,8 +22,8 @@ Terms follow the [domain model and glossary](domain-model.md) (in review in
 - In this document **token** always means a git host credential (a GitHub
   installation token or a Forgejo access token). It never means the agent
   tokens the glossary defines.
-- A **backlink** is a single comment that Shinan posts on a git host PR to
-  link to a task. It is a git host comment, not a
+- A **backlink** is a single comment that Shinan posts on a GitHub PR to link
+  to a task. It is a git host comment, not a
   [comment](domain-model.md#comment-and-progress-update) on a task in Shinan.
   **Proposed** term; reason: "comment" alone means a message on a task.
 
@@ -30,7 +31,7 @@ Each statement is marked:
 
 - **Decided**: follows from an accepted plan decision (D-nnn, in the
   [plan](plan.md#6-decisions-so-far)) or from the owner's answers in
-  [issue #25][o] (written "owner, O-n").
+  [issue #25][o] (written "owner, O-n" or "owner, N-n").
 - **Proposed**: suggested here, with a reason. Needs review and owner approval.
 - **Open**: not settled. Listed under [open questions](#open-questions) or
   [decisions needed](#decisions-needed-from-the-owner).
@@ -67,18 +68,14 @@ External facts were checked against primary sources on **2026-11-16**; see
    timeline feel live; periodic re-reading catches what webhooks miss.
    **Decided** that both exist (plan, Integration points). The method is
    [section 7](#7-reconciliation) (**proposed**).
-4. **Shinan never acts on a git host for a person.** Shinan stores no
-   per-person git host tokens and never writes to GitHub as a person. Its own
-   writes on GitHub use the GitHub App's installation token. Anything a person
-   wants done on a git host (opening an issue, commenting, closing) is done by
-   an agent running on that person's own hardware, already signed in to the git
-   host. **Decided** (owner, O-1, [#25][o]).
-   - **The Forgejo exception.** Forgejo has no app identity, so Shinan's own
-     writes there (backlinks) appear as the person whose account the
-     connection uses. **Decided** (owner, O-53, [#25][o]). This is a known
-     cost: on the host, Shinan's backlinks look like that person's comments.
-     Shinan tells them apart only by the comment IDs it stores
-     ([section 9](#recognising-its-own-writes)).
+4. **Shinan never acts on a git host for a person, and writes only on
+   GitHub.** Shinan stores no per-person git host tokens. On GitHub it writes
+   only as its app, with the installation token. On Forgejo it makes no writes
+   at all: Forgejo connections are read-only. Anything a person wants done on a
+   git host (opening an issue, commenting, closing) is done by an agent running
+   on that person's own hardware, already signed in to the git host; the
+   request reaches the person's own agent sessions as a queued nudge and waits
+   if none is running. **Decided** (owner, O-1, N-4 and N-3, [#25][o]).
 5. **The connector supplies evidence; it does not decide who acted.** For each
    git host event the connector records the git host account that the host
    reports, any markers found and where the event came from (webhook or
@@ -88,8 +85,8 @@ External facts were checked against primary sources on **2026-11-16**; see
    says the git host account cannot tell a person from their agents, so the
    connector must not pretend it can.
 6. **Least privilege, where the owner has not chosen otherwise.** Shinan asks
-   for read access by default and write access only for the write-backs a
-   workspace turns on, and it stores nothing from repositories a connection
+   for read access, plus write access on GitHub only for backlinks, and it
+   stores nothing from repositories a connection
    does not cover. **Proposed**; reason: Shinan is on the public internet
    (D-015), so a leaked credential or database should do as little harm as
    possible. The owner accepted a broader Forgejo token where people choose
@@ -103,7 +100,7 @@ External facts were checked against primary sources on **2026-11-16**; see
 A git host is identified by its address, such as `github.com` or
 `git.guneet.dev`; its host type is GitHub or Forgejo. **Proposed** in the
 [domain model](domain-model.md#git-host). This document keeps that rule because
-two Forgejo servers have separate accounts, tokens, sign-in and webhooks.
+two Forgejo servers have separate accounts, tokens and webhooks.
 
 ### Git host connection
 
@@ -115,9 +112,10 @@ holds (**proposed**, extending the domain model's attributes):
 | Git host and host type | Which connector handles it. |
 | Method and account | GitHub App installation; or, on Forgejo, the connecting member's account and token (section 4). |
 | Covered repositories | The repositories Shinan reads through this connection, by the host's stable repository ID. |
-| Write-back settings | Which write-backs are on, per repository ([section 9](#9-what-shinan-writes-back)). |
+| Backlink setting | GitHub only: whether backlinks are on, per repository ([section 9](#9-what-shinan-writes-back)). Forgejo connections have none. |
 | Counting branches | Per repository, the branches whose merges count as "merged" for [Tasks and work](tasks.md#62-markers); the default branch unless set. |
 | Automated accounts | Per repository, git host accounts such as dependency update tools whose issues and PRs skip triage or are ignored. Tasks and work defines what the setting does ([Tasks §5.1](tasks.md#51-which-issues-become-tasks)); it lives here because it names git host accounts per repository. |
+| Import issues | Per repository, whether new issues become tasks (on by default). Off is for shared repositories where most issues are unrelated, as [Roadmap §4.4](roadmap.md) proposes for the trial; issues there are still read for markers and links. Whether this fits D-003 is settled with that proposal. |
 | Set up by | The member who made the connection, and whose credential it depends on (Forgejo). |
 | Webhook state | Last delivery received, signature failures, failed deliveries seen. |
 | Reconciliation state | Per repository: last successful run of each layer, the watermark, last error. |
@@ -154,8 +152,8 @@ default branch. **Proposed**. Reasons:
 - The stable ID survives renames and transfers. Shinan follows the host's
   `repository` events and updates owner and name instead of treating a rename
   as a new repository.
-- Visibility decides where backlinks may be posted: never in public
-  repositories (owner, O-56, [#25][o]).
+- On GitHub, visibility decides where backlinks may be posted: never in
+  public repositories (owner, O-56, [#25][o]).
 
 Visibility does **not** decide what members see in Shinan. Every workspace
 member sees everything in the workspace, including titles and one-line
@@ -176,7 +174,7 @@ of only one workspace in a Shinan installation; a second workspace asking for
 it is refused with a clear message. **Decided** (owner, O-59, [#25][o]). The
 data keeps repositories and work items outside workspaces, as the domain model
 describes, so this can be relaxed later. Reasons: two workspaces on one
-repository would each post backlinks and run reconciliation, doubling noise and
+repository would each run reconciliation and, on GitHub, post backlinks, doubling noise and
 API use, and access rules for a work item seen from two workspaces are not
 designed.
 
@@ -219,7 +217,8 @@ issues or comments for people. A person who wants an issue for a task asks an
 agent, which opens it with its own tools on the person's hardware (O-1). The
 agent links it to the task as usual ([Tasks §6.6](tasks.md#66-repository-issues-for-people)).
 
-**Sign-in with GitHub** (owner, O-41, [#25][o]) can use the same app's
+**Sign-in with GitHub**, one of the two ways to sign in to Shinan (owner, N-7,
+[#25][o]), can use the same app's
 user authorisation: GitHub lets a person authorise an app without the app being
 installed on their account. Shinan uses the resulting user token only to read
 who the person is, then discards it and keeps no refresh token, so it never
@@ -287,9 +286,6 @@ Facts about `https://git.guneet.dev`, checked 2026-11-16 unless stated:
   status that goes stale).
 - Access tokens can be listed, created and deleted through the API, but not
   edited, and have no expiry field.
-- The OAuth2 provider is on: `/.well-known/openid-configuration` lists the
-  authorisation, token and user-info endpoints, and no client registration
-  endpoint.
 - The `guneet` account is the owner and a **site administrator**, and agents on
   Daedalus use it (the `workspace` repository's Forgejo service entry, checked
   there 2026-11-08).
@@ -310,19 +306,16 @@ own identity and its own webhook. Everything acts as some user.
 
 ### The connection's account
 
-Shinan uses the **connecting member's own Forgejo account** for reading and for
-its writes. **Decided** (owner, O-53, [#25][o]). Consequences:
+Forgejo connections are **read-only**: Shinan posts no backlinks and makes no
+other writes on Forgejo. **Decided** (owner, N-4, [#25][o]). Shinan reads
+through the **connecting member's own Forgejo account**; no separate Shinan
+account is created. **Decided** (owner, O-53, now about reading only, N-4).
+Consequences:
 
-- Shinan's backlinks on Forgejo appear as that member, and every edit of a
-  backlink sends an `issue_comment` event from that member's account.
-- Shinan recognises its own writes **only by the comment IDs it stores**
-  ([section 9](#recognising-its-own-writes)), and excludes them from anything
-  that reacts to members' comments, such as
-  [mention links](#mentions-in-comments).
+- Nothing Shinan does appears on Forgejo, so every Forgejo comment is someone
+  else's, and there is no own-write detection on Forgejo.
+- The token needs only read scopes: `read:repository` and `read:issue`.
 - The connection depends on that member ([section 2](#git-host-connection)).
-
-This is the stated exception to principle 4. No separate Shinan account is
-created on Forgejo.
 
 ### The connection token
 
@@ -332,16 +325,17 @@ refuse broad ones. **Decided** (owner, O-54, [#25][o]).
 
 **Residual risk.** A broad token from a site administrator, such as the
 owner's on `git.guneet.dev`, can act as **any user** on that server (`?sudo=`)
-and write to every repository. Anyone who obtains it from Shinan, for example
+and write to every repository, even though Shinan itself only reads. Anyone
+who obtains it from Shinan, for example
 through a database leak or a compromise of the Shinan server, holds that power
 until the token is deleted on Forgejo, because v16 tokens never expire. A
-"Specific repositories" token with `read:repository` and `read:issue` (plus
-`write:issue` if backlinks are on) limits the damage to the chosen
-repositories, at the cost of a new token whenever a repository is added.
+read-only "Specific repositories" token (`read:repository` and `read:issue`)
+limits the damage to reading the chosen repositories, at the cost of a new
+token whenever a repository is added.
 
 **Proposed**, within that decision:
 
-- The connection page **recommends** a "Specific repositories" token and
+- The connection page **recommends** a read-only "Specific repositories" token and
   shows, after a test call, what the stored token can reach: whether admin
   routes (`GET /api/v1/admin/users`) and user routes (`GET /api/v1/user`)
   accept it. A broad token is accepted with a visible warning, not refused.
@@ -377,50 +371,34 @@ elsewhere. **Decided** (owner, O-55, [#25][o]).
   to Shinan on the same machine works through the public address is **open**
   and must be tested at deployment.
 
-### Sign-in with any Forgejo instance
+### Connecting any Forgejo instance
 
-People can sign in with Forgejo, including any self-hosted Forgejo instance.
-**Decided** (owner, O-41, [#25][o]). How sign-in works as a whole belongs to
-[Identity, agents and permissions](identity.md). What Shinan needs from **each
-Forgejo instance** (facts checked 2026-11-16 on Forgejo's OAuth2 provider
-documentation and `git.guneet.dev`):
+There is no Forgejo sign-in to Shinan; people sign in with an email magic link
+or GitHub. Forgejo is used only to connect accounts and repositories, and
+anyone can enter any Forgejo address to connect. **Decided** (owner, N-7,
+[#25][o]). For a connection, Shinan needs from each instance only:
 
 | Need | Detail |
 |---|---|
-| The instance's address | Shinan reads `https://<instance>/.well-known/openid-configuration` to find the authorisation, token and user-info endpoints. |
-| An OAuth2 application on that instance | A client ID and secret with Shinan's callback address as the redirect URI. Any user can register one under Settings → Applications; instance-wide ones are registered by an admin. Forgejo publishes no client registration endpoint, so Shinan cannot register itself. |
-| The OAuth2 provider turned on | It is on by default (`[oauth2] ENABLED`), and on `git.guneet.dev`. |
-| Network reach | Shinan's server must reach the instance's token and user-info endpoints; the person's browser must reach its sign-in page. |
+| The instance's address | Entered by the member; Shinan checks `/api/v1/version` to confirm it is Forgejo and which version, since API details differ between versions. |
+| A token | From the member's account on that instance ([the connection token](#the-connection-token)). No OAuth2 application has to be registered on the instance. |
+| A webhook | Added by the member ([webhooks](#webhooks)). |
+| Network reach both ways | Shinan's server must reach the instance's API, and the instance must be allowed to deliver to Shinan (its `ALLOWED_HOST_LIST`). |
 
 **Proposed:**
 
-- **Who registers an instance.** Someone with an account on that Forgejo
-  instance registers the OAuth2 application in their own Forgejo settings,
-  and the operator of the Shinan installation enters the instance address,
-  client ID and secret once. People then pick the instance on the sign-in
-  page. Reason: Forgejo has no self-registration, and each instance's secret
-  must be held by the Shinan installation. Whether a workspace owner, rather
-  than the operator, may add instances is for Identity.
-- **Identity is the instance plus its user number.** A Forgejo sign-in is
-  keyed by the instance's address (the OpenID `issuer`) and the user's number
-  on it (`sub`). A username on one instance never matches the same username on
-  another. Reason: anyone can run a Forgejo instance and create any username
-  on it.
-- **Email from an instance proves nothing by itself.** In v16.0.5 an instance
-  reports `email_verified` from its own account state, and its admins control
-  that state. So the email a Forgejo instance reports must not, on its own,
-  satisfy the email allowlist that decides who may have an account (owner,
-  O-48, [#25][o]). See
-  [decisions needed](#decisions-needed-from-the-owner).
-- **The sign-in token is used once and discarded.** Forgejo's OAuth2 tokens
-  have no scopes and carry the user's full rights (for a site admin, admin
-  rights). Shinan exchanges the code, reads the user-info endpoint and
-  discards the token at once; it keeps no refresh token. Reason: O-1, and the
-  token is too powerful to keep. Residual risk: a compromised Shinan server
-  could capture such a token at the moment of sign-in.
-- Signing in with a Forgejo instance does not create a git host connection,
-  and a connection's token is never used for sign-in. Reason: the two have
-  different owners and lifetimes.
+- **Accounts are keyed by instance and user number.** A Forgejo account, for a
+  connection or for linking to a member (Identity), is identified by the
+  instance address and the account's numeric ID there. A username on one
+  instance never matches the same username on another. Reason: anyone can run
+  a Forgejo instance and create any username on it.
+- **Addresses entered by people are checked before Shinan calls them.**
+  Shinan follows [Architecture's rule](architecture.md) that outgoing requests
+  to private, loopback and link-local addresses are refused unless the
+  installation operator allows that host. Reason: without it, a Forgejo
+  address could make Shinan's server call internal services on Musashi.
+  `git.guneet.dev` is reached by its public address, or allowed by the
+  operator if Shinan reaches it internally.
 
 ## 5. Events Shinan listens for
 
@@ -574,9 +552,8 @@ status. Mentions by outside accounts are ignored. **Decided** (owner, O-25,
   Because agents use their member's account (D-017), mentions written by a
   member's agents count too; that is intended. Accounts listed as automated
   accounts never count.
-- **Shinan's own comments never count,** recognised by stored comment ID.
-  This matters on Forgejo, where backlinks appear as the connection's member
-  and contain the task ID (O-53).
+- **Shinan's own backlinks never count.** They exist only on GitHub, written
+  by the app's own account, which is never a member's account.
 - **One link per task and work item.** A mention in any comment on an issue or
   PR links that issue or PR (the work item) to the task as `related`; several
   mentions of the same task on one item make one link. Each link records the
@@ -681,8 +658,11 @@ from the intervals above):
 | The same, in other repositories | 10 minutes, else 24 hours | 24 hours |
 | Rename or visibility change | 10 minutes, else 1 hour | 1 hour |
 
-Visibility is read hourly for every repository because it decides where
-backlinks may be posted (O-56, [section 9](#backlinks)).
+Issues, PRs, merges and reviews are therefore recorded within an hour even when
+every webhook is lost, inside the trial's 24-hour event-capture requirement (R2
+in [Roadmap](roadmap.md)); the 5-minute part of R2 depends on webhooks
+arriving. Visibility is read hourly for every repository because it decides
+where GitHub backlinks may be posted (O-56, [section 9](#backlinks)).
 
 The intervals are starting values to tune against the
 [rate limits](#8-rate-limits-and-load) during the trial. **Open** whether they
@@ -799,25 +779,22 @@ less current rather than hiding it. **Proposed**.
 
 | Write-back | First version | Status |
 |---|---|---|
-| One **backlink** on a PR linked to a task, edited in place as links change, only when the PR description lacks the task's address, and never in public repositories | Yes | **Decided** (owner, O-56, [#25][o]) |
+| One **backlink** on a GitHub PR linked to a task, edited in place as links change, only when the PR description lacks the task's address, and never in public repositories | Yes, GitHub only | **Decided** (owner, O-56 and N-4, [#25][o]) |
+| Any write on Forgejo, including backlinks | Never: Forgejo connections are read-only | **Decided** (owner, N-4, [#25][o]) |
 | Outcome on origin issues and issues made for people when the task finishes | No: whoever finishes the task closes or comments with their own tools, prompted by a reminder on the task | **Decided** (owner, O-57, [#25][o]) |
-| Anything a person asks for on a git host: creating an issue, commenting, closing | Never by Shinan; an agent on the person's hardware does it | **Decided** (owner, O-1, [#25][o]) |
+| Anything a person asks for on a git host: creating an issue, commenting, closing | Never by Shinan; the request reaches the person's own agent sessions as a queued nudge, and an agent on the person's hardware does it | **Decided** (owner, O-1 and N-3, [#25][o]) |
 | Commit status or check run naming the task | No | **Decided** (owner, O-58, [#25][o]) |
 | Backlinks or comments on outside issues | No | **Proposed** |
 | Labels, assignees, milestones, closing or reopening issues, editing PR or issue text, merging, reviewing | Never | **Proposed** |
 | Project boards | Never | **Proposed**; also impossible on Forgejo v16 (no API) |
 
-Shinan's only write in the first version is therefore the backlink. It needs
-Pull requests write on GitHub and `write:issue` on Forgejo (PR comments go
-through Forgejo's issue API); a connection with backlinks off needs no write
-access.
-
-Identity for the backlink: the GitHub App on GitHub (O-1, O-51); the
-connecting member's account on Forgejo (O-53).
+Shinan's only write in the first version is therefore the backlink on GitHub,
+written as the GitHub App (O-1, O-51, N-4). It needs Pull requests write; a
+GitHub workspace with backlinks off would need no write access at all.
 
 ### Backlinks
 
-- Backlinks let someone looking at a PR on the host find the task, which is
+- Backlinks let someone looking at a GitHub PR find the task, which is
   what the plan means by "post links back where appropriate". One comment
   edited in place avoids a stream of noise. It carries the task ID and its
   Shinan address only, not the task's title or text. **Proposed**; reason:
@@ -840,8 +817,8 @@ own `Closes #42` at merge. For the rest, the task shows origin issues still
 open on the host as a reminder, and whoever finishes the task closes or
 comments with their own git host tools. **Decided** (owner, O-57 and O-1,
 [#25][o]). If reminders turn out to be missed during the trial, the
-recommendation was to move to "comment and close on `done`"; under O-1 that
-would also be done by an agent, not by Shinan.
+recommendation was to move to "comment and close on `done`"; under O-1 and N-4
+that would also be done by an agent, not by Shinan.
 
 ### Why the rest is never written
 
@@ -854,31 +831,18 @@ would also be done by an agent, not by Shinan.
   that belong to people and their agents (O-1).
 - **No writes for people.** Shinan never acts on a git host on a person's
   behalf (O-1). Shinan's MCP tools therefore do not create branches, PRs,
-  issues or comments on git hosts; agents use their own tools. The MCP tool
-  list is owned by [Agent integrations](agent-integrations.md).
+  issues or comments on git hosts; agents use their own tools, and a person's
+  request reaches their agents as a queued nudge (N-3). The MCP tools and
+  nudge delivery are owned by [Agent integrations](agent-integrations.md).
 
 ### Recognising its own writes
 
-A comment counts as Shinan's **only if its comment ID is one Shinan stored**
-when it posted it. **Decided** that stored IDs are the only test (owner, O-53,
-[#25][o]). No hidden marker in the text is trusted. **Proposed** handling of
-the race where the webhook for Shinan's own comment arrives before the host's
-answer gives Shinan the ID:
-
-1. Before posting, Shinan records a pending write: the item and the account it
-   writes as.
-2. While that write is pending, a new comment on the same item from that
-   account is held back, not processed.
-3. When the host answers, Shinan stores the comment's ID, clears the pending
-   write and releases held comments: the one with the stored ID is Shinan's;
-   any other is processed as an ordinary comment by its author. If the post
-   fails or times out, held comments are processed as ordinary ones.
-
-Reasons: on Forgejo, Shinan's backlinks come from a member's account (O-53), so
-the author cannot tell them apart; anyone can paste text that looks like
-Shinan's; and without holding back, Shinan could treat its own comment as the
-member's, for example as a [mention](#mentions-in-comments). On GitHub the
-app's identity is a further check.
+Shinan writes only on GitHub, and only as its app (N-4). So a GitHub comment is
+Shinan's when its author is the app's own account, which no person or agent
+can use. Shinan also stores the ID of each backlink it posts, to edit it in
+place later. **Proposed**; reason: the app identity is enough, so no text
+marker, pending-write tracking or held-back comments are needed. Forgejo has
+nothing to recognise, because Shinan writes nothing there.
 
 ## 10. Security notes
 
@@ -898,9 +862,10 @@ marked:
   setup, never logged, and never given to agents. A broad Forgejo token from a
   site administrator can act as any user on that server
   ([residual risk](#the-connection-token)).
-- **Sign-in tokens** from GitHub and Forgejo are used once to learn who the
-  person is and then discarded ([section 3](#one-github-app-installation-token-only),
-  [section 4](#sign-in-with-any-forgejo-instance)).
+- **Sign-in tokens** from GitHub are used once to learn who the person is and
+  then discarded ([section 3](#one-github-app-installation-token-only)).
+- **Forgejo addresses entered by people** are checked before Shinan calls them
+  ([section 4](#connecting-any-forgejo-instance)).
 - **Nothing from uncovered repositories is stored**
   ([section 5](#handling-a-delivery), step 2).
 - **Visibility:** each connection's page shows its granted permissions and
@@ -920,29 +885,34 @@ model, "words to avoid"). No GitLab facts were checked for this document.
 
 | Document | What this document needs from it |
 |---|---|
-| [Domain model and glossary](domain-model.md) | Terms used throughout; the [git host](domain-model.md#git-host) and [git host connection](domain-model.md#git-host-connection) attributes, extended in [section 2](#2-git-hosts-connections-and-repositories); the "backlink" term proposed here; subtasks (O-21) and per-person, per-tool, per-machine agents (O-40). |
-| [Tasks and work](tasks.md) (PR #20) | Marker syntax and every rule about which text makes which link, including subtasks (O-21), trailers and when marker-made links stop following edits ([§6](tasks.md#6-linking-work)); the written form of task IDs in comments (O-25); unconfirmed links and who confirms them ([§6.4](tasks.md#64-unconfirmed-links)); task status from linked work; the meaning of the automated-accounts and counting-branches settings, which live on the connection here; the reminder for open origin issues (O-57). |
-| [Identity, agents and permissions](identity.md) (PR #24) | Sign-in as a whole, including GitHub and any Forgejo instance (O-41), the email allowlist (O-48) and whether a Forgejo instance's email can count; who may add a Forgejo instance for sign-in; who may create, change and remove git host connections; verified links between git host accounts and members (needed for mention links and outside-actor markers); turning connector evidence into an actor and attribution confidence (plan question 2); token age and replacement policy. |
-| [Agent integrations](agent-integrations.md) (PR #23) | Agent session marker syntax; that agents, not Shinan, carry out what people want done on git hosts (O-1). |
-| [Human experience](human-experience.md) (PR #16) | How work item and connection freshness, connection health, broad-token warnings, unconfirmed links, mention links and open origin issues are shown; the connection and sign-in setup screens. |
-| [Architecture and operations](architecture.md) (PR #22) | Webhook endpoint, queueing, storage and retention of deliveries; encrypted credential storage (O-54); whether Forgejo on Musashi can deliver to Shinan on Musashi; any reverse-proxy rate limits; task address shape. |
-| [Roadmap and migration](roadmap.md) (PR #17) | Which repositories the trial covers (O-70), which decides the GitHub accounts and Forgejo owners to connect. |
-| [Decision log](decisions/) (PR #19) | Records for the owner's answers cited here (O-1, O-6, O-21, O-24, O-25, O-41, O-43, O-48, O-50, O-51 to O-59), mapped to D-nnn by that document. |
+| [Domain model and glossary](domain-model.md) (PR #14) | Terms used throughout; the [git host](domain-model.md#git-host) and [git host connection](domain-model.md#git-host-connection) attributes, extended in [section 2](#2-git-hosts-connections-and-repositories); the "backlink" term; subtasks (O-21, nesting to any depth, N-1) and per-person, per-tool, per-machine agents (O-40). |
+| [Tasks and work](tasks.md) (PR #20) | Marker syntax and every rule about which text makes which link, including subtasks, trailers and when marker-made links stop following edits ([§6](tasks.md#6-linking-work)); the written form of task IDs in comments (O-25); unconfirmed links and who confirms them ([§6.4](tasks.md#64-unconfirmed-links)); task status from linked work; the meaning of the automated-accounts, counting-branches and import-issues settings, which live on the connection here; the reminder for open origin issues (O-57). |
+| [Identity, agents and permissions](identity.md) (PR #24) | Sign-in (email magic link or GitHub only, N-7) and the email allowlist (O-48); linking members' GitHub and Forgejo accounts, with Forgejo accounts keyed by instance and user number; who may create, change and remove git host connections; verified account links (needed for mention links and outside-actor markers); turning connector evidence into an actor and attribution confidence (plan question 2); token age and replacement policy. |
+| [Agent integrations](agent-integrations.md) (PR #23) | Agent session marker syntax; delivering a person's git host requests to their own agent sessions as queued nudges (O-1, N-3). |
+| [Human experience](human-experience.md) (PR #16) | How work item and connection freshness, connection health, broad-token warnings, unconfirmed links, mention links and open origin issues are shown; the connection setup screens. |
+| [Architecture and operations](architecture.md) (PR #22) | Webhook endpoint, queueing, storage and retention of deliveries; encrypted credential storage (O-54); the rule for outgoing requests to private addresses; whether Forgejo on Musashi can deliver to Shinan on Musashi; any reverse-proxy rate limits; task address shape. |
+| [Roadmap and migration](roadmap.md) (PR #17) | Which repositories the trial covers (O-70); the import-issues setting it proposes; the event-capture requirement R2. It answers this document's GitHub organizations question: the trial needs only `guneet-xyz`. |
+| [Decision log](decisions/) (PR #19) | Records for the owner's answers cited here, mapped to D-nnn by that document (for example D-032 for O-1, D-033 for O-53/O-54 as changed by N-4, D-034 for sign-in as changed by N-7). |
 
-**Mismatches in sibling drafts** as fetched on 2026-11-16, before their authors
-applied the owner's answers; listed for the integration review:
+**Mismatches in sibling drafts** as fetched on 2026-11-16, after they applied
+batches 1 to 11 but before batch 12; listed for the integration review:
 
-- Tasks and work (8d8e010) still says comments on the host never create links
-  (O-25 changes this), still uses `Completes` / `Part of` (O-21 replaces them
-  with subtasks), and in §5.1 expects issues created from a task to carry
-  "Shinan's own marker"; under O-1 such issues are opened by agents and carry
-  the task ID in their description, not a Shinan marker. It also refers to
-  "git host integrations rule 1/4/5/6", which no longer match this document's
-  numbering.
-- Identity, agents and permissions (fcaea3a) lists GitHub user access tokens
-  for person-requested writes and a separate Shinan account on Forgejo as
-  options, and passkeys-only sign-in; O-1, O-53 and O-41 settle these
-  differently.
+- **Forgejo writes (N-4).** Agent integrations (88acc1d), Architecture
+  (d3ca54e), Human experience (3ab0d4e), Identity (03207c7) and the glossary
+  (0e4bfcd) still say Shinan's writes on Forgejo go through the connecting
+  person's account or are recognised by stored IDs. Forgejo is now read-only.
+  The glossary's backlink is "on a git host PR or issue"; here it is a GitHub
+  PR only.
+- **Forgejo and password sign-in (N-7).** The glossary, Identity, Architecture,
+  Roadmap (820f2a6) and Human experience still list Forgejo sign-in and
+  passwords. Architecture's open question on adding Forgejo instances to its
+  sign-in library is moot.
+- **Tasks and work (fae89ac)** §5.1 still matches issues "carrying Shinan's
+  own marker (an issue created from a task)". Shinan creates no issues (O-1);
+  such issues are opened by agents and carry the task ID, which the same row
+  already covers.
+- **Human experience** read this document at 87d9cf2 and lists a separate
+  `shinan` account as a mismatch; that is resolved here.
 
 ## Proposed in this document
 
@@ -954,17 +924,17 @@ Still proposed:
 2. The connector supplies attribution evidence and does not decide the actor;
    plan question 2 stays with Identity ([principle 5](#1-principles)).
 3. Connection attributes, health states and their detection, the automated
-   accounts and counting branches settings, and repository records keyed by
+   accounts, counting branches and import-issues settings, and repository records keyed by
    the host's stable ID ([section 2](#2-git-hosts-connections-and-repositories)).
 4. The GitHub App's permissions (no Administration, so no autolinks), sign-in
    through the same app with the user token discarded, and per-installation
    apps for self-hosting ([section 3](#3-connecting-to-github)).
-5. Forgejo: a recommended (not required) "Specific repositories" token, a
-   breadth check with a warning, and token age shown
+5. Forgejo: a recommended (not required) read-only "Specific repositories"
+   token, a breadth check with a warning, and token age shown
    ([section 4](#the-connection-token)).
-6. Forgejo sign-in: instances registered once per Shinan installation,
-   identities keyed by instance and user number, instance email not trusted on
-   its own, sign-in token discarded ([section 4](#sign-in-with-any-forgejo-instance)).
+6. Connecting any Forgejo instance: a version check, accounts keyed by
+   instance and user number, and Architecture's private-address rule
+   ([section 4](#connecting-any-forgejo-instance)).
 7. The event map, routing on `X-Forgejo-Event-Type`, delivery handling with
    repository filtering before storage, and event identity keys
    ([section 5](#5-events-shinan-listens-for)).
@@ -975,7 +945,7 @@ Still proposed:
 10. Rate-limit practice for GitHub and a self-imposed ceiling for Forgejo, with
     budgets for both ([section 8](#8-rate-limits-and-load)).
 11. Backlink wording and behaviour when a repository turns public; no
-    comments on outside issues; own writes held back until their ID is known
+    comments on outside issues; own writes recognised by the app's identity
     ([section 9](#9-what-shinan-writes-back)).
 12. Releases are recorded as repository events; deployments are not read from
     git hosts in the first version.
@@ -987,20 +957,20 @@ From [issue #25][o]:
 
 | Answer | Effect here |
 |---|---|
-| O-1 | No per-person git host tokens; Shinan never writes to GitHub as a person; person-requested host actions are done by agents ([principle 4](#1-principles), [section 9](#9-what-shinan-writes-back)). |
+| O-1, N-3 | No per-person git host tokens; Shinan never acts for a person; person-requested host actions reach the person's own agents as queued nudges ([principle 4](#1-principles), [section 9](#9-what-shinan-writes-back)). |
+| N-4 | No writes on Forgejo; Forgejo connections are read-only; on GitHub, writes only as the app ([principle 4](#1-principles), [section 4](#the-connections-account), [section 9](#9-what-shinan-writes-back)). |
 | O-6 | Per-workspace task ID prefixes; markers name their workspace ([section 6](#connector-rules)). |
-| O-21 | Subtasks replace `Completes` / `Part of`; marker rules deferred to Tasks ([section 6](#6-detecting-task-markers)). |
+| O-21, N-1 | Subtasks (any depth) replace `Completes` / `Part of`; marker rules deferred to Tasks ([section 6](#6-detecting-task-markers)). |
 | O-24 | Outside actors' markers make unconfirmed links ([section 6](#connector-rules)). |
 | O-25 | Members' mentions in host comments make `related` links ([section 6](#mentions-in-comments)). |
-| O-41 | Sign-in with GitHub and any Forgejo instance ([sections 3](#one-github-app-installation-token-only) and [4](#sign-in-with-any-forgejo-instance)). |
-| O-43 | Every member sees everything; visibility only governs backlinks ([section 2](#repository)). |
-| O-48 | Email allowlist; instance email not trusted on its own ([section 4](#sign-in-with-any-forgejo-instance)). |
+| O-41, N-7 | Sign-in by email magic link or GitHub only; Forgejo only for connecting, at any address ([section 3](#one-github-app-installation-token-only), [section 4](#connecting-any-forgejo-instance)). |
+| O-43 | Every member sees everything; visibility only governs GitHub backlinks ([section 2](#repository)). |
 | O-50 | Only workspace owners purge stored deliveries ([section 5](#handling-a-delivery)). |
 | O-51, O-52 | GitHub App, installation token only, private and owned by `guneet-xyz` ([section 3](#3-connecting-to-github)). |
-| O-53 | The connecting member's Forgejo account; own writes recognised by stored IDs only ([section 4](#the-connections-account), [section 9](#recognising-its-own-writes)). |
+| O-53 | The connecting member's Forgejo account, for reading only (N-4) ([section 4](#the-connections-account)). |
 | O-54 | Any Forgejo token accepted, stored encrypted, residual risk stated ([section 4](#the-connection-token)). |
 | O-55 | Owner-level webhooks for the owner's accounts, per-repository elsewhere ([section 4](#webhooks)). |
-| O-56 | Backlinks only when the description lacks the address, never in public repositories ([section 9](#backlinks)). |
+| O-56 | GitHub backlinks only when the description lacks the address, never in public repositories ([section 9](#backlinks)). |
 | O-57 | No outcome comments; reminders instead ([section 9](#no-outcome-comments)). |
 | O-58 | No commit statuses or check runs ([section 9](#why-the-rest-is-never-written)). |
 | O-59 | One workspace per repository ([section 2](#one-workspace-per-repository-at-first)). |
@@ -1010,9 +980,10 @@ From [issue #25][o]:
 1. **Read-only GitHub App.** Should Shinan offer a second, read-only app
    registration for workspaces that want no backlinks at all, given that
    GitHub sets permissions per app?
-2. **GitHub organizations and other people.** Will the trial need repositories
-   outside `guneet-xyz`, or sign-in by people other than the owner? Either may
-   need a public app.
+2. **Other GitHub accounts and people.** The trial needs only `guneet-xyz`
+   ([Roadmap](roadmap.md)); Walls would need the `cranklabs` organization, and
+   sign-in by people other than the owner may need a public app or a separate
+   sign-in-only app. Which, and when?
 3. **Forgejo token list.** Can the web interface change a token's repository
    list on v16, or must a new token be made when a repository is added?
 4. **Same-machine delivery.** Can Forgejo on Musashi deliver webhooks to
@@ -1031,11 +1002,9 @@ From [issue #25][o]:
 
 ## Decisions needed from the owner
 
-New questions raised by the answers:
-
-| # | Decision | Recommended option | Reason |
-|---|---|---|---|
-| 1 | Can the email a Forgejo instance reports satisfy the email allowlist (O-48) on its own? (Shared with Identity.) | No: confirm it once by a magic link before the allowlist admits the account | Any instance's admin controls the email and its "verified" flag, and O-41 accepts any instance. |
+None. The question raised last time (whether a Forgejo instance's email can
+satisfy the allowlist) no longer arises, because there is no Forgejo sign-in
+(N-7).
 
 ## Sources
 
@@ -1061,10 +1030,10 @@ GitHub documentation:
 
 Forgejo documentation, source and instance:
 
-- [Webhooks](https://forgejo.org/docs/latest/user/repository/webhooks/), [API usage](https://forgejo.org/docs/latest/user/api/usage/), [Access token scope](https://forgejo.org/docs/latest/user/authentication/token-scope/) (specific-repository tokens; site admin `sudo`), [OAuth2 provider](https://forgejo.org/docs/latest/user/authentication/oauth2-provider/) ("OAuth2 scopes are not yet implemented"; applications registered under user settings; discovery and user-info endpoints) and [Authorized Integrations](https://forgejo.org/docs/latest/user/api/authorized-integrations/) (v17.0.1 pages).
+- [Webhooks](https://forgejo.org/docs/latest/user/repository/webhooks/), [API usage](https://forgejo.org/docs/latest/user/api/usage/), [Access token scope](https://forgejo.org/docs/latest/user/authentication/token-scope/) (specific-repository tokens; site admin `sudo`), [OAuth2 provider](https://forgejo.org/docs/latest/user/authentication/oauth2-provider/) ("OAuth2 scopes are not yet implemented") and [Authorized Integrations](https://forgejo.org/docs/latest/user/api/authorized-integrations/) (v17.0.1 pages).
 - [Configuration cheat sheet, v16.0](https://forgejo.org/docs/v16.0/admin/config-cheat-sheet/): `[webhook]` (`DELIVER_TIMEOUT` 5, `ALLOWED_HOST_LIST` external, `PAYLOAD_COMMIT_LIMIT` 15), `[api]`, `[oauth2]` (`ENABLED` true), `cron.cleanup_hook_task_table` (168 hours), `[authorized_integration]`; no API rate-limit setting found.
-- Forgejo source at tag `v16.0.5`: [`modules/webhook/type.go`](https://codeberg.org/forgejo/forgejo/src/tag/v16.0.5/modules/webhook/type.go) (event types and their `X-Forgejo-Event` names), [`services/webhook/webhook.go`](https://codeberg.org/forgejo/forgejo/src/tag/v16.0.5/services/webhook/webhook.go) (owner-level webhooks apply to all of an owner's repositories), [`services/webhook/deliver.go`](https://codeberg.org/forgejo/forgejo/src/tag/v16.0.5/services/webhook/deliver.go) (single delivery attempt), [`services/webhook/shared/payloader.go`](https://codeberg.org/forgejo/forgejo/src/tag/v16.0.5/services/webhook/shared/payloader.go) (`X-Forgejo-Signature`, `X-Forgejo-Event-Type`), [`models/webhook/hooktask.go`](https://codeberg.org/forgejo/forgejo/src/tag/v16.0.5/models/webhook/hooktask.go) (a replay gets a new delivery ID), [`routers/web/auth/oauth.go`](https://codeberg.org/forgejo/forgejo/src/tag/v16.0.5/routers/web/auth/oauth.go) (`email_verified` taken from the account's state).
-- `https://git.guneet.dev`: `/api/v1/version`, `/api/v1/settings/api`, `/swagger.v1.json` (including the token endpoints), `/.well-known/openid-configuration` (no registration endpoint) and the public organization list.
+- Forgejo source at tag `v16.0.5`: [`modules/webhook/type.go`](https://codeberg.org/forgejo/forgejo/src/tag/v16.0.5/modules/webhook/type.go) (event types and their `X-Forgejo-Event` names), [`services/webhook/webhook.go`](https://codeberg.org/forgejo/forgejo/src/tag/v16.0.5/services/webhook/webhook.go) (owner-level webhooks apply to all of an owner's repositories), [`services/webhook/deliver.go`](https://codeberg.org/forgejo/forgejo/src/tag/v16.0.5/services/webhook/deliver.go) (single delivery attempt), [`services/webhook/shared/payloader.go`](https://codeberg.org/forgejo/forgejo/src/tag/v16.0.5/services/webhook/shared/payloader.go) (`X-Forgejo-Signature`, `X-Forgejo-Event-Type`), [`models/webhook/hooktask.go`](https://codeberg.org/forgejo/forgejo/src/tag/v16.0.5/models/webhook/hooktask.go) (a replay gets a new delivery ID).
+- `https://git.guneet.dev`: `/api/v1/version`, `/api/v1/settings/api`, `/swagger.v1.json` (including the token endpoints) and the public organization list.
 - The `workspace` repository's Forgejo setup notes and Forgejo and Musashi catalog entries (read-only background; their own check dates are cited where used).
 
 [o]: https://github.com/guneet-xyz/shinan/issues/25
