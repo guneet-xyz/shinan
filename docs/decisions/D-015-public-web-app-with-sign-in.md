@@ -39,7 +39,11 @@ and architecture documents.
 
 - **Decided:** the identity and architecture documents give sign-in, access
   rules and security extra attention.
-- **Open:** the sign-in method and the protections for a public web app
+- **Decided (owner):** sign-in methods and accounts are set by
+  [D-034](D-034-sign-in-and-accounts.md); agent tokens, the security log and
+  purge rights by [D-035](D-035-tokens-security-log-purge.md); visibility by
+  [D-023](D-023-workspace-wide-visibility-no-secrets.md).
+- **Open:** the remaining protections for a public web app
   holding infrastructure details ([plan, question 7](../plan.md#7-open-questions)).
   Owned by [identity, agents and permissions](../identity.md) and
   [architecture and operations](../architecture.md).
@@ -73,3 +77,4 @@ and architecture documents.
   how it is reached (commit `5c3330c`).
 - Recorded as accepted from the owner's answers (commit `e46c560`, 2026-11-16)
   and approved with the plan on 2026-11-16 (merge commit `248a2c5`).
+- 2026-11-16: related decisions [D-023](D-023-workspace-wide-visibility-no-secrets.md), [D-034](D-034-sign-in-and-accounts.md), [D-035](D-035-tokens-security-log-purge.md) recorded from [issue #25](https://github.com/guneet-xyz/shinan/issues/25); maintained sections updated.

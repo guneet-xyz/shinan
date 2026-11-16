@@ -58,6 +58,10 @@ can follow session events and send messages into a running session.
   [connection level](../domain-model.md#connection-level),
   [presence](../domain-model.md#presence) and [nudge](../domain-model.md#nudge)
   entries.
+- **Decided (owner):** an agent is per person, coding tool and machine, and
+  every subagent is its own agent session ([D-031](D-031-agent-and-session-granularity.md));
+  phase 3 launchers run on hardware the user registers
+  ([D-032](D-032-no-writes-as-a-person-on-github.md)).
 - **Open:** how far Claude Code and other coding tools can receive a message in
   a running agent session, and how presence works for tools with no plugin
   ([plan, question 9](../plan.md#7-open-questions)). Owned by
@@ -87,3 +91,4 @@ can follow session events and send messages into a running session.
 - Added to the plan as **proposed** (commit `6cb3f88`, 2026-11-16).
 - Accepted when the owner's answers were recorded (commit `e46c560`) and
   approved with the plan on 2026-11-16 (merge commit `248a2c5`).
+- 2026-11-16: related decisions [D-031](D-031-agent-and-session-granularity.md), [D-032](D-032-no-writes-as-a-person-on-github.md) recorded from [issue #25](https://github.com/guneet-xyz/shinan/issues/25); maintained sections updated.

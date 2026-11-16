@@ -8,7 +8,7 @@ evidence: https://github.com/guneet-xyz/shinan/issues/1
 supersedes: []
 superseded_by: []
 amends: []
-amended_by: []
+amended_by: [D-040]
 ---
 
 # D-018: Shinan starts empty; the `workspace` repository moves over only when Shinan is ready
@@ -16,6 +16,7 @@ amended_by: []
 Status: **Accepted** by the owner on 2026-11-16, with the plan
 ([issue #1](https://github.com/guneet-xyz/shinan/issues/1),
 [PR #2](https://github.com/guneet-xyz/shinan/pull/2)).
+Amended by [D-040](D-040-trial-coordination-in-shinan.md).
 
 ## Context
 
@@ -46,6 +47,9 @@ early changes.
   [naming rule](../domain-model.md#two-meanings-of-workspace) and
   [supporting terms](../domain-model.md#supporting-terms) ("migration",
   "source of truth").
+- **Decided (owner, [D-040](D-040-trial-coordination-in-shinan.md)):**
+  cross-project coordination for trial projects moves into Shinan during the
+  trial.
 - **Open:** which projects the proof of concept uses, what counts as "ready",
   and how the `workspace` repository is then moved over
   ([plan, question 8](../plan.md#7-open-questions)). Owned by
@@ -75,3 +79,4 @@ early changes.
   coordination issues, with no staging (commit `5c3330c`, 2026-11-16).
 - Recorded as accepted from the owner's answers (commit `e46c560`, 2026-11-16)
   and approved with the plan on 2026-11-16 (merge commit `248a2c5`).
+- 2026-11-16: amended by [D-040](D-040-trial-coordination-in-shinan.md) (owner answers on [issue #25](https://github.com/guneet-xyz/shinan/issues/25)). Decision and Reasons unchanged; maintained sections updated.

@@ -44,9 +44,8 @@ Trust in the catalog is the main differentiator.
   [fact state](../domain-model.md#fact-state) and
   [source and last checked](../domain-model.md#source-and-last-checked)
   entries.
-- **Open:** the domain model asks the owner whether to rename a fact state
-  ([decisions needed](../domain-model.md#decisions-needed-from-the-owner)).
-  This record does not assume the outcome.
+- **Decided (owner, [D-025](D-025-fact-state-planned.md)):** the fact state
+  `proposed` is renamed `planned`.
 - **Open:** how freshness is shown ([plan, question 4](../plan.md#7-open-questions)).
   Owned by [human experience](../human-experience.md).
 
@@ -70,3 +69,4 @@ Trust in the catalog is the main differentiator.
 - Recorded as accepted ("agreed in conversation with the owner") in the first
   plan draft (commit `5c3330c`, 2026-11-16).
 - Approved with the plan on 2026-11-16 (merge commit `248a2c5`).
+- 2026-11-16: related decisions [D-025](D-025-fact-state-planned.md) recorded from [issue #25](https://github.com/guneet-xyz/shinan/issues/25); maintained sections updated.

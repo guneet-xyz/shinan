@@ -37,11 +37,9 @@ than a single pick.
 
 - **Decided:** the architecture document presents several stack options with
   their trade-offs, and the owner makes the choice.
-- **Open:** the options themselves, storage, and how the catalog's Markdown and
-  its agent index stay in sync ([plan, question 1](../plan.md#7-open-questions)).
-  Owned by [architecture and operations](../architecture.md). Recording the
-  owner's choice follows the decision log's
-  [process for new decisions](README.md#how-documents-propose-new-decisions).
+- **Decided (owner, [D-037](D-037-typescript-node-react.md)):** TypeScript, a
+  plain Node.js server and a React single-page app. Storage is PostgreSQL
+  ([D-022](D-022-catalog-storage-and-git-mirror.md)).
 
 ## Alternatives considered
 
@@ -56,8 +54,10 @@ than a single pick.
 
 ## Related open questions
 
-- Technology stack, storage and sync
-  ([plan, question 1](../plan.md#7-open-questions)).
+- How the catalog's Markdown and its agent index stay in sync
+  ([plan, question 1](../plan.md#7-open-questions)); stack and storage are
+  answered by [D-037](D-037-typescript-node-react.md) and
+  [D-022](D-022-catalog-storage-and-git-mirror.md).
 
 ## History
 
@@ -66,3 +66,4 @@ than a single pick.
   2026-11-16).
 - Recorded as accepted from the owner's answers (commit `e46c560`, 2026-11-16)
   and approved with the plan on 2026-11-16 (merge commit `248a2c5`).
+- 2026-11-16: related decisions [D-037](D-037-typescript-node-react.md) recorded from [issue #25](https://github.com/guneet-xyz/shinan/issues/25); maintained sections updated.

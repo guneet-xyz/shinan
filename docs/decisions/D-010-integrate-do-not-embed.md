@@ -8,7 +8,7 @@ evidence: https://github.com/guneet-xyz/shinan/issues/1
 supersedes: []
 superseded_by: []
 amends: []
-amended_by: []
+amended_by: [D-041]
 ---
 
 # D-010: Integrate with tools such as Multica, Linear and Plane through their APIs; do not embed them
@@ -16,6 +16,7 @@ amended_by: []
 Status: **Accepted** by the owner on 2026-11-16, with the plan
 ([issue #1](https://github.com/guneet-xyz/shinan/issues/1),
 [PR #2](https://github.com/guneet-xyz/shinan/pull/2)).
+Amended by [D-041](D-041-no-outside-tracker-integrations.md).
 
 ## Context
 
@@ -59,8 +60,8 @@ Shinan host-neutral.
 - Proposed refinements: see the domain model's
   [supporting terms](../domain-model.md#supporting-terms) ("outside tool") and
   its [open questions](../domain-model.md#open-questions).
-- **Open:** which document owns these integrations; see the decision log's
-  [open questions](README.md#open-questions).
+- **Decided (owner, [D-041](D-041-no-outside-tracker-integrations.md)):** no
+  integrations with these tools are planned, and no document owns them.
 
 ## Alternatives considered
 
@@ -69,7 +70,8 @@ Shinan host-neutral.
 ## Owning documents
 
 - [Product overview](../product-overview.md): positioning against these tools.
-- Owner of the integrations themselves: **open**.
+- None for the integrations themselves; they are not planned
+  ([D-041](D-041-no-outside-tracker-integrations.md)).
 
 ## Related open questions
 
@@ -81,3 +83,4 @@ Shinan host-neutral.
 - Recorded as accepted ("agreed in conversation with the owner") in the first
   plan draft (commit `5c3330c`, 2026-11-16).
 - Approved with the plan on 2026-11-16 (merge commit `248a2c5`).
+- 2026-11-16: amended by [D-041](D-041-no-outside-tracker-integrations.md) (owner answers on [issue #25](https://github.com/guneet-xyz/shinan/issues/25)). Decision and Reasons unchanged; maintained sections updated.

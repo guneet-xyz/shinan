@@ -36,6 +36,8 @@ They are the hosts we use.
   ([plan, section 10](../plan.md#10-phases-after-the-documents)).
 - **Decided:** GitLab comes later
   ([plan, section 5](../plan.md#5-integration-points)).
+- **Decided (owner, [D-033](D-033-forgejo-connection.md)):** on Forgejo,
+  Shinan uses the connecting person's own account and accepts any token.
 - Proposed refinements: see the domain model's
   [git host](../domain-model.md#git-host) entry.
 
@@ -61,3 +63,4 @@ They are the hosts we use.
 - Recorded as accepted ("agreed in conversation with the owner") in the first
   plan draft (commit `5c3330c`, 2026-11-16).
 - Approved with the plan on 2026-11-16 (merge commit `248a2c5`).
+- 2026-11-16: related decisions [D-033](D-033-forgejo-connection.md) recorded from [issue #25](https://github.com/guneet-xyz/shinan/issues/25); maintained sections updated.

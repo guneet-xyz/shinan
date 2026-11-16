@@ -8,7 +8,7 @@ evidence: https://github.com/guneet-xyz/shinan/issues/1
 supersedes: []
 superseded_by: []
 amends: []
-amended_by: []
+amended_by: [D-036]
 ---
 
 # D-019: One user at first, but workspaces and invitations are designed in from the start
@@ -16,6 +16,7 @@ amended_by: []
 Status: **Accepted** by the owner on 2026-11-16, with the plan
 ([issue #1](https://github.com/guneet-xyz/shinan/issues/1),
 [PR #2](https://github.com/guneet-xyz/shinan/pull/2)).
+Amended by [D-036](D-036-design-now-build-before-second-member.md).
 
 ## Context
 
@@ -43,9 +44,14 @@ sign-in.
   [workspace](../domain-model.md#workspace),
   [member and role](../domain-model.md#member-and-role) and
   [invitation](../domain-model.md#invitation) entries.
-- **Open:** permissions when a member can see a task but not a private
-  repository it links to ([plan, question 3](../plan.md#7-open-questions)).
-  Owned by [identity, agents and permissions](../identity.md).
+- **Decided (owner, [D-036](D-036-design-now-build-before-second-member.md)):**
+  this decision means "design now, build before the second member".
+- **Decided (owner, [D-023](D-023-workspace-wide-visibility-no-secrets.md)):**
+  every member sees everything in a workspace, including private repository
+  work (plan question 3).
+- **Decided (owner, [D-034](D-034-sign-in-and-accounts.md)):** an email
+  allowlist decides who can have an account; joining a workspace needs an
+  invitation.
 
 ## Alternatives considered
 
@@ -61,8 +67,8 @@ sign-in.
 
 ## Related open questions
 
-- Permissions for private repositories
-  ([plan, question 3](../plan.md#7-open-questions)).
+- Plan question 3 (private repositories) is answered for now by
+  [D-023](D-023-workspace-wide-visibility-no-secrets.md).
 
 ## History
 
@@ -70,3 +76,4 @@ sign-in.
   (commit `5c3330c`, 2026-11-16).
 - Recorded as accepted from the owner's answers (commit `e46c560`, 2026-11-16)
   and approved with the plan on 2026-11-16 (merge commit `248a2c5`).
+- 2026-11-16: amended by [D-036](D-036-design-now-build-before-second-member.md) (owner answers on [issue #25](https://github.com/guneet-xyz/shinan/issues/25)). Decision and Reasons unchanged; maintained sections updated.

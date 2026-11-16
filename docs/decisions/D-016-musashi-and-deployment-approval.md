@@ -45,6 +45,10 @@ Musashi already runs the owner's public applications.
 
 - **Decided:** no deployment of `shinan.guneet.dev` happens without the
   owner's approval.
+- **Decided (owner):** deployments happen as needed, each with its own
+  approval ([D-039](D-039-deploy-as-needed.md)); `awaiting deployment
+  approval` is its own task flag ([D-028](D-028-task-flags.md)); no built-in
+  backups for now ([D-038](D-038-no-built-in-backups.md)).
 - Proposed refinements: see the domain model's
   [supporting terms](../domain-model.md#supporting-terms) ("deployment
   approval") and its
@@ -76,3 +80,4 @@ Musashi already runs the owner's public applications.
   (commit `5c3330c`, 2026-11-16).
 - Recorded as accepted from the owner's answers (commit `e46c560`, 2026-11-16)
   and approved with the plan on 2026-11-16 (merge commit `248a2c5`).
+- 2026-11-16: related decisions [D-028](D-028-task-flags.md), [D-038](D-038-no-built-in-backups.md), [D-039](D-039-deploy-as-needed.md) recorded from [issue #25](https://github.com/guneet-xyz/shinan/issues/25); maintained sections updated.

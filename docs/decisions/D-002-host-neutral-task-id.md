@@ -41,10 +41,11 @@ work on any host to one story.
 - Proposed refinements: see the domain model's [task](../domain-model.md#task)
   (ID uniqueness, prefix, subtasks) and [work link](../domain-model.md#work-link)
   entries.
-- **Open:** the task ID format and linking conventions. Owned by
-  [tasks and work](../tasks.md); the domain model asks the owner about a
-  per-workspace prefix
-  ([decisions needed](../domain-model.md#decisions-needed-from-the-owner)).
+- **Decided (owner, [D-027](D-027-workspace-task-id-prefix.md)):** each
+  workspace has its own task ID prefix.
+- **Decided (owner, [D-030](D-030-related-links-from-mentions.md)):** members'
+  mentions of a task ID in git host comments create a `related` link.
+- Linking conventions: see [tasks and work](../tasks.md).
 
 ## Alternatives considered
 
@@ -66,3 +67,4 @@ None in the plan.
 - Recorded as accepted ("agreed in conversation with the owner") in the first
   plan draft (commit `5c3330c`, 2026-11-16).
 - Approved with the plan on 2026-11-16 (merge commit `248a2c5`).
+- 2026-11-16: related decisions [D-027](D-027-workspace-task-id-prefix.md), [D-030](D-030-related-links-from-mentions.md) recorded from [issue #25](https://github.com/guneet-xyz/shinan/issues/25); maintained sections updated.

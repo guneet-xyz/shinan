@@ -8,7 +8,7 @@ evidence: https://github.com/guneet-xyz/shinan/issues/1
 supersedes: []
 superseded_by: []
 amends: []
-amended_by: []
+amended_by: [D-021]
 ---
 
 # D-005: Task status is calculated from linked work
@@ -16,6 +16,7 @@ amended_by: []
 Status: **Accepted** by the owner on 2026-11-16, with the plan
 ([issue #1](https://github.com/guneet-xyz/shinan/issues/1),
 [PR #2](https://github.com/guneet-xyz/shinan/pull/2)).
+Amended by [D-021](D-021-status-from-work-and-events.md).
 
 ## Context
 
@@ -41,11 +42,12 @@ Copied status goes stale; this matches the current workspace rule.
   reconciliation ([plan, section 5](../plan.md#5-integration-points)).
 - Proposed refinements: see the domain model's
   [task status, task flags and manual states](../domain-model.md#task-status-task-flags-and-manual-states).
-- **Open:** the domain model asks the owner to confirm a reading of this
-  decision, and other changes to task states
-  ([decisions needed](../domain-model.md#decisions-needed-from-the-owner)).
-  This record does not assume the outcome.
-- **Open:** detailed status rules. Owned by [tasks and work](../tasks.md).
+- **Decided (owner):** this decision is read as "calculated from linked work
+  plus recorded events" ([D-021](D-021-status-from-work-and-events.md)); task
+  flags are managed per workspace ([D-028](D-028-task-flags.md)); a task with
+  subtasks is done when they are done and its delivering PRs are merged
+  ([D-029](D-029-subtasks.md)).
+- Detailed status rules: Owned by [tasks and work](../tasks.md).
 
 ## Alternatives considered
 
@@ -68,3 +70,5 @@ Copied status goes stale; this matches the current workspace rule.
 - Recorded as accepted ("agreed in conversation with the owner") in the first
   plan draft (commit `5c3330c`, 2026-11-16).
 - Approved with the plan on 2026-11-16 (merge commit `248a2c5`).
+- 2026-11-16: amended by [D-021](D-021-status-from-work-and-events.md) (owner answers on [issue #25](https://github.com/guneet-xyz/shinan/issues/25)). Decision and Reasons unchanged; maintained sections updated.
+- 2026-11-16: related decisions [D-028](D-028-task-flags.md), [D-029](D-029-subtasks.md) recorded from [issue #25](https://github.com/guneet-xyz/shinan/issues/25); maintained sections updated.

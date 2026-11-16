@@ -18,70 +18,130 @@ Always say "decision record" for a file here.
 
 Every rule in this README is marked:
 
-- **Decided**: follows from the plan, which is cited.
-- **Proposed**: suggested here, with a reason. The owner confirms or changes it
-  when approving this document.
+- **Decided**: follows from the plan or from an owner answer, which is cited.
+- **Proposed**: suggested here, with a reason.
 - **Open**: not settled; listed under [open questions](#open-questions).
+
+Most rules here were accepted by the owner on 2026-11-16 in answers O-93 to
+O-98 on [issue #25](https://github.com/guneet-xyz/shinan/issues/25#issuecomment-6912648147).
 
 Inside each decision record:
 
 | Section | What it holds |
 |---|---|
-| Decision, Reasons | The plan's words, quoted exactly. Decided. Nothing else goes here. |
-| Context | Sourced facts, each with a link. External facts also give the date they were checked. |
-| Notes | Remarks about the plan's wording, such as a reason that was not independently checked. Each note says whether it is a sourced fact or proposed. Only present where needed. |
-| Consequences | **Decided** items that follow from the plan, with a citation. Proposals made in other documents are only linked, never copied. **Open** items name the document that owns them. |
-| Alternatives considered | Each alternative carries one label: **Recorded** (it appears as an option in the plan or its history), **Implied** (by the decision's wording or reasons, not recorded as discussed) or **Not recorded**. |
+| Decision, Reasons | Fixed. For D-001 to D-020, the plan's words, quoted exactly. For later records, the decision as the owner accepted it, and the owner's stated reason or "Owner's choice; no reason recorded". |
+| Context | Sourced facts, each with a link. External facts also give the date they were checked. Reasons given by the documents that recommended an option go here, not in Reasons. |
+| Notes | Remarks about the wording above, such as a reason that was not independently checked. Each note says whether it is a sourced fact or proposed. Only present where needed. |
+| Consequences | **Decided** items with a citation. Proposals made in other documents are only linked, never copied. **Open** items name the document that owns them. |
+| Alternatives considered | Each alternative carries one label: **Recorded** (it appears as an option in the plan, its history or the owner's checklist), **Implied** (by the decision's wording or reasons, not recorded as discussed) or **Not recorded**. |
 | Owning documents, Related open questions, History | Links and dates. |
 
-A record does not start new proposals. Where the decision log noticed a
-possible proposal for another document, it is listed under
+**Decided (owner, O-95, [#25](https://github.com/guneet-xyz/shinan/issues/25)):**
+a record does not start new proposals; it only cites proposals made in owning
+documents. Where the decision log noticed a possible proposal for another
+document, it is listed under
 [suggestions for owning documents](#suggestions-for-owning-documents) instead.
-**Proposed.** Reason: a proposal should start in the document that owns the
-subject, where it is reviewed with that subject.
 
 ## Index
 
-All twenty records were accepted by the owner on 2026-11-16 when the plan was
-approved ([issue #1](https://github.com/guneet-xyz/shinan/issues/1),
-[PR #2](https://github.com/guneet-xyz/shinan/pull/2)).
+D-001 to D-020 were accepted with the plan
+([issue #1](https://github.com/guneet-xyz/shinan/issues/1),
+[PR #2](https://github.com/guneet-xyz/shinan/pull/2)). D-021 to D-041 record
+the owner's answers on [issue #25](https://github.com/guneet-xyz/shinan/issues/25);
+the O-numbers are in each record's `evidence` field and in the
+[O-number mapping](#owner-answers-on-issue-25).
 
-| ID | Decision | Status | Date | Owning documents |
-|---|---|---|---|---|
-| [D-001](D-001-above-git-hosts.md) | Shinan sits above git hosts and does not replace their issues or PRs | Accepted | 2026-11-16 | Product overview, Git host integrations, Tasks and work |
-| [D-002](D-002-host-neutral-task-id.md) | The task is the core object and has a host-neutral task ID | Accepted | 2026-11-16 | Tasks and work |
-| [D-003](D-003-task-starts-with-intent.md) | A task starts where the intent starts; outside issues become tasks automatically | Accepted | 2026-11-16 | Tasks and work |
-| [D-004](D-004-link-prs-directly.md) | Agent-driven work links PRs directly; repository issues only when people need them | Accepted | 2026-11-16 | Tasks and work |
-| [D-005](D-005-derived-task-status.md) | Task status is calculated from linked work | Accepted | 2026-11-16 | Tasks and work |
-| [D-006](D-006-document-first-catalog.md) | The catalog is document-first, with a generated agent index | Accepted | 2026-11-16 | Catalog |
-| [D-007](D-007-fact-provenance.md) | Every fact records its fact state, source and last-checked time | Accepted | 2026-11-16 | Catalog |
-| [D-008](D-008-agents-connect-from-outside.md) | Agents connect from outside; Shinan runs no model in the first phases | Accepted | 2026-11-16 | Agent integrations |
-| [D-009](D-009-github-and-forgejo-first.md) | GitHub and Forgejo are the first git hosts | Accepted | 2026-11-16 | Git host integrations |
-| [D-010](D-010-integrate-do-not-embed.md) | Integrate with tools such as Multica, Linear and Plane through their APIs; do not embed them | Accepted | 2026-11-16 | Product overview |
-| [D-011](D-011-private-repository-and-brand.md) | Private repository, internal brand "Shinan", first deployment at `shinan.guneet.dev` | Accepted | 2026-11-16 | Product overview, Architecture and operations |
-| [D-012](D-012-self-hostable.md) | Self-hostable by design | Accepted | 2026-11-16 | Architecture and operations |
-| [D-013](D-013-business-model-deferred.md) | Business model, licensing and pricing are deferred | Accepted | 2026-11-16 | Product overview, Roadmap and migration |
-| [D-014](D-014-three-connection-levels.md) | Agents connect at three connection levels: MCP and skill, plugin, launcher | Accepted | 2026-11-16 | Agent integrations |
-| [D-015](D-015-public-web-app-with-sign-in.md) | The web app is on the public internet and requires sign-in | Accepted | 2026-11-16 | Identity, agents and permissions; Architecture and operations |
-| [D-016](D-016-musashi-and-deployment-approval.md) | `shinan.guneet.dev` runs on Musashi; every deployment needs the owner's approval | Accepted | 2026-11-16 | Architecture and operations |
-| [D-017](D-017-shared-git-host-accounts.md) | Agents use their person's git host account; Shinan attributes actions from its own records | Accepted | 2026-11-16 | Identity, agents and permissions |
-| [D-018](D-018-start-empty-migrate-later.md) | Shinan starts empty; the `workspace` repository moves over only when Shinan is ready | Accepted | 2026-11-16 | Roadmap and migration |
-| [D-019](D-019-workspaces-from-the-start.md) | One user at first, but workspaces and invitations are designed in from the start | Accepted | 2026-11-16 | Identity, agents and permissions |
-| [D-020](D-020-stack-chosen-from-options.md) | The technology stack is chosen by the owner from options with trade-offs | Accepted | 2026-11-16 | Architecture and operations |
+| ID | Decision | Status | Date | Amends / amended by | Owning documents |
+|---|---|---|---|---|---|
+| [D-001](D-001-above-git-hosts.md) | Shinan sits above git hosts and does not replace their issues or PRs | Accepted | 2026-11-16 | | Product overview, Git host integrations, Tasks and work |
+| [D-002](D-002-host-neutral-task-id.md) | The task is the core object and has a host-neutral task ID | Accepted | 2026-11-16 | | Tasks and work |
+| [D-003](D-003-task-starts-with-intent.md) | A task starts where the intent starts; outside issues become tasks automatically | Accepted | 2026-11-16 | | Tasks and work |
+| [D-004](D-004-link-prs-directly.md) | Agent-driven work links PRs directly; repository issues only when people need them | Accepted | 2026-11-16 | | Tasks and work |
+| [D-005](D-005-derived-task-status.md) | Task status is calculated from linked work | Accepted | 2026-11-16 | Amended by D-021 | Tasks and work |
+| [D-006](D-006-document-first-catalog.md) | The catalog is document-first, with a generated agent index | Accepted | 2026-11-16 | Amended by D-022 | Catalog |
+| [D-007](D-007-fact-provenance.md) | Every fact records its fact state, source and last-checked time | Accepted | 2026-11-16 | | Catalog |
+| [D-008](D-008-agents-connect-from-outside.md) | Agents connect from outside; Shinan runs no model in the first phases | Accepted | 2026-11-16 | | Agent integrations |
+| [D-009](D-009-github-and-forgejo-first.md) | GitHub and Forgejo are the first git hosts | Accepted | 2026-11-16 | | Git host integrations |
+| [D-010](D-010-integrate-do-not-embed.md) | Integrate with tools such as Multica, Linear and Plane through their APIs; do not embed them | Accepted | 2026-11-16 | Amended by D-041 | Product overview |
+| [D-011](D-011-private-repository-and-brand.md) | Private repository, internal brand "Shinan", first deployment at `shinan.guneet.dev` | Accepted | 2026-11-16 | | Product overview, Architecture and operations |
+| [D-012](D-012-self-hostable.md) | Self-hostable by design | Accepted | 2026-11-16 | | Architecture and operations |
+| [D-013](D-013-business-model-deferred.md) | Business model, licensing and pricing are deferred | Accepted | 2026-11-16 | | Product overview, Roadmap and migration |
+| [D-014](D-014-three-connection-levels.md) | Agents connect at three connection levels: MCP and skill, plugin, launcher | Accepted | 2026-11-16 | | Agent integrations |
+| [D-015](D-015-public-web-app-with-sign-in.md) | The web app is on the public internet and requires sign-in | Accepted | 2026-11-16 | | Identity, agents and permissions; Architecture and operations |
+| [D-016](D-016-musashi-and-deployment-approval.md) | `shinan.guneet.dev` runs on Musashi; every deployment needs the owner's approval | Accepted | 2026-11-16 | | Architecture and operations |
+| [D-017](D-017-shared-git-host-accounts.md) | Agents use their person's git host account; Shinan attributes actions from its own records | Accepted | 2026-11-16 | Amended by D-032 | Identity, agents and permissions |
+| [D-018](D-018-start-empty-migrate-later.md) | Shinan starts empty; the `workspace` repository moves over only when Shinan is ready | Accepted | 2026-11-16 | Amended by D-040 | Roadmap and migration |
+| [D-019](D-019-workspaces-from-the-start.md) | One user at first, but workspaces and invitations are designed in from the start | Accepted | 2026-11-16 | Amended by D-036 | Identity, agents and permissions |
+| [D-020](D-020-stack-chosen-from-options.md) | The technology stack is chosen by the owner from options with trade-offs | Accepted | 2026-11-16 | | Architecture and operations |
+| [D-021](D-021-status-from-work-and-events.md) | Task status is calculated from linked work plus recorded events; agents record verification | Accepted | 2026-11-16 | Amends D-005 | Tasks and work |
+| [D-022](D-022-catalog-storage-and-git-mirror.md) | Catalog revisions in PostgreSQL with an always-on read-only Git mirror; review in Shinan | Accepted | 2026-11-16 | Amends D-006 | Catalog; Architecture and operations |
+| [D-023](D-023-workspace-wide-visibility-no-secrets.md) | Every member sees everything in a workspace; secrets never go in the catalog | Accepted | 2026-11-16 | | Catalog; Identity, agents and permissions |
+| [D-024](D-024-gated-catalog-approval.md) | Only gated catalog changes need approval, from the start of the trial | Accepted | 2026-11-16 | | Catalog |
+| [D-025](D-025-fact-state-planned.md) | The fact state `proposed` is renamed `planned` | Accepted | 2026-11-16 | | Catalog |
+| [D-026](D-026-custom-entity-types.md) | Custom entity types are allowed in the first version | Accepted | 2026-11-16 | | Catalog |
+| [D-027](D-027-workspace-task-id-prefix.md) | Each workspace has its own task ID prefix | Accepted | 2026-11-16 | | Tasks and work |
+| [D-028](D-028-task-flags.md) | Task flags are managed per workspace; agents may set `needs a person`; `awaiting deployment approval` is its own flag | Accepted | 2026-11-16 | | Tasks and work |
+| [D-029](D-029-subtasks.md) | Tasks can have subtasks; done when subtasks are done and delivering PRs are merged | Accepted | 2026-11-16 | | Tasks and work |
+| [D-030](D-030-related-links-from-mentions.md) | Members' mentions of a task ID in git host comments create a `related` link | Accepted | 2026-11-16 | | Tasks and work; Git host integrations |
+| [D-031](D-031-agent-and-session-granularity.md) | An agent is per person, coding tool and machine; every subagent is its own agent session | Accepted | 2026-11-16 | | Identity, agents and permissions; Agent integrations |
+| [D-032](D-032-no-writes-as-a-person-on-github.md) | Shinan never writes to GitHub as a person; person-requested git host actions are done by the person's own agents | Accepted | 2026-11-16 | Amends D-017 | Git host integrations; Identity, agents and permissions |
+| [D-033](D-033-forgejo-connection.md) | On Forgejo, Shinan uses the connecting person's own account and accepts any token | Accepted | 2026-11-16 | | Git host integrations |
+| [D-034](D-034-sign-in-and-accounts.md) | Sign-in by GitHub, Forgejo, email magic link or password; an email allowlist decides who can have an account | Accepted | 2026-11-16 | | Identity, agents and permissions |
+| [D-035](D-035-tokens-security-log-purge.md) | Agent tokens last until revoked; the security log is kept forever; only workspace owners can purge | Accepted | 2026-11-16 | | Identity, agents and permissions; Architecture and operations |
+| [D-036](D-036-design-now-build-before-second-member.md) | D-019 means design now, build before the second member | Accepted | 2026-11-16 | Amends D-019 | Identity, agents and permissions |
+| [D-037](D-037-typescript-node-react.md) | The stack is TypeScript, a plain Node.js server and a React single-page app | Accepted | 2026-11-16 | | Architecture and operations |
+| [D-038](D-038-no-built-in-backups.md) | No built-in backups for now; relying on host-level backups is an accepted risk | Accepted | 2026-11-16 | | Architecture and operations; Roadmap and migration |
+| [D-039](D-039-deploy-as-needed.md) | Deploy to Musashi as needed, each deployment with its own approval | Accepted | 2026-11-16 | | Architecture and operations; Roadmap and migration |
+| [D-040](D-040-trial-coordination-in-shinan.md) | Cross-project coordination for trial projects moves into Shinan during the trial | Accepted | 2026-11-16 | Amends D-018 | Roadmap and migration |
+| [D-041](D-041-no-outside-tracker-integrations.md) | No integrations with outside trackers are planned; the Multica trial is skipped | Accepted | 2026-11-16 | Amends D-010 | Product overview |
 
 The full list of owning documents, with planned paths, is in each record.
 
-**Proposed:** the index is updated in every pull request that adds a record or
-changes a status, and may later be generated from the records' front matter.
-Reason: it is the first place people and agents look. Parallel pull requests
-will sometimes conflict on this table; the one merged second resolves the
-conflict, which is a one-line change.
+**Decided (owner, O-93, [#25](https://github.com/guneet-xyz/shinan/issues/25)):**
+the index is updated in every pull request that adds a record or changes a
+status, and may later be generated from the records' front matter. Parallel
+pull requests will sometimes conflict on this table; the one merged second
+resolves the conflict.
+
+## Owner answers on issue #25
+
+Mapping from the owner's answers to decision records. Answers not listed here
+accepted a document's own recommendation inside that document (or, for O-93
+to O-96 and O-98, this README's rules); they are decided in the documents,
+which cite the O-number.
+
+| Owner answers | Record |
+|---|---|
+| O-4, O-10 | [D-021](D-021-status-from-work-and-events.md) |
+| O-11, O-12 | [D-022](D-022-catalog-storage-and-git-mirror.md) |
+| O-2, O-43 | [D-023](D-023-workspace-wide-visibility-no-secrets.md) |
+| O-3, O-46 | [D-024](D-024-gated-catalog-approval.md) |
+| O-5 | [D-025](D-025-fact-state-planned.md) |
+| O-17 | [D-026](D-026-custom-entity-types.md) |
+| O-6 | [D-027](D-027-workspace-task-id-prefix.md) |
+| O-7, O-8 | [D-028](D-028-task-flags.md) |
+| O-21 | [D-029](D-029-subtasks.md) |
+| O-25 | [D-030](D-030-related-links-from-mentions.md) |
+| O-37, O-40 | [D-031](D-031-agent-and-session-granularity.md) |
+| O-1 | [D-032](D-032-no-writes-as-a-person-on-github.md) |
+| O-53, O-54 | [D-033](D-033-forgejo-connection.md) |
+| O-41, O-48 (O-42 cited) | [D-034](D-034-sign-in-and-accounts.md) |
+| O-44, O-47, O-50 | [D-035](D-035-tokens-security-log-purge.md) |
+| O-49 | [D-036](D-036-design-now-build-before-second-member.md) |
+| O-60, O-61 | [D-037](D-037-typescript-node-react.md) |
+| O-62, O-63, O-64 (O-65 cited) | [D-038](D-038-no-built-in-backups.md) |
+| O-83 | [D-039](D-039-deploy-as-needed.md) |
+| O-73 (O-74 cited) | [D-040](D-040-trial-coordination-in-shinan.md) |
+| O-97, O-88 | [D-041](D-041-no-outside-tracker-integrations.md) |
+| O-93, O-94, O-95, O-96, O-98 | This README (no record) |
+| All other O-numbers | No record; decided in the owning document |
 
 ## Record format
 
-**Proposed.** Each record is one Markdown file with a short block of
-structured fields at the top (YAML front matter), followed by fixed sections.
-Reason: the `workspace` repository's
+**Decided (owner, O-93, [#25](https://github.com/guneet-xyz/shinan/issues/25)).**
+Each record is one Markdown file with a short block of structured fields at
+the top (YAML front matter), followed by fixed sections. Reason given when it
+was proposed: the `workspace` repository's
 [decision records](https://git.guneet.dev/guneet/workspace/src/branch/main/decisions/README.md)
 use a similar shape (front matter with `id`, `status`, `owner` and `date`, then
 sections), and it works for both people and agents. This log adds sections and
@@ -117,7 +177,8 @@ wording the owner accepted.
 
 ## Reasons
 
-Why this choice was made, in the words the owner accepted.
+Why this choice was made, in the words the owner accepted, or "Owner's
+choice; no reason recorded".
 
 ## Notes
 
@@ -147,8 +208,7 @@ When the decision was proposed, changed and accepted, and when maintained
 sections were updated, with links.
 ```
 
-Field meanings (**proposed**; reason: each one answers a question a reader or
-an agent asks first):
+Field meanings (**decided**, O-93):
 
 | Field | Meaning |
 |---|---|
@@ -157,7 +217,7 @@ an agent asks first):
 | `status` | One of the statuses below. |
 | `date` | The date the current status was set. For accepted records, the date the owner accepted it. |
 | `decided_by` | `owner` once accepted or rejected. Empty while proposed. |
-| `evidence` | A link to where the owner decided, usually the approved pull request. Empty while proposed. |
+| `evidence` | A link to where the owner decided, usually the approved pull request, followed by the owner-answer numbers in brackets where there are any. Empty while proposed. |
 | `supersedes`, `superseded_by` | IDs of records this one fully replaces, or that fully replace it. |
 | `amends`, `amended_by` | IDs of records this one changes in part, or that change it in part. |
 
@@ -174,14 +234,14 @@ an agent asks first):
 - **Decided:** `proposed` and `accepted` keep the plan's meanings: "Accepted"
   means agreed with the owner; "Proposed" means the owning document must
   confirm or change it ([plan, section 6](../plan.md#6-decisions-so-far)).
-- **Proposed:** `rejected`, `withdrawn` and `superseded`. Reason: a decision log
+- **Decided (owner, O-93):** `rejected`, `withdrawn` and `superseded`. Reason given when proposed: a decision log
   is only useful if it also shows what was ruled out and what replaced what.
   A proposal dropped before it ever reached `main` needs no record: its closed
   pull request is enough.
-- **Proposed:** an accepted record that has been amended stays `accepted`, and
-  its `amended_by` field points to the change. Reason: most of it still applies,
-  and readers need to know to read both.
-- **Proposed:** a record becomes `accepted` or `rejected` only through the
+- **Decided (owner, O-93):** an accepted record that has been amended stays
+  `accepted`, and its `amended_by` field points to the change. The index shows
+  the amendment.
+- **Decided (owner, O-93):** a record becomes `accepted` or `rejected` only through the
   owner's decision, shown by the `evidence` link. Reason: the plan defines
   "accepted" as agreed with the owner.
 
@@ -189,23 +249,25 @@ an agent asks first):
 
 - **Decided:** decision IDs have the form `D-NNN` and D-001 to D-020 are taken
   ([plan, section 6](../plan.md#6-decisions-so-far)).
-- **Proposed:** numbers are given in order and never reused, including for
+- **Decided (owner, O-93):** numbers are given in order and never reused, including for
   rejected and withdrawn records. Reason: other documents, pull requests and
   task notes cite these IDs; reusing one would make old citations point at the
   wrong decision.
-- **Proposed:** a new record takes the next number not used on `main` or in any
+- **Decided (owner, O-93):** a new record takes the next number not used on `main` or in any
   open pull request (check with `gh pr list` and by searching for `D-0` in open
   pull requests). If two pull requests still collide, the one merged second
   renumbers its record and its citations before merging. Reason: several
   document authors work in parallel, and this needs no central allocator.
-- **Proposed:** three digits, growing to four only after D-999. Reason: keeps
+- **Decided (owner, O-93):** three digits, growing to four only after D-999. Reason: keeps
   file names sorting correctly for the foreseeable future.
 
 ## How documents propose new decisions
 
-**Proposed** process. Reason: ten documents are being written in parallel, so
-the log needs one path that works inside each document's own pull request,
-with no second round trip.
+**Decided (owner, O-94, [#25](https://github.com/guneet-xyz/shinan/issues/25)).**
+Each record goes into its document's own pull request as `accepted`; the
+owner's approval of that pull request is the acceptance, and the final
+integrated review can supersede it. Reason given when proposed: ten documents
+are written in parallel, so the log needs one path with no second round trip.
 
 1. **Inside a document**, an author marks a choice "proposed" with its reason,
    as the [plan's conventions](../plan.md#9-how-the-documents-are-produced)
@@ -225,8 +287,10 @@ with no second round trip.
    owner decides against one, the author changes that record to `rejected`
    (or changes the decision as the owner asks) before merging.
 5. **If the owner decides outside a pull request**, for example in an issue
-   comment, a small pull request adds the record with `evidence` linking to
-   that comment.
+   comment, a pull request adds the record with `evidence` linking to that
+   comment. When one session decides many items across documents, the
+   decision log's pull request creates all of that batch's records, so that
+   numbers do not collide (as for [issue #25](#history)).
 6. **A `proposed` record** may be merged before the owner decides, only when
    several documents need to cite the same proposal. It names its owning
    document.
@@ -237,25 +301,25 @@ with no second round trip.
 
 ## Changing a decision
 
-- **Proposed:** in an accepted record, the front matter's `id`, the **Decision**
+- **Decided (owner, O-95):** in an accepted record, the front matter's `id`, the **Decision**
   and the **Reasons** sections are fixed. Reason: they must keep showing what
   was agreed and why; silently editing them would hide that a decision changed.
   The `workspace` repository's
   [decision records](https://git.guneet.dev/guneet/workspace/src/branch/main/decisions/README.md)
   follow the same rule ("Preserve superseded decisions with links to their
   replacements").
-- **Proposed:** the other sections (Context, Notes, Consequences, Alternatives
+- **Decided (owner, O-95):** the other sections (Context, Notes, Consequences, Alternatives
   considered, Owning documents, Related open questions) are maintained. They
   may be updated as owning documents settle, as long as each update adds a
   History line. Reason: they describe the decision's surroundings, which keep
   changing, and a frozen copy would drift from the owning documents.
-- **Proposed:** the `status`, `date`, `decided_by`, `evidence`,
+- **Decided (owner, O-93):** the `status`, `date`, `decided_by`, `evidence`,
   `superseded_by` and `amended_by` fields change only through the steps below.
-- **Proposed:** to change a decision completely, write a new record that lists
+- **Decided (owner, O-93):** to change a decision completely, write a new record that lists
   the old one in `supersedes`. When the owner accepts the new record, the old
   record's status becomes `superseded` and its `superseded_by` field points to
   the new one, in the same pull request.
-- **Proposed:** to change part of a decision, write a new record that lists the
+- **Decided (owner, O-93):** to change part of a decision, write a new record that lists the
   old one in `amends` and says exactly which part changes. The old record stays
   `accepted` and gets `amended_by`. Reason: a full replacement would force
   copying the unchanged parts, which then drift.
@@ -265,11 +329,16 @@ with no second round trip.
 - **Decided:** the plan's section 6 table is the owner-approved summary, and
   "each decision becomes a decision record with its reasoning"
   ([plan, section 6](../plan.md#6-decisions-so-far)).
-- **Proposed:** the Decision and Reasons sections of D-001 to D-020 quote the
-  plan's wording exactly. Reason: that is the wording the owner accepted;
-  rewording it here could change its meaning without approval.
-- **Open:** whether the plan's table should later point to this index as the
-  current list. See [decisions needed from the owner](#decisions-needed-from-the-owner).
+- **Decided (owner, O-95):** the Decision and Reasons sections of D-001 to
+  D-020 quote the plan's wording exactly.
+- **Decided (owner, O-96, [#25](https://github.com/guneet-xyz/shinan/issues/25)):**
+  the plan's section 6 table stays as the approved snapshot, and one line
+  pointing to this index is added to it in a separate small pull request on
+  the plan. That pull request is a follow-up and is not part of this one.
+- **Decided (owner, O-98, [#25](https://github.com/guneet-xyz/shinan/issues/25)):**
+  plan text that has no decision ID gets a record only when a document
+  proposes changing it. [D-025](D-025-fact-state-planned.md) and
+  [D-028](D-028-task-flags.md) are such records.
 
 ## Suggestions for owning documents
 
@@ -279,7 +348,7 @@ document to adopt, change or ignore.
 
 | Suggestion | For | Related record |
 |---|---|---|
-| Say what happens to the `workspace` repository's issue-per-task practice when it moves into Shinan. | [Roadmap and migration](../roadmap.md) | [D-004](D-004-link-prs-directly.md), [D-018](D-018-start-empty-migrate-later.md) |
+| Say what happens to the `workspace` repository's issue-per-task practice when it moves into Shinan (trial coordination already moves in, per [D-040](D-040-trial-coordination-in-shinan.md)). | [Roadmap and migration](../roadmap.md) | [D-004](D-004-link-prs-directly.md), [D-018](D-018-start-empty-migrate-later.md) |
 | Core flows work on both GitHub and Forgejo; features specific to one host may add to them but are not required. | [Git host integrations](../git-hosts.md) | [D-009](D-009-github-and-forgejo-first.md) |
 | Avoid depending on services that are only available as someone else's hosted product. | [Architecture and operations](../architecture.md) | [D-012](D-012-self-hostable.md) |
 | Avoid designs that rely on a particular pricing, licence or business model. | [Product overview](../product-overview.md) | [D-013](D-013-business-model-deferred.md) |
@@ -308,37 +377,30 @@ document to adopt, change or ignore.
 
 ## Open questions
 
-1. **When does a decision made inside an approved document count as
-   accepted?** The plan's process ends with an owner review of the complete,
-   integrated set ([plan, section 9](../plan.md#9-how-the-documents-are-produced)).
-   It is not stated whether a decision is accepted when the owner approves the
-   document that proposes it, or only after that final review.
-2. **Which document owns integrations with Multica, Linear and Plane?**
-   [D-010](D-010-integrate-do-not-embed.md) decides to integrate through their
-   APIs, but no document in the plan's section 8 lists these integrations in
-   what it owns. The [domain model](../domain-model.md#supporting-terms)
-   proposes that Tasks and work owns the term "outside tool".
-3. **Should decisions stated in plan prose but without an ID get records?**
-   Examples: GitLab comes after GitHub and Forgejo
-   ([plan, section 5](../plan.md#5-integration-points)); notifications are not
-   in the first version; agent sessions connected only through MCP are marked
-   "self-reported" ([plan, section 4](../plan.md#4-product-pillars)).
-4. **Owner decisions raised by the domain model.** The
-   [domain model](../domain-model.md#decisions-needed-from-the-owner) asks the
-   owner for several decisions and says each needs a record here. Some
-   reinterpret or change approved plan content (for example its reading of
-   D-005, and changes to plan section 4 wording). This log does not assume any
-   outcome. Under the process above, each decision the owner makes is recorded
-   as a new record in the domain model's pull request, amending the affected
-   record where one exists.
+None besides the decision below. The earlier open questions were answered by
+the owner on issue #25: acceptance (O-94), ownership of outside tracker
+integrations (O-97, [D-041](D-041-no-outside-tracker-integrations.md)), plan
+text without IDs (O-98), and the domain model's owner decisions
+([D-021](D-021-status-from-work-and-events.md),
+[D-025](D-025-fact-state-planned.md), [D-027](D-027-workspace-task-id-prefix.md),
+[D-028](D-028-task-flags.md)).
 
 ## Decisions needed from the owner
 
 | # | Decision | Recommended | Reason |
 |---|---|---|---|
-| 1 | Adopt this record format, the five statuses and the numbering rule. | Adopt as written. | Close to the `workspace` repository's practice and needs no tooling. |
-| 2 | How and when records are written and accepted (open question 1). | The record goes into the document's own pull request as `accepted`, listed in its description; the owner's approval of that pull request is the acceptance, and the final integrated review can supersede it. | One path for many parallel authors, firm decisions to build on, and later changes stay visible. |
-| 3 | May records contain consequences proposed by the decision log itself, and are their non-normative sections updated over time? | Records only cite proposals made in owning documents; Decision and Reasons are fixed, other sections are maintained with a History line. | Proposals get reviewed where their subject lives, and records do not drift from the documents they summarise. |
-| 4 | Where decisions live long-term. | Keep the plan's section 6 table as the approved snapshot and add one line pointing to this index, in a separate small pull request on the plan. | The plan stays an accurate record of what was approved; new decisions get one home. |
-| 5 | Which document owns integrations with Multica, Linear and Plane (open question 2). | Tasks and work, with Git host integrations as the alternative; Tasks and work maps outside items to tasks either way. | Tasks and work already holds the "outside tool" term; Git host integrations would fit if these are treated like other connections with webhooks and reconciliation. |
-| 6 | Records for plan prose without IDs (open question 3). | None for now; add one only when a document proposes changing such text. | Already approved in the plan; a record adds value only when there is reasoning or a change to capture. |
+| 1 | Is the difference between GitHub and Forgejo writes intended? On GitHub, Shinan never writes as a person and stores no per-person token ([D-032](D-032-no-writes-as-a-person-on-github.md), O-1); on Forgejo, it writes as the connecting person with that person's token ([D-033](D-033-forgejo-connection.md), O-53/O-54). | Confirm as intended, and have git hosts and identity state the difference plainly. | Both answers are explicit, and O-1 names only GitHub; a short confirmation stops documents from generalising either rule to both hosts. |
+
+## History
+
+- 2026-11-16: first draft and per-document review
+  ([PR #19](https://github.com/guneet-xyz/shinan/pull/19)).
+- 2026-11-16: the owner accepted this README's rules (O-93 to O-96, O-98) and
+  decided O-97 on [issue #25](https://github.com/guneet-xyz/shinan/issues/25).
+- 2026-11-16: records D-021 to D-041 added for the owner's answers on
+  issue #25. O-94 normally puts each record in its own document's pull
+  request. This batch was decided in one session on issue #25 across many
+  documents, so all of its records were created in this pull request to avoid
+  numbering collisions between parallel pull requests. Amended records
+  (D-005, D-006, D-010, D-017, D-018, D-019) got `amended_by` and a History
+  line; their Decision and Reasons are unchanged.
