@@ -1,6 +1,6 @@
 # Shinan: high-level plan
 
-Status: **draft for owner review** ([issue #1](https://github.com/guneet-xyz/shinan/issues/1)).
+Status: **approved by the owner on 2026-11-16** ([issue #1](https://github.com/guneet-xyz/shinan/issues/1)).
 Nothing here is a specification. Each section names the in-depth document that
 will own it.
 
