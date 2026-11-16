@@ -308,13 +308,21 @@ select {
   color: var(--text);
 }
 
-button {
+button,
+a.button {
   padding: 0.25rem 1rem;
   border: 1px solid var(--accent);
   border-radius: var(--radius);
   background: var(--accent);
   color: var(--accent-text);
   cursor: pointer;
+}
+
+a.button {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.5rem;
+  text-decoration: none;
 }
 
 button:disabled {

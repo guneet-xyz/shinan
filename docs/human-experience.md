@@ -1103,6 +1103,9 @@ details (D-015).
   O-6, [#25]); the prefix rules are [Tasks and work](tasks.md)'s (section 3). It makes the person its workspace owner, then
   opens the [setup checklist](#first-run-for-a-new-workspace). Whether any
   signed-in person may create a workspace is owned by [Identity](identity.md).
+  **Proposed (M1-4):** until tasks exist, it asks only for a name, offered
+  on the start page to someone with no workspace and under Your account,
+  Workspaces; the prefix and the setup checklist come with tasks (M2, M3).
 
 ### Workspace settings
 
@@ -1221,6 +1224,14 @@ GitHub account; owned by [Identity](identity.md)), linked git host accounts,
 the workspaces they belong to with their role, pending invitations,
 [notification settings](#notifications) (phase 2), and
 [your machines](#your-machines-phase-3) (phase 3). **Proposed.**
+
+It also lists the person's sign-in sessions (browser, when signed in, last
+active, network address), each of which they can end, and "sign out
+everywhere" ([Identity](identity.md) section 3.3). Installation operators
+also find a link to the installation settings, where they keep the email
+allowlist ([Identity](identity.md) section 3.2). **Proposed** (M1-4).
+Reason: identity requires both, and they belong to the person, not to a
+workspace.
 
 ### Your agents
 

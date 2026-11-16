@@ -61,6 +61,15 @@ describe("getWorkspace", () => {
 })
 
 describe("renameWorkspace", () => {
+  it("refuses a name longer than 100 characters", async () => {
+    await expect(
+      renameWorkspace(asPerson(db, owner), {
+        workspaceId,
+        name: "x".repeat(101),
+      }),
+    ).rejects.toMatchObject({ rule: "name-too-long" })
+  })
+
   it("renames the workspace and records it", async () => {
     const renamed = await renameWorkspace(asPerson(db, owner), {
       workspaceId,

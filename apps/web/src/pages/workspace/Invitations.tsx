@@ -5,7 +5,7 @@ import { roles } from "@shinan/api-client"
 import type { Invitation, InvitationState, Role } from "@shinan/api-client"
 
 import { useAction } from "../../action"
-import { isApiError, useApi, useResource } from "../../api"
+import { useApi, useResource } from "../../api"
 import { ErrorMessage, Loading } from "../../components/status"
 import { formatDate, roleNames } from "../../format"
 import { useWorkspace } from "./context"
@@ -40,15 +40,6 @@ function ManageInvitations() {
   const invitations = useResource(`invitations:${workspace.id}`, () =>
     api.invitations(workspace.id),
   )
-
-  if (isApiError(invitations.error, "not-implemented")) {
-    return (
-      <section aria-labelledby="invitations-heading">
-        <h2 id="invitations-heading">Invitations</h2>
-        <p>Invitations are not available on this installation yet.</p>
-      </section>
-    )
-  }
 
   return (
     <section aria-labelledby="invitations-heading">
@@ -184,7 +175,7 @@ function InvitationRow(props: { invitation: Invitation; reload: () => void }) {
           </>
         )}
       </dl>
-      {invitation.state === "pending" && (
+      {(invitation.state === "pending" || invitation.state === "expired") && (
         <div className="actions">
           <button
             type="button"
@@ -201,19 +192,21 @@ function InvitationRow(props: { invitation: Invitation; reload: () => void }) {
           >
             Resend
           </button>
-          <button
-            type="button"
-            className="danger"
-            disabled={action.pending}
-            onClick={() =>
-              action.run(
-                () => api.withdrawInvitation(workspace.id, invitation.id),
-                props.reload,
-              )
-            }
-          >
-            Withdraw
-          </button>
+          {invitation.state === "pending" && (
+            <button
+              type="button"
+              className="danger"
+              disabled={action.pending}
+              onClick={() =>
+                action.run(
+                  () => api.withdrawInvitation(workspace.id, invitation.id),
+                  props.reload,
+                )
+              }
+            >
+              Withdraw
+            </button>
+          )}
         </div>
       )}
       {resent && <p role="status">Sent again.</p>}

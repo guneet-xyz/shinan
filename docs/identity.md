@@ -170,7 +170,17 @@ How each method works, **proposed** unless marked:
   short life and single use limit a link read from a mailbox or a log. Whoever
   controls the email account can sign in (T1); NIST SP 800-63B-4 does not
   accept email as an authentication channel, which is the residual risk the
-  owner accepted.
+  owner accepted. **Proposed (M1-4):** the emailed link opens a page that
+  signs in only when the person clicks, with the token in the link's
+  fragment. Reason: mail scanners that fetch links would otherwise use the
+  link up (or sign in themselves), and the token stays out of server and
+  proxy logs. Opening links is limited per network address like asking for
+  them (5 a minute); only the first refusal in each minute is recorded, so a
+  flood does not fill the security log. The reply to a request for a link is
+  sent before Shinan
+  decides whether the address may have one, so it takes the same time either
+  way (§10); the deciding work still uses the database, which a determined
+  observer of the server's load might notice.
 - **GitHub.** Sign-in uses the same GitHub App that git host connections use
   ([git host integrations](git-hosts.md)). The person is identified by GitHub's
   stable account number, never by username or email. Shinan uses the
@@ -195,7 +205,9 @@ an **email allowlist** decides who can have an account on an installation. Joini
 - The allowlist is kept by the installation's operators, who change it in
   the installation's settings. Every change is recorded in the
   installation-level security log. Reason: only someone responsible for the
-  installation should decide who can use it.
+  installation should decide who can use it. **Proposed (M1-4):** changing it
+  needs re-authentication, like other changes to who can do what; operators'
+  own addresses come from the configuration and are changed there.
 - **First start** (the one rule for a fresh installation): the installation's
   configuration names the operators' email addresses, and those addresses seed
   the allowlist. The first operator account is claimed through a one-time
@@ -210,6 +222,21 @@ an **email allowlist** decides who can have an account on an installation. Joini
   is asked for their email and sent such a link before the account exists.
   Reason: the allowlist is about email addresses, so Shinan checks the address
   itself rather than trusting the address GitHub reports.
+  - **Proposed (M1-4):** the GitHub account is linked only when that link is
+    opened in the same browser that signed in with GitHub, within 15 minutes,
+    for the address entered on that step. Reason: otherwise someone could
+    start with their own GitHub account, enter another person's address, and
+    get their GitHub account linked when that person opens the link. Any
+    other sign-in in that browser drops the waiting GitHub sign-in.
+    Residual risk: someone who deliberately uses the email step in another
+    person's unattended browser within those 15 minutes can link that
+    person's GitHub account to their own account, which lets them sign in as
+    themselves with it; it gives them nothing of the other person's.
+  - **Proposed (M1-4):** the new account's handle is made from the address's
+    local part (lowercase letters, digits and hyphens, with a number added if
+    it is taken), and its name starts as the handle. Reason: the account is
+    created as the link is opened, with nothing else to ask; the person can
+    change their name, and handles never change (8.7).
 - Removing an address from the allowlist ends that person's sign-in sessions,
   stops both sign-in methods, and revokes all their agent tokens in every
   workspace. Their past events keep their credit. Reason: an account that can
@@ -229,7 +256,11 @@ different from an [agent session](domain-model.md#agent-session).
   signing in again is quick.
 - **Re-authentication** asks the person to sign in again, with an email magic link or
   GitHub, even inside a sign-in session, before a sensitive action, unless they
-  did so in the last few minutes. Sensitive actions: approving an agent token
+  did so in the last few minutes. **Proposed (M1-4):** the last 10 minutes,
+  counted from the start of the sign-in session; signing in again starts a
+  new one and ends the old. Reason: long enough for a few sensitive actions
+  in a row, short enough that a session left open or stolen rarely falls
+  inside it (open question 1). Sensitive actions: approving an agent token
   or making one by hand, giving a deployment approval, inviting, changing
   roles, removing members, adding or changing git host connections, changing
   workspace settings, adding or removing a sign-in method, purging, exporting,
@@ -241,7 +272,9 @@ different from an [agent session](domain-model.md#agent-session).
   ("sign out everywhere").
 - Shinan emails the person when they sign in from a browser it has not seen
   before, when GitHub is added or removed as a sign-in method, and when an
-  agent token is approved. Reason: a quick alert is the main way a person
+  agent token is approved. **Proposed (M1-4):** a browser is recognised by a
+  long-lived cookie of its own, of which Shinan keeps only a hash per person;
+  the sign-in that creates an account sends no alert. Reason: a quick alert is the main way a person
   learns that someone else is using their account. The alert goes to the same
   mailbox an attacker in T1 controls, so it helps most against T2 and stolen
   sign-in sessions.
@@ -256,6 +289,17 @@ allowlist. Otherwise the installation operator can end the person's sign-in
 sessions and change their email address with a server command, which is
 recorded. Reason: email is the root of every account (O-41, N-7), and the
 operator command saves a sole owner whose email account is lost.
+
+**Proposed (M1-4):** the operator's command also, in the same step, removes
+the old address from the email allowlist and withdraws the invitations still
+pending for it; it adds the new address to the allowlist. The command refuses
+an address the configuration still names as an operator's: operator rights
+come from the address, so the operator first replaces it in the
+configuration and restarts, then runs the command. Withdrawn invitations are not moved
+to the new address; a workspace owner invites it again. Reason: the lost
+mailbox may be in someone else's hands, and otherwise they could open a link
+to the old address, get a new account with it, and accept the person's
+invitations.
 
 ### 3.5 Linking git host accounts
 
@@ -308,7 +352,9 @@ connections and members, and people are invited to them.
 
 - Any person on an installation can create a workspace and becomes its
   workspace owner. Reason: the allowlist already decides who is a person;
-  operators can restrict this.
+  operators can restrict this. **Proposed (M1-4):** at most 10 a day per
+  person, with names of at most 100 characters. Reason: workspace names go
+  into events and the security log, which is kept forever.
 - A workspace always has at least one workspace owner. The last workspace
   owner cannot leave or lower their own role.
 - The boundary rule from the glossary applies everywhere: agents, tokens,
@@ -434,7 +480,10 @@ in the [glossary](domain-model.md#invitation).
   the invited address. A leaked link alone is useless unless the email account
   is also controlled (T4).
 - Links are single-use, expire after 7 days and can be withdrawn before
-  acceptance.
+  acceptance. **Proposed (M1-4):** sending an invitation again gives it a new
+  link and another 7 days, and the old link stops working; accepting or
+  declining needs no re-authentication, because it changes only the
+  invitee's own access and needs the invited address's sign-in anyway.
 - Before the invitee signs in, the acceptance page shows only the
   installation's name.
 - Creating, withdrawing, accepting and declining are recorded in the security
@@ -876,7 +925,9 @@ written forms:
 
 - A person's handle is chosen when their account is created: lowercase
   letters, digits and hyphens, unique in the installation, and not changeable
-  in the first version.
+  in the first version. **Proposed (M1-4):** never `shinan` or `unknown`,
+  the written forms of other actors below. Reason: a person writing as
+  `shinan` could not be told apart from Shinan itself.
 - An agent's handle is `<coding tool>-<machine>`, set when the agent is
   created on the approval page ([6.2](#62-registering-an-agent)), unique among
   the person's agents in the workspace, and not changeable.
@@ -1129,7 +1180,8 @@ All checked on 2026-11-16.
 ## Open questions
 
 1. **Re-authentication window.** How many minutes count as "recent" for
-   sensitive actions?
+   sensitive actions? **Proposed (M1-4):** 10 minutes
+   ([3.3](#33-sign-in-sessions-and-re-authentication)).
 2. **Self-approval in teams.** When a second member joins, should approving
    your own agent's gated catalog proposal need someone else (O-46 covers one
    person only)?

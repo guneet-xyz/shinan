@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from "vitest"
 
-import { ApiError, createApiClient, needsReauthentication } from "./index.js"
+import {
+  ApiError,
+  createApiClient,
+  needsReauthentication,
+  sameSitePath,
+} from "./index.js"
 
 function fakeFetch(response: () => Response) {
   return vi.fn<typeof globalThis.fetch>(() => Promise.resolve(response()))
@@ -119,5 +124,29 @@ describe("createApiClient", () => {
       .renameWorkspace("w", "New")
       .catch((e: unknown) => e)
     expect(needsReauthentication(error)).toBe(true)
+  })
+})
+
+describe("sameSitePath", () => {
+  const origin = "https://shinan.example"
+
+  it("keeps paths on this site, as resolved", () => {
+    expect(sameSitePath("/w/1?x=1#y", origin)).toBe("/w/1?x=1#y")
+    expect(sameSitePath("/x/../account", origin)).toBe("/account")
+    expect(sameSitePath("/%2f/evil.example", origin)).toBe("/%2f/evil.example")
+  })
+
+  it("refuses anything a browser would read as another host", () => {
+    for (const value of [
+      "//evil.example",
+      "/.//evil.example/x",
+      "/..//evil.example",
+      "/./\\evil.example",
+      "/\t/evil.example",
+      "https://evil.example/",
+      "javascript:alert(1)",
+    ]) {
+      expect(sameSitePath(value, origin), value).toBeNull()
+    }
   })
 })

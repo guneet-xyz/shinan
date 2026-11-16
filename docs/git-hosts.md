@@ -251,6 +251,11 @@ separate sign-in-only app. **Open**.
 | Checks                        | CI check results (`check_suite`, `check_run`).                                                                             |
 | Commit statuses               | CI results reported as commit statuses (`status`).                                                                         |
 
+Sign-in needs none of these: it reads only the signed-in person's own
+`/user` (their stable account number and login), which needs no
+permission, so the app is registered with sign-in only in M1 and gains the
+permissions above in M3. **Proposed** (M1-4).
+
 Not requested: Administration. So Shinan does not set up GitHub custom
 autolinks for task IDs. Configuring autolinks needs repository administration
 permission (checked 2026-11-16), against principle 6, and the task address

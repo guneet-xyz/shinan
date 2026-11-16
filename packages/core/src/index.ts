@@ -38,8 +38,65 @@ export { listSecurityLog } from "./security-log-read.js"
 export type { SecurityLogEntry } from "./security-log-read.js"
 export { getInstallation, setUpInstallation } from "./identity/installation.js"
 export type { Installation } from "./identity/installation.js"
-export { createPerson } from "./identity/people.js"
-export type { NewPerson, Person } from "./identity/people.js"
+export type { Person } from "./identity/people.js"
+export {
+  addToAllowlist,
+  listAllowlist,
+  removeFromAllowlist,
+  syncOperators,
+} from "./identity/allowlist.js"
+export type { AllowlistEntry } from "./identity/allowlist.js"
+export {
+  checkAddGitHub,
+  describeClient,
+  endAllSignInSessions,
+  endSignInSession,
+  findPendingGitHubSignIn,
+  listSignInSessions,
+  maySignIn,
+  openSignInLink,
+  pendingGitHubMinutes,
+  pruneSignInRecords,
+  prepareSetupLink,
+  reauthenticationMinutes,
+  recordGitHubAdded,
+  recordSignIn,
+  recordSignInFailure,
+  recordSignOut,
+  removeGitHub,
+  sendSignInLink,
+  setupLinkHours,
+  signInLinkMinutes,
+  startGitHubSignIn,
+  startSetup,
+} from "./identity/sign-in.js"
+export type {
+  GitHubSignInMethod,
+  OpenedSignInLink,
+  SignInMethod,
+  SignInRecord,
+  SignInSession,
+} from "./identity/sign-in.js"
+export {
+  acceptInvitation,
+  createInvitation,
+  declineInvitation,
+  findInvitation,
+  invitationDays,
+  listInvitations,
+  listInvitationsForYou,
+  resendInvitation,
+  withdrawInvitation,
+} from "./identity/invitations.js"
+export type {
+  Invitation,
+  InvitationForYou,
+  InvitationKey,
+} from "./identity/invitations.js"
+export { changeEmailOf, endSessionsOf } from "./identity/recovery.js"
+export { hashToken } from "./tokens.js"
+export { isEmailAddress } from "./validation.js"
+export { clientDescription } from "./security-log.js"
 export { getAccount } from "./identity/account.js"
 export type { Account, AccountWorkspace } from "./identity/account.js"
 export {
@@ -66,10 +123,15 @@ export {
   pruneEmailDeliveries,
 } from "./email/prune.js"
 export type { PruneResult } from "./email/prune.js"
-export { EmailQueueError, emailLimits, emailQueue } from "./email/queue.js"
+export {
+  EmailQueueError,
+  emailLimits,
+  emailQueue,
+  throttleAddress,
+} from "./email/queue.js"
 export type { EmailJob } from "./email/queue.js"
 // Message templates are pure functions, so they bypass no check. The core
-// operations that send them (M1-4) queue them with the internal `queueEmail`.
+// operations that send them queue them with the internal `queueEmail`.
 export {
   invitationEmail,
   magicLinkEmail,

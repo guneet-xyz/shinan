@@ -124,6 +124,32 @@ describe("worker", () => {
     expect(heartbeat?.cron).toBe("0 * * * *")
     const prune = await worker.boss.getSchedule(queues.emailPrune)
     expect(prune?.cron).toBe("30 * * * *")
+    const signIn = await worker.boss.getSchedule(queues.signInPrune)
+    expect(signIn?.cron).toBe("15 * * * *")
+  })
+
+  it("prunes expired sign-in records", async () => {
+    worker = await startWorker({
+      databaseUrl,
+      db,
+      emailSender,
+      pollingIntervalSeconds: 0.5,
+    })
+    const id = await worker.boss.send(queues.signInPrune)
+
+    await vi.waitFor(
+      async () => {
+        const [job] = await worker!.boss.findJobs(queues.signInPrune, {
+          id: id!,
+        })
+        expect(job?.state).toBe("completed")
+        expect(job?.output).toEqual({
+          pendingGitHubSignIns: expect.any(Number) as number,
+          signInSessions: expect.any(Number) as number,
+        })
+      },
+      { timeout: 10_000, interval: 200 },
+    )
   })
 
   it("prunes email records", async () => {

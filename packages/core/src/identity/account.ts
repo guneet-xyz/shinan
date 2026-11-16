@@ -5,11 +5,20 @@ import { atInstallation } from "../authorize.js"
 import type { Context } from "../context.js"
 import { NotFoundError } from "../errors.js"
 import type { Person } from "./people.js"
+import { githubMethodOf } from "./sign-in.js"
+import type { GitHubSignInMethod } from "./sign-in.js"
 
 export interface Account {
   person: Pick<Person, "id" | "handle" | "name" | "email" | "createdAt">
   /** The workspaces the person is a current member of, by name. */
   workspaces: AccountWorkspace[]
+  /**
+   * How the person signs in (identity §3.1): always an email magic link to
+   * their address, and GitHub if they linked it.
+   */
+  signInMethods: { email: string; github: GitHubSignInMethod | null }
+  /** Whether the person is an installation operator (identity §12). */
+  operator: boolean
 }
 
 export interface AccountWorkspace {
@@ -22,8 +31,8 @@ export interface AccountWorkspace {
 
 /**
  * The signed-in person's own account: their profile and their workspaces
- * with their role in each (human experience, Your account). Sign-in methods
- * and sessions belong to the sign-in layer (M1-4).
+ * with their role in each, and how they sign in (human experience, Your
+ * account).
  */
 export async function getAccount(ctx: Context): Promise<Account> {
   return atInstallation(ctx, "account.read", async (scope) => {
@@ -61,6 +70,14 @@ export async function getAccount(ctx: Context): Promise<Account> {
         ),
       )
       .orderBy(asc(schema.workspaces.name), asc(schema.workspaces.id))
-    return { person, workspaces }
+    return {
+      person,
+      workspaces,
+      signInMethods: {
+        email: person.email,
+        github: await githubMethodOf(scope.tx, personId),
+      },
+      operator: scope.actor.operator,
+    }
   })
 }

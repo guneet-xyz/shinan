@@ -1,6 +1,7 @@
 import { Navigate } from "react-router"
 
 import { useAccount } from "../account"
+import { CreateWorkspace } from "../components/CreateWorkspace"
 
 /** The start page: the person's first workspace, if they have one. */
 export function Home() {
@@ -13,8 +14,10 @@ export function Home() {
       <h1>Welcome, {account.person.name}</h1>
       <p>
         You are not a member of any workspace yet. Joining a workspace needs an
-        invitation from one of its workspace owners; it arrives by email.
+        invitation from one of its workspace owners; it arrives by email. Or
+        create a workspace of your own, and become its workspace owner.
       </p>
+      <CreateWorkspace />
     </section>
   )
 }

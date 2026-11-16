@@ -39,7 +39,7 @@ export async function recordSecurityEntry(
     confidence: entry.actor.confidence,
     subjectPersonId: entry.subjectPersonId ?? null,
     networkAddress: networkAddress(entry.request.networkAddress),
-    client: entry.request.client ?? null,
+    client: clientDescription(entry.request.client),
     details: entry.details ?? {},
   })
 }
@@ -53,4 +53,17 @@ export async function recordSecurityEntry(
 export function networkAddress(value: string | undefined): string | null {
   if (value === undefined || isIP(value) === 0) return null
   return value.replace(/%.*$/, "")
+}
+
+/**
+ * The longest client description kept. The log is kept forever, and a user
+ * agent comes from the request, so a long one is cut short.
+ */
+export const clientLengthLimit = 512
+
+export function clientDescription(value: string | undefined): string | null {
+  if (value === undefined) return null
+  return value.length > clientLengthLimit
+    ? value.slice(0, clientLengthLimit)
+    : value
 }

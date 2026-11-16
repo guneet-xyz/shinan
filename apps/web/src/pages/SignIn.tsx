@@ -23,6 +23,7 @@ export function SignIn() {
     redirectToSignIn: false,
   })
   const name = installation.data?.name ?? "Shinan"
+  const github = installation.data?.signInMethods.github ?? false
 
   // Someone already signed in (for example back from GitHub) goes on.
   const account = useResource("account", () => api.account(), {
@@ -90,7 +91,7 @@ export function SignIn() {
           {failed && (
             <p className="error" role="alert">
               That sign-in did not work. The link may have expired or been used
-              already. Try again.
+              already, or this address cannot sign in here. Try again.
             </p>
           )}
           <form onSubmit={sendLink} className="stack">
@@ -107,15 +108,19 @@ export function SignIn() {
               Email me a sign-in link
             </button>
           </form>
-          <p className="divider">or</p>
-          <button
-            type="button"
-            className="github"
-            disabled={pending}
-            onClick={useGitHub}
-          >
-            Sign in with GitHub
-          </button>
+          {github && (
+            <>
+              <p className="divider">or</p>
+              <button
+                type="button"
+                className="github"
+                disabled={pending}
+                onClick={useGitHub}
+              >
+                Sign in with GitHub
+              </button>
+            </>
+          )}
           {error !== undefined && (
             <p className="error" role="alert">
               {signInErrorMessage(error)}

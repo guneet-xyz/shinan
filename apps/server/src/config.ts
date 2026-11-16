@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 
+import { isEmailAddress } from "@shinan/core"
 import type { EmailFrom } from "@shinan/email"
 
 export type Env = Record<string, string | undefined>
@@ -11,42 +12,128 @@ export interface WebConfig {
   /** Built web app to serve, or undefined to serve only the API. */
   webDistDir: string | undefined
   /**
-   * PLACEHOLDER until sign-in (M1-4): the handle of the person every request
-   * is signed in as, in development only.
+   * The installation's public address (`SHINAN_URL`), such as
+   * `https://shinan.guneet.dev`: the base of every link Shinan sends and of
+   * GitHub's callback address.
    */
-  placeholderPerson: string | undefined
+  installationUrl: string
+  /**
+   * The installation operators' email addresses (`SHINAN_OPERATORS`), which
+   * also seed the email allowlist (identity §3.2, §12).
+   */
+  operators: string[]
+  /** Signs sign-in cookies and encrypts sign-in state (secret). */
+  sessionSecret: string
+  /** The GitHub App's client ID and secret, for GitHub sign-in. */
+  github: { clientId: string; clientSecret: string } | undefined
+  /** Sign-in session limits (identity §3.3); operators may change them. */
+  sessions: { idleMinutes: number; maxHours: number }
 }
 
 const defaultWebDistDir = fileURLToPath(
   new URL("../../web/dist", import.meta.url),
 )
 
-export function readWebConfig(env: Env): WebConfig {
+/**
+ * A fixed secret, accepted only when NODE_ENV is exactly `development`, so
+ * restarting `pnpm dev` keeps people signed in. Anything else must set
+ * SHINAN_SESSION_SECRET.
+ */
+const developmentSessionSecret =
+  "shinan-development-only-session-secret-never-use-elsewhere"
+
+export function readWebConfig(
+  env: Env,
+  readFile?: (path: string) => string,
+): WebConfig {
   const production = env.NODE_ENV === "production"
-  // An empty value turns the placeholder off.
-  const placeholderPerson = env.SHINAN_PLACEHOLDER_PERSON || undefined
-  if (placeholderPerson) requireDevelopment(env)
+  const development = env.NODE_ENV === "development"
+
+  const url =
+    env.SHINAN_URL || (production ? undefined : "http://localhost:5173")
+  if (!url) throw new Error("SHINAN_URL is not set")
+  const installationUrl = readInstallationUrl(url, production)
+
+  const operators = (env.SHINAN_OPERATORS ?? "")
+    .split(/[\s,]+/)
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean)
+  for (const email of operators) {
+    // The same rule as sign-in links, so every operator can be sent one.
+    if (!isEmailAddress(email)) {
+      throw new Error(
+        `SHINAN_OPERATORS has an address sign-in links cannot be sent to: ${email}`,
+      )
+    }
+  }
+  if (production && operators.length === 0) {
+    throw new Error("SHINAN_OPERATORS is not set")
+  }
+
+  const sessionSecret =
+    readSecret(env, "SHINAN_SESSION_SECRET", readFile) ??
+    (development ? developmentSessionSecret : undefined)
+  if (!sessionSecret) throw new Error("SHINAN_SESSION_SECRET is not set")
+  if (sessionSecret.length < 32) {
+    throw new Error("SHINAN_SESSION_SECRET must be at least 32 characters")
+  }
+
+  const clientId = env.GITHUB_CLIENT_ID || undefined
+  const clientSecret = readSecret(env, "GITHUB_CLIENT_SECRET", readFile)
+  if ((clientId === undefined) !== (clientSecret === undefined)) {
+    throw new Error(
+      "Set both GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET, or neither",
+    )
+  }
+
   return {
     host: env.HOST ?? "127.0.0.1",
     port: readPort(env.PORT ?? "3000", "PORT"),
     webDistDir: production
       ? (env.WEB_DIST_DIR ?? defaultWebDistDir)
       : env.WEB_DIST_DIR,
-    placeholderPerson,
+    installationUrl,
+    operators,
+    sessionSecret,
+    github: clientId && clientSecret ? { clientId, clientSecret } : undefined,
+    sessions: {
+      idleMinutes: readWhole(
+        env.SIGN_IN_SESSION_IDLE_MINUTES ?? "60",
+        "SIGN_IN_SESSION_IDLE_MINUTES",
+      ),
+      maxHours: readWhole(
+        env.SIGN_IN_SESSION_MAX_HOURS ?? "24",
+        "SIGN_IN_SESSION_MAX_HOURS",
+      ),
+    },
   }
 }
 
-/**
- * PLACEHOLDER until sign-in (M1-4). The placeholder person runs only when
- * NODE_ENV is exactly `development`; any other value, or none, refuses it, so
- * a mistyped or missing NODE_ENV can never sign the public in.
- */
-export function requireDevelopment(env: { NODE_ENV?: string }): void {
-  if (env.NODE_ENV !== "development") {
+/** An origin with no path, over HTTPS in production. */
+function readInstallationUrl(value: string, production: boolean): string {
+  let url: URL
+  try {
+    url = new URL(value)
+  } catch {
+    throw new Error(`SHINAN_URL must be an address, got "${value}"`)
+  }
+  if (url.protocol !== "https:" && (production || url.protocol !== "http:")) {
+    throw new Error("SHINAN_URL must use https")
+  }
+  if (url.pathname !== "/" || url.search || url.hash) {
     throw new Error(
-      "SHINAN_PLACEHOLDER_PERSON is for development only: it needs NODE_ENV=development",
+      "SHINAN_URL must be an origin, such as https://shinan.example",
     )
   }
+  return url.origin
+}
+
+function readWhole(value: string, name: string): number {
+  const number = Number(value)
+  if (!/^\d+$/.test(value) || number < 1 || !Number.isSafeInteger(number)) {
+    throw new Error(`${name} must be a whole number above 0, got "${value}"`)
+  }
+  return number
 }
 
 export function readDatabaseUrl(env: Env): string {

@@ -1,6 +1,10 @@
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { randomBytes } from "node:crypto"
+import { afterEach, describe, expect, inject, it, vi } from "vitest"
 
-import { createEmailSender, runCommand, usage } from "./commands.js"
+import { schema } from "@shinan/db"
+import { connectTestDatabase } from "@shinan/db/testing"
+
+import { closeWeb, createEmailSender, runCommand, usage } from "./commands.js"
 
 describe("runCommand", () => {
   afterEach(() => {
@@ -34,7 +38,27 @@ describe("runCommand", () => {
   })
 
   it("requires DATABASE_URL to serve the web role", async () => {
-    await expect(runCommand(["web"], {})).rejects.toThrow(/DATABASE_URL/)
+    await expect(
+      runCommand(["web"], { NODE_ENV: "development" }),
+    ).rejects.toThrow(/DATABASE_URL/)
+  })
+
+  it("requires the sign-in settings to serve the web role in production", async () => {
+    const env = { DATABASE_URL: "postgres://unused", NODE_ENV: "production" }
+    await expect(runCommand(["web"], env)).rejects.toThrow(/SHINAN_URL/)
+  })
+
+  it("checks the recovery commands' arguments", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {})
+    for (const args of [
+      ["account"],
+      ["account", "end-sessions"],
+      ["account", "end-sessions", "ada", "extra"],
+      ["account", "change-email", "ada"],
+      ["account", "unknown", "ada"],
+    ]) {
+      await expect(runCommand(args, {}), args.join(" ")).resolves.toBe(1)
+    }
   })
 
   it("requires DATABASE_URL to run the worker", async () => {
@@ -44,6 +68,62 @@ describe("runCommand", () => {
   it("requires SES settings to run the worker in production", async () => {
     const env = { DATABASE_URL: "postgres://unused", NODE_ENV: "production" }
     await expect(runCommand(["worker"], env)).rejects.toThrow(/EMAIL_TRANSPORT/)
+  })
+})
+
+describe("account change-email", () => {
+  it("refuses a configured operator address with what to do instead", async () => {
+    const { db, pool } = connectTestDatabase()
+    try {
+      const handle = `op-${randomBytes(4).toString("hex")}`
+      const email = `${handle}@example.com`
+      await db.insert(schema.people).values({ handle, name: handle, email })
+      await db.insert(schema.installationOperators).values({ email })
+      const error = vi.spyOn(console, "error").mockImplementation(() => {})
+      const code = await runCommand(
+        ["account", "change-email", handle, "new@example.com"],
+        { DATABASE_URL: inject("databaseUrl") },
+      )
+      expect(code).toBe(1)
+      expect(error).toHaveBeenCalledWith(
+        `${email} is an operator address in SHINAN_OPERATORS. Replace it there with new@example.com and restart Shinan, then run this command again.`,
+      )
+    } finally {
+      await pool.end()
+    }
+  })
+})
+
+describe("closeWeb", () => {
+  it("waits for background sign-in work before closing the database", async () => {
+    const order: string[] = []
+    let finish!: () => void
+    const background = new Promise<void>((resolve) => (finish = resolve))
+    const closing = closeWeb({
+      signIn: {
+        idle: async () => {
+          await background
+          order.push("sign-in idle")
+        },
+      },
+      jobs: {
+        stop: () => {
+          order.push("jobs stopped")
+          return Promise.resolve()
+        },
+      },
+      pool: {
+        end: () => {
+          order.push("database closed")
+          return Promise.resolve()
+        },
+      },
+    })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(order).toEqual([])
+    finish()
+    await closing
+    expect(order).toEqual(["sign-in idle", "jobs stopped", "database closed"])
   })
 })
 

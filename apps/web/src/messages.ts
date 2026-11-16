@@ -15,8 +15,12 @@ export function errorMessage(error: unknown): string {
         return "Sign in again to continue."
       case "sign-in-required":
         return "Your sign-in has ended. Sign in to continue."
+      case "payload-too-large":
+        return "That is too large to send."
+      case "too-many-requests":
+        return "Too many attempts. Wait a minute and try again."
       case "not-implemented":
-        return "This is not available yet."
+        return "This is not available on this installation."
     }
   }
   return "Something went wrong. Try again in a moment."
@@ -26,7 +30,7 @@ export function errorMessage(error: unknown): string {
 export function signInErrorMessage(error: unknown): string {
   if (isApiError(error, "invalid-input")) return error.message
   if (isApiError(error) && [404, 501].includes(error.status)) {
-    return "Sign-in is not available on this installation yet."
+    return "Sign-in is not available on this installation."
   }
   return "Could not start sign-in. Try again in a moment."
 }

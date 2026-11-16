@@ -8,6 +8,7 @@ import type { SignIn } from "../src/api/sign-in.js"
  * sensitive actions.
  */
 export const testSignIn: SignIn = {
+  methods: { github: false },
   currentPerson(request) {
     const personId = request.headers.get("x-test-person")
     if (!personId) return Promise.resolve({ person: null })

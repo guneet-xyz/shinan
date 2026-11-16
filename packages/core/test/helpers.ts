@@ -82,9 +82,11 @@ export async function newPerson(db: Db, prefix = "person"): Promise<Person> {
  * Starts a job queue on this test run's database, installing pg-boss and
  * creating core's queues as `migrate` does. Call `stop()` when done.
  */
-export async function startTestJobQueue(): Promise<PgBoss> {
+export async function startTestJobQueue(
+  connectionString = inject("databaseUrl"),
+): Promise<PgBoss> {
   const boss = new PgBoss({
-    connectionString: inject("databaseUrl"),
+    connectionString,
     schema: "pgboss",
     migrate: true,
     supervise: false,

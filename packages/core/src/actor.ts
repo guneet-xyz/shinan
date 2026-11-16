@@ -23,6 +23,8 @@ export interface PersonActor {
   personId: string
   /** Signed in again recently, as sensitive actions need (identity §3.3). */
   reauthenticated?: boolean
+  /** The sign-in session the request came with, if any. */
+  signInSessionId?: string
 }
 
 export interface AgentActor {
@@ -60,6 +62,11 @@ export interface ResolvedActor {
   confidence: Confidence
   /** The membership the actor acts through, for workspace actions. */
   member: { id: string; role: Role } | null
+  /**
+   * Whether the actor is a person whose address the installation's
+   * configuration names as an operator (identity §12).
+   */
+  operator: boolean
 }
 
 /** The written form of an actor (identity §8.7). */
