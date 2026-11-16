@@ -2,7 +2,8 @@
 
 Status: **draft for review** ([issue #7](https://github.com/guneet-xyz/shinan/issues/7)).
 Updated with the owner's answers in
-[issue #25](https://github.com/guneet-xyz/shinan/issues/25).
+[issue #25](https://github.com/guneet-xyz/shinan/issues/25) and the
+integration review in [issue #26](https://github.com/guneet-xyz/shinan/issues/26).
 
 This document owns how people sign in, who can have an account, how
 workspaces, members and invitations work, how agents act for people, which
@@ -13,9 +14,7 @@ internet needs. It stays conceptual: it says what must be true and why. The
 that makes it true (D-020).
 
 It uses the terms of the [domain model and glossary](domain-model.md) exactly.
-That document is still in review
-([PR #14](https://github.com/guneet-xyz/shinan/pull/14)); terms this document
-needs but the glossary lacks are listed under
+Terms this document needs but the glossary lacks are listed under
 [proposed glossary additions](#proposed-glossary-additions).
 
 ## How to read this document
@@ -25,7 +24,10 @@ Every statement is marked:
 - **Decided**: follows from an accepted plan decision (D-nnn), or from an
   owner answer in [issue #25](https://github.com/guneet-xyz/shinan/issues/25),
   cited as "owner, O-n" or, for the follow-up answers in batches 12 and 13, "owner,
-  N-n". The decision log maps these to decision records (D-021 onwards).
+  N-n", or from an owner answer on the integration review in
+  [issue #26](https://github.com/guneet-xyz/shinan/issues/26), cited as "owner,
+  NO-n". The [decision log](decisions/README.md) maps these to decision
+  records.
 - **Proposed**: suggested here, with a reason. The owner confirms or changes it.
 - **Open**: not settled. Listed under [open questions](#open-questions) or
   [decisions needed from the owner](#decisions-needed-from-the-owner).
@@ -35,7 +37,7 @@ statement says otherwise.
 
 ## Summary
 
-1. **Two sign-in methods: an email sign-in link or GitHub** (owner, O-41,
+1. **Two sign-in methods: an email magic link or GitHub** (owner, O-41,
    N-7). No passwords, no Forgejo sign-in, no passkeys. Forgejo accounts on
    any instance are only connected, never used to sign in. Shinan sends email
    from the first version ([section 3](#3-sign-in-for-people)).
@@ -50,8 +52,10 @@ statement says otherwise.
 4. **One agent per person, coding tool and machine**, for example "Guneet's
    OpenCode on Daedalus" (owner, O-40) ([section 6.1](#61-what-one-agent-is)).
 5. **Agent tokens are long-lived and valid until revoked** (owner, O-44).
-   Revocation works at once, and every token's use is visible
-   ([section 7](#7-tokens)).
+   An agent gets its one token through a browser approval started from the
+   plugin or CLI, or a token made by hand; it works at every agent endpoint
+   (owner, NO-1). Revocation works at once, and every token's use is visible
+   ([section 6.2](#62-registering-an-agent), [7](#7-tokens)).
 6. **Shinan writes to git hosts only on GitHub, and only as its app.**
    Forgejo connections are read-only. Shinan stores no per-person git host
    tokens except the Forgejo token a person gives it to read their repositories
@@ -59,8 +63,9 @@ statement says otherwise.
 7. **An agent can never do more than its member, and some actions are for
    people only** ([section 6.3](#63-what-an-agent-may-do)).
 8. **Honest attribution.** Every credit carries a confidence; markers are
-   checked against Shinan's records; Shinan's own writes are recognised only by
-   stored item IDs ([section 8](#8-acting-for-and-attribution)).
+   checked against Shinan's records; Shinan's own GitHub writes are recognised
+   by the GitHub App's own account and the item IDs it stored
+   ([section 8](#8-acting-for-and-attribution)).
 9. **The security log is kept forever and cannot be purged** (owner, O-47,
    N-8, N-13); only workspace owners purge other workspace content (owner, O-50)
    ([section 11](#11-audit)).
@@ -88,7 +93,7 @@ worth protecting.
 
 The owner's answers in [issue #25](https://github.com/guneet-xyz/shinan/issues/25)
 chose convenience over some of the protections this document first proposed
-(no passkeys or second factor, sign-in by email link or GitHub only,
+(no passkeys or second factor, sign-in by magic link or GitHub only,
 long-lived agent tokens, no restricted level, any Forgejo token, any Forgejo
 address). The table below states, for each threat, what Shinan still does and
 what risk remains. It does not reopen those decisions. **Proposed** list;
@@ -97,7 +102,7 @@ remaining risk in one place.
 
 | # | Threat | What Shinan does | Residual risk |
 |---|---|---|---|
-| T1 | A person's email account is taken over, or a sign-in link is read from their mailbox | Single-use links that expire after 15 minutes; re-authentication for sensitive actions; email alerts on sign-in from a new browser and on new agent tokens; the security log ([3](#3-sign-in-for-people), [10](#10-protections-for-a-public-installation)) | Email is the root of every account (O-41, N-7). Whoever controls a person's mailbox can sign in, read the whole workspace and, after re-authenticating the same way, change it. The alerts go to that same mailbox, so an attacker who controls it can delete them. |
+| T1 | A person's email account is taken over, or a magic link is read from their mailbox | Single-use links that expire after 15 minutes; re-authentication for sensitive actions; email alerts on sign-in from a new browser and on new agent tokens; the security log ([3](#3-sign-in-for-people), [10](#10-protections-for-a-public-installation)) | Email is the root of every account (O-41, N-7). Whoever controls a person's mailbox can sign in, read the whole workspace and, after re-authenticating the same way, change it. The alerts go to that same mailbox, so an attacker who controls it can delete them. |
 | T2 | A person's GitHub account is taken over | Identity keyed by GitHub's stable account number; Shinan keeps no GitHub token from sign-in ([3.1](#31-sign-in-methods)) | GitHub sign-in is a sign-in method (N-7), so a taken-over GitHub account is a taken-over Shinan account, protected only by whatever GitHub requires (for example its own two-factor settings). |
 | T3 | An agent token is stolen | Narrow scopes, one agent per machine, instant revocation, last-use display, the security log ([6](#6-agents), [7](#7-tokens)) | A token works until someone revokes it (O-44). A token copied from a machine, or printed by a misled agent, keeps working from anywhere, possibly for a long time, and reads everything in the workspace. |
 | T4 | An invitation link leaks | Bound to one email address; the invitee must sign in as an allowlisted person with that verified email; single use; expires ([5.2](#52-invitations)) | Whoever controls the invitee's email can accept it. |
@@ -140,7 +145,7 @@ remaining risk in one place.
 
 | Identity (glossary term) | Proves itself with | Section |
 |---|---|---|
-| [Person](domain-model.md#person) | An email sign-in link or GitHub, giving a sign-in session | [3](#3-sign-in-for-people) |
+| [Person](domain-model.md#person) | An email magic link or GitHub, giving a sign-in session | [3](#3-sign-in-for-people) |
 | [Member](domain-model.md#member-and-role) | A person plus a membership record with a role | [5](#5-members-roles-and-invitations) |
 | [Agent](domain-model.md#agent) | An agent token, approved by its member | [6](#6-agents), [7](#7-tokens) |
 | [Agent session](domain-model.md#agent-session) | Its agent's token, plus a conversation identifier the coding tool reports | [6.4](#64-agent-sessions) |
@@ -155,14 +160,14 @@ remaining risk in one place.
 ### 3.1 Sign-in methods
 
 **Decided (owner, O-41, N-7, [#25](https://github.com/guneet-xyz/shinan/issues/25)):**
-people sign in to Shinan with an **email sign-in link** or with **GitHub**.
+people sign in to Shinan with an **email magic link** or with **GitHub**.
 There is no password sign-in, no Forgejo sign-in and no passkeys. Forgejo is
 used only to connect accounts and repositories ([3.5](#35-linking-git-host-accounts)).
 Shinan sends email from the first version.
 
 How each method works, **proposed** unless marked:
 
-- **Email sign-in link.** Shinan emails a link that works once, expires after
+- **Email magic link.** Shinan emails a link that works once, expires after
   15 minutes, and is sent at most a few times per hour per address. Reason:
   short life and single use limit a link read from a mailbox or a log. Whoever
   controls the email account can sign in (T1); NIST SP 800-63B-4 does not
@@ -184,19 +189,26 @@ How each method works, **proposed** unless marked:
 ### 3.2 Who can have an account
 
 **Decided (owner, O-42, O-48, [#25](https://github.com/guneet-xyz/shinan/issues/25)):**
-an **account allowlist** of email addresses decides who can have an account
-on an installation. Joining a workspace still needs an invitation
+an **email allowlist** decides who can have an account on an installation. Joining a workspace still needs an invitation
 ([5.2](#52-invitations)).
 
 **Proposed:**
 
-- The allowlist is kept by the installation's operators. It starts with the
-  addresses given in the installation's configuration, and operators change it
-  in the installation's settings. Every change is recorded in the
+- The allowlist is kept by the installation's operators, who change it in
+  the installation's settings. Every change is recorded in the
   installation-level security log. Reason: only someone responsible for the
   installation should decide who can use it.
+- **First start** (the one rule for a fresh installation): the installation's
+  configuration names the operators' email addresses, and those addresses seed
+  the allowlist. The first operator account is claimed through a one-time
+  setup link that the installation prints to its own log, confirmed by an
+  email magic link sent to one of the configured operator addresses. After
+  that, every account, including other operators', is created as below.
+  Reason: claiming a fresh installation needs both access to the server and
+  control of an operator's mailbox, so nobody can race the operator to it. The
+  mechanism is for the [architecture](architecture.md) document.
 - An account is created the first time an allowlisted person opens an email
-  sign-in link sent to the allowlisted address. A person who starts with GitHub
+  magic link sent to the allowlisted address. A person who starts with GitHub
   is asked for their email and sent such a link before the account exists.
   Reason: the allowlist is about email addresses, so Shinan checks the address
   itself rather than trusting the address GitHub reports.
@@ -217,14 +229,15 @@ different from an [agent session](domain-model.md#agent-session).
   activity, the values NIST SP 800-63B-4 suggests for its middle assurance
   level. The operator can change them. Reason: the data is sensitive, and
   signing in again is quick.
-- **Re-authentication** asks the person to sign in again, with an email link or
+- **Re-authentication** asks the person to sign in again, with an email magic link or
   GitHub, even inside a sign-in session, before a sensitive action, unless they
-  did so in the last few minutes. Sensitive actions: approving an agent token,
-  inviting, changing roles, removing members, adding or changing git host
-  connections, changing workspace settings, adding or removing a sign-in
-  method, purging, exporting and deleting a workspace. Reason: a sign-in
+  did so in the last few minutes. Sensitive actions: approving an agent token
+  or making one by hand, giving a deployment approval, inviting, changing
+  roles, removing members, adding or changing git host connections, changing
+  workspace settings, adding or removing a sign-in method, purging, exporting,
+  importing and deleting a workspace. Reason: a sign-in
   session left open or stolen from a browser should not be enough for actions
-  that change who can do what. It does not stop someone who controls the
+  that change who can do what or approve a live change. It does not stop someone who controls the
   person's mailbox or GitHub account (T1, T2).
 - A person can see their active sign-in sessions and end any or all of them
   ("sign out everywhere").
@@ -237,7 +250,7 @@ different from an [agent session](domain-model.md#agent-session).
 
 ### 3.4 Recovery
 
-**Proposed:** a person who loses access to GitHub signs in with an email link.
+**Proposed:** a person who loses access to GitHub signs in with an email magic link.
 A person who loses their email account cannot sign in by email; if they also
 use GitHub they can sign in that way and change their email address, which
 needs a link sent to the new address and an operator adding it to the
@@ -335,14 +348,21 @@ member's role ([6.3](#63-what-an-agent-may-do)).
 |---|---|---|---|
 | Read everything in the workspace: catalog (wiki, agent index), tasks, timelines, presence | ✓ | ✓ | ✓ |
 | Create, claim, update tasks and subtasks; add work links; record verification | ✓ | ✓ | ✓ |
+| Add or remove dependencies; move a subtask under another parent or make it top-level | ✓ | ✓ | ✓ |
+| Rank `to do` tasks | ✓ | ✓ | ✗ (agents read the order) |
+| Confirm or dismiss an unconfirmed link made by an outside actor's marker | ✓ | ✓ | ✗ |
+| Confirm or dismiss an unconfirmed link from a member's closing reference | ✓ | ✓ | ✓ |
 | Comment on tasks | ✓ | ✓ | ✗ (agents post progress updates) |
 | Post progress updates on its task | – | – | ✓ |
 | Send nudges | ✓ | ✓ | ✗ (nudges come from people) |
+| Withdraw a nudge before it is delivered | own | own | ✗ |
+| Request a git host action on a task (reaches the requester's own agent sessions, N-3) | ✓ | ✓ | ✗ |
 | Accept or cancel tasks in `triage`; set `cancelled` or `on hold` | ✓ | ✓ | ✗ |
 | Set or clear `needs a person`, with a summary | ✓ | ✓ | ✓ (O-7) |
 | Set `awaiting deployment approval` (ask for approval) | ✓ | ✓ | ✓ |
-| Give a deployment approval | ✓ | ✓ where workspace settings allow | Only to record one its own member gave in the agent's conversation (O-20) |
+| Give a deployment approval in Shinan (with re-authentication) | ✓ | ✗ | Only to record one its own member gave in the agent's conversation (O-20) |
 | Make catalog proposals | ✓ | ✓ | ✓ |
+| Comment on catalog proposals | ✓ | ✓ | ✓ (with `catalog:propose`) |
 | Approve gated catalog proposals | ✓ | ✓ | ✗ |
 | Register agents; approve, view and revoke their tokens | own | own | ✗ |
 | Disable any agent, revoke any token in the workspace | ✓ | ✗ | ✗ |
@@ -352,7 +372,7 @@ member's role ([6.3](#63-what-an-agent-may-do)).
 | Change workspace settings, including the workspace's task flags | ✓ | ✗ | ✗ |
 | Read the workspace security log | ✓ | own entries | ✗ |
 | Correct the credit on an event from their own git host account | own | own | ✗ |
-| Purge, export or delete the workspace | ✓ | ✗ | ✗ |
+| Purge, export or delete the workspace; import an export into an empty workspace (all with re-authentication) | ✓ | ✗ | ✗ |
 
 Notes:
 
@@ -367,6 +387,16 @@ Notes:
   people approve them. **Decided (owner, O-46):** a person may approve a
   proposal made by their own agent while one person uses Shinan; the approval
   is recorded as the person's action, separate from the proposal.
+- **Only workspace owners give deployment approval in Shinan**, and it needs
+  re-authentication ([3.3](#33-sign-in-sessions-and-re-authentication)). **Proposed**; reason: it is the
+  one approval gate for live deployments (D-016 for `shinan.guneet.dev`), and
+  no workspace setting for contributors is defined anywhere. If a team needs
+  contributors to approve, [Tasks and work](tasks.md) defines the setting and
+  [human experience](human-experience.md) its screen.
+- **Decided (owner, NO-4, [#26](https://github.com/guneet-xyz/shinan/issues/26)):**
+  deployment approval requests and answers are always recorded as task
+  events, whether or not the workspace keeps the `awaiting deployment
+  approval` flag.
 - An agent recording a deployment approval may record only one given by its
   own member, in its own conversation. The record says "approved by Guneet in
   conversation, recorded by OpenCode on Daedalus". **Proposed**; reason: O-20
@@ -375,9 +405,9 @@ Notes:
 - **Only workspace owners invite** in the first version. **Proposed**; reason:
   every member sees everything (O-43), so letting someone in stays with the
   people accountable for the workspace.
-- Any member may register a **read-only agent** (only the `read` scopes,
-  [7.2](#72-scopes)). Reason: a read-only token limits what a leaked token can
-  change, even without a read-only role.
+- Any member may give an agent a **read-only token** (only the `read` scopes,
+  [7.2](#72-scopes)) when approving it. It is a choice of scopes, not a role.
+  Reason: it limits what a leaked token can change.
 - Every contributor can read and change the whole workspace, including
   infrastructure details and private-repository work (O-2, O-43, N-11). The
   invitation screen says so ([human experience](human-experience.md)).
@@ -450,51 +480,67 @@ workspace, acts for exactly one member, and never does more than that member.
   person when they approve the agent's first token. It can point to a
   `machine` catalog entity. It is still only a label: a token copied off the
   machine works anywhere (T3).
-- The clients on one machine (the MCP client, the plugin, the CLI) act as that
-  machine's agent. They may share one token or each hold their own; either way
-  all their actions are credited to the same agent. Which they do is for
-  [agent integrations](agent-integrations.md). Reason: tokens do not rotate
-  (O-44), so sharing is safe; the choice is about setup convenience.
+- **Decided (owner, NO-1, [#26](https://github.com/guneet-xyz/shinan/issues/26)):**
+  each agent has **one token**. The clients on its machine (the plugin, the
+  MCP client and the CLI) all use it, and all their actions are credited to
+  that agent.
 - Losing or retiring a machine (as Takezo was in November 2026) means
   disabling the agents on it, which revokes all their tokens and nothing else.
 - Every subagent is its own agent session of the same agent (owner, O-37).
 
 ### 6.2 Registering an agent
 
-**Proposed** flow, for a coding tool connecting to Shinan's MCP server with its
-built-in MCP sign-in:
+**Decided (owner, NO-1, [#26](https://github.com/guneet-xyz/shinan/issues/26)):**
+an agent gets its long-lived token through a **browser approval started from
+the plugin or the CLI**, with a short code for machines without a browser, and
+a **token made by hand** in the web app as the fallback. There is one token
+per agent, accepted at every agent endpoint: the MCP endpoint, the REST API
+and the plugin stream. There is no MCP-specific OAuth sign-in in the first
+version; it may come later, only if a coding tool needs it.
+
+The flow, with the details **proposed** here:
 
 ```mermaid
 sequenceDiagram
-  participant T as Coding tool on a machine
-  participant B as Person's browser
+  participant T as Plugin or CLI on a machine
+  participant B as Person's browser (any device)
   participant S as Shinan
-  T->>S: MCP request without a token
-  S-->>T: Sign-in required, with where to sign in
-  T->>B: Open Shinan's approval page (authorization code with PKCE)
+  T->>S: Ask to register: coding tool, suggested machine name
+  S-->>T: Approval link and short code
+  T->>B: Open the link, or the person types the code on another device
   B->>S: Person signs in and re-authenticates
   S->>B: Show workspace, coding tool, scopes; ask which machine
   B->>S: Choose or create the agent for this tool and machine; reduce scopes; approve
-  S-->>T: Long-lived token for that agent, bound to Shinan's MCP address
+  S-->>T: The agent's long-lived token
   S->>S: Record in security log; email the person
 ```
 
-- This follows the MCP authorization specification (revision 2026-07-28):
-  OAuth 2.1 with the authorization code flow, PKCE, a browser redirect, and
-  resource indicators (RFC 8707). Shinan's approval page is its own consent
-  screen, so it asks there for the agent and machine, which the protocol does
-  not carry. Tokens are accepted only at Shinan's MCP address, as the
-  specification requires servers to check.
-- Under O-44 Shinan issues a token that is valid until revoked, with no
-  refresh step.
-- **Headless runs** that cannot open a browser: the person creates a token for
-  the agent in the web app (with re-authentication), sees it once, and places
-  it on the machine, for example as an environment variable the coding tool
-  sends as a header. Reason: some tools cannot run the browser flow; the MCP
-  specification has no device flow.
+- The steps follow the shape of the OAuth device authorization grant
+  (RFC 8628: show a link and a short code, the person approves in a browser,
+  the tool receives the token). How it is built is for the
+  [architecture](architecture.md) document.
+- The person, not the tool, chooses or confirms the machine on the approval
+  page. Reason: the tool only suggests a name; the person knows which machine
+  it is.
+- The plugin or CLI stores the token for the coding tool and configures the
+  tool's MCP connection to send it as an `Authorization` header, read from the
+  machine's credential store or an environment variable, never written into a
+  project file. Reason: one approval covers the plugin, MCP and the CLI on a
+  machine, as [agent integrations](agent-integrations.md) requires, and
+  headless runs (such as `claude -p`) need no browser at run time.
+- **Token made by hand (fallback):** the person creates a token for an agent
+  in the web app, with re-authentication, chooses its machine and scopes, sees
+  it once, and places it on the machine. Reason: for tools or machines where
+  neither the plugin nor the CLI can run the approval.
 - The token goes straight to the tool or to the person, never through a chat,
   issue or file in a repository. The `workspace` repository's policy already
   forbids pasting credentials into conversations.
+- Reasons for this flow over the coding tools' own MCP OAuth sign-in (as
+  recorded with NO-1): one approval serves every component on a machine;
+  headless runs work; with long-lived tokens (O-44) there is nothing to
+  refresh; and Shinan does not have to act as a full OAuth authorization server
+  on a public address (D-015). Cost: a tool that supports only MCP OAuth and no
+  custom header would need the CLI as a bridge.
 
 Only people register agents and approve tokens. An agent cannot create another
 agent or a token, not even for itself (principle 4).
@@ -516,10 +562,13 @@ three of these allow:
 - add or change git host connections or workspace settings;
 - read the workspace security log;
 - correct attribution;
-- send nudges or comments (agents post progress updates instead);
+- send nudges, withdraw them, or request git host actions;
+- comment on tasks (agents post progress updates instead; they may comment on
+  catalog proposals);
+- rank `to do` tasks, or confirm links made by outside actors' markers;
 - give a deployment approval (an agent may only record one its own member gave
   in the agent's conversation, O-20);
-- purge, export or delete a workspace;
+- purge, export, import or delete a workspace;
 - accept a task out of `triage`, set `cancelled` or `on hold`, and anything else
   [Tasks and work](tasks.md) or [Catalog](catalog.md) reserves for people.
 
@@ -589,8 +638,8 @@ see that each one is narrow and can be revoked.
 | Credential | Held by | Lets the holder | Lifetime |
 |---|---|---|---|
 | Sign-in session | A person's browser | Act as the person in the web app | 24 hours, 1 hour idle ([3.3](#33-sign-in-sessions-and-re-authentication)) |
-| Email sign-in link | The person's mailbox | Start one sign-in session | 15 minutes, once |
-| Agent token | The clients of one agent on one machine | Act as that agent in one workspace, within its scopes, at Shinan's MCP address | Until revoked (owner, O-44) |
+| Email magic link | The person's mailbox | Start one sign-in session | 15 minutes, once |
+| Agent token (one per agent, NO-1) | The plugin, MCP client and CLI of one agent on one machine | Act as that agent in one workspace, within its scopes, at the installation's agent endpoints (MCP, REST API, plugin stream) | Until revoked (owner, O-44) |
 | Invitation link | The invitee's mailbox | Accept one invitation, once signed in with the invited address | 7 days, once |
 | GitHub App private key and installation tokens | The Shinan server | Read from GitHub and make Shinan's own writes (its only git host writes), as the app | Key until rotated; installation tokens 1 hour ([git host integrations](git-hosts.md)) |
 | Forgejo connection token | The Shinan server, encrypted | Read from Forgejo, as the connecting person; Shinan never writes with it (N-4) ([9.3](#93-git-host-connections)) | Set by the person on Forgejo |
@@ -615,13 +664,14 @@ rule.
 | Scope | Allows |
 |---|---|
 | `catalog:read` | Read the catalog and the agent index |
-| `catalog:propose` | Make and withdraw catalog proposals |
+| `catalog:propose` | Make and withdraw catalog proposals; comment on catalog proposals |
 | `tasks:read` | Read tasks, work links and timelines |
 | `tasks:write` | Create, claim and update tasks and subtasks; add work links; record verification; post progress updates; set the flags agents may set |
 | `presence` | Report agent sessions and presence; receive nudges |
 
-A normal agent gets all five; a read-only agent gets the two `read` scopes.
-Reason: splitting reading from writing is the line that matters most when a
+A normal agent gets all five. A **read-only token** has only the two `read`
+scopes; it is a choice of scopes offered when approving a token, not a role
+(N-11 removed only the viewer role). Reason: splitting reading from writing is the line that matters most when a
 long-lived token leaks. Because there is no restricted level (O-2), a `read`
 scope reads everything in the workspace.
 
@@ -638,6 +688,8 @@ no forced re-approval.
   only helps the person decide what to revoke.
 - Removing a member, disabling an agent, removing someone from the allowlist,
   and deleting a workspace revoke tokens automatically.
+- Issuing a new token for an agent, by approval or by hand, revokes its
+  previous one. Reason: one token per agent (NO-1).
 
 ### 7.4 Handling
 
@@ -647,12 +699,18 @@ no forced re-approval.
   it. Reason: a copy of Shinan's database must not contain usable tokens.
 - Tokens start with a recognisable prefix. Reason: leak scanners, and later
   Shinan itself, can then spot them in text.
-- Tokens are sent in a request header, never in a web address, and are
-  accepted only at the address they were issued for. Reason: the MCP
-  specification requires both.
-- Later, Shinan refuses text (comments, catalog proposals, progress updates)
-  that contains one of its own tokens, and revokes that token
-  ([13](#13-first-version-scope)).
+- Tokens are sent in an `Authorization` header, never in a web address.
+  Reason: web addresses end up in logs; the MCP specification also forbids
+  tokens in query strings.
+- **Decided (owner, NO-1):** an agent token is accepted at every agent
+  endpoint of the installation that issued it (the MCP endpoint, the REST API
+  and the plugin stream) and nowhere else. **Proposed:** the token records the
+  installation's address, and other installations reject it. Which endpoints
+  exist is for the [architecture](architecture.md) document.
+- Shinan's own token prefixes are refused in catalog proposals from the first
+  version, as the [catalog](catalog.md) requires. Refusing them in other text
+  (comments, progress updates) and revoking the exposed token automatically
+  come later ([13](#13-first-version-scope)).
 - How a coding tool stores the token on the machine is owned by
   [agent integrations](agent-integrations.md); the machine's own credential
   store is preferred over a plain file.
@@ -663,8 +721,8 @@ no forced re-approval.
 
 | Action | Who can do it | Effect |
 |---|---|---|
-| Revoke one token | Its member; a workspace owner | That token stops working |
-| Disable an agent (that is, one machine's agent) | Its member; a workspace owner | All its tokens stop working |
+| Revoke an agent's token | Its member; a workspace owner | The token stops working; the agent needs a new approval or a token made by hand |
+| Disable an agent (that is, one machine's agent) | Its member; a workspace owner | Its token stops working and no new one can be issued until it is enabled again |
 | Disable a machine | The person, for their own agents and launcher on it | All their agents and the launcher on that machine stop working |
 | Remove a member or lower a role | A workspace owner | See [5.3](#53-leaving-removal-and-role-changes) |
 | Sign out everywhere | The person | Ends all their sign-in sessions; optionally revokes all their agent tokens in every workspace |
@@ -709,14 +767,15 @@ levels.
   committer fields are never evidence, and GitHub's own matching of commit
   emails to accounts is ignored. Reason: those fields are free text.
 - Items Shinan wrote itself (only on GitHub, N-4) are recognised by their
-  stored item IDs ([9.3](#93-git-host-connections)).
+  author being the GitHub App's own account, which no person or agent can
+  use, and by the item IDs Shinan stored ([9.3](#93-git-host-connections)).
 
 **Levels:**
 
 | Confidence | When | Credited to |
 |---|---|---|
 | `recorded` | The action came through Shinan with a valid sign-in session or agent token. | The person; or the agent session, if it belongs to that agent, otherwise the agent. |
-| `recorded` | Shinan made the write on GitHub, as its app, and its record of writes holds the item ID GitHub returned. | Shinan. |
+| `recorded` | The item was written on GitHub by the GitHub App's own account. | Shinan. |
 | `marked` | A git host item carries a marker naming an agent session that passes the checks in [8.3](#83-checking-markers); or (later) a commit is signed with a key registered to one agent ([8.4](#84-stronger-evidence-agent-signing-keys)). | That agent session (or agent). |
 | `inferred` | No confirmed marker, but Shinan's records point one way: one of the person's agent sessions was active, attached to a task linked to this item and reporting this repository at the time; or **none** of the person's connected agent sessions was active. | "Probably" that agent session; or the person, labelled "no connected agent active". |
 | `unknown` | The account is linked to a member but nothing points either way. | "The person or one of their agents". |
@@ -725,9 +784,11 @@ levels.
 Reasons:
 
 - Only actions through Shinan were seen by Shinan, so only they are
-  `recorded`. Shinan's own GitHub writes count only when matched by stored
-  ID. Shinan makes no writes on Forgejo (N-4), so everything from a Forgejo
-  account, including the connecting person's, is credited by the rules here.
+  `recorded`. Shinan's own GitHub writes are recognised by the app's own
+  account, which only Shinan can use, as [git host integrations](git-hosts.md)
+  proposes; the stored IDs let Shinan edit its backlinks. Shinan makes no
+  writes on Forgejo (N-4), so everything from a Forgejo account, including the
+  connecting person's, is credited by the rules here.
 - "No connected agent active" keeps direct human actions on git hosts from all
   showing as `unknown`, while saying what Shinan knows rather than guessing.
   The owner's agents do most routine git host work, and during the trial some
@@ -796,6 +857,35 @@ host account and by their agents. Known limits (D-017):
   is often wrong, the rule is dropped and those events become `unknown`
   ([roadmap](roadmap.md)).
 
+### 8.7 How an actor is written in text
+
+Some records name an actor in plain text, such as the `by` field of a
+[fact check](catalog.md) (`by: guneet via opencode-daedalus`). **Proposed**
+written forms:
+
+| Actor | Written form | Example |
+|---|---|---|
+| A person | The person's **handle** | `guneet` |
+| An agent session acting for a person, or the agent when no session is known | `<person handle> via <agent handle>` | `guneet via opencode-daedalus` |
+| Shinan itself | `shinan` | `shinan` |
+| An imported record whose actor is not known | `unknown` | `unknown` |
+
+- A person's handle is chosen when their account is created: lowercase
+  letters, digits and hyphens, unique in the installation, and not changeable
+  in the first version.
+- An agent's handle is `<coding tool>-<machine>`, set when the agent is
+  created on the approval page ([6.2](#62-registering-an-agent)), unique among
+  the person's agents in the workspace, and not changeable.
+- The written form names the agent, not the agent session. The exact agent
+  session is on the event that recorded the change, with attribution
+  `recorded`. Reason: the text stays short and readable, and full detail lives
+  in events.
+- Shinan writes the form itself from the actor of the request; nobody types it.
+  So a written actor always matches a `recorded` attribution, except `unknown`
+  on imports. Reason: a typed name could credit someone else.
+- Written forms of former members and disabled agents stay as they are.
+  Reason: past records are not rewritten.
+
 ## 9. Access rules
 
 ### 9.1 How every request is checked
@@ -844,7 +934,10 @@ owns who may manage them, whose access they carry and how Shinan's own writes
 are credited.
 
 - **Proposed:** only workspace owners add, change or remove git host
-  connections, with re-authentication.
+  connections, with re-authentication. Because a Forgejo connection reads with
+  the connecting person's own token (O-53), a Forgejo repository that only a
+  contributor can read cannot be connected. That is fine while the owner is the
+  only member; it is revisited before a second member joins.
 - **Decided (owner, O-1, O-51, N-4):** on GitHub, Shinan connects through a
   GitHub App and uses only its installation token. Shinan's own writes (such as
   backlinks) appear as the app, and these are the only writes Shinan makes on
@@ -883,7 +976,7 @@ restriction stays possible later.
 - **Nothing without sign-in** except the sign-in pages, the invitation
   acceptance page and a minimal health check. The wiki and agent index are
   behind sign-in too.
-- **No passwords to guess** (N-7): sign-in is by email link or GitHub.
+- **No passwords to guess** (N-7): sign-in is by magic link or GitHub.
 - **Throttling** of sign-in and invitation emails (per address and per network
   address, so Shinan cannot be used to flood a mailbox) and of failed token
   use. Failures are recorded.
@@ -896,8 +989,10 @@ restriction stays possible later.
   agent tokens ([3.3](#33-sign-in-sessions-and-re-authentication)).
 - **Narrow, hashed tokens checked on every request** ([7](#7-tokens)).
 - **Outside text is data, not instructions.** The
-  [agent integrations](agent-integrations.md) document makes MCP answers show
-  where text came from. Reason: the `workspace` repository's policy already
+  [agent integrations](agent-integrations.md) document makes MCP answers carry
+  a trust label on each text field: who wrote it (member, agent, outside actor
+  or Shinan) and whether it may be treated as an instruction, as the
+  [architecture](architecture.md) document proposes. Reason: the `workspace` repository's policy already
   treats commands found in issues and logs as data.
 
 The residual risks of the owner's choices are listed with the
@@ -910,7 +1005,7 @@ kinds (**proposed**):
 
 | Area | Recorded |
 |---|---|
-| Sign-in | Sign-ins and failures by method, email links sent and used, re-authentications, GitHub added or removed as a sign-in method, sign-in sessions ended |
+| Sign-in | Sign-ins and failures by method, magic links sent and used, re-authentications, GitHub added or removed as a sign-in method, sign-in sessions ended |
 | Accounts | Allowlist additions and removals; accounts created; email address changes |
 | Membership | Invitations created, withdrawn, accepted, declined, expired; role changes; removals; leaving |
 | Agents and tokens | Agents created, renamed, disabled; tokens approved and revoked (and why); each token's first and last use, network address and number of requests |
@@ -950,8 +1045,9 @@ kinds (**proposed**):
 - The **installation operator** can read and change everything in the
   installation's storage. Shinan cannot protect a workspace from its own
   operator, and documentation says so.
-- In the app, operators are the people named in the installation's
-  configuration. They keep the allowlist and change installation settings,
+- In the app, operators are the people whose email addresses the
+  installation's configuration names ([3.2](#32-who-can-have-an-account)).
+  They keep the allowlist and change installation settings,
   including any exceptions to the Forgejo address checks. They are not members
   of any workspace by being operators and cannot purge (O-50).
 - On `shinan.guneet.dev`, the owner is both operator and sole workspace owner.
@@ -961,62 +1057,52 @@ kinds (**proposed**):
 **Decided (owner, O-49, [#25](https://github.com/guneet-xyz/shinan/issues/25)):**
 D-019 is read as "design now, build before the second member", in three
 stages. The contents below follow the owner's other answers (O-1, O-2, O-41,
-O-43, O-44, O-47, O-48, O-50, N-4, N-7, N-8, N-11, N-12, N-13). The viewer test account is
+O-43, O-44, O-47, O-48, O-50, N-4, N-7, N-8, N-11, N-12, N-13) and NO-1. The viewer test account is
 dropped from the first version (owner, N-11).
 
 | Built in version 1 | Designed now, built before a second member joins | Later |
 |---|---|---|
 | Person, member, role and workspace recorded on every record; the owner is the only workspace owner | The invitation flow by email ([5.2](#52-invitations)) | Workspace deletion grace period and restore |
 | The single check path ([9.1](#91-how-every-request-is-checked)) | The contributor role enforced in screens and checks ([5.1](#51-roles-and-permissions)) | Generic OpenID Connect sign-in |
-| Sign-in by email link and GitHub; email sending | Removal and role-change effects ([5.3](#53-leaving-removal-and-role-changes)) | Agent signing keys ([8.4](#84-stronger-evidence-agent-signing-keys)) |
+| Sign-in by magic link and GitHub; email sending | Removal and role-change effects ([5.3](#53-leaving-removal-and-role-changes)) | Agent signing keys ([8.4](#84-stronger-evidence-agent-signing-keys)) |
 | The email allowlist; sign-in session limits; re-authentication; security emails | Nudges from other members: framing and the per-agent opt-out ([6.5](#65-nudges-from-other-people)) | The launcher token (phase 3, [6.6](#66-launchers-phase-3)) |
 | Linking GitHub through sign-in and Forgejo through a token, with the address checks | Security log views for members other than the workspace owner | Refusing text that contains Shinan tokens ([7.4](#74-handling)) |
-| Agent registration through browser approval, per machine; scopes; headless tokens; revocation | | Full read logging, if ever needed |
-| Hashed tokens with a recognisable prefix; throttling; uniform errors | | |
+| Agent registration through a browser approval started from the plugin or CLI (with a short code), and tokens made by hand; one token per agent at every agent endpoint (NO-1); scopes, including read-only tokens; revocation | GitHub sign-in for people other than the GitHub App's owner, if the private app does not allow it ([open question 10](#open-questions)) | Full read logging, if ever needed |
+| Hashed tokens with a recognisable prefix, refused in catalog proposals; throttling; uniform errors | | MCP-specific OAuth sign-in, only if a coding tool needs it (NO-1) |
 | The security log, kept forever and not purgeable, readable by the workspace owner; purge of other content limited to workspace owners wherever purge is built | | |
-| Attribution: which account counts, confidence levels, marker checks, corrections, Shinan's GitHub writes recognised by stored ID | | |
+| Attribution: which account counts, confidence levels, marker checks, corrections, Shinan's GitHub writes recognised by the app's account, written actor forms ([8.7](#87-how-an-actor-is-written-in-text)) | | |
 
 ## Proposed glossary additions
 
 **Proposed** for the [domain model and glossary](domain-model.md), with this
-document as owner. Reason: one vocabulary needs one home. The glossary
-(0e4bfcd) already has account allowlist, installation operator, revocation,
-security log, sign-in session and token; this document uses them as defined
-there.
+document as owner. Reason: one vocabulary needs one home.
 
 | Term | Definition |
 |---|---|
-| Re-authentication | Signing in again, by email link or GitHub, before a sensitive action, inside a sign-in session. |
+| Re-authentication | Signing in again, by email magic link or GitHub, before a sensitive action, inside a sign-in session. |
+| Handle | A person's or agent's short, unchangeable name used when an actor is written in text ([8.7](#87-how-an-actor-is-written-in-text)). |
+| Read-only token | An agent token with only the two `read` scopes. A choice of scopes, not a role. |
 | Launcher token | The credential a launcher uses on one registered machine (phase 3). |
 
-Changes to existing glossary entries:
-
-- **Sign-in method:** an email sign-in link or GitHub only (owner, N-7); not
-  Forgejo and not a password.
-- **Member and role:** two roles, workspace owner and contributor; no viewer
-  (owner, N-11).
-- **Git host account:** Forgejo accounts are linked by a token, on any
-  instance (owner, N-7).
-- **Invitation:** "invitee address" is an email address on the account
-  allowlist.
+This document uses "email allowlist" and "email magic link", as the
+integration review recommends (I-8).
 
 ## Dependencies on other documents
 
-Sibling drafts were read on 2026-11-16 at the commits named. They include the
-answers to O-1 to O-98 but not yet batch 12 (N-1 to N-11), so most mismatches
-below are batch 12 changes.
+Current needs only. Each is also tracked as a finding on
+[issue #26](https://github.com/guneet-xyz/shinan/issues/26) where one exists.
 
-| Document | What this document needs from it, and remaining mismatches |
+| Document | What this document needs from it |
 |---|---|
-| [Domain model and glossary](domain-model.md) (0e4bfcd) | The [additions and changes above](#proposed-glossary-additions). **Mismatches:** its sign-in method lists Forgejo and password (N-7); its roles include viewer and a viewer's read-only agent (N-11). |
-| [Catalog](catalog.md) (78d6bb1) | Secrets never in the catalog, with pointers to a secrets manager (O-2). **Mismatch:** its always-on Git mirror (O-11) is removed for now by N-5. |
-| [Tasks and work](tasks.md) (fae89ac) | Marker format; reserved-for-people task actions; how an agent-recorded deployment approval is shown (O-20); task flags per workspace (O-8); claims on revocation or removal; subtasks at any depth (N-1). **Mismatch:** it says viewers cannot comment or nudge; there are no viewers (N-11). |
-| [Git host integrations](git-hosts.md) (98333b8) | GitHub App used for sign-in as well as connections; installation token only (O-1, O-51); Forgejo with the connecting person's account and any token (O-53, O-54); stored write IDs on GitHub; the pusher for commits; reading a Forgejo account with `read:user`; outbound address checks for any Forgejo address; Forgejo SSH signing on `git.guneet.dev` before signing keys. **Mismatches:** its "Sign-in with any Forgejo instance" section (N-7) and Forgejo backlinks and `write:issue` (N-4). |
-| [Agent integrations](agent-integrations.md) (88acc1d) | Its [authentication requirements](agent-integrations.md#authentication-requirements): one approval per machine covers plugin, MCP server and CLI ([6.1](#61-what-one-agent-is)); headless runs ([6.2](#62-registering-an-agent)); revocation at once ([7.5](#75-revocation)). The launcher setup guide (O-1); framing of nudges from other members. Its listed mismatches with this document's older draft are resolved here. |
-| [Human experience](human-experience.md) (3ab0d4e) | Screens for email-link and GitHub sign-in, re-authentication, the allowlist, Forgejo linking by address and token, agent approval with machine, token last-use, the security log, attribution confidence, and the "everyone sees everything" warnings. **Mismatches:** viewer screens and notes (N-11); Forgejo and password sign-in (N-7). |
-| [Architecture and operations](architecture.md) (d3ca54e) | Email sending from version 1 (O-41), through the AWS SES API (N-6); throttling; token hashing and per-request checks; encrypted Forgejo tokens (O-54); outbound address checks for Forgejo; the security log kept forever and not purgeable. **Mismatches:** password hashing, Forgejo sign-in through a generic OAuth plugin, and "if email is down, password and git host sign-in still work" (N-7: only GitHub remains if email is down); the Git mirror (N-5). |
-| [Roadmap and migration](roadmap.md) (820f2a6) | The [first version scope](#13-first-version-scope); measuring attribution in the proof of concept; no backups before migration (O-62). **Mismatches:** sign-in methods (N-7); the viewer test account and its request to build viewer enforcement and invitations in M1 (dropped by N-11). |
-| [Decision log](decisions/) (46bd0d1) | Records for batches 12 and 13: N-7 changes D-034; N-4 changes D-033; N-13 narrows O-50 for the security log; N-8, N-11 and N-12 for this document's rules. |
+| [Domain model and glossary](domain-model.md) | The [additions above](#proposed-glossary-additions); "email allowlist" and "email magic link" as the main terms (I-8); Shinan's GitHub writes recognised by the app's own account (I-25). |
+| [Catalog](catalog.md) | The fact check's `by` field in the written form of [8.7](#87-how-an-actor-is-written-in-text); refusing Shinan's token prefixes in catalog proposals from the first version (I-27); a catalog export, if any, follows the workspace export rights in [5.1](#51-roles-and-permissions) (I-12). |
+| [Tasks and work](tasks.md) | Releasing claims and keeping assignments when a member is removed or an agent's token is revoked (I-16); deployment approval requests and answers always recorded as task events (NO-4); a contributor deployment-approval setting only if a team needs one. |
+| [Git host integrations](git-hosts.md) | Recognising Shinan's GitHub writes by the app's account; the pusher's account for commits; reading a Forgejo account with `read:user`; the mechanism behind the address checks (N-12); whether people other than the app's owner can authorize the private GitHub App for sign-in (I-29); the limitation that Forgejo connections use a workspace owner's account (I-31). |
+| [Agent integrations](agent-integrations.md) | Registration started from the plugin or CLI, writing the coding tool's MCP configuration with the token as a header (NO-1); a tool to comment on catalog proposals (I-22, I-33); trust labels on MCP answers (I-34); framing of nudges from other members; the launcher setup guide (O-1). |
+| [Human experience](human-experience.md) | "Your agents" following [6.2](#62-registering-an-agent) (NO-1, I-46), with the read-only token offered at approval (I-26); refusing invitations to addresses not on the allowlist (I-40); deployment approval by workspace owners with re-authentication; export and import screens (I-45); showing when a recipient has turned off nudges from others (I-47). |
+| [Architecture and operations](architecture.md) | The registration flow and the agent endpoints that accept a token (NO-1, I-48); the first-start rule in [3.2](#32-who-can-have-an-account) (I-53); security emails (I-51); the address-check mechanism (N-12, I-50); the security log not purgeable (N-13, I-49); token hashing, per-request checks and throttling. |
+| [Roadmap and migration](roadmap.md) | The [first version scope](#13-first-version-scope); measuring attribution in the proof of concept. |
+| [Decision log](decisions/README.md) | Records for NO-1 and NO-4 if the decision log records integration answers. |
 
 ## Sources checked
 
@@ -1026,10 +1112,10 @@ All checked on 2026-11-16.
   (August 2025): AAL2 reauthentication guidance (24 hours, 1 hour idle); email
   not accepted for out-of-band authentication.
 - Model Context Protocol, [Authorization](https://modelcontextprotocol.io/specification/latest/basic/authorization)
-  (2026-07-28 revision): OAuth 2.1 with authorization code, PKCE and resource
-  indicators; audience checks; tokens only in the Authorization header; no
-  device grant.
-- IETF, [RFC 8707: Resource Indicators for OAuth 2.0](https://www.rfc-editor.org/rfc/rfc8707).
+  (2026-07-28 revision): tokens only in the Authorization header, never in the
+  query string. Its OAuth sign-in is not used in the first version (NO-1).
+- IETF, [RFC 8628: OAuth 2.0 Device Authorization Grant](https://datatracker.ietf.org/doc/html/rfc8628)
+  (the shape of the browser approval with a short code).
 - GitHub Docs, [Webhook events and payloads](https://docs.github.com/en/webhooks/webhook-events-and-payloads)
   (`sender`, `ghost`); [About commit signature verification](https://docs.github.com/en/authentication/managing-commit-signature-verification/about-commit-signature-verification)
   and [Adding a new SSH key](https://docs.github.com/en/authentication/connecting-to-github-with-ssh/adding-a-new-ssh-key-to-your-github-account)
@@ -1043,7 +1129,8 @@ All checked on 2026-11-16.
   and [`ssh_key.go`](https://codeberg.org/forgejo/forgejo/src/tag/v16.0.5/models/asymkey/ssh_key.go);
   [Gitea pull request 17743](https://github.com/go-gitea/gitea/pull/17743).
 - The owner's answers, [issue #25](https://github.com/guneet-xyz/shinan/issues/25),
-  including batches 12 and 13.
+  including batches 12 and 13, and the integration review with the owner's
+  answers, [issue #26](https://github.com/guneet-xyz/shinan/issues/26).
 - The `workspace` repository (read-only background): `docs/access-and-safety.md`,
   `docs/collaboration.md`, `catalog/services/forgejo.md`.
 
@@ -1067,8 +1154,14 @@ All checked on 2026-11-16.
    bulk reads?
 9. **Attribution reliability** (plan question 2), measured in the proof of
    concept ([8.6](#86-accountability-and-known-limits)).
+10. **GitHub sign-in for a second member.** It was not checked whether people
+    other than `guneet-xyz` can authorize the private GitHub App. If they
+    cannot, GitHub sign-in for a second member needs a public app or a
+    separate sign-in-only app; magic links work regardless. To settle before a
+    second member joins ([git host integrations](git-hosts.md), I-29).
 
 ## Decisions needed from the owner
 
 None. The owner answered every decision this document raised (O-1 to O-98
-and N-1 to N-13 in [issue #25](https://github.com/guneet-xyz/shinan/issues/25)).
+and N-1 to N-13 in [issue #25](https://github.com/guneet-xyz/shinan/issues/25),
+and NO-1 and NO-4 in [issue #26](https://github.com/guneet-xyz/shinan/issues/26)).
