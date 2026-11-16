@@ -28,33 +28,37 @@ The word "proposed" in bold is the document marker above; the two are unrelated.
 The working prototype is the `workspace` repository's catalog: its
 [catalog README](https://git.guneet.dev/guneet/workspace/src/branch/main/catalog/README.md),
 [templates](https://git.guneet.dev/guneet/workspace/src/branch/main/templates/README.md)
-and [maintenance policy](https://git.guneet.dev/guneet/workspace/src/branch/main/docs/maintenance.md).
-Where a rule below comes from that practice, the reason says so. A full mapping
-is in [section 13](#13-mapping-from-the-workspace-repositorys-catalog).
+and [maintenance policy](https://git.guneet.dev/guneet/workspace/src/branch/main/docs/maintenance.md),
+read at revision `86bba32`. Where a rule below comes from that practice, the
+reason says so. A full mapping is in
+[section 13](#13-mapping-from-the-workspace-repositorys-catalog).
 
 ## Summary
 
 - A workspace's catalog is a set of Markdown documents, one per catalog entity,
-  each with structured fields at the top (frontmatter) and prose below. These
-  documents are the source of truth; the wiki and the agent index are generated
-  from them (D-006).
-- Structured fields hold **facts**. Each fact has a fact state (`intended`,
-  `observed`, `proposed`, `unknown`) and points to a **fact check** that records
-  the source, the last-checked time, who checked and what exactly was checked
-  (D-007).
+  each with structured fields at the top (frontmatter) and prose below. Every
+  applied catalog revision **is** a set of Markdown documents; the wiki, the
+  agent index and every query table are derived from them and can be rebuilt
+  from them alone (D-006).
+- Structured fields hold **facts**, grouped under the **fact check** that last
+  checked them. A fact check records when, by whom, what exactly was checked,
+  what was not, and the source (D-007). Each fact has a fact state
+  (`intended`, `observed`, `proposed`, `unknown`).
+- Type schemas say whether each fact key holds one value or many. Only
+  single-valued keys can have discrepancies, which are kept side by side,
+  never silently resolved.
 - The catalog holds identity, routing and observations that no other system
   owns. It links to owning sources for everything else.
-- Every change is a catalog proposal. In the first version every proposal
-  except an unchanged recheck waits for a person's catalog approval; a relaxed
-  setting later lets routine changes apply on their own after validation.
-- Disagreements between sources are kept side by side as discrepancies, never
-  silently resolved.
+- Every change is a catalog proposal. Which proposals need a person's catalog
+  approval is an owner decision; this document recommends that routine changes
+  apply on their own and that rules, lifecycle, people and exposure stay
+  gated.
 
 ## 1. Principles
 
 | # | Principle | Status and reason |
 |---|---|---|
-| P1 | The Markdown documents are the source of truth. The wiki and the agent index are generated from them and never edited directly. | **Decided** (D-006: people must be able to read it). |
+| P1 | The Markdown documents are the source of truth. Every applied catalog revision is a set of Markdown documents; the wiki, the agent index and all query tables are derived and rebuildable from them alone, and never edited directly. | **Decided** that the Markdown is the source of truth and the index is generated (D-006: people must be able to read it). The "rebuildable from Markdown alone" test is **proposed**; reason: it is what separates D-006 from the alternative D-006 rejected, a database with pages generated from it. |
 | P2 | Every fact records its state, source and last-checked time. | **Decided** (D-007: trust is the main differentiator). |
 | P3 | Link, don't copy. A fact owned by another system is linked, not copied. | **Decided** (plan, "What Shinan does not do"). |
 | P4 | `unknown` is a valid answer. Missing, unreachable and not checked are recorded, never filled with guesses. | **Proposed**. Reason: the `workspace` repository's rule; a guessed fact is worse than a known gap because nobody rechecks it. |
@@ -65,25 +69,47 @@ is in [section 13](#13-mapping-from-the-workspace-repositorys-catalog).
 
 ## 2. Entity documents
 
-### 2.1 One document per entity
+### 2.1 One document per entity, and what "source of truth" means
 
 Each catalog entity is one Markdown document: frontmatter in YAML between `---`
 lines, then a Markdown body.
 
-- **Decided:** Markdown with structured fields at the top (D-006).
+- **Decided:** Markdown with structured fields at the top is the source of
+  truth, and the agent index is generated from it (D-006).
+- **Proposed (the D-006 invariant):**
+  1. Every applied catalog revision is the full Markdown text of the
+     documents it changed. Nothing about the catalog's content (facts, fact
+     checks, relations, entity fields, body) exists only outside that text.
+  2. Changes, from the web editor, MCP or the CLI, are applied by producing
+     new Markdown from the latest revision. Validation runs on the resulting
+     Markdown, not on the operations that produced it.
+  3. The wiki, the agent index, search and every list or table used for
+     queries are derived. Deleting them all and re-parsing the Markdown
+     rebuilds them exactly.
+
+  Reason: D-006 rejected "a structured-data-first catalog, with pages
+  generated from a database"
+  ([D-006 record, PR #19](https://github.com/guneet-xyz/shinan/pull/19)). A
+  "lossless export" alone would not rule that design out; these three rules
+  do. Where the Markdown text is stored (files, Git or database rows) does not
+  matter to D-006, and is owned by [architecture](architecture.md).
+- Catalog proposals, approvals, comments and events are not catalog content.
+  They are separate records about changes to it, like pull requests beside a
+  repository, and are not expected to be rebuildable from the Markdown.
+  **Proposed.** Reason: they describe the process, not the things in the
+  catalog; the [glossary](domain-model.md#event) already makes events their
+  own record.
 - **Proposed:** YAML, restricted to plain maps, lists, strings, numbers,
   booleans, dates and `null` (no anchors, tags or multi-document files).
   Reason: YAML frontmatter is what the `workspace` repository and most Markdown
   tools already use; the restricted subset keeps documents easy to read and
-  parse identically everywhere. Unlike the `workspace` repository, which allows
-  only `key: value` lines so a dependency-free script can check them, nested
-  values are allowed because facts need several fields each.
-- **Open (owned by [architecture](architecture.md)):** where the documents are
-  stored, and whether a git repository holds or mirrors them (plan question 1).
-  This document only requires that a workspace's catalog can be exported as a
-  folder of these Markdown files and imported back without loss. Reason: a
-  plain export keeps the catalog readable without Shinan and supports
-  self-hosting (D-012).
+  parse the same way everywhere. Unlike the `workspace` repository, which
+  allows only `key: value` lines so a dependency-free script can check them,
+  nested values are allowed because facts carry state and provenance.
+- **Proposed:** a workspace's catalog can be exported as a folder of these
+  Markdown files and imported back with no loss. Reason: it keeps the catalog
+  readable without Shinan and supports self-hosting (D-012). Under the
+  invariant this is a copy, not the guarantee itself.
 
 ### 2.2 Entity fields
 
@@ -101,8 +127,7 @@ are not facts about the world, so they carry no fact state.
 | `replaced_by` | when retired, if any | Reference to the replacing entity. |
 | `aliases` | no | Former IDs, kept so old links still resolve. |
 | `restricted` | no | `true` if the whole entity is restricted, see [section 7](#7-sensitive-information). |
-| `facts` | no | List of facts, see [section 4](#4-facts). |
-| `fact_checks` | no | Map of fact checks, see [4.4](#44-fact-checks). |
+| `facts` | no | Facts grouped by fact check, see [section 4](#4-facts). |
 
 - **Proposed.** Reason: these are the `workspace` repository's required fields
   (`id`, `status`, `owner`) plus what the wiki and index need (`type`, `title`,
@@ -147,11 +172,19 @@ The body is prose for people and agents: what the thing is, why it is set up
 this way, warnings, and history worth keeping. It follows the
 [type's section conventions](#3-entity-types).
 
-- A claim in the body that someone may rely on and that can be checked should
-  be a fact in the frontmatter, not only a sentence. The body may explain a
-  fact but should not repeat its value. **Proposed.** Reason: only facts carry
-  state and freshness; a value in two places drifts. Validation cannot detect
-  this, so it is a writing rule checked in review.
+- A claim about the **current** state that someone may rely on and that can be
+  checked should be a fact, not only a sentence; the body may explain it but
+  should not restate its current value. **Proposed.** Reason: only facts carry
+  state and freshness, and an unpinned value in two places drifts apart.
+  Validation cannot detect this, so it is a writing rule checked in review.
+- Dated history is welcome in the body, for example "grown to 128 GiB online
+  on 2026-11-14 (infra/musashi#93)". **Proposed.** Reason: a dated statement
+  stays true, so it cannot drift; this is how the `workspace` repository keeps
+  useful operational history.
+- An `intended` fact may repeat a value from its owning source
+  ([section 6](#6-link-dont-copy)). That is not the drift the first rule
+  prevents, because the fact check pins the source revision it came from, so
+  the copy can be compared with its source at any time.
 - Generated sections (relations in both directions, unknowns, discrepancies,
   pending catalog proposals, related tasks) are added by the wiki and are not
   written in the body. **Proposed.** Reason: the `workspace` repository writes
@@ -164,7 +197,8 @@ this way, warnings, and history worth keeping. It follows the
 ### 2.5 Example
 
 An abbreviated `project/dockyard`, based on the `workspace` repository's entry.
-Values are illustrative.
+Values are illustrative. The deployment's facts are on the `service` entity
+that the project `provides`, not here (see [section 3](#service)).
 
 ```markdown
 ---
@@ -175,64 +209,33 @@ summary: Self-hosted OCI registry with a web UI and access management.
 status: active
 owner: person/guneet
 facts:
-  - key: repository
-    value: https://github.com/guneet-xyz/dockyard
-    state: observed
-    check: c1
-  - key: docs.agent_instructions
-    value: https://github.com/guneet-xyz/dockyard/blob/main/AGENTS.md
-    state: observed
-    check: c1
-  - key: release.latest
-    value: v0.3.1
-    state: observed
-    check: c1
-  - rel: checkout-on
-    to: machine/daedalus
-    path: /root/dockyard
-    state: observed
-    check: c2
-  - rel: deployed-on
-    to: machine/musashi
-    state: intended
-    check: c3
-  - key: deployment.version
-    value: v0.3.1
-    state: observed
-    check: c4
-  - key: deployment.built_from_commit
-    value: null
-    state: unknown
-    check: c4
-    note: No build attestation was checked; a checkout alone does not prove which source a build used.
-fact_checks:
-  c1:
-    checked: 2026-11-14
+  - checked: 2026-11-14
     by: guneet via opencode-daedalus
     scope: Repository, agent instructions and latest release exist
     source: https://github.com/guneet-xyz/dockyard/releases/tag/v0.3.1
-  c2:
-    checked: 2026-11-14
+    observed:
+      repository: https://github.com/guneet-xyz/dockyard
+      docs.agent_instructions: https://github.com/guneet-xyz/dockyard/blob/main/AGENTS.md
+      release.latest: v0.3.1
+  - checked: 2026-11-14
     by: guneet via opencode-daedalus
-    scope: Daedalus checkout is a clean main at 022de7d
-    source: Local git on Daedalus
-  c3:
-    checked: 2026-11-14
-    by: guneet via opencode-daedalus
-    scope: Musashi stack source defines the dockyard stack
-    source: https://git.guneet.dev/infra/musashi/src/commit/5b1a4a8/stacks/dockyard/README.md
-  c4:
-    checked: 2026-11-14
-    by: guneet via opencode-daedalus
-    scope: Web UI on the running deployment reports its version
-    source: HTTPS check of the public endpoint (infra/musashi#85)
+    scope: Checkouts on Daedalus and Musashi and their revisions
+    source: Local git on Daedalus; filtered SSH reads on Musashi (infra/musashi#85)
+    limits: The Daedalus infrastructure checkout's submodule was not initialized, so it was not read
+    observed:
+      checkout-on:
+        - {to: machine/daedalus, path: /root/dockyard}
+        - {to: machine/musashi, path: /mnt/musashi/stacks/dockyard}
+        - {to: machine/musashi, path: /mnt/musashi/stacks/dockyard/dockyard}
+      provides: service/container-registry
 ---
 
 # Dockyard
 
-Musashi builds Dockyard images locally from a source submodule; it does not
+Musashi builds Dockyard images locally from the source submodule; it does not
 run the published images. Do not assume a newer checkout or release is
-deployed. See the [Musashi stack rules](https://git.guneet.dev/infra/musashi/src/branch/main/stacks/dockyard/README.md).
+deployed. See the [container registry](service/container-registry) and the
+[Musashi stack rules](https://git.guneet.dev/infra/musashi/src/branch/main/stacks/dockyard/README.md).
 
 ## Cautions
 
@@ -241,18 +244,65 @@ submodule but does not initialize it. Do not initialize it as a side effect of
 reading context.
 ```
 
-**Proposed** as the shape; exact field names are confirmed when the type
-schemas are built. Reason: it keeps the `workspace` repository's content and
-habits while giving each fact its own state and check.
+An excerpt from the same exercise on `machine/musashi` (values illustrative), showing two
+observations of one single-valued key that disagree (a
+[discrepancy](#47-discrepancies)), a restricted fact and explicit unknowns:
+
+```yaml
+facts:
+  - checked: 2026-11-14
+    by: guneet via opencode-daedalus
+    scope: Online data-disk grow; partition, filesystem and fstab after the change
+    source: https://git.guneet.dev/infra/musashi/issues/93
+    observed:
+      disk.data.size: {value: 128 GiB, via: filesystem}
+      disk.data.free: 74 GiB
+  - checked: 2026-11-14
+    by: guneet via opencode-daedalus
+    scope: Azure instance metadata right after the resize
+    source: Azure instance metadata (non-sensitive fields), infra/musashi#93
+    observed:
+      disk.data.size: {value: 64 GB, via: instance-metadata, note: Metadata lags after a resize}
+  - checked: 2026-11-07
+    by: guneet via opencode-daedalus
+    scope: Identity and platform
+    source: SSH identity and platform evidence (workspace 23bf602)
+    observed:
+      platform.arch: aarch64
+      hostname: {value: musashi, restricted: true}
+  - unknown:
+      network.public_ipv6: Reachability not tested
+      recovery.tested: The rebuild runbook has not been run
+```
+
+**Trying the shape on a full entry.** The whole Musashi entry, written this
+way, needs 56 lines of frontmatter for 22 facts in 6 groups. The first draft's
+form (each fact a separate item pointing to a named check) needed about 135
+lines for the same content. Today's entry has 8 lines of frontmatter, because
+it keeps most facts in prose; about 20 lines of its body move into facts.
+
+**Proposed** as the shape; exact key names are confirmed when the type schemas
+are built. Reason: grouping by fact check reads like the `workspace`
+repository's "verified on date, scope, source" habit, keeps one line per fact
+in the common case, and needs no check IDs (see
+[4.3](#43-how-facts-are-written)).
 
 ## 3. Entity types
 
 The type list is **decided** (plan, Catalog pillar). Each type has a **type
-schema**: required and recommended fact keys, allowed relations, body section
-conventions and how often each fact should be rechecked. The schemas below are
-**proposed**, drawn from the `workspace` repository's templates, which have
-worked for its 18 projects, 4 machines, 10 services, 3 runbooks and 3
-decisions (counted 2026-11-16).
+schema**: its fact keys, and for each key
+
+- whether it is **single-valued** or **multi-valued** (its cardinality,
+  [4.2](#42-fact-identity-cardinality-and-current-facts)),
+- whether it is a relation, and which attributes identify it,
+- whether it is **restricted by default** ([section 7](#7-sensitive-information)),
+- how often it should be rechecked ([4.6](#46-freshness)),
+
+plus body section conventions. The schemas below are **proposed**, drawn from
+the `workspace` repository's templates, which have worked for its 18 projects,
+4 machines, 10 services, 3 runbooks and 3 decisions (counted at `86bba32`).
+In the lists below, "(many)" marks multi-valued keys and "(restricted)" keys
+that are restricted by default; other keys are single-valued.
 
 All types share one rule: each entity says **what belongs elsewhere** and links
 to it. Reason: P3.
@@ -263,16 +313,16 @@ A body of work with one or more repositories, for example an application or an
 infrastructure repository. A project is not a repository: the repository is
 the thing on the git host ([git hosts](git-hosts.md)); the project describes it.
 
-- **Facts:** `repository` (one or more, preferably a repository known through a
-  git host connection), `docs.readme`, `docs.agent_instructions`,
+- **Facts:** `repository` (many; preferably a repository known through a git
+  host connection), `docs.readme`, `docs.agent_instructions`,
   `docs.deployment`, `issue_tracker`, `release.latest`.
-- **Relations:** `checkout-on` a machine, with the path (one per checkout);
-  `deployed-on` a machine; `provides` a service; `depends-on` a service;
-  `configures` a machine or service (for infrastructure repositories).
+- **Relations** (all many): `checkout-on` a machine, identified by machine and
+  `path`; `provides` a service; `depends-on` a service; `configures` a machine
+  or service (for infrastructure repositories).
 - **Body:** role in one or two sentences; cautions; cross-project context.
 - **Belongs elsewhere:** setup, architecture, tests and deployment commands
-  (the project's repository); task worktree paths (tasks); task progress
-  (tasks).
+  (the project's repository); deployment facts (the `service` it provides);
+  task worktree paths and task progress ([tasks](tasks.md)).
 - **Reason:** the project entry owning checkout locations, and machines not
   repeating project lists, is the `workspace` repository's rule. Here the
   machine's list is generated from the inverse relation.
@@ -282,11 +332,12 @@ the thing on the git host ([git hosts](git-hosts.md)); the project describes it.
 A computer: a cloud VM, a home server, a development host.
 
 - **Facts:** `role`, `environment` (development, production and so on),
-  `platform.os`, `platform.arch`, `provider`, `access.method`,
-  `access.network`, storage facts such as `disk.data.size`, `hostname`
-  (restricted).
-- **Relations:** `configured-by` a project; `on-network` a service (for example
-  Tailscale).
+  `provider`, `platform.os`, `platform.arch`, `platform.vm_size`,
+  `access.method`, `access.address` (restricted), `access.host_key`
+  (restricted), `hostname` (restricted), storage facts such as
+  `disk.data.size`.
+- **Relations:** `configured-by` a project; `on-network` a service (many, for
+  example Tailscale).
 - **Body:** identity and role; access prerequisites (no secrets); operational
   constraints; cautions.
 - **Belongs elsewhere:** configuration (the infrastructure repository);
@@ -296,19 +347,30 @@ A computer: a cloud VM, a home server, a development host.
 
 ### service
 
-Something running that others depend on: a git host, ingress, DNS, a registry,
-monitoring.
+Something running: a deployment of a project, such as the container registry,
+or a shared service others depend on, such as ingress, DNS or monitoring.
 
-- **Facts:** `endpoint` (one or more), `environment`, `deployment.version`.
-- **Relations:** `runs-on` a machine, or `provided-by` an outside provider
-  described in the body; `configured-by` a project; `depends-on` other
-  services.
+- **Facts:** `endpoint` (many), `environment`, `deployment.version`,
+  `deployment.built_from`.
+- **Relations:** `runs-on` a machine (many), or `provided-by` an outside
+  provider described in the body; `configured-by` a project; `depends-on`
+  other services (many). The project it comes from is the inverse of the
+  project's `provides`.
 - **Body:** role and authority; dependencies and operational context;
   cautions.
 - **Belongs elsewhere:** live health (the monitoring system, linked);
   configuration; secrets.
-- **Reason:** the `workspace` service template. Live health changes by the
-  minute, so copying it would always be stale.
+- **Proposed:** every running deployment that someone relies on is a
+  `service`, and deployment facts (version, endpoint, where it runs) live only
+  there. There is no `deployed-on` relation on projects. Reason: one home per
+  fact (P3); a project-level version would be ambiguous as soon as a project
+  has two deployments. The `workspace` repository already separates the
+  Dockyard project from the `container-registry` service it runs as. Cost:
+  deployed applications that have no service entry today (for example Walls)
+  get one. This widens the glossary's wording ("a running service that other
+  things depend on"); see [dependencies](#dependencies-on-other-documents).
+- **Reason for the type:** the `workspace` service template. Live health
+  changes by the minute, so copying it would always be stale.
 
 ### runbook
 
@@ -316,7 +378,7 @@ A real, cross-project procedure, such as rebuilding a machine.
 
 - **Facts:** `last_successful_run` (`observed`, or `unknown` if never run),
   `changes_deployment` (true or false).
-- **Relations:** `applies-to` machines, services or projects.
+- **Relations:** `applies-to` machines, services or projects (many).
 - **Body:** purpose and owning sources; targets and prerequisites; expected
   impact; procedure; verification; rollback and escalation.
 - **Rules:** only verified steps or links to owning procedures; untested parts
@@ -331,9 +393,8 @@ A lasting decision with its reasoning, for example how releases are versioned.
 
 - **Fields beyond the common ones:** `decision_state`: `proposed`, `accepted`,
   `rejected` or `superseded`; `decided_on` (date); `decided_by`.
-- **Relations:** `supersedes` / `superseded-by` another decision;
-  `applies-to` entities; `from-task` the task where it was made
-  ([tasks](tasks.md)).
+- **Relations:** `supersedes` another decision; `applies-to` entities (many);
+  `from-task` the task where it was made ([tasks](tasks.md)).
 - **Body:** context; decision; alternatives and reasons; consequences;
   replacement.
 - **Rules:** a superseded decision is kept and linked to its replacement, never
@@ -354,7 +415,7 @@ catalog".
   for `shinan` and `git-host`, an `observed` fact that the enforcement is
   actually in place.
 - **Relations:** `applies-to` entity types, specific entities or the whole
-  workspace; `see-also` runbooks.
+  workspace (many); `see-also` runbooks (many).
 - **Body:** the rule; why; what it covers and does not; exceptions.
 - **Reason:** the `workspace` repository's policies (maintenance, access and
   safety, collaboration) are what agents most need, and they currently live
@@ -384,9 +445,9 @@ them for this work.
 Describes an agent for readers: what it is used for, its usual machines, any
 workspace-specific conventions.
 
-- **Facts:** `agent_record` (link to the agent's identity record); `usual-machine`
-  relations (informational; the machine of each agent session is recorded per
-  session, per the glossary).
+- **Facts:** `agent_record` (link to the agent's identity record);
+  `usual-machine` relations (many; informational, since the machine of each
+  agent session is recorded per session, per the glossary).
 - **Rules:** never holds tokens or permissions; links to the identity record.
   **Proposed** (glossary). Reason: as for `person`.
 
@@ -398,49 +459,105 @@ workspace-specific conventions.
 - **Custom types** defined by a workspace: **proposed** not in the first
   version. Reason: the eight types cover the `workspace` repository's whole
   catalog, and custom types multiply schema, validation and index work. A fact
-  key outside the type schema is allowed but flagged in review, so needs show
-  up before new types are added.
+  key outside the type schema is allowed (treated as single-valued) but
+  flagged in review, so needs show up before new types are added.
 
 ## 4. Facts
 
 ### 4.1 What a fact is
 
-A fact is one structured value in an entity's frontmatter: either a **keyed
-fact** (`key` and `value`) or a **relation** (`rel` and `to`, see
-[section 5](#5-relations)). The body is not made of facts.
+A fact is one structured value in an entity's frontmatter: a keyed value (such
+as `platform.arch: aarch64`) or a relation to another entity (such as
+`provides: service/container-registry`, see [section 5](#5-relations)). The
+body is not made of facts.
 
-- **Proposed** (the glossary leaves the unit to this document, naming "a
-  structured field or an explicitly marked statement" as options). Reason:
-  per-field facts are what D-007 asks for and what the agent index can query;
-  page-level checks (the `workspace` repository's `last_verified`) cannot say
-  which part was checked, which is why that repository already writes long
-  `verification_scope` lists. Marked statements inside prose were rejected
-  because they are harder to validate and to edit as single operations.
-  Per-section facts would still mix fresh and stale claims. This is listed
-  under [decisions needed](#decisions-needed-from-the-owner) because it shapes
-  everything else.
+**Proposed** (the glossary leaves the unit to this document, naming "a
+structured field or an explicitly marked statement" as options). Reason:
+per-field facts are what D-007 asks for and what the agent index can query;
+page-level checks (the `workspace` repository's `last_verified`) cannot say
+which part was checked, which is why that repository already writes long
+`verification_scope` lists. Marked statements inside prose were rejected
+because they are harder to validate and to change as single operations. This
+is listed under [decisions needed](#decisions-needed-from-the-owner) because it
+shapes everything else.
 
-A key may appear more than once when the values come from different sources or
-states (for example an `intended` and an `observed` value). Each item is then
-its own fact. **Proposed.** Reason: this is how discrepancies are recorded
-([4.6](#46-discrepancies)).
+### 4.2 Fact identity, cardinality and current facts
 
-### 4.2 Fact fields
+Without these rules, ordinary multi-valued data (two endpoints, two checkouts
+on one machine) would look like disagreement. All rules here are **proposed**.
 
-| Field | Required | Meaning |
-|---|---|---|
-| `key` or `rel` + `to` | yes | What the fact is about. Keys are lowercase, dotted (`platform.arch`). |
-| `value` | for keyed facts | String, number, boolean, date, URL, entity reference, or a list of these. `null` only with state `unknown`. |
-| `state` | yes | Fact state, see [4.3](#43-fact-states). |
-| `check` | see 4.3 | The ID of a [fact check](#44-fact-checks) on the same entity. |
-| `task` | for `proposed` | The task (or accepted `decision` entity) behind the change. |
-| `note` | no | Short explanation, especially for `unknown` and discrepancies. |
-| `restricted` | no | `true` for a restricted fact, see [section 7](#7-sensitive-information). |
+**Cardinality.** The type schema marks each key single-valued or multi-valued.
+Relations are multi-valued unless the schema says otherwise.
 
-**Proposed.** Reason: the smallest set that satisfies D-007 and the
-`workspace` repository's evidence rules.
+**Identity: which written facts are "the same fact".**
 
-### 4.3 Fact states
+| Kind of key | A fact is identified by |
+|---|---|
+| Single-valued key | key + fact state + `via` (if given) |
+| Multi-valued key | key + value |
+| Relation | relation + target + the attributes the schema names as identifying (for `checkout-on`, the `path`) |
+
+`via` is an optional short label for the means of observation, such as
+`filesystem` or `instance-metadata`. It is only needed when two different
+observations of one single-valued key are kept on purpose.
+
+**Current facts.** The current facts are exactly the facts in the latest
+applied revision. Earlier values live in [history](#9-history).
+
+**Replace or add beside.** When a catalog proposal writes a fact, it
+**replaces** the current fact with the same identity, and is **added beside**
+the others otherwise. So:
+
+- a new observation of a single-valued key by the same means replaces the old
+  one (Musashi's disk size seen again with `df`);
+- an observation by a different means is added beside it (instance metadata),
+  which can make a discrepancy;
+- an `observed` fact is added beside an `intended` fact for the same key;
+- a new value of a multi-valued key is added; a value that no longer holds is
+  removed by an explicit remove operation, never by omission.
+
+Reason: these are the reviewer's "same source replaces, different source adds"
+rule, made precise. Free-text sources cannot be compared reliably, so `via`
+names the "source" that matters for identity.
+
+### 4.3 How facts are written
+
+The `facts` field is a list of **groups**. A group is either one fact check
+with the facts it covers, or a list of facts that have no fact check.
+
+```yaml
+facts:
+  - checked: 2026-11-13            # a fact check group
+    by: guneet via opencode-daedalus
+    scope: Read-only check of the VM platform
+    source: Read-only SSH and Azure instance metadata (workspace issue 101)
+    limits: Public IPs and network security group not inspected
+    observed:                      # facts by state
+      platform.vm_size: Standard_D2ps_v6
+      disk.root.used: 93%
+  - proposed:                      # facts with no fact check
+      endpoint: {value: https://shinan.guneet.dev, task: T-12}
+  - unknown:
+      backup.freshness: Backups are paused; no restore test
+```
+
+- **Short form:** `key: value`. **Long form**, when a fact needs more:
+  `key: {value: ..., via: ..., note: ..., restricted: true, task: ..., remove: true}`.
+  A multi-valued key holds a list. In an `unknown` list the value is a short
+  note saying why it is unknown.
+- **No check IDs.** A fact check is identified by its group. Catalog
+  proposals carry their fact checks inline, and Shinan writes them into the
+  Markdown when it applies them, merging a new check into an existing group
+  only when every field matches. Reason: invented local IDs such as `c5`
+  collide when two proposals add checks at once.
+- A fact appears in exactly one group. A recheck moves it to the new group.
+  Groups left empty are dropped from the current document and remain in
+  history.
+
+**Proposed.** Reason: one line per fact in the common case (see the Musashi
+trial in [2.5](#25-example)), and facts checked together sit together.
+
+### 4.4 Fact states
 
 The four state names are **decided** (plan, Catalog pillar). Their meanings
 follow the glossary's [fact state test](domain-model.md#fact-state): if the
@@ -448,22 +565,26 @@ owning source declares something now, it is `intended`, even if not yet
 applied; if it is agreed but not yet in the owning source, it is `proposed`.
 The rules for each are **proposed**:
 
-| State | Means | Needs a fact check? | Source must be |
+| State | Means | Fact check | Source must be |
 |---|---|---|---|
-| `intended` | The owning source currently declares this should be true. | Yes. | The owning source, pinned to a revision where possible, or a `decision` or `policy` entity. |
-| `observed` | Someone saw this when they checked. | Yes. | A description of the observation (what, how, from where), optionally linking the task or event. |
-| `proposed` | An accepted change that the owning source does not yet declare. | No. | The `task` (or accepted `decision` entity) behind it. |
-| `unknown` | Not known. | Optional: with a check it means "looked and could not tell"; without, "never looked". | As for `observed`, if a check is given. |
+| `intended` | The owning source currently declares this should be true. | Required | The owning source, pinned to a revision where possible, or a `decision` or `policy` entity. |
+| `observed` | Someone saw this when they checked. | Required | A description of the observation (what, how, from where), optionally linking the task or event. |
+| `proposed` | An accepted change that the owning source does not yet declare. | None | The `task` (or accepted `decision` entity) behind it, on the fact. |
+| `unknown` | Not known. | Optional: in a check group it means "looked and could not tell"; in an `unknown` list without a check, "never looked". | As for `observed`, if in a check group. |
 
 Rules:
 
+- A `proposed` fact can add a value or, with `remove: true`, plan the removal
+  of a current one (for example a checkout that will be deleted).
+  **Proposed.** Reason: plans to take things away matter as much as plans to
+  add them.
 - A `proposed` fact never turns into another state by itself. When the owning
   source declares the change, a new `intended` fact replaces it; when the
   change is seen in the world, a new `observed` fact records it. Both come
   with fact checks. **Proposed.** Reason: the `workspace` repository's rule
   that "planned changes are proposals until implemented and verified".
 - A merged change that is not yet applied is `intended`; its absence in the
-  world shows as a [discrepancy](#46-discrepancies) with the `observed` fact.
+  world shows as a [discrepancy](#47-discrepancies) with the `observed` fact.
   **Proposed** (glossary test). Reason: drift between source and reality is
   exactly what the catalog should surface.
 - When the task behind a `proposed` fact ends without delivering it (for
@@ -475,36 +596,38 @@ Rules:
   document status. This document works either way; a rename is a
   find-and-replace of the value.
 
-### 4.4 Fact checks
+### 4.5 Fact checks
 
 A **fact check** records one act of checking. Several facts can share one
 check when they were checked together.
 
 | Field | Required | Meaning |
 |---|---|---|
-| `checked` | yes | When the check actually happened: a date, or date and time. Not when the page was edited or the proposal applied. |
-| `by` | yes | The actor who checked: a person, or an agent session acting for a person, written as the [identity](identity.md) document defines. Shinan for automatic fact checks. |
+| `checked` | yes | When the check actually happened: a date, or date and time. Not when the page was edited or the proposal applied. `null` only for [imported facts](#13-mapping-from-the-workspace-repositorys-catalog) whose origin is known but that were never checked. |
+| `by` | yes | The actor who checked: a person, or an agent session acting for a person, written as the [identity](identity.md) document defines; Shinan for automatic fact checks. `unknown` is allowed only for imported checks. |
 | `scope` | yes | What exactly was checked, in one line. |
 | `source` | yes | Where the evidence is: a URL (pinned where possible), a repository revision, or a short description of the observation. No raw logs or sensitive output. |
+| `limits` | no | What was deliberately or necessarily **not** checked, in one line. |
 
 - **Decided** that each fact records source and last-checked time (D-007).
-- **Proposed:** the shared, named check record and these fields. Reason: they
-  are the `workspace` repository's `last_verified`, `verification_scope` and
-  `verification_source`, moved from page level to the facts they cover. Sharing
-  one check across facts avoids repeating the same evidence ten times.
-- **Proposed:** rechecking a fact without changing it adds a new fact check
-  and points the fact at it. Checking one fact never refreshes others.
-  Reason: the `workspace` repository's rule against refreshing dates
-  mechanically.
-- **Proposed:** fact checks no fact refers to any more are dropped from the
-  current document; they remain in [history](#9-history). Reason: keeps
-  frontmatter short.
-- **Proposed:** when a check goes through Shinan, the `by` value must match the
-  actor Shinan records for the catalog proposal, with its attribution
-  confidence. Reason: a self-declared `by` that disagrees with Shinan's own
-  record would undermine trust; see [identity](identity.md).
+- **Proposed:** the fact check record and these fields. Reason: they are the
+  `workspace` repository's `last_verified`, `verification_scope` and
+  `verification_source`, moved from page level to the facts they cover.
+  `limits` keeps what that repository writes as "Verification limits" (for
+  example Dockyard's "No registry login, image push/pull … was performed"),
+  which tells a reader where trust ends.
+- **Proposed:** rechecking a fact without changing it records a new fact check
+  for it. Checking one fact never refreshes others. Reason: the `workspace`
+  repository's rule against refreshing dates mechanically.
+- **Proposed:** when a check goes through Shinan, `by` must match the actor
+  Shinan records for the catalog proposal, with its attribution confidence.
+  Reason: a self-declared `by` that disagrees with Shinan's own record would
+  undermine trust; see [identity](identity.md).
+- A fact check with `checked: null` shows as **not checked**. It counts as a
+  source and a (missing) last-checked time for D-007, in the same way roadmap
+  criterion R5 accepts "an explicit `unknown`". **Proposed.**
 
-### 4.5 Freshness
+### 4.6 Freshness
 
 Freshness is the time since a fact's last check. It is a risk signal, never a
 verdict: an old fact is not wrong, it is less certain.
@@ -525,17 +648,19 @@ verdict: an old fact is not wrong, it is less certain.
 - **Open:** the actual interval values; they are set while building the type
   schemas.
 
-### 4.6 Discrepancies
+### 4.7 Discrepancies
 
-A **discrepancy** exists when two current facts with the same key (or the same
-relation and target) have different values and neither is `proposed`. Typical
+A **discrepancy** exists when a **single-valued** key has two or more current
+facts, none of them `proposed` or `unknown`, whose values differ. Typical
 cases:
 
 - `intended` differs from `observed` (the configuration repository says one
   thing, the machine shows another);
-- two `observed` facts from different sources differ (the `workspace`
-  repository records Azure instance metadata reporting 64 GB after the disk
-  had been grown to 128 GiB).
+- two `observed` facts with different `via` differ (Musashi's instance
+  metadata reported 64 GB after the disk had been grown to 128 GiB).
+
+Several values of a multi-valued key are never a discrepancy. Two checkouts on
+Musashi are two facts with different identities.
 
 Rules (**proposed**; reason: P5 and the `workspace` repository's practice):
 
@@ -544,27 +669,39 @@ Rules (**proposed**; reason: P5 and the `workspace` repository's practice):
 - Discrepancies are detected automatically, shown prominently in the wiki and
   returned with the entity in the agent index.
 - A discrepancy is resolved by one of: changing the world (a task, then a new
-  check); changing the owning source (then a new `intended` check); or
-  recording that the difference is accepted, with a `note` and an owner. An
-  accepted discrepancy stays visible but is not flagged as needing attention.
+  check); changing the owning source (then a new `intended` check); removing
+  an observation shown to be wrong, with a note in the proposal; or recording
+  that the difference is accepted, with a `note` and an owner. An accepted
+  discrepancy stays visible but is not flagged as needing attention.
 - A `proposed` fact that differs from current facts is a plan, not a
   discrepancy.
+- **Open:** whether to flag gaps between the `intended` and `observed` values
+  of a multi-valued key (for example an intended endpoint never observed).
+  This needs to know whether an observation was complete, which `limits` only
+  states in prose.
 
-### 4.7 Unknowns
+### 4.8 Unknowns
 
-Every `unknown` fact appears in the entity's generated **known unknowns** list
-and in a workspace-wide list. **Proposed.** Reason: the `workspace` repository
-writes "Known unknowns" by hand on every entry; generating it keeps it honest.
-Required facts of a type that are missing are treated as `unknown` "never
-looked" (not as errors) so new entities can be created from partial
-knowledge. **Proposed.** Reason: the `workspace` templates say to record
-`unknown` rather than invent information.
+Two lists are generated, and kept apart (**proposed**):
+
+- **Known unknowns:** facts written as `unknown`, deliberately. These appear
+  on the entity page and in a workspace-wide list. Reason: the `workspace`
+  repository writes "Known unknowns" by hand on every entry because they
+  matter; generating the list keeps it honest.
+- **Not yet recorded:** required keys of the type schema that the entity does
+  not mention at all, and facts with `checked: null`. These are shown in a
+  quieter, separate place. Reason: otherwise every new entity would list every
+  required key and drown out the deliberate unknowns.
+
+Missing required keys are not validation errors, so entities can be created
+from partial knowledge. **Proposed.** Reason: the `workspace` templates say to
+record `unknown` rather than invent information.
 
 ## 5. Relations
 
-A relation is a fact whose value is another entity: `rel` names the relation,
-`to` the target. It has a state and a check like any fact. "Dockyard's
-deployment runs on Musashi" (the glossary's example of a fact) is a relation.
+A relation is a fact whose value is another entity. It has a state and a fact
+check like any fact. "Dockyard's deployment runs on Musashi" (the glossary's
+example of a fact) is the `runs-on` relation of `service/container-registry`.
 
 - **Proposed:** relations are facts. Reason: relations go stale like any other
   claim, and the glossary's own fact example is a relation.
@@ -574,20 +711,21 @@ deployment runs on Musashi" (the glossary's example of a fact) is a relation.
   project lists; Backstage likewise generates inverse pairs such as `ownedBy`
   and `ownerOf` (checked 2026-11-16, link in P6).
 - **Proposed:** a relation may carry small attributes, such as the `path` of a
-  checkout. Reason: a checkout is meaningless without its path, and making it a
-  separate entity would be heavy.
+  checkout, written in long form (`{to: machine/musashi, path: /mnt/...}`).
+  The schema says which attributes identify it. Reason: a checkout is
+  meaningless without its path, and making it a separate entity would be heavy.
 - **Proposed:** a fixed vocabulary per type pair, initially:
 
 | Relation | From | To | Inverse shown on target |
 |---|---|---|---|
-| `checkout-on` (with `path`) | project | machine | checkouts |
-| `deployed-on` | project | machine | deployments |
+| `checkout-on` (identified by `path`) | project | machine | checkouts |
 | `provides` | project | service | provided by |
 | `runs-on` | service | machine | services |
 | `configured-by` | machine, service | project | configures |
 | `depends-on` | project, service | service | dependents |
 | `on-network` | machine | service | members |
 | `applies-to` | runbook, policy, decision | any entity or type | runbooks, policies, decisions |
+| `see-also` | policy | runbook | policies |
 | `supersedes` | decision | decision | superseded by |
 | `from-task` | decision | task | decisions |
 | `usual-machine` | agent | machine | agents |
@@ -626,31 +764,71 @@ The catalog holds three kinds of information and links to everything else.
 | Sign-in, roles, tokens, git host accounts | [Identity](identity.md) |
 | Credentials | A secret manager; never the catalog |
 
-An `intended` fact may repeat a value from its owning source (for example the
-port a configuration file sets) when readers need it for routing, because its
-fact check pins the revision it came from. Commands and whole configuration
-blocks are never copied. **Proposed.** Reason: a pinned value can be checked
-for staleness against its source; a copied command block cannot, and invites
-running outdated instructions.
+An `intended` fact may repeat a single value from its owning source (for
+example the port a configuration file sets) when readers need it for routing.
+Commands and whole configuration blocks are never copied. **Proposed.**
+Reason: the fact check pins the source revision, so the value can be compared
+with its source and flagged when the source moves on; a copied command block
+cannot be compared that way and invites running outdated instructions.
 
 ## 7. Sensitive information
 
 The web app is on the public internet behind sign-in and holds infrastructure
-details (D-015), so the catalog needs two protections.
+details (D-015), so the catalog needs three protections.
 
-- **No credentials, ever.** Every catalog proposal is scanned for things that
-  look like secrets (private keys, tokens, passwords); a match blocks it.
-  **Proposed.** Reason: P8; once applied, a secret is in history and must be
-  purged ([section 9](#9-history)). The `workspace` repository relies on
-  reviewers to catch this; automation is cheaper and more reliable.
-- **Restricted facts and entities.** A fact or entity can be marked
-  `restricted` (for example internal addresses, host key fingerprints, account
-  layouts). Restricted content is hidden from readers who lack access, in both
-  the wiki and the agent index. Who has access is owned by
-  [identity](identity.md). **Proposed.** Reason: some routing facts are
-  harmless to the team but useful to an attacker; a whole-workspace boundary
-  alone is coarse once viewers and outside readers are invited (D-019).
-  Listed under [decisions needed](#decisions-needed-from-the-owner).
+### 7.1 No credentials, ever
+
+Every catalog proposal is scanned for things that look like secrets (private
+keys, tokens, passwords) in **all** its text: fact values, `note`, fact check
+`scope`, `source` and `limits`, entity fields, the body and the proposal's
+explanation. A match blocks it. **Proposed.** Reason: P8; a secret in any
+field ends up in history and must then be redacted
+([section 9](#9-history)). The `workspace` repository relies on reviewers to
+catch this; automation is cheaper and more reliable. Shinan's own token check
+([identity](identity.md)) is one part of this scan.
+
+### 7.2 Restricted content
+
+A fact or a whole entity can be marked `restricted`, for example internal
+addresses, host key fingerprints and access layouts. Type schemas mark such
+keys restricted by default (`hostname`, `access.address`, `access.host_key`);
+an author can restrict any other fact, and lifting a restriction needs catalog
+approval ([8.2](#82-when-catalog-approval-is-needed)).
+
+Restricted content is visible only to readers allowed to see it (who that is
+is owned by [identity](identity.md)). The rule applies **everywhere the
+content can appear** (**proposed**; reason: a restriction that leaks through
+one side door protects nothing):
+
+- the wiki and its search;
+- the agent index and every MCP or CLI answer;
+- revisions and history views, including diffs between revisions;
+- event summaries and timelines;
+- the recent changes feed;
+- catalog proposal review screens, and pending catalog proposals shown on
+  entities or in the index;
+- the workspace-wide lists (discrepancies, unknowns, due for recheck);
+- exports and any Git export: a full export includes restricted content and
+  is itself restricted; a reduced export leaves it out and says so. The export
+  screen warns that a Git export keeps whatever it receives in its history.
+
+Hidden content is replaced by a visible "restricted" marker, never silently
+dropped, so readers know something is there. Only members who can see the
+restricted content of a proposal may review or approve it. **Proposed.**
+
+**Agents and model providers.** Whatever an agent reads is sent to its coding
+tool's model provider, a third party. **Proposed:** restricted content goes
+only to agent tokens that carry an explicit permission for it, which the
+person grants knowingly (the scope itself is owned by
+[identity](identity.md)). Reason: filtering only by what the member may see
+would send restricted facts to third parties by default; agents that need,
+say, a host address for a task can be given the permission.
+
+**Open (decision needed):** whether restriction is in the first version at
+all. The [identity draft](https://github.com/guneet-xyz/shinan/pull/24)
+currently proposes that every member reads the whole catalog in the first
+version and leaves restricted entities open; see
+[dependencies](#dependencies-on-other-documents).
 
 ## 8. Editing and approval
 
@@ -676,18 +854,21 @@ history need):
 
 - the author (actor) and, where there is one, the related task;
 - a short explanation of why;
-- the changes, as a list of operations, each stating the value it expects to
-  replace (see [8.5](#85-conflicts));
-- for every new or changed fact, its fact check (evidence).
+- the changes, as a list of operations, each stating what it expects to find
+  (see [8.5](#85-conflicts));
+- for every new or changed fact, its fact check, inline.
 
-**Operations** (**proposed**): create entity; set or remove a fact; add a fact
-check (a recheck); edit body (whole body or one section); change an entity field
-(title, summary, status, owner); retire; change ID. Agents send operations
-through MCP or the CLI ([agent integrations](agent-integrations.md)); the web
-editor and any outside Markdown edit ([8.7](#87-edits-outside-shinan)) are
-turned into the same operations. Reason: operations on single facts rarely
-conflict and make review precise ("disk.data.size: 64 GiB → 128 GiB"), where a
-whole-file diff hides what changed.
+**Operations** (**proposed**): create entity; set a fact (replacing or adding
+beside, per [4.2](#42-fact-identity-cardinality-and-current-facts)); remove a
+fact; recheck facts; edit body (whole body or one section); change an entity
+field (title, summary, status, owner); restrict or unrestrict; retire; change
+ID. Agents send operations through MCP or the CLI
+([agent integrations](agent-integrations.md)); the web editor produces the
+same operations. Shinan applies them by writing new Markdown from the latest
+revision and validating the result (the [D-006 invariant](#21-one-document-per-entity-and-what-source-of-truth-means)).
+Reason: operations on single facts rarely conflict and make review precise
+("disk.data.size: 64 GiB → 128 GiB"), where a whole-file diff hides what
+changed.
 
 One proposal may change several entities and is applied all or nothing.
 **Proposed.** Reason: retiring a machine and moving its checkouts must not
@@ -695,61 +876,79 @@ half-happen.
 
 ### 8.2 When catalog approval is needed
 
-The glossary proposes a strict first version: every catalog proposal needs
-catalog approval except a recheck that leaves the claim unchanged, and
-workspace settings may relax this later. This document adopts that as the
-first-version default and proposes the shape of the relaxed setting, so that
-the change after the proof of concept is a settings switch, not a redesign.
-Settings and who may approve are owned by [identity](identity.md).
+Changes fall into classes:
 
-| Class | Examples | First version | Relaxed setting (proposed) |
+| Class | Examples | Option A: strict | Option B: gated classes only |
 |---|---|---|---|
 | Recheck | New fact check, value unchanged | Applies on its own | Applies on its own |
-| Observed or unknown facts | Add or change an `observed`/`unknown` fact or relation | Needs catalog approval | Applies on its own |
-| Intended facts | From an owning source pinned to a revision | Needs catalog approval | Applies on its own |
-| Planned changes | Add or remove a `proposed` fact | Needs catalog approval | Applies on its own |
-| Body and bookkeeping | Body text, title, summary, new entity of type project, machine, service or runbook | Needs catalog approval | Applies on its own |
-| Rules | Create or change a `policy`; change a `decision` to `accepted`, `rejected` or `superseded`; the start-here document | Needs catalog approval | Needs catalog approval |
-| Lifecycle | Deprecate, retire, change ID, change owner | Needs catalog approval | Needs catalog approval |
-| People and agents | Any change to `person` or `agent` entities | Needs catalog approval | Needs catalog approval |
-| Exposure | Removing `restricted` from a fact or entity | Needs catalog approval | Needs catalog approval |
-| Doubtful | A recheck or change whose fact check is older than the current one; accepting a discrepancy; breaking a warning rule of validation | Needs catalog approval | Needs catalog approval |
+| Observed or unknown facts | Add, change or remove an `observed`/`unknown` fact or relation | Catalog approval | Applies on its own |
+| Intended facts | From an owning source pinned to a revision | Catalog approval | Applies on its own |
+| Planned changes | Add or remove a `proposed` fact | Catalog approval | Applies on its own |
+| Body and bookkeeping | Body text, title, summary, new entity of type project, machine, service or runbook | Catalog approval | Applies on its own |
+| Rules | Create or change a `policy`; change a `decision` to `accepted`, `rejected` or `superseded`; change the start-here document | Catalog approval | Catalog approval |
+| Lifecycle | Deprecate, retire, change ID, change owner | Catalog approval | Catalog approval |
+| People and agents | Any change to `person` or `agent` entities | Catalog approval | Catalog approval |
+| Exposure | Removing `restricted` from a fact or entity | Catalog approval | Catalog approval |
+| Doubtful | A recheck or change whose fact check is older than the current one; accepting a discrepancy; breaking a warning rule of validation | Catalog approval | Catalog approval |
 
-- **Proposed:** the first-version column. Reason: the glossary's reason,
-  starting strict while trust in the catalog is being built; the proof of
-  concept covers a few projects only (D-018), so the volume is small.
-- **Proposed:** the relaxed column, for a workspace owner to switch on.
-  Reason: today agents merge routine changes to the `workspace` repository's
-  catalog themselves, under standing authority, after validation. At that
-  scale, approving every fact would bury one person and push agents to skip
-  updates. People keep control of what changes the rules, what is hard to
-  undo, and what exposes information.
-- **Proposed:** a person's own edit that would need catalog approval is
-  applied at once when that person may approve it. Reason: approving one's own
-  edit is a formality.
+**Expected owner workload during the trial.** From the `workspace`
+repository's history (2026-11-06 to 2026-11-16, at `86bba32`), 49 commits
+changed the 13 catalog entries that roadmap RM-6 puts in the trial
+workspace, about 4 to 5 a day. The estimates below assume one catalog
+proposal per commit. Five created entries; none changed an entry's
+status or owner, and there are no policies or decisions in the trial set.
 
-Changes that apply on their own still appear in a **recent changes** feed,
-grouped per proposal, and can be reverted with one action (a new proposal
-restoring the earlier values). **Proposed.** Reason: review after the fact
-keeps people informed without blocking agents. The feed's design is owned by
-[human experience](human-experience.md).
+- **Option A (strict)**, which the [glossary](domain-model.md#catalog-proposal-and-approval)
+  currently proposes for the first version: about 4 to 5 approvals a day,
+  plus the initial seeding. Each wait counts against roadmap criterion R7
+  (90% of changes applied within two days). It also adds a sign-off that the
+  `workspace` repository's access policy deliberately removed (routine
+  documentation updates have standing authority; "do not add a generic final
+  signoff gate").
+- **Option B (gated classes only):** close to zero approvals a day for the
+  same history; the owner reads the recent changes feed when they choose and
+  reverts with one action.
+
+**Recommended: Option B from the start of the trial.** Reason: it keeps
+today's standing authority for routine updates while people keep control of
+rules, irreversible changes, identity and exposure. During the trial the
+`workspace` repository stays the source of truth (D-018), so a wrong
+catalog change is cheap, visible in the feed and easy to revert. If the owner
+prefers Option A, approval should work in bulk (all proposals of one task, or
+a selected list, at once), and the switch to Option B should be tied to a
+readiness check. This changes the glossary's proposal and current workspace
+practice, so it is an [owner decision](#decisions-needed-from-the-owner).
+Settings and who may approve are owned by [identity](identity.md).
+
+- **Proposed (either option):** a person's own edit that would need catalog
+  approval is applied at once when that person may approve it. Reason:
+  approving one's own edit is a formality.
+- **Proposed (either option):** changes that apply on their own appear in a
+  **recent changes** feed, grouped per proposal, and can be reverted with one
+  action (a new proposal restoring the earlier values). Reason: review after
+  the fact keeps people informed without blocking agents. The feed's design is
+  owned by [human experience](human-experience.md).
 
 ### 8.3 Validation
 
-Every proposal is validated before it applies or reaches a reviewer.
-**Proposed.** Reason: the `workspace` repository's `scripts/check.py` does this
-for links and frontmatter and is the main reason its entries stay consistent.
+Every proposal is validated, on the Markdown it would produce, before it
+applies or reaches a reviewer. **Proposed.** Reason: the `workspace`
+repository's `scripts/check.py` does this for links and frontmatter and is the
+main reason its entries stay consistent.
 
 Blocking rules (the proposal cannot apply):
 
 - frontmatter parses; required entity fields present; `type` and `status`
   valid;
-- references (`owner`, `to`, body links to entity IDs, `check`) resolve;
-- every non-`proposed`, non-`unknown` fact has a fact check with all four
-  fields, and `checked` is not in the future;
-- `proposed` facts link a task or an accepted decision;
-- relation used between allowed types;
-- no secret-like content ([section 7](#7-sensitive-information));
+- references (`owner`, relation targets, body links to entity IDs) resolve;
+- every `intended` and `observed` fact is in a fact check group whose
+  `checked`, `by`, `scope` and `source` are present, and `checked` is not in
+  the future; `checked: null` and `by: unknown` only on imported checks;
+- `proposed` facts name a task or an accepted decision;
+- no two current facts share an identity
+  ([4.2](#42-fact-identity-cardinality-and-current-facts));
+- relations used only between allowed types;
+- no secret-like content anywhere ([7.1](#71-no-credentials-ever));
 - no task status copied into facts (for example a `status` key holding a task
   status value).
 
@@ -757,6 +956,7 @@ Warning rules (the proposal needs catalog approval, with the reason shown):
 
 - fact key not in the type schema;
 - the new fact check is older than the one it replaces;
+- a key that is restricted by default written without `restricted`;
 - an external link does not respond (when link checking exists; **open**).
 
 Validation cannot prove a fact matches reality; only fact checks do.
@@ -775,57 +975,70 @@ How tasks show this, and whether it is part of "done", is owned by
 
 ### 8.5 Conflicts
 
-Each operation states the value (and fact check) it expects to replace. If the
-current value is different when the proposal is applied, that operation
-conflicts. **Proposed.**
+Each operation states what it expects to find: the current value and fact
+check of the fact it replaces or removes, or that no fact with that identity
+exists yet. When the proposal is applied, Shinan compares these with the
+latest revision. **Proposed.**
 
-- A conflicting proposal does not apply on its own. Its author is told and can
-  refresh it; otherwise a person resolves it.
+- Operations whose expectations still hold apply, even if other parts of the
+  same entity changed meanwhile. Reason: two agents rechecking different
+  facts of Musashi should not block each other.
+- If any expectation fails, the proposal does not apply on its own. Its author
+  is told and can refresh it; otherwise a person resolves it.
 - Competing claims are resolved from evidence and check time, not from which
-  proposal arrived last. Two different values with valid fact checks may both be
-  kept as a discrepancy.
+  proposal arrived last. Two different values with valid fact checks may both
+  be kept, as a discrepancy where the key is single-valued.
 - Reason: the `workspace` repository's rule ("resolve competing claims from
   evidence and observation time, not merge order"); per-fact operations make
   real conflicts rare.
 
+The architecture draft proposes failing any proposal whose entity has moved
+on since its base revision; see [dependencies](#dependencies-on-other-documents).
+
 ### 8.6 Who sees and reviews proposals
 
-Pending catalog proposals are shown on the entities they touch and in a review
-list; agents can read them through the agent index so they do not duplicate
-one another. Members and agents can comment on a proposal; only people
-approve. **Proposed.** Reason: agents working in parallel need to see pending
-changes, as they see open pull requests today.
+- Pending catalog proposals are shown on the entities they touch and in a
+  review list; agents can read them through the agent index so they do not
+  duplicate one another. **Proposed.** Reason: agents working in parallel need
+  to see pending changes, as they see open pull requests today.
+- Members and agents can comment on a catalog proposal; only people approve.
+  An agent may be asked to review a proposal (for example by the skill, for
+  large or doubtful proposals) and records its findings as a comment.
+  **Proposed.** Reason: agent review is cheap and is how documents in this
+  repository are reviewed today; a comment informs the person without letting
+  an agent approve.
+- Restricted content in a proposal is shown only to those allowed to see it
+  ([7.2](#72-restricted-content)).
 
 ### 8.7 Edits outside Shinan
 
-If the documents can be edited outside Shinan (for example in a git
-repository, should [architecture](architecture.md) choose one), such edits
-enter as catalog proposals, attributed to whoever made them with the
-attribution confidence Shinan can establish, and go through the same
-validation and catalog approval. **Proposed.** Reason: there must be one path to
-change the source of truth, or catalog approval and history mean nothing.
-**Open (decision needed):** whether catalog proposals are native to Shinan or
-are pull requests on a git repository that holds the documents.
+In the first version the catalog is changed only through catalog proposals in
+Shinan. Any Git export is one-way and read-only. **Proposed.** Reason: there
+must be one path to change the source of truth, or catalog approval and
+history mean nothing; this matches the architecture draft's one-way export.
+If two-way editing is ever added, edits made outside Shinan would enter as
+catalog proposals, attributed with the confidence Shinan can establish, and go
+through the same validation and approval.
 
 ## 9. History
 
-- Every applied proposal creates a new **catalog revision** of the documents it
-  changed and an event credited to its author (and approver), which appears on
-  the entity's timeline. **Proposed.** Reason: events are the glossary's single
-  record of what happened; revisions let anyone see an entity as it was.
+- Every applied proposal creates a new **catalog revision**, the full Markdown
+  of the documents it changed, and an event credited to its author (and
+  approver), which appears on the entity's timeline. **Proposed.** Reason:
+  events are the glossary's single record of what happened; revisions let
+  anyone see an entity as it was.
 - Revisions are not edited. A revert is a new proposal. **Proposed.** Reason:
   the glossary's rule that events are not edited.
 - Retired entities stay readable, marked retired, linked to their replacement,
   and excluded from default search. **Proposed.** Reason: the `workspace`
   repository keeps retired entries (for example the Takezo machine) because
   their history still answers questions.
-- **Purge** removes content from all revisions, for leaked secrets or personal
-  data only. Only a workspace owner can purge; a purge leaves an event saying
-  what was removed and why, without the content. **Proposed.** Reason: some
-  content must not survive, but its removal must be visible. This is the
-  catalog's answer to the glossary's open question on redaction; the
-  installation-wide rule, including events, belongs to
-  [architecture](architecture.md) and [identity](identity.md).
+- **Redaction** removes leaked secrets or personal data from catalog
+  revisions, as the [architecture draft](architecture.md) proposes for all
+  records: the content is replaced by a marker, the redaction is an event, and
+  derived data is rebuilt. **Proposed.** Reason: some content must not
+  survive, but its removal must be visible. Who may redact is owned by
+  [identity](identity.md).
 - How revisions are stored: [architecture](architecture.md).
 
 ## 10. The wiki
@@ -837,16 +1050,17 @@ trustworthy at a glance, per D-007):
 
 - the body, rendered;
 - every fact with its state, value, freshness (age, and "due for recheck" or
-  "not checked") and a link to its fact check's source and scope;
+  "not checked") and its fact check's source, scope and limits;
 - discrepancies, prominently, with both sides' evidence;
-- generated sections: inverse relations, known unknowns, pending catalog
-  proposals, related tasks, the entity timeline;
-- restricted content only to readers allowed to see it, with a visible note
-  that something is hidden;
+- generated sections: inverse relations, known unknowns (and, separately,
+  not-yet-recorded keys), pending catalog proposals, related tasks, the entity
+  timeline;
+- restricted content only to readers allowed to see it, with a visible marker
+  where something is hidden ([7.2](#72-restricted-content));
 - index pages per entity type, from `title`, `summary`, `status` and `owner`
   (replacing the hand-written tables in the `workspace` repository's catalog
   README files);
-- workspace-wide lists: discrepancies, facts due for recheck, unknowns,
+- workspace-wide lists: discrepancies, facts due for recheck, known unknowns,
   recent changes, and catalog proposals waiting for catalog approval.
 
 ## 11. Start here
@@ -860,8 +1074,7 @@ names a "start here" path (Wiki and onboarding pillar, owned by
   holding no facts. **Proposed.** Reason: the start-here path is a curated
   route, not a thing in the world, so it should not pretend to have facts;
   keeping it in the catalog gives it history and approval. Changing it needs
-  catalog approval by default, because it shapes how agents behave.
-  Listed under [decisions needed](#decisions-needed-from-the-owner).
+  catalog approval, because it shapes how agents behave.
 - It holds two ordered paths of entity references with a sentence on each:
   - **for people:** what the workspace covers, the main projects, machines and
     services, the policies that matter, who owns what;
@@ -902,11 +1115,11 @@ whether it can rely on a fact, in one read):
 
 - entity fields (`id`, `type`, `title`, `summary`, `status`, `owner`,
   `replaced_by`, `aliases`);
-- every fact with its state, value, note and its fact check inlined
-  (`checked`, `by`, `scope`, `source`), plus the recheck interval from the
-  type schema;
+- every fact with its state, value, `via`, note, cardinality and identity, its
+  fact check (`checked`, `by`, `scope`, `source`, `limits`), and the recheck
+  interval from the type schema;
 - relations in both directions (written and generated);
-- discrepancies and unknowns;
+- discrepancies, known unknowns and not-yet-recorded keys;
 - the policies and runbooks that apply to it (through `applies-to`, including
   ones that apply to its type or to the whole workspace);
 - pending catalog proposals touching it;
@@ -914,24 +1127,26 @@ whether it can rely on a fact, in one read):
 - the catalog revision it was generated from.
 
 Workspace-level entries: the agents' start-here path, and the lists of
-discrepancies, facts due for recheck and unknowns.
+discrepancies, facts due for recheck and known unknowns.
 
 ### 12.2 Rules
 
-- **Generated only.** Nothing writes to the index except generation from the
-  documents; changes go through catalog proposals. **Decided** (D-006).
+- **Generated only, rebuildable.** Nothing writes to the index except
+  generation from the Markdown, and it can be rebuilt from the Markdown alone.
+  **Decided** that it is generated (D-006); rebuildable is **proposed**
+  (P1).
 - **Every answer names the catalog revision.** **Proposed.** Reason: the
   `workspace` repository asks agents to state the revision they consulted;
   with it, an agent's claim "the catalog said X" can be checked later.
-- **Lag is visible.** If the index is behind the latest applied revision, the
-  answer says so. **Proposed.** Reason: a silently stale index is the failure
-  D-007 exists to prevent.
+- **Lag is visible.** If the index is behind the latest applied revision, or
+  is being rebuilt, the answer says so. **Proposed.** Reason: a silently stale
+  index is the failure D-007 exists to prevent.
 - **Freshness is computed when read**, from `checked` and the current time,
   not stored. **Proposed.** Reason: stored ages are wrong a day later.
-- **Access rules apply.** Restricted content is left out for agents whose
-  member cannot see it, and the answer says something was left out.
-  **Proposed.** Reason: [section 7](#7-sensitive-information); an agent never
-  sees more than its member ([identity](identity.md)).
+- **Access rules apply.** Restricted content is left out unless the agent's
+  token is allowed it ([7.2](#72-restricted-content)), and the answer marks
+  what was left out. An agent never sees more than its member
+  ([identity](identity.md)). **Proposed.**
 - **Format:** **proposed** structured JSON per entity, following the same
   field names as the documents. Reason: every coding tool and MCP client
   handles JSON; matching names mean agents learn one vocabulary. The exact
@@ -940,8 +1155,8 @@ discrepancies, facts due for recheck and unknowns.
   [agent integrations](agent-integrations.md)), **proposed**: get an entity by
   ID or alias; list by type and status; text search across titles, summaries,
   facts and body sections; neighbours through relations; the policies and
-  runbooks for an entity; context for a task's related entities; and the
-  workspace lists in 12.1.
+  runbooks for an entity; context for a task's related entities; changes
+  since a given catalog revision; and the workspace lists in 12.1.
 
 ### 12.3 Automatic fact checks by Shinan
 
@@ -956,107 +1171,160 @@ is in the first version. Shinan never connects to machines to check facts
 
 ## 13. Mapping from the `workspace` repository's catalog
 
-The move itself is owned by the [roadmap](roadmap.md) (D-018). This mapping
-shows that the model above can hold what the `workspace` repository holds
-today. **Proposed.**
+When and how the move happens is owned by the [roadmap](roadmap.md) (D-018);
+the same rules apply to the trial workspace's seeding (roadmap RM-6) and to
+the final import. This mapping shows that the model above can hold what the
+`workspace` repository holds today. **Proposed.**
+
+### 13.1 Provenance of imported facts
+
+Copying is not checking. An imported fact keeps exactly the provenance the
+entry had, and no more (**proposed**; reason: the `workspace` rule "do not …
+claim a whole page was checked when only one fact was verified", and D-007):
+
+- **Covered facts.** A fact that the entry's `verification_scope` plainly
+  covers is imported into a fact check with the entry's `last_verified` date,
+  its scope text, `by: unknown` (entries do not record who checked), and a
+  `source` naming both the original `verification_source` and the entry at
+  its Git revision. Where a long scope lists several dated checks, each
+  becomes its own group when they can be told apart.
+- **Facts the scope does not cover.** They are imported into a group with
+  `checked: null` ("not checked"), `by: unknown` and the entry at its Git
+  revision as source, so they show as not checked until someone checks them.
+- **Unknowns.** Values written `unknown` and "Known unknowns" items become
+  `unknown` facts; "Verification limits" sections become `limits` on the
+  matching fact checks.
+- **The importer** (person or agent session) is the author of the catalog
+  proposal, not the checker. Last-checked times are never refreshed by the
+  import.
+- Whether a scope "plainly covers" a fact is judged by the importing agent, per
+  fact, and listed in the import report so the owner's spot check (roadmap
+  R14) can see each judgment.
+
+This agrees with roadmap RM-6, which keeps the original check date "or
+`unknown` where the entry's verification scope does not cover it": RM-6's
+"`unknown` last-checked time" is written here as `checked: null` (shown as
+"not checked"), because `unknown` is a fact state; see
+[dependencies](#dependencies-on-other-documents).
+
+### 13.2 What maps where
 
 | `workspace` repository | Shinan catalog |
 |---|---|
-| Entry file `catalog/machines/musashi.md`, `id: musashi` | Entity `machine/musashi` |
+| Entry file `catalog/machines/musashi.md`, `id: musashi` | Entity `machine/musashi`; the old ID `musashi` is kept as an alias where it is unique across types |
 | `status: active / deprecated / retired` | Entity status, same values |
 | `owner: guneet` / `unknown` | `owner: person/guneet` / `unknown` |
-| `last_verified`, `verification_scope`, `verification_source` | Fact checks. On import, the page-level check becomes one fact check on all facts extracted from the page; dated items in long scopes become separate checks where they can be told apart. |
-| `last_verified: null` | Facts without a fact check ("not checked") |
-| Values written `unknown`; "Known unknowns" sections | `unknown` facts; generated known-unknowns list |
+| `last_verified`, `verification_scope`, `verification_source` | Fact checks, as in [13.1](#131-provenance-of-imported-facts) |
+| `last_verified: null` | Facts with `checked: null` ("not checked") |
+| Values written `unknown`; "Known unknowns" sections | `unknown` facts |
+| "Verification limits" sections | `limits` on fact checks |
 | "Locations" tables | `checkout-on` relations with `path` |
 | "Authoritative sources" lists | Keyed facts (`repository`, `docs.*`, `issue_tracker`) |
-| Discrepancies written in prose | Paired facts, detected as discrepancies |
-| `templates/*.md` | Type schemas |
+| Deployment details on project entries | Facts on the `service` the project `provides`; a service entity is created where none exists |
+| Discrepancies written in prose | Paired facts on single-valued keys, detected as discrepancies |
+| Dated history in prose | Stays in the body |
+| `templates/*.md` | Type schemas; not imported |
 | `runbooks/`, `decisions/` | `runbook` and `decision` entities (decision `status` becomes `decision_state`) |
-| `docs/maintenance.md`, `docs/access-and-safety.md`, parts of `docs/collaboration.md` | `policy` entities |
-| `README.md` "Start here", `AGENTS.md`, `docs/agent-entrypoint.md` | Start-here document; product-wide parts move to the skill |
-| `scripts/check.py` | Validation on every catalog proposal |
-| Pull requests changing catalog files; `CHANGELOG.md` | Catalog proposals; revisions and events (no changelog file) |
+| `docs/maintenance.md`, `docs/access-and-safety.md`, policy parts of `docs/collaboration.md` | `policy` entities |
+| `docs/forgejo-setup.md` | Its setup checklist becomes facts on `service/forgejo`: items the owner reported become `observed` facts with the owner's statement as source; pending items become `unknown` facts, or `proposed` facts if a task exists. Its "verified CLI usage" section becomes a `runbook` if agents still need it after Shinan's git host connections exist; otherwise it is left in the archived repository. |
+| `README.md` "Start here", `AGENTS.md`, `docs/agent-entrypoint.md` | The start-here document; product-wide parts move to the skill ([agent integrations](agent-integrations.md)) |
+| `docs/skills.md`, `.opencode/skills/*` (workspace-navigate, -maintain, -task, -audit) | Not imported. Replaced by Shinan's skill ([agent integrations](agent-integrations.md)); any workspace-specific rule they contain becomes a `policy` |
+| `integrations/opencode/*` | Not imported. Replaced by setup instructions for Shinan's MCP server, skill and plugin ([agent integrations](agent-integrations.md)) |
+| `scripts/check.py`, tests | Replaced by validation on every catalog proposal; not imported |
+| Pull requests changing catalog files; `CHANGELOG.md` | Catalog proposals; revisions and events. The changelog and Git history stay in the archived repository. |
 | Forgejo issues | Tasks ([tasks](tasks.md)) |
 
 Extracting facts from prose cannot be fully automatic. **Proposed:** import
-each entry with its prose as body and its page-level check, then extract facts
-gradually, entity by entity, through ordinary catalog proposals. Reason: a
-lossless first import, then improvement through the normal flow, avoids a
-risky one-shot conversion.
+each entry with its prose as body and the facts that can be extracted
+reliably, then extract the rest gradually, entity by entity, through ordinary
+catalog proposals. Reason: a lossless first import, then improvement through
+the normal flow, avoids a risky one-shot conversion.
 
 ## Dependencies on other documents
 
-| Document | What this document needs from it |
+| Document | What this document needs from it, and where the drafts agree or differ |
 |---|---|
-| [Domain model and glossary](domain-model.md) | Terms used here. After it merges, it should gain the new terms proposed here: fact check, type schema, relation, catalog revision, start-here document, recheck interval, restricted; clarify that an entity ID is written `<type>/<slug>`; and record the owner's answers on fact granularity and the `planned` rename. Its first-version catalog approval rule is adopted here; the relaxed setting and the shared-fact-check model should be reflected there. |
-| [Architecture and operations](architecture.md) | Storage of documents and revisions; whether a git repository holds or mirrors them; generating and syncing the agent index (plan question 1); export and import; secret scanning. |
-| [Identity, agents and permissions](identity.md) | Who may approve catalog proposals and change approval settings; how actors are written in `by`; who may see restricted content; purge rights. |
-| [Agent integrations](agent-integrations.md) | MCP and CLI operations for reading the index and sending catalog proposals; delivering the agents' start-here path; the recheck-before-acting and documentation-impact conventions. |
-| [Human experience](human-experience.md) | Wiki pages, freshness display, discrepancy display, editors, review list and recent changes feed, start-here presentation. |
+| [Domain model and glossary](domain-model.md) ([PR #14](https://github.com/guneet-xyz/shinan/pull/14), read at `8bb5d65`) | Terms used here. **Differs:** its catalog approval rule is Option A (all proposals except unchanged rechecks); this document recommends Option B ([8.2](#82-when-catalog-approval-is-needed)), an owner decision. Its `service` wording ("other things depend on") should widen to "a running deployment or shared service" if [the one-home rule](#service) is accepted. **To add after it merges:** fact check, fact identity, cardinality, `via`, type schema, catalog revision, start-here document, recheck interval, restricted, not checked; and that an entity ID is written `<type>/<slug>`. |
+| [Architecture and operations](architecture.md) ([PR #22](https://github.com/guneet-xyz/shinan/pull/22)) | **Agrees:** its proposal 5.1a stores each entity's full Markdown text as revisions and rebuilds the index from it in the same transaction, which satisfies the [D-006 invariant](#21-one-document-per-entity-and-what-source-of-truth-means); fact checks live in the Markdown, as it assumes; native catalog proposals; Git export one-way only; redaction (its 4.4) as used in [section 9](#9-history). **Differs:** its concurrent-edit rule fails a proposal whenever the entity moved on since its base revision; this document checks each operation's expectations ([8.5](#85-conflicts)) so unrelated changes to one entity do not block each other. **Needs:** export handling of restricted content ([7.2](#72-restricted-content)); secret scanning of all text fields. |
+| [Roadmap and migration](roadmap.md) ([PR #17](https://github.com/guneet-xyz/shinan/pull/17)) | **Agrees:** RM-6 import provenance (see [13.1](#131-provenance-of-imported-facts); its "`unknown` last-checked time" should read "not checked"); the 6.2 mapping, including skills and `integrations/opencode` replaced by Shinan's skill. **Answers its question:** `docs/forgejo-setup.md` becomes facts on `service/forgejo` plus, if still needed, a runbook. **Differs:** 6.2 keeps IDs unchanged; here the slug is unchanged but gains a type prefix, with the old ID as an alias where unique. **Tension:** R7's two-day target fits Option B, not Option A. RM-2's export as "D-006's promise" is a copy; the promise itself is the invariant in 2.1. |
+| [Identity, agents and permissions](identity.md) ([PR #24](https://github.com/guneet-xyz/shinan/pull/24)) | Who may approve and change approval settings; how actors are written in `by`; who may redact. **Differs:** its 9.5 proposes that every member reads the whole catalog in the first version and leaves restricted entities open; this document recommends restriction in the first version, plus a token permission before restricted content reaches agents ([7.2](#72-restricted-content)). Its scope list (`catalog:read`, `catalog:propose`) would need that permission added. |
+| [Agent integrations](agent-integrations.md) | MCP and CLI operations for reading the index and sending catalog proposals; delivering the agents' start-here path; the recheck-before-acting and documentation-impact conventions; agent review comments on proposals. |
+| [Human experience](human-experience.md) | Wiki pages, freshness display, discrepancy display, restricted markers, editors, review list and recent changes feed, start-here presentation. |
 | [Tasks and work](tasks.md) | Links between tasks and entities; `proposed` facts tied to tasks and what happens when a task is cancelled; promoting task decisions to `decision` entities; whether the documentation-impact obligation is part of "done". |
 | [Git host integrations](git-hosts.md) | Repository identity for `project` facts; which facts Shinan can check automatically. |
-| [Roadmap and migration](roadmap.md) | Moving the `workspace` repository's catalog; whether automatic checks are in the first version. |
-| [Decision log](decisions/) | Records for the owner's decisions below once made. |
+| [Decision log](decisions/) ([PR #19](https://github.com/guneet-xyz/shinan/pull/19)) | Records for the owner's decisions below once made. Confirming the D-006 invariant needs no amendment to D-006; renaming `proposed` needs a new record (as its D-007 record notes). |
 
 ## Proposed in this document
 
 1. [Principles](#1-principles) P4 to P8, including "catalog content is context,
    not authorization".
-2. Restricted YAML frontmatter; [entity fields](#22-entity-fields) as
+2. The [D-006 invariant](#21-one-document-per-entity-and-what-source-of-truth-means):
+   every applied revision is Markdown, everything else is rebuildable from it.
+3. Restricted YAML frontmatter; [entity fields](#22-entity-fields) as
    bookkeeping, not facts.
-3. [IDs](#23-ids-and-references) written `<type>/<slug>`, stable, with aliases.
-4. Body rules: checkable claims become facts; generated sections are not
-   hand-written.
-5. [Type schemas](#3-entity-types) for all eight types, the relation
-   vocabulary, and no custom types in the first version.
-6. [A fact is one structured field or relation](#41-what-a-fact-is).
-7. [Rules per fact state](#43-fact-states) and [shared fact checks](#44-fact-checks).
-8. [Per-key recheck intervals](#45-freshness) as a risk signal.
-9. [Discrepancy](#46-discrepancies) detection and resolution.
-10. [Relations are facts](#5-relations), written on one side, with generated
+4. [IDs](#23-ids-and-references) written `<type>/<slug>`, stable, with aliases.
+5. [Body rules](#24-body): current-state claims become facts; dated history
+   stays in prose; generated sections are not hand-written.
+6. [Type schemas](#3-entity-types) with cardinality, default restriction and
+   recheck intervals; deployment facts only on `service`; no custom types in
+   the first version.
+7. [A fact is one structured field or relation](#41-what-a-fact-is), with
+   [identity, cardinality and replace-or-add rules](#42-fact-identity-cardinality-and-current-facts).
+8. [Facts grouped by fact check](#43-how-facts-are-written), with no check IDs.
+9. [Rules per fact state](#44-fact-states), including planned removals.
+10. [Fact checks](#45-fact-checks) with `limits`.
+11. [Per-key recheck intervals](#46-freshness) as a risk signal.
+12. [Discrepancies](#47-discrepancies) on single-valued keys only;
+    [unknowns kept apart from not-yet-recorded keys](#48-unknowns).
+13. [Relations are facts](#5-relations), written on one side, with generated
     inverses.
-11. The [hold-versus-link split](#6-link-dont-copy).
-12. [Secret blocking and restricted content](#7-sensitive-information).
-13. [Every change is a catalog proposal of operations](#81-catalog-proposals);
-    [default catalog approval rules](#82-when-catalog-approval-is-needed);
-    [validation](#83-validation); [conflict handling](#85-conflicts).
-14. The [documentation-impact obligation](#84-agents-documentation-impact-obligation)
+14. The [hold-versus-link split](#6-link-dont-copy).
+15. [Secret scanning of all text](#71-no-credentials-ever) and
+    [restricted content everywhere it can appear](#72-restricted-content),
+    with a token permission for agents.
+16. [Every change is a catalog proposal of operations](#81-catalog-proposals);
+    [catalog approval options](#82-when-catalog-approval-is-needed);
+    [validation](#83-validation); [per-operation conflict checks](#85-conflicts);
+    [agent review comments](#86-who-sees-and-reviews-proposals);
+    [no outside edits in the first version](#87-edits-outside-shinan).
+17. The [documentation-impact obligation](#84-agents-documentation-impact-obligation)
     for agents.
-15. [History](#9-history): revisions, reverts, retired entities, purge.
-16. [Wiki requirements](#10-the-wiki), the
+18. [History](#9-history): revisions, reverts, retired entities, redaction.
+19. [Wiki requirements](#10-the-wiki), the
     [start-here document](#11-start-here) and the
     [agent index](#12-the-agent-index) content and rules.
-17. [Mapping](#13-mapping-from-the-workspace-repositorys-catalog) and gradual
-    import from the `workspace` repository.
+20. [Import provenance](#131-provenance-of-imported-facts) and the
+    [mapping](#132-what-maps-where) from the `workspace` repository.
 
 ## Open questions
 
 1. Body embeds of fact values (`{{fact:...}}`): worth the loss of raw
    readability? ([2.4](#24-body))
-2. Recheck interval values per fact key. ([4.5](#45-freshness))
-3. Whether Shinan enforces any `policy` beyond its own settings.
+2. Recheck interval values per fact key. ([4.6](#46-freshness))
+3. Flagging gaps between intended and observed values of multi-valued keys.
+   ([4.7](#47-discrepancies))
+4. Whether Shinan enforces any `policy` beyond its own settings.
    ([3](#policy))
-4. External link checking: whether, how often, and from where.
+5. External link checking: whether, how often, and from where.
    ([8.3](#83-validation))
-5. Automatic fact checks through git host connections in the first version or
+6. Automatic fact checks through git host connections in the first version or
    later. ([12.3](#123-automatic-fact-checks-by-shinan))
-6. More than one start-here path for larger workspaces. ([11](#11-start-here))
-7. Whether an agent reviewer step (agents commenting on catalog proposals
-   before a person decides) should be built in, as reviewer agents are used
-   for documents today. ([8.6](#86-who-sees-and-reviews-proposals))
+7. More than one start-here path for larger workspaces. ([11](#11-start-here))
 8. Exact agent index JSON schema, written with the first version.
    ([12.2](#122-rules))
 
 ## Decisions needed from the owner
 
-| # | Question | Recommended | Reason |
+| # | Decision | Recommended | Reason |
 |---|---|---|---|
-| 1 | How fine-grained is a fact? (the glossary leaves the unit to this document) | One structured field or one relation, with shared fact checks; prose is not facts. | Only per-field facts let the catalog say which part is fresh, which D-007 requires. |
-| 2 | Rename the fact state `proposed` to `planned`? (also an owner decision in the glossary) | Rename to `planned`. | "Proposed" already means a catalog proposal and a document status; three meanings will confuse readers and agents. |
-| 3 | Are catalog proposals native to Shinan, or pull requests on a git repository holding the documents? | Native to Shinan, with a lossless Markdown export (and an optional read-only git mirror if architecture wants it). | Per-fact operations, auto-apply rules and fast agent edits do not fit a pull request per fact check; export keeps the Markdown portable. |
-| 4 | Catalog approval rules ([8.2](#82-when-catalog-approval-is-needed)): the glossary's strict first version, plus a relaxed setting for later? | Yes: strict during the proof of concept; offer the relaxed setting (routine facts, rechecks and body edits apply on their own with a recent changes feed; rules, lifecycle, people and agents, and exposure still need catalog approval) and decide whether to switch it on after the proof of concept. | Strict is cheap at proof-of-concept volume and builds trust; the relaxed setting matches today's standing authority once volume grows. |
-| 5 | Entity IDs as `<type>/<slug>`? | Yes. | The `workspace` repository already has `musashi` as both a project and a machine. |
-| 6 | Restricted facts and entities in the first version? | Yes, one level (`restricted`), with access set by the identity document. | The app is public behind sign-in (D-015), and invited viewers should not see every address and fingerprint. |
-| 7 | Custom entity types in the first version? | No; allow unknown fact keys, flagged in review. | Eight types cover the whole `workspace` repository's catalog; flagged keys show real needs first. |
-| 8 | Start here as a special catalog document (not an entity type) with separate paths for people and agents, changed only with catalog approval? | Yes. | It is a curated route, not a thing with facts, and it steers agent behaviour, so changes deserve a person's look. |
+| 1 | Confirm the D-006 invariant: every applied catalog revision is Markdown, and everything else is derived and rebuildable from it ([2.1](#21-one-document-per-entity-and-what-source-of-truth-means)) | Confirm (D-006 unchanged) | It is what makes "Markdown is the source of truth" testable, and the architecture draft's storage already satisfies it. |
+| 2 | Where catalog proposals and review happen | Natively in Shinan; Git export one-way only | Per-fact operations and fast agent edits do not fit a pull request per change, and native review keeps the Markdown canonical. |
+| 3 | Unit of a fact | One structured field or relation, with cardinality and identity rules | Only per-field facts can say which part is fresh, as D-007 requires. |
+| 4 | Rename fact state `proposed` to `planned` | Rename | "Proposed" already means a catalog proposal and a document status. |
+| 5 | Default catalog approval: A strict (≈4–5 approvals a day in the trial) or B gated classes only (≈0 a day) | B from the start of the trial | Keeps today's standing authority and roadmap R7 while rules, lifecycle, identity and exposure stay gated. |
+| 6 | Import provenance (with roadmap RM-6) | Keep the entry's date only where its scope covers the fact; otherwise "not checked"; `by: unknown`; importer recorded on the proposal | Copying is not checking (D-007). |
+| 7 | Restricted content in the first version (differs from the identity draft) | Yes: one `restricted` level, enforced everywhere, schema defaults, and a token permission before agents receive it | The app is public (D-015), and agents send what they read to third-party model providers. |
+| 8 | Entity IDs as `<type>/<slug>` | Yes, old IDs as aliases | Musashi is both a project and a machine today. |
+| 9 | Deployment facts only on `service` entities | Yes | One home per fact; a project can have several deployments. |
+| 10 | Custom entity types in the first version | No; flag unknown keys instead | Eight types cover the whole `workspace` repository's catalog. |
+| 11 | Start-here as a special document with two paths, changed only with catalog approval | Yes | It is a curated route that steers agents, not a thing with facts. |
