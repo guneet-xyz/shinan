@@ -1,4 +1,4 @@
-import { screen } from "@testing-library/react"
+import { screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { describe, expect, it, vi } from "vitest"
 
@@ -48,6 +48,7 @@ describe("the GitHub email step", () => {
     expect(api.requestSignInLink).toHaveBeenCalledWith({
       email: "me@example.com",
       callbackURL: "/w/1",
+      metadata: { github: true },
     })
     expect(
       await screen.findByRole("heading", { name: "Check your email" }),
@@ -65,6 +66,80 @@ describe("the GitHub email step", () => {
     expect(
       screen.getByRole("link", { name: "Start again" }).getAttribute("href"),
     ).toBe("/sign-in")
+  })
+})
+
+describe("the sign-in link page", () => {
+  it("opens the link only when the person clicks, then goes on", async () => {
+    const { leaveApp } = await import("../navigation")
+    const api = fakeApi({
+      account: () => Promise.reject(signedOut()),
+      openSignInLink: () => Promise.resolve({ location: "/w/1" }),
+    })
+    renderApp("/sign-in/link#token=abc&next=%2Fw%2F1", api)
+
+    const button = await screen.findByRole("button", {
+      name: "Continue signing in",
+    })
+    expect(api.openSignInLink).not.toHaveBeenCalled()
+    await userEvent.click(button)
+    expect(api.openSignInLink).toHaveBeenCalledWith({
+      token: "abc",
+      next: "/w/1",
+    })
+    expect(leaveApp).toHaveBeenCalledWith("/w/1")
+  })
+
+  it("keeps the return path on this site", async () => {
+    const api = fakeApi({
+      account: () => Promise.reject(signedOut()),
+      openSignInLink: () => Promise.resolve({ location: "/" }),
+    })
+    renderApp("/sign-in/link#token=abc&next=%2F%2Fevil.example", api)
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Continue signing in" }),
+    )
+    expect(api.openSignInLink).toHaveBeenCalledWith({ token: "abc", next: "/" })
+  })
+
+  it("says when the link is incomplete", async () => {
+    const api = fakeApi({ account: () => Promise.reject(signedOut()) })
+    renderApp("/sign-in/link", api)
+
+    expect(await screen.findByText(/link is incomplete/)).toBeTruthy()
+  })
+})
+
+describe("creating a workspace", () => {
+  it("is offered to someone with no workspace, who becomes its owner", async () => {
+    const created = { ...account.workspaces[0]! }
+    let workspaces: typeof account.workspaces = []
+    const api = fakeApi({
+      account: () => Promise.resolve({ ...account, workspaces }),
+      createWorkspace: (name: string) => {
+        workspaces = [created]
+        return Promise.resolve({
+          id: workspaceId,
+          name,
+          createdAt: "2026-11-16T10:00:00.000Z",
+          role: "owner",
+        })
+      },
+    })
+    renderApp("/", api)
+
+    await userEvent.type(
+      await screen.findByLabelText("New workspace name"),
+      "Team",
+    )
+    await userEvent.click(
+      screen.getByRole("button", { name: "Create workspace" }),
+    )
+    expect(api.createWorkspace).toHaveBeenCalledWith("Team")
+    await waitFor(() =>
+      expect(currentPath()).toBe(`/w/${workspaceId}/settings/general`),
+    )
   })
 })
 

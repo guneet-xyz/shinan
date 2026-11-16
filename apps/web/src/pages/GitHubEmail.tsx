@@ -31,16 +31,22 @@ export function GitHubEmail() {
     setSending(true)
     setError(undefined)
     const address = email.trim()
-    api.requestSignInLink({ email: address, callbackURL: next }).then(
-      () => {
-        setSending(false)
-        setSentTo(address)
-      },
-      (failure: unknown) => {
-        setSending(false)
-        setError(failure)
-      },
-    )
+    api
+      .requestSignInLink({
+        email: address,
+        callbackURL: next,
+        metadata: { github: true },
+      })
+      .then(
+        () => {
+          setSending(false)
+          setSentTo(address)
+        },
+        (failure: unknown) => {
+          setSending(false)
+          setError(failure)
+        },
+      )
   }
 
   const startAgain = `/sign-in${next === "/" ? "" : `?next=${encodeURIComponent(next)}`}`

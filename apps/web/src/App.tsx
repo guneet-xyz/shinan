@@ -10,6 +10,7 @@ import { InvitationPage } from "./pages/Invitation"
 import { NotFound } from "./pages/NotFound"
 import { Setup } from "./pages/Setup"
 import { SignIn } from "./pages/SignIn"
+import { SignInLink } from "./pages/SignInLink"
 import { General } from "./pages/workspace/General"
 import { Invitations } from "./pages/workspace/Invitations"
 import { Members } from "./pages/workspace/Members"
@@ -21,7 +22,8 @@ import {
 import { RequireSignIn } from "./session"
 
 /**
- * The app's pages. Only the sign-in pages, the first-start setup page and the
+ * The app's pages. Only the sign-in pages (including the confirm page of an
+ * emailed sign-in link), the first-start setup page and the
  * invitation acceptance page (which shows nothing but the installation's
  * name before sign-in) are shown without sign-in; every other address,
  * including unknown ones, needs it first (identity §10).
@@ -32,6 +34,7 @@ export function App() {
       <Routes>
         <Route path="sign-in" element={<SignIn />} />
         <Route path="sign-in/github" element={<GitHubEmail />} />
+        <Route path="sign-in/link" element={<SignInLink />} />
         <Route path="setup" element={<Setup />} />
         <Route path="invitation" element={<InvitationPage />} />
         <Route element={<RequireSignIn />}>

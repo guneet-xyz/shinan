@@ -6,6 +6,7 @@ import type { InvitationForYou, SignInSession } from "@shinan/api-client"
 import { useAccount } from "../account"
 import { useAction } from "../action"
 import { useApi, useResource } from "../api"
+import { CreateWorkspace } from "../components/CreateWorkspace"
 import { ErrorMessage, Loading } from "../components/status"
 import { formatDate, formatTime, roleNames } from "../format"
 import { signInErrorMessage } from "../messages"
@@ -66,6 +67,7 @@ export function Account() {
             ))}
           </ul>
         )}
+        <CreateWorkspace />
       </section>
       <PendingInvitations />
       <SignInMethods />

@@ -109,6 +109,8 @@ export function fakeApi(overrides: Partial<ApiClient> = {}): Fake {
     "startGitHubSignIn",
     "signOut",
     "pendingGitHubSignIn",
+    "openSignInLink",
+    "createWorkspace",
     "startSetup",
     "account",
     "signInSessions",
