@@ -65,8 +65,10 @@ The owner decided the main design points in [#25](https://github.com/guneet-xyz/
 7. Every subagent is its own agent session (O-37).
 8. An agent is per person, coding tool and machine (O-40), with long-lived
    tokens (O-44).
-9. Shinan stores no per-person git host tokens. Git host actions a person asks
-   for are done by that person's own agent on their own hardware (O-1).
+9. Shinan stores no per-person git host tokens; it writes on GitHub only as its
+   app and never on Forgejo (O-1, N-4). Git host actions a person asks for
+   reach that person's own agent sessions as a queued nudge (N-3).
+10. Subagents attach to a task only by claiming one (N-2).
 
 Shinan never blocks or slows a coding tool (proposed; reason: it helps the
 work and must never stop it).
@@ -182,10 +184,11 @@ document adds:
   is not claimed automatically; the plugin tells the agent why through its
   context (see [plugins](#common-behavior)). The claim event records that it
   came from the branch name.
-- **Proposed:** a coordinating agent session that splits work stays unattached.
-  It creates subtasks (owner, O-21: big work is split into subtasks), and each
-  subagent claims its own subtask. Reason: this keeps
-  "one task per agent session" while supporting how the owner works. These
+- A coordinating agent session that splits work creates subtasks (owner,
+  O-21; any depth, N-1, [#25](https://github.com/guneet-xyz/shinan/issues/25)). It may claim the parent task, and each
+  subagent claims its own subtask. This follows the tasks document, "Claims,
+  assignees and agent sessions", which also sends nudges on a parent to its
+  subtasks' agent sessions when nobody is attached to the parent. These
   documents are themselves written by subagents started by one coordinating
   agent session.
 
@@ -197,14 +200,12 @@ Claude Code forks.
 
 - **Decided** (owner, O-37, [#25](https://github.com/guneet-xyz/shinan/issues/25)): every subagent is its own agent
   session, linked to its parent agent session, under the same agent.
-- **Proposed:** a subagent is **not** attached to its parent's task
-  automatically, and the branch-marker automatic claim applies only to
-  top-level agent sessions. A subagent is attached only when it claims a task
-  itself. Nudges for the parent's task go to the parent, which can pass them
-  on. Reason: subagents share their parent's checkout and branch, so the
-  automatic claim would attach every short helper. Each helper that finished
-  would then leave an `undeliverable` nudge delivery behind. This is a
-  [decision for the owner](#decisions-needed-from-the-owner).
+- **Decided** (owner, N-2, [#25](https://github.com/guneet-xyz/shinan/issues/25)): a subagent is attached to a task only
+  when it claims one itself, and the branch-marker automatic claim applies only
+  to top-level agent sessions. Nudges for the parent's task go to the agent
+  sessions attached to it. Reason: subagents share their parent's checkout and
+  branch, so the automatic claim would attach every short helper, and each
+  helper that finished would leave an `undeliverable` nudge delivery behind.
 - **Proposed:** a subagent's presence follows its own signals. In OpenCode it
   has its own session events. In Claude Code, `SubagentStart` marks it `busy` and
   `SubagentStop` marks it `idle`. A subagent goes `offline` or `ended` with its
@@ -545,29 +546,29 @@ Shinan itself.
 
 ### Git host actions a person asks for
 
-**Decided** (owner, O-1, [#25](https://github.com/guneet-xyz/shinan/issues/25)): Shinan does not write to GitHub as a
-person and stores no per-person git host tokens. Anything a person wants done
-on a git host, such as opening a repository issue for a task, is done by an
-agent running on that person's own hardware, which is already signed in to the
-git host. Shinan's own writes, such as backlinks, use its GitHub App
-installation token. On Forgejo they go through the connecting person's account
-(O-53). Details are in the [git hosts document](git-hosts.md).
+**Decided** (owner, O-1 and N-4, [#25](https://github.com/guneet-xyz/shinan/issues/25)): Shinan stores no per-person git
+host tokens and never writes as a person. On GitHub it writes only as its own
+GitHub App, for example backlinks. On Forgejo it writes nothing; Forgejo
+connections are read-only. Anything a person wants done on a git host, such as
+opening a repository issue for a task, is done by an agent running on that
+person's own hardware, which is already signed in to the git host. Details are
+in the [git hosts document](git-hosts.md).
 
-**Proposed:**
+**Decided** (owner, N-3, [#25](https://github.com/guneet-xyz/shinan/issues/25)):
 
 - A request from the web app for such an action is delivered as a nudge from
-  the person to **their own** agent sessions only, with `queue` delivery. Reason:
-  the action must run under the requester's own git host account. `queue` lets
-  the agent finish its current step before an errand.
-- If the person has no running agent session, the request waits like any
-  nudge with no target. The person can start an agent session: by hand before
-  phase 3, or through a launcher on their registered hardware in phase 3
+  the person to **their own** agent sessions only, with `queue` delivery.
+  Reason: the action must run under the requester's own git host account, and
+  `queue` lets the agent finish its current step before an errand.
+- If the person has no running agent session, the request waits like any nudge
+  with no target. The person can start an agent session: by hand before phase
+  3, or through a launcher on their registered hardware in phase 3
   ([launcher](#launcher-phase-3)).
-- The agent does the action, then replies with **reply to nudge**, including a
-  link to the result. Which actions people can request is owned by the
-  [tasks](tasks.md) and [git hosts](git-hosts.md) documents.
-- How to deliver these requests is a
-  [decision for the owner](#decisions-needed-from-the-owner).
+
+**Proposed:** the agent does the action, then replies with **reply to nudge**,
+including a link to the result. Reason: the person sees that the errand is
+done without visiting the git host. Which actions people can request is owned
+by the [tasks](tasks.md) and [git hosts](git-hosts.md) documents.
 
 ### Handling nudges
 
@@ -686,11 +687,13 @@ All of the following is **proposed**.
   reply. A nudge from another member opens with "Request from <name>, another
   member of the workspace", which the skill treats as a request within the
   current task ([handling nudges](#handling-nudges)). This is the framing route
-  that the identity document requires for nudges from others. Messages that Shinan writes for a person's action (tasks document,
-  "When a nudge is created") are labelled as from Shinan, with the action they
-  report.
-- **New outcomes** `withdrawn` and `cancelled`, and the holder states above,
-  need adding to the glossary ([dependencies](#dependencies-on-other-documents)).
+  that the identity document requires for nudges from others. Some nudges are
+  created by a person's action in Shinan, such as answering a deployment
+  approval request; for those Shinan writes the text. They are still from that
+  person, and the text says which action caused them (tasks document, "When a
+  nudge is created").
+- The outcomes `withdrawn` and `cancelled`, and the holder and route, are in
+  the [glossary](domain-model.md#nudge).
 
 ### Steer or queue
 
@@ -703,7 +706,7 @@ current work first. Either one wakes an idle agent session.
   override. Reason: the member's own corrections are worth most before the
   agent goes further, but another person should not redirect someone else's
   agent mid-step.
-- **Proposed:** requests for git host actions use `queue`
+- **Decided** (owner, N-3): requests for git host actions use `queue`
   ([git host actions](#git-host-actions-a-person-asks-for)).
 - Tools without these modes use the nearest equivalent
   ([Claude Code plugin](#claude-code-plugin)).
@@ -877,11 +880,12 @@ depending on phases 1 and 2 (plan, section 10). **Decided** (owner, O-1,
 Outline, **proposed**:
 
 - **Registration.** Installing the launcher registers the device for one
-  person. With one agent per person, coding tool and machine (O-40), it creates
-  the agent "<person>'s OpenCode on <device>" and its long-lived token (O-44),
-  through the identity document's registration flow. The launcher starts agents
-  only for the person who registered it. Reason: it runs with that person's git
-  host access.
+  person, through the identity document's browser approval ("Launchers"). The
+  launcher gets its own launcher token, which only lets it receive start
+  requests for that person's agents on that device. The device's OpenCode agent
+  ("<person>'s OpenCode on <device>", O-40) has its own long-lived agent token
+  (O-44). The launcher starts agents only for the person who registered it.
+  Reason: it runs with that person's git host access.
 - **Connection.** The launcher keeps an outgoing connection to Shinan, like a
   plugin. Reason: devices sit behind NAT and firewalls (architecture document).
 - **Starting an agent session.** When the person asks for a new agent session,
@@ -907,14 +911,14 @@ phase 3):
 4. Choose a data location for checkouts and worktrees, kept apart from the
    system disk where possible (as on Daedalus today).
 5. Install the launcher and approve the device in the browser. This creates the
-   agent and its token; the Shinan plugin, MCP server and skill come with it
-   (O-36).
+   launcher token and the device's OpenCode agent with its token. The Shinan
+   plugin, MCP server and skill come with it (O-36).
 6. Record the device as a `machine` entity in the catalog, without secrets
    (O-2).
 7. Check the device: it appears online in Shinan, a test agent session starts,
    claims a test task and reports presence.
-8. Removing a device: revoke its agent in Shinan, which revokes its token, and
-   uninstall the launcher.
+8. Removing a device: disable the machine in Shinan, which revokes its agents'
+   tokens and the launcher token, then uninstall the launcher.
 
 ## Authentication requirements
 
@@ -957,25 +961,30 @@ Checked on **2026-11-16** against the vendors' own documentation.
 
 ## Dependencies on other documents
 
-The sibling drafts were read on 2026-11-16, before they applied the owner's
-answers in [#25](https://github.com/guneet-xyz/shinan/issues/25). The mismatches below are for the integration review.
+The sibling drafts were read again on 2026-11-16, at the revisions listed. They
+already apply the owner's answers in [#25](https://github.com/guneet-xyz/shinan/issues/25) up to batch 11. The mismatches
+below are for the integration review.
 
 | Document | What this document needs from it, and known mismatches |
 |---|---|
-| [Domain model and glossary](domain-model.md) ([#3](https://github.com/guneet-xyz/shinan/issues/3)) | New terms: **agent session ID**, **conversation ID**, **heartbeat**, **device setup guide**; presence state **`offline`** (O-32); nudge delivery outcomes **`withdrawn`** and **`cancelled`**, the delivery **holder** and **route**. Update: an agent is per person, coding tool and machine (O-40); every subagent is its own agent session, linked to its parent (O-37); nudges wait for the next claimant only if never delivered (O-27). |
-| [Tasks and work](tasks.md) ([#6](https://github.com/guneet-xyz/shinan/issues/6)) | Claim rules and which tasks can be claimed automatically; subtasks (O-21) and whether a subagent's subtask claim needs anything special; markers, including the name of the agent session trailer in its `Shinan-…` scheme; nudge creation, batching and withdrawal; which git host actions a person can request (O-1); whether agents may set workspace-defined flags (O-8). |
-| [Identity, agents and permissions](identity.md) ([#7](https://github.com/guneet-xyz/shinan/issues/7)) | Registration and tokens meeting the [authentication requirements](#authentication-requirements). **Mismatches:** the draft has one agent per person and coding tool, with tokens per machine (now per machine, O-40), and short-lived tokens with renewal (now long-lived, O-44). It also reserves "record a deployment approval" for people, but O-20 lets the agent record an approval its member gave in the conversation. Also needed: launcher registration (O-1); how tool-reported and model-passed session IDs count for attribution; the framing route for nudges from others, which this document chooses. |
-| [Architecture and operations](architecture.md) ([#11](https://github.com/guneet-xyz/shinan/issues/11)) | MCP endpoint and protocol versions; the plugin stream with offers, withdrawals and acknowledgements as used in [one owner at a time](#one-owner-at-a-time); the server-side allow-list for plugin reports; serving the skill; the launcher's connection. |
-| [Git host integrations](git-hosts.md) ([#8](https://github.com/guneet-xyz/shinan/issues/8)) | Detecting markers; Shinan's own writes only through its GitHub App installation token, with person-requested actions done by the person's agents (O-1). |
+| [Domain model and glossary](domain-model.md) ([#3](https://github.com/guneet-xyz/shinan/issues/3), `0e4bfcd`) | Uses its terms: agent session ID, conversation ID, heartbeat, `offline`, subagent sessions, nudge outcomes, holder and route, and device setup guide. All are now in the glossary. No mismatch found. |
+| [Tasks and work](tasks.md) ([#6](https://github.com/guneet-xyz/shinan/issues/6), `fae89ac`) | Claim rules, including the coordinating session claiming the parent and subagents claiming subtasks, which this document now follows; subtasks at any depth (N-1); the `Shinan-` trailer scheme, where this document names the session key `Shinan-Session`; nudge creation, batching and withdrawal; which git host actions a person can request; workspace-defined flags (O-8). **Mismatches:** its open question 4 (how agent sessions hear about events that no person caused, such as a PR closed on the host) affects delivery; see [question 1](#open-questions). It still mentions a viewer role, removed by N-11; that rule is not this document's. |
+| [Identity, agents and permissions](identity.md) ([#7](https://github.com/guneet-xyz/shinan/issues/7), `03207c7`) | Registration and tokens meeting the [authentication requirements](#authentication-requirements); the launcher token (its "Launchers"); attribution of tool-reported and model-passed session IDs; the framing route for nudges from others, which this document chooses; agents recording deployment approvals given in the conversation (O-20). No mismatch found. |
+| [Architecture and operations](architecture.md) ([#11](https://github.com/guneet-xyz/shinan/issues/11), `d3ca54e`) | MCP endpoint and protocol versions; the plugin stream with offers, withdrawals and acknowledgements, as used in [one owner at a time](#one-owner-at-a-time); the server-side allow-list for plugin reports; serving the skill; the launcher's connection. |
+| [Git host integrations](git-hosts.md) ([#8](https://github.com/guneet-xyz/shinan/issues/8), `98333b8`) | Detecting markers; Shinan writes only as its GitHub App and never on Forgejo (O-1, N-4); person-requested actions done by the person's agents. |
 | [Catalog](catalog.md) ([#5](https://github.com/guneet-xyz/shinan/issues/5)) | The agent index; which changes are gated (O-3); recording unchanged re-checks; the agents' start-here path (O-18); secrets recorded only as locations (O-2). |
-| [Human experience](human-experience.md) ([#10](https://github.com/guneet-xyz/shinan/issues/10)) | Showing presence (including `offline`), grouping subagents under their parent (O-37), waiting reasons and where to answer them (O-39), delivery outcomes; the nudge form with steer or queue; requesting git host actions and new agent sessions; where the device setup guide lives. |
-| [Roadmap and migration](roadmap.md) ([#12](https://github.com/guneet-xyz/shinan/issues/12)) | Trial projects and coordination in Shinan during the trial (O-73); Claude Code plugin in phase 2a (O-82); the device setup guide in phase 3 (O-1). |
-| [Decision log](decisions/) ([#13](https://github.com/guneet-xyz/shinan/issues/13)) | Records mapping the O-n answers cited here to decision numbers. |
+| [Human experience](human-experience.md) ([#10](https://github.com/guneet-xyz/shinan/issues/10), `3ab0d4e`) | Showing presence, including `offline`; grouping subagents under their parent, which it already does; waiting reasons and where to answer them (O-39); delivery outcomes; the nudge form with steer or queue; requesting git host actions and new agent sessions; where the device setup guide lives. |
+| [Roadmap and migration](roadmap.md) ([#12](https://github.com/guneet-xyz/shinan/issues/12)) | Trial projects and coordination in Shinan during the trial (O-73); the Claude Code plugin in phase 2a (O-82); the device setup guide in phase 3 (O-1). |
+| [Decision log](decisions/) ([#13](https://github.com/guneet-xyz/shinan/issues/13)) | Records mapping the O-n and N-n answers cited here to decision numbers. |
 
 ## Open questions
 
-1. **Following tasks without claiming them.** Should a coordinating agent
-   session be able to follow its subtasks, for example to receive their nudges?
+1. **Events that no person caused.** When a PR is closed on the host, a
+   dependency finishes or a linked PR merges, attached agent sessions should
+   hear about it. The tasks document leaves open whether this is a nudge (its
+   open question 4). For delivery, this document suggests using the same path
+   (holder, acknowledgement, `queue` mode) with the message labelled as from
+   Shinan. It would never carry a person's authority.
 2. **Heartbeat values.** Are 60 s and 3 min right, and should a workspace be
    able to change the timeouts?
 3. **Prompt or synthetic message in OpenCode.** Which do models handle better
@@ -993,10 +1002,5 @@ answers in [#25](https://github.com/guneet-xyz/shinan/issues/25). The mismatches
 
 ## Decisions needed from the owner
 
-The owner's answers in [#25](https://github.com/guneet-xyz/shinan/issues/25) settled every earlier row. These two are new
-questions that the answers raise:
-
-| # | Decision | Recommended option | Reason |
-|---|---|---|---|
-| 1 | Do subagents attach to their parent's task? (follows O-37) | No. Subagents are linked to the parent, attach only by claiming a task themselves, and the branch-marker automatic claim applies only to top-level agent sessions | Otherwise every short helper attaches and leaves `undeliverable` nudge deliveries when it finishes. |
-| 2 | How git host actions a person asks for reach an agent (follows O-1) | As a nudge to the requester's own agent sessions only, with `queue` delivery; if none is running, it waits like any nudge until the person starts one | The action must run under the requester's own git host account and should not interrupt a step in progress. |
+None. The owner's answers in [#25](https://github.com/guneet-xyz/shinan/issues/25) (O-1 to O-98, and N-2 and N-3 in batch
+12) settled every decision this document raised.
