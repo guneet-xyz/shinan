@@ -10,7 +10,8 @@ import {
 } from "vitest"
 
 import { getInstallation } from "@shinan/core"
-import { connectTestDatabase } from "@shinan/db/testing"
+import { createDatabase } from "@shinan/db"
+import { connectTestDatabase, createTestDatabase } from "@shinan/db/testing"
 
 import { runCommand } from "./commands.js"
 import { migrateJobQueue, queues, startWorker } from "./jobs.js"
@@ -36,6 +37,28 @@ describe("migrate", () => {
     await expect(runCommand(["migrate"], env)).resolves.toBe(0)
 
     expect(await getInstallation(db)).toMatchObject({ name: "Shinan" })
+  })
+
+  it("lets overlapping runs on a fresh database take turns", async () => {
+    const fresh = await createTestDatabase({ migrate: false })
+    try {
+      const env = { DATABASE_URL: fresh.url }
+      const runs = await Promise.all(
+        Array.from({ length: 3 }, () => runCommand(["migrate"], env)),
+      )
+      expect(runs).toEqual([0, 0, 0])
+
+      const freshDb = createDatabase(fresh.url)
+      try {
+        expect(await getInstallation(freshDb.db)).toMatchObject({
+          name: "Shinan",
+        })
+      } finally {
+        await freshDb.pool.end()
+      }
+    } finally {
+      await fresh.drop()
+    }
   })
 })
 

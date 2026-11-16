@@ -1,7 +1,7 @@
 import { serve } from "@hono/node-server"
 
 import { productName, setUpInstallation, shinan } from "@shinan/core"
-import { createDatabase, migrateDatabase } from "@shinan/db"
+import { createDatabase, migrateDatabase, withMigrationLock } from "@shinan/db"
 
 import { createApp } from "./app.js"
 import { readDatabaseUrl, readWebConfig } from "./config.js"
@@ -85,15 +85,17 @@ async function runWorker(env: Env): Promise<void> {
 async function runMigrate(env: Env): Promise<void> {
   const databaseUrl = readDatabaseUrl(env)
   console.info("Applying database migrations")
-  await migrateDatabase(databaseUrl)
-  await migrateJobQueue(databaseUrl)
+  await withMigrationLock(databaseUrl, async () => {
+    await migrateDatabase(databaseUrl)
+    await migrateJobQueue(databaseUrl)
 
-  const { db, pool } = createDatabase(databaseUrl)
-  try {
-    await setUpInstallation({ db, actor: shinan }, { name: productName })
-  } finally {
-    await pool.end()
-  }
+    const { db, pool } = createDatabase(databaseUrl)
+    try {
+      await setUpInstallation({ db, actor: shinan }, { name: productName })
+    } finally {
+      await pool.end()
+    }
+  })
   console.info("Database ready")
 }
 

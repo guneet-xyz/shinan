@@ -43,3 +43,28 @@ export async function migrateDatabase(databaseUrl: string): Promise<void> {
     await pool.end()
   }
 }
+
+/**
+ * Runs `work` while holding a session-level advisory lock, so overlapping
+ * `migrate` runs (for example a restart loop) take turns instead of racing.
+ * Drizzle's migrator takes no lock of its own.
+ */
+export async function withMigrationLock<T>(
+  databaseUrl: string,
+  work: () => Promise<T>,
+): Promise<T> {
+  const client = new pg.Client({ connectionString: databaseUrl })
+  await client.connect()
+  try {
+    await client.query(`select pg_advisory_lock(${migrationLockKey})`)
+    try {
+      return await work()
+    } finally {
+      await client.query(`select pg_advisory_unlock(${migrationLockKey})`)
+    }
+  } finally {
+    await client.end()
+  }
+}
+
+const migrationLockKey = "hashtextextended('shinan:migrate', 0)"

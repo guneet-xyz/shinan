@@ -20,10 +20,12 @@ export interface TestDatabase {
 }
 
 /**
- * Creates a fresh, migrated database on the server in DATABASE_URL, so tests
- * never touch the development database's data.
+ * Creates a fresh database on the server in DATABASE_URL, so tests never
+ * touch the development database's data. It is migrated unless
+ * `migrate: false` is given.
  */
 export async function createTestDatabase(
+  options: { migrate?: boolean } = {},
   serverUrl = process.env.DATABASE_URL ?? defaultServerUrl,
 ): Promise<TestDatabase> {
   const name = `shinan_test_${randomBytes(6).toString("hex")}`
@@ -59,7 +61,7 @@ export async function createTestDatabase(
   }
 
   try {
-    await migrateDatabase(testUrl.toString())
+    if (options.migrate !== false) await migrateDatabase(testUrl.toString())
   } catch (error) {
     await drop()
     throw error

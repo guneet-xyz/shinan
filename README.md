@@ -58,7 +58,7 @@ The server's commands, from `apps/server`:
 
 ```sh
 export DATABASE_URL=postgres://shinan@localhost:5432/shinan
-pnpm migrate   # prepare the database: migrations, job queue tables, installation record
+pnpm migrate   # prepare the database: migrations, job queue tables, installation record (overlapping runs take turns)
 pnpm worker    # worker role: background jobs (pg-boss); needs migrate first
 pnpm dev       # web role, restarting on changes
 ```
