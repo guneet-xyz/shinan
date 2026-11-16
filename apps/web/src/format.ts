@@ -37,5 +37,18 @@ export function safeNextPath(
     return "/"
   }
   if (url.origin !== origin) return "/"
-  return url.pathname + url.search + url.hash
+  const path = url.pathname + url.search + url.hash
+  // The parser's normalised path can itself start with `//` (for example
+  // from `/.//evil.example`), which a browser would read as another host.
+  // Keep only a path with exactly one leading slash that, read again, still
+  // stays on this origin.
+  if (
+    !path.startsWith("/") ||
+    path.startsWith("//") ||
+    path.startsWith("/\\")
+  ) {
+    return "/"
+  }
+  if (new URL(path, origin).origin !== origin) return "/"
+  return path
 }
