@@ -195,7 +195,9 @@ an **email allowlist** decides who can have an account on an installation. Joini
 - The allowlist is kept by the installation's operators, who change it in
   the installation's settings. Every change is recorded in the
   installation-level security log. Reason: only someone responsible for the
-  installation should decide who can use it.
+  installation should decide who can use it. **Proposed (M1-4):** changing it
+  needs re-authentication, like other changes to who can do what; operators'
+  own addresses come from the configuration and are changed there.
 - **First start** (the one rule for a fresh installation): the installation's
   configuration names the operators' email addresses, and those addresses seed
   the allowlist. The first operator account is claimed through a one-time
@@ -210,6 +212,16 @@ an **email allowlist** decides who can have an account on an installation. Joini
   is asked for their email and sent such a link before the account exists.
   Reason: the allowlist is about email addresses, so Shinan checks the address
   itself rather than trusting the address GitHub reports.
+  - **Proposed (M1-4):** the GitHub account is linked only when that link is
+    opened in the same browser that signed in with GitHub, within 15 minutes,
+    for the address entered there. Reason: otherwise someone could start with
+    their own GitHub account, enter another person's address, and get their
+    GitHub account linked when that person opens the link.
+  - **Proposed (M1-4):** the new account's handle is made from the address's
+    local part (lowercase letters, digits and hyphens, with a number added if
+    it is taken), and its name starts as the handle. Reason: the account is
+    created as the link is opened, with nothing else to ask; the person can
+    change their name, and handles never change (8.7).
 - Removing an address from the allowlist ends that person's sign-in sessions,
   stops both sign-in methods, and revokes all their agent tokens in every
   workspace. Their past events keep their credit. Reason: an account that can
@@ -229,7 +241,11 @@ different from an [agent session](domain-model.md#agent-session).
   signing in again is quick.
 - **Re-authentication** asks the person to sign in again, with an email magic link or
   GitHub, even inside a sign-in session, before a sensitive action, unless they
-  did so in the last few minutes. Sensitive actions: approving an agent token
+  did so in the last few minutes. **Proposed (M1-4):** the last 10 minutes,
+  counted from the start of the sign-in session; signing in again starts a
+  new one and ends the old. Reason: long enough for a few sensitive actions
+  in a row, short enough that a session left open or stolen rarely falls
+  inside it (open question 1). Sensitive actions: approving an agent token
   or making one by hand, giving a deployment approval, inviting, changing
   roles, removing members, adding or changing git host connections, changing
   workspace settings, adding or removing a sign-in method, purging, exporting,
@@ -241,7 +257,9 @@ different from an [agent session](domain-model.md#agent-session).
   ("sign out everywhere").
 - Shinan emails the person when they sign in from a browser it has not seen
   before, when GitHub is added or removed as a sign-in method, and when an
-  agent token is approved. Reason: a quick alert is the main way a person
+  agent token is approved. **Proposed (M1-4):** a browser is recognised by a
+  long-lived cookie of its own, of which Shinan keeps only a hash per person;
+  the sign-in that creates an account sends no alert. Reason: a quick alert is the main way a person
   learns that someone else is using their account. The alert goes to the same
   mailbox an attacker in T1 controls, so it helps most against T2 and stolen
   sign-in sessions.
@@ -434,7 +452,10 @@ in the [glossary](domain-model.md#invitation).
   the invited address. A leaked link alone is useless unless the email account
   is also controlled (T4).
 - Links are single-use, expire after 7 days and can be withdrawn before
-  acceptance.
+  acceptance. **Proposed (M1-4):** sending an invitation again gives it a new
+  link and another 7 days, and the old link stops working; accepting or
+  declining needs no re-authentication, because it changes only the
+  invitee's own access and needs the invited address's sign-in anyway.
 - Before the invitee signs in, the acceptance page shows only the
   installation's name.
 - Creating, withdrawing, accepting and declining are recorded in the security
@@ -1129,7 +1150,8 @@ All checked on 2026-11-16.
 ## Open questions
 
 1. **Re-authentication window.** How many minutes count as "recent" for
-   sensitive actions?
+   sensitive actions? **Proposed (M1-4):** 10 minutes
+   ([3.3](#33-sign-in-sessions-and-re-authentication)).
 2. **Self-approval in teams.** When a second member joins, should approving
    your own agent's gated catalog proposal need someone else (O-46 covers one
    person only)?

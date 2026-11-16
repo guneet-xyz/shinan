@@ -40,15 +40,22 @@ pnpm install
 pnpm services:up   # PostgreSQL on localhost:5432 and Mailpit (http://localhost:8025)
 export DATABASE_URL=postgres://shinan@localhost:5432/shinan
 pnpm --filter @shinan/server migrate
+export SHINAN_OPERATORS=you@example.com
 pnpm dev           # API on http://localhost:3000, web app on http://localhost:5173
+pnpm --filter @shinan/server worker   # in another terminal: sends email to Mailpit
 ```
 
-Until sign-in exists (M1-4), `pnpm dev` signs every request in as a
-**placeholder person** (handle `dev`, with a "Development" workspace), set by
-`SHINAN_PLACEHOLDER_PERSON` (an empty value turns it off). It runs only when
-`NODE_ENV` is exactly `development`, which `pnpm dev` sets, and is refused
-otherwise. It never signs in as a person it did not create itself, and it is
-removed when sign-in arrives.
+On first start, the `web` role prints a one-time **setup link** to its log
+(`http://localhost:5173/setup#…`). Open it, enter the address from
+`SHINAN_OPERATORS`, and open the sign-in link that arrives in Mailpit: that
+creates the first operator account ([architecture 12](docs/architecture.md#12-self-hosting)).
+After that, operators add addresses to the email allowlist under Your
+account, Installation settings, and anyone allowlisted signs in with an email
+link. GitHub sign-in appears only when `GITHUB_CLIENT_ID` and
+`GITHUB_CLIENT_SECRET` are set. The placeholder person from before sign-in
+existed (handle `dev`, with a "Development" workspace) may still be in an
+older development database; reset it with `docker compose -f
+deploy/compose.dev.yml down -v` if it gets in the way.
 
 `pnpm services:down` stops the services. If a port is taken, set
 `SHINAN_DB_PORT`, `SHINAN_SMTP_PORT` or `SHINAN_MAILPIT_PORT` before
@@ -59,23 +66,29 @@ The server reads its settings from environment variables. A secret can
 instead be read from a file: set `NAME_FILE` to its path rather than `NAME`
 (for example `DATABASE_URL_FILE`, `SES_SECRET_ACCESS_KEY_FILE`).
 
-| Variable                    | Default                              | Meaning                                                                                              |
-| --------------------------- | ------------------------------------ | ---------------------------------------------------------------------------------------------------- |
-| `DATABASE_URL`              | none (tests use the local service)   | PostgreSQL connection string (secret)                                                                |
-| `HOST`                      | `127.0.0.1`                          | Address the `web` role listens on                                                                    |
-| `PORT`                      | `3000`                               | Port the `web` role listens on                                                                       |
-| `NODE_ENV`                  | unset (`development` in `pnpm dev`)  | `production` serves the built web app and requires SES; `development` allows the placeholder person  |
-| `WEB_DIST_DIR`              | `apps/web/dist` in production        | Directory of the built web app to serve                                                              |
-| `EMAIL_TRANSPORT`           | `smtp`, except in production (none)  | `ses`, or `smtp` for the local mail catcher (not in production)                                      |
-| `EMAIL_FROM`                | `shinan@localhost` for `smtp`        | From address; required for `ses`                                                                     |
-| `EMAIL_FROM_NAME`           | `Shinan`                             | From display name                                                                                    |
-| `SES_REGION`                | none                                 | AWS region of the SES identity, such as `us-east-1`                                                  |
-| `SES_ACCESS_KEY_ID`         | none (the AWS SDK's default chain)   | Access key of the send-only IAM user (secret)                                                        |
-| `SES_SECRET_ACCESS_KEY`     | none (the AWS SDK's default chain)   | Its secret key (secret)                                                                              |
-| `SES_CONFIGURATION_SET`     | none                                 | SES configuration set, such as `guneet-dev`                                                          |
-| `SMTP_HOST`                 | `127.0.0.1`                          | Mail catcher host, for `smtp`                                                                        |
-| `SMTP_PORT`                 | `1025`                               | Mail catcher port, for `smtp`                                                                        |
-| `SHINAN_PLACEHOLDER_PERSON` | `dev` in `pnpm dev`, otherwise unset | Development only, until M1-4: the handle every request is signed in as; needs `NODE_ENV=development` |
+| Variable                       | Default                                              | Meaning                                                                                                 |
+| ------------------------------ | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`                 | none (tests use the local service)                   | PostgreSQL connection string (secret)                                                                   |
+| `HOST`                         | `127.0.0.1`                                          | Address the `web` role listens on                                                                       |
+| `PORT`                         | `3000`                                               | Port the `web` role listens on                                                                          |
+| `NODE_ENV`                     | unset (`development` in `pnpm dev`)                  | `production` serves the built web app and requires SES and the sign-in settings                         |
+| `WEB_DIST_DIR`                 | `apps/web/dist` in production                        | Directory of the built web app to serve                                                                 |
+| `EMAIL_TRANSPORT`              | `smtp`, except in production (none)                  | `ses`, or `smtp` for the local mail catcher (not in production)                                         |
+| `EMAIL_FROM`                   | `shinan@localhost` for `smtp`                        | From address; required for `ses`                                                                        |
+| `EMAIL_FROM_NAME`              | `Shinan`                                             | From display name                                                                                       |
+| `SES_REGION`                   | none                                                 | AWS region of the SES identity, such as `us-east-1`                                                     |
+| `SES_ACCESS_KEY_ID`            | none (the AWS SDK's default chain)                   | Access key of the send-only IAM user (secret)                                                           |
+| `SES_SECRET_ACCESS_KEY`        | none (the AWS SDK's default chain)                   | Its secret key (secret)                                                                                 |
+| `SES_CONFIGURATION_SET`        | none                                                 | SES configuration set, such as `guneet-dev`                                                             |
+| `SMTP_HOST`                    | `127.0.0.1`                                          | Mail catcher host, for `smtp`                                                                           |
+| `SMTP_PORT`                    | `1025`                                               | Mail catcher port, for `smtp`                                                                           |
+| `SHINAN_URL`                   | `http://localhost:5173`, except in production (none) | The installation's public address (an origin, HTTPS in production): the base of every link Shinan sends |
+| `SHINAN_OPERATORS`             | none (required in production)                        | Installation operators' email addresses, separated by commas; they seed the email allowlist             |
+| `SHINAN_SESSION_SECRET`        | a fixed value only with `NODE_ENV=development`       | Signs sign-in cookies and encrypts sign-in state; at least 32 characters (secret)                       |
+| `GITHUB_CLIENT_ID`             | none (no GitHub sign-in)                             | The GitHub App's client ID, for sign-in                                                                 |
+| `GITHUB_CLIENT_SECRET`         | none                                                 | The GitHub App's client secret (secret)                                                                 |
+| `SIGN_IN_SESSION_IDLE_MINUTES` | `60`                                                 | A sign-in session ends after this long without activity                                                 |
+| `SIGN_IN_SESSION_MAX_HOURS`    | `24`                                                 | A sign-in session ends after this long in any case                                                      |
 
 In development the worker sends email to Mailpit; open http://localhost:8025
 to read it. Email is queued as a job in the same transaction as the change
@@ -93,6 +106,14 @@ pnpm worker    # worker role: background jobs (pg-boss), including email; needs 
 pnpm dev       # web role, restarting on changes (needs DATABASE_URL)
 ```
 
+Recovery for installation operators ([identity 3.4](docs/identity.md#34-recovery)),
+recorded in the security log:
+
+```sh
+node dist/cli.js account end-sessions <handle>           # end all of a person's sign-in sessions
+node dist/cli.js account change-email <handle> <email>   # change their address, allowlist it, end their sessions
+```
+
 ### Web app and API
 
 The web app (`apps/web`) uses [React Router](https://reactrouter.com/) in
@@ -105,7 +126,13 @@ API handlers in `apps/server/src/api` only translate: they call one core
 operation and map its errors (`NotFoundError` to 404, `ForbiddenError` to 403,
 `ReauthenticationRequiredError` to 403 with `reauthentication-required`,
 `InvalidInputError` to 422, other `RuleViolationError`s to 409). Who is signed
-in comes from the `SignIn` interface in `apps/server/src/api/sign-in.ts`.
+in comes from the `SignIn` interface in `apps/server/src/api/sign-in.ts`,
+which `apps/server/src/sign-in` implements with
+[Better Auth](https://www.better-auth.com/docs) (email magic links and
+GitHub). Better Auth runs the protocols; every rule (the allowlist, creating
+accounts, linking GitHub) is a core operation it calls through its hooks.
+Only `/api/auth` routes the web app uses are served. Sign-in tests mock
+GitHub's OAuth endpoints and never call GitHub.
 
 To run the production build: `pnpm build`, then `pnpm start` (the `web` role
 serving the API and the built web app on port 3000).

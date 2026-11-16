@@ -873,8 +873,10 @@ credentials.
   internet-facing `web` process should not expose them. Webhook verification in
   `web` needs only the webhook secrets, which are encrypted separately with a
   key `web` holds.
-- **Agent tokens** and magic-link tokens are stored as hashes only; there are no
-  passwords (N-7).
+- **Agent tokens**, magic-link tokens and sign-in session tokens are stored
+  as hashes only; there are no passwords (N-7). The token from GitHub sign-in
+  is never stored, and the database refuses one
+  ([identity](identity.md) §3.1).
 - **Logs** never contain tokens, cookies, magic links, webhook bodies or
   Authorization headers. The one exception is the first-start setup link
   ([section 12](#12-self-hosting)), printed once on purpose, single-use and
@@ -1032,12 +1034,15 @@ licensing (D-013); this section makes sure nothing blocks it. All **proposed**:
   mechanism:
   - On start, if no operator account exists, the `web` process creates a random
     setup token, stores only its hash, and prints the setup link (installation
-    address plus token) once to its own log. Nothing else shows it.
+    address plus token) once to its own log. Nothing else shows it. The token
+    is in the link's fragment (`/setup#…`), which browsers never send to a
+    server, so it reaches no access log.
   - The link works once and expires after 24 hours; an expired or lost link is
     replaced by restarting the process, which invalidates the old one. Reason:
     only someone with access to the server's log can start the claim.
-  - Opening the link asks which configured operator address to use and sends a
-    magic link there ([section 9](#9-email-and-notifications)), so SES must be
+  - Opening the link asks which configured operator address to use (the
+    person types it; the page does not list them) and sends a magic link
+    there ([section 9](#9-email-and-notifications)), so SES must be
     configured before first use. Opening that magic link creates the operator
     account and disables the setup link for good. Reason: identity requires
     both server access and control of an operator's mailbox.

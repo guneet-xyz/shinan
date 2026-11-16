@@ -1222,6 +1222,14 @@ the workspaces they belong to with their role, pending invitations,
 [notification settings](#notifications) (phase 2), and
 [your machines](#your-machines-phase-3) (phase 3). **Proposed.**
 
+It also lists the person's sign-in sessions (browser, when signed in, last
+active, network address), each of which they can end, and "sign out
+everywhere" ([Identity](identity.md) section 3.3). Installation operators
+also find a link to the installation settings, where they keep the email
+allowlist ([Identity](identity.md) section 3.2). **Proposed** (M1-4).
+Reason: identity requires both, and they belong to the person, not to a
+workspace.
+
 ### Your agents
 
 An agent is per person, coding tool and machine, for example "Guneet's
