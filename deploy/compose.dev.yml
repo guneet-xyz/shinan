@@ -1,0 +1,37 @@
+# Local development services. Not a deployment: ports bind to localhost only
+# and the database trusts local connections without a password.
+#
+#   pnpm services:up     start PostgreSQL and Mailpit
+#   pnpm services:down   stop them (add -v to the docker command to delete data)
+name: shinan-dev
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: shinan
+      POSTGRES_DB: shinan
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - 127.0.0.1:${SHINAN_DB_PORT:-5432}:5432
+    volumes:
+      - postgres:/var/lib/postgresql
+    healthcheck:
+      test: [CMD, pg_isready, -U, shinan, -d, shinan]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+
+  mailpit:
+    image: axllent/mailpit:v1.33
+    ports:
+      - 127.0.0.1:${SHINAN_SMTP_PORT:-1025}:1025
+      - 127.0.0.1:${SHINAN_MAILPIT_PORT:-8025}:8025
+    healthcheck:
+      test: [CMD, /mailpit, readyz]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+
+volumes:
+  postgres:

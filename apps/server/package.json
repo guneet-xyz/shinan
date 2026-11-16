@@ -1,0 +1,23 @@
+{
+  "name": "@shinan/server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "shinan": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsx watch --conditions=@shinan/source src/cli.ts web",
+    "migrate": "tsx --conditions=@shinan/source src/cli.ts migrate",
+    "start": "NODE_ENV=production node dist/cli.js web",
+    "typecheck": "tsc --noEmit",
+    "worker": "tsx --conditions=@shinan/source src/cli.ts worker"
+  },
+  "dependencies": {
+    "@hono/node-server": "^2.1.8",
+    "@shinan/core": "workspace:*",
+    "@shinan/db": "workspace:*",
+    "hono": "^4.13.18"
+  }
+}
