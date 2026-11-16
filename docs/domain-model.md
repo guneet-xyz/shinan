@@ -420,9 +420,12 @@ Related terms (owner: Agent integrations):
   - **Task ID:** stable and host-neutral: the workspace's prefix and a number,
     such as `T-123`. Used in branch names and pull request descriptions. If a
     workspace changes its prefix, the old one stays as an alias.
-  - **Task address:** the task's stable web address, written next to its ID in
-    PR descriptions and used in backlinks and emails. Because prefixes are
-    unique within an installation, the ID alone identifies the workspace.
+  - **Task address:** the task's stable web address,
+    `https://<installation address>/t/<task ID>` (for example
+    `https://shinan.guneet.dev/t/T-124`), written next to its ID in PR
+    descriptions and used in backlinks and emails. Because prefixes are unique
+    within an installation, the ID alone identifies the workspace; an address
+    with a former prefix redirects to the current ID.
   - Title, intent (what and why), acceptance criteria, decisions made along the
     way.
   - Task status and task flags (below).
@@ -462,9 +465,10 @@ Related terms (owner: Agent integrations):
     per level. Reasons: branch names and markers keep one shape, a moved
     subtask keeps its ID, old branch names cannot be rewritten, and a task's
     place in its parent's order already says when its parts come up.
-  - **Open:** the shape of the task address is owned by Architecture and
-    operations and Human experience; Architecture is to define it (integration
-    finding I-52).
+  - **Proposed** by Architecture and operations: the task address shape.
+    Reason: it is short enough to write next to a task ID and stays stable
+    whatever the page looks like, and a workspace name in it would break on
+    rename.
   - **Proposed:** IDs are unique within a workspace and never reused, and so is
     the prefix. Reason: a reused ID would make old branch names and PRs point
     at the wrong story.
@@ -709,6 +713,27 @@ Accepting a task out of `triage` and setting `cancelled` are for people only
   reason: with subagents working on subtasks, a split task often has no
   session of its own, and stopping at the first session on each path reaches
   the coordinating session without flooding every helper.
+
+### Task notice
+
+- **Definition:** a message from Shinan, not from a person, telling the agent
+  sessions attached to a task that something happened which no person did in
+  Shinan. Examples: a `delivers` PR was closed without merging or merged, a
+  task this one depends on finished, or an outside actor's marker made an
+  unconfirmed link.
+- **Delivery:** the same targets and delivery path as a [nudge](#nudge),
+  always in `queue` mode, labelled as from Shinan, and batched with waiting
+  nudges in time order. It has the same delivery outcomes. It never carries a
+  person's authority, and a notice that reaches no session does not wait for
+  the next claimant.
+- **Owner:** Tasks and work (when notices are sent); Agent integrations
+  (delivery).
+- **Status:** **Proposed** by Tasks and work, adopting Agent integrations'
+  delivery. Reasons: without notices an agent never hears that its PR was
+  closed or that the task it waited for is done; making them nudges would blur
+  the rule that a nudge carries a person's authority; and information can go
+  stale, while the next session can read what happened on the task's
+  timeline.
 
 ## Git hosts
 
@@ -1042,15 +1067,16 @@ Accepting a task out of `triage` and setting `cancelled` are for people only
 | Check-in | An agent session contacting Shinan, which updates last seen and hands over pending nudges. | Agent integrations | Proposed: sessions without a plugin need a defined moment to receive nudges. |
 | Checkout | A local copy of a repository on a machine. A worktree is an extra checkout on its own branch. Long-lived checkout locations are facts on `project` entities; task worktree paths are not catalog facts. | Catalog | Proposed: the `workspace` repository's rule; task worktrees are short-lived. |
 | CI check | A test or build result reported on a work item by the git host. Recorded as an event. | Git host integrations | Proposed: keeps "check" free for fact checks. |
+| Handle | A person's or agent's short name that never changes, used whenever an actor is written in text. A person's handle is chosen when their account is created; an agent's is `<coding tool>-<machine>`. An agent session acting for a person is written `<person handle> via <agent handle>`, for example `guneet via opencode-daedalus`; Shinan is written `shinan`. Shinan writes these forms itself; nobody types them. | Identity, agents and permissions | Proposed by Identity: a typed name could credit someone else, and past records are not rewritten. |
 | Decision record | A file in this repository's `docs/decisions/` recording a decision about Shinan itself, with statuses `proposed`, `accepted`, `rejected`, `withdrawn`, `superseded`. Not a `decision` entity. | Decision log | Decided (owner, [O-93][o]). |
 | Machine | A computer. Described by a `machine` entity; each agent is tied to one. | Catalog | Decided that agents are per machine (owner, [O-40][o]). |
 | Marker | Text in a commit message, PR description or branch name that carries a task ID and, where possible, the agent session. In PR descriptions and commits it is written as Git trailers: `Shinan-Task: <task ID> <task address>` and `Shinan-Session: <agent session ID>`. | Tasks and work (task part); Agent integrations (session part) | Proposed: needed for attribution (D-017) and linking (D-002); a namespaced key avoids clashing with other tools' trailers. |
-| Notification | A message to a person outside the web app, email first (phase 2). Not a nudge, which goes to agent sessions. | Architecture and operations (sending: channels, delivery, retries, failures); Human experience (what is sent and personal settings) | Decided (owner, [NO-3][n]). |
+| Notification | A message to a person outside the web app, email first (phase 2). Not a nudge or a task notice, which go to agent sessions. | Architecture and operations (sending: channels, delivery, retries, failures); Human experience (what is sent and personal settings) | Decided (owner, [NO-3][n]). |
 | Migration | Moving the `workspace` repository's catalog and coordination into a Shinan workspace once Shinan is judged ready. | Roadmap and migration | Decided (D-018). |
 | Reconciliation | Periodically re-reading a git host to catch events missed by webhooks. | Git host integrations | Decided (plan, Integration points). |
 | Revocation | Making a token, agent, sign-in session or membership stop working at once. | Identity, agents and permissions | Proposed by Identity: long-lived tokens make revocation the main control. |
 | Source of truth | The place whose version wins when copies disagree, used for whole bodies of records. The `workspace` repository is the source of truth until migration, except that cross-project coordination for trial projects moves into Shinan during the trial. For a single fact, say owning source. | This document | Decided (D-018; owner, [O-73][o]). |
-| Token | A credential an agent uses to reach Shinan. There is one per agent; it lasts until revoked, cannot exceed its member's rights, and is accepted at every agent endpoint (MCP, the REST API and the plugin stream). A person gets it by approving in the browser a request started from the plugin or the CLI (with a short code for machines without a browser), or makes one by hand as a fallback. There is no MCP-specific OAuth sign-in in the first version. Its **scopes** are the kinds of action it allows. In git host documents, "token" may mean a git host credential; say which. | Identity, agents and permissions | Decided: scoped tokens for agents (plan, Integration points); long-lived (owner, [O-44][o]); how it is obtained and where it is accepted (owner, [NO-1][n]). |
+| Token | A credential an agent uses to reach Shinan. There is one per agent; it lasts until revoked, cannot exceed its member's rights, and is accepted at every agent endpoint (MCP, the REST API and the plugin stream). A person gets it by approving in the browser a request started from the plugin or the CLI (with a short code for machines without a browser), or makes one by hand as a fallback. There is no MCP-specific OAuth sign-in in the first version. Its **scopes** are the kinds of action it allows. A **read-only token** has only the two `read` scopes; it is a choice of scopes, not a role. In git host documents, "token" may mean a git host credential; say which. | Identity, agents and permissions | Decided: scoped tokens for agents (plan, Integration points); long-lived (owner, [O-44][o]); how it is obtained and where it is accepted (owner, [NO-1][n]). |
 | Trust label | A machine-readable label on each text field Shinan returns to an agent, saying who wrote it (member, agent, outside actor or Shinan) and whether it may be treated as an instruction. | Agent integrations (fields and skill wording); Architecture and operations (where it is applied) | Proposed: text from outsiders reaches agents (D-003), so agents must be able to tell instructions from data. |
 | Trial | Phase 1b: using the first version on the proof-of-concept projects while the `workspace` repository stays the source of truth. | Roadmap and migration | Decided (plan, phases; owner, [O-70][o]). |
 | Triage inbox | The list of tasks in `triage`. | Tasks and work; Human experience | Decided (plan, phase 2). |
@@ -1088,7 +1114,7 @@ glossary; one word for one thing keeps the documents consistent.
 | check (alone); "check after merge" | fact check, CI check; verify after merge | Two kinds of check, and verification is a third thing. |
 | redact, delete (for records) | purge | One operation, one word. |
 | decision (alone, in product terms) | `decision` entity, decision on a task, or decision record | Three different things. |
-| notification (for agents) | nudge | Notifications are for people (phase 2). |
+| notification (for agents) | nudge (from a person) or task notice (from Shinan) | Notifications are for people (phase 2). |
 | account allowlist; allowlist (alone) | email allowlist | The owner's words (O-48). |
 | email sign-in link; sign-in link | email magic link | The owner's words (N-7). |
 | approval mode | strict setting | One name for the catalog's switch. |
@@ -1131,21 +1157,12 @@ N-13) and [issue #26][n] (NO-1 to NO-4).
 1. **Attribution reliability** (plan question 2): how reliable crediting can
    be when agents share their person's git host account. (Identity, agents
    and permissions)
-2. **Messages no person sent**, such as "PR closed on the host" or "dependency
-   done": whether they reach agent sessions as nudges or as a separate kind of
-   message. Tasks and work decides (integration finding I-17); this glossary
-   adds the term once it is settled.
 
 ## Dependencies
 
-What this document still needs from other documents:
-
-| Document | Need |
-|---|---|
-| [Architecture and operations](architecture.md) | The shape of the [task address](#task) (integration finding I-52). |
-| [Agent integrations](agent-integrations.md) | The fields and skill wording of [trust labels](#supporting-terms) (I-34). Release after 24 hours of silence for every agent session, as [Release](#agent-session) says (I-32). |
-| [Tasks and work](tasks.md) | The answer on messages no person sent (I-17, [open question 2](#open-questions)). |
-| [Decision log](decisions/README.md) | Links into this document that point to renamed or removed headings: D-007 should link `#fact-check-source-and-freshness` (I-60); D-010 and D-016 point to removed or moved terms (I-61). |
+None. This document needs nothing further from other documents. When an
+owning document adds or changes a term, it updates this glossary in the same
+pull request.
 
 [o]: https://github.com/guneet-xyz/shinan/issues/25
 [n]: https://github.com/guneet-xyz/shinan/issues/26
