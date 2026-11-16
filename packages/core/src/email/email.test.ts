@@ -19,12 +19,14 @@ import { ForbiddenError, RuleViolationError } from "../errors.js"
 import type { JobQueue } from "../jobs.js"
 import { deliverEmail, EmailRetryError } from "./deliver.js"
 import type { EmailAttempt } from "./deliver.js"
-import { pruneEmailDeliveries } from "./prune.js"
+import { lostEmailGraceMinutes, pruneEmailDeliveries } from "./prune.js"
 import {
   emailLimits,
   emailQueue,
+  EmailQueueError,
   emailRetryWindowMs,
   queueEmail,
+  throttleAddress,
 } from "./queue.js"
 import type { EmailJob, OutgoingEmail } from "./queue.js"
 import { magicLinkEmail } from "./templates.js"
@@ -146,6 +148,51 @@ describe("queueEmail", () => {
     )
   })
 
+  /** Everything a thrown error would show if logged, as one string. */
+  function everything(error: unknown): string {
+    const fields = error as Record<string, unknown>
+    return [
+      String(error),
+      fields.message,
+      fields.stack,
+      JSON.stringify(error, Object.getOwnPropertyNames(error)),
+    ].join("\n")
+  }
+
+  it("never puts the message or recipient in a database error", async () => {
+    const to = address()
+    const token = randomUUID()
+    const link = `https://shinan.example/sign-in?token=${token}`
+    // PostgreSQL's jsonb refuses \u0000, so the insert fails with the
+    // message as a query parameter.
+    const failing = { ...content, text: `${link}\u0000` }
+
+    const error = await queue(email({ to, content: failing })).catch(
+      (e: unknown) => e,
+    )
+
+    expect(error).toBeInstanceOf(EmailQueueError)
+    expect(error).toMatchObject({ code: "22P05" })
+    expect((error as Error).cause).toBeUndefined()
+    expect(everything(error)).not.toContain(token)
+    expect(everything(error)).not.toContain(to)
+  })
+
+  it("never puts the recipient in an error from the throttle's queries", async () => {
+    const to = address()
+    const error = await db
+      .transaction(async (tx) => {
+        // An earlier failure aborts the transaction, so the lock query fails.
+        await tx.execute(sql`select 1/0`).catch(() => {})
+        return queueEmail({ tx, jobs: boss, request: {} }, email({ to }))
+      })
+      .catch((e: unknown) => e)
+
+    expect(error).toBeInstanceOf(EmailQueueError)
+    expect(error).toMatchObject({ code: "25P02" })
+    expect(everything(error)).not.toContain(to)
+  })
+
   it("never keeps trying for more than an hour", async () => {
     const before = Date.now()
     const late = await queue(
@@ -230,6 +277,23 @@ describe("throttling", () => {
     ).toMatchObject({ queued: true })
   })
 
+  it("counts IPv6 addresses by their /64", async () => {
+    const prefix = `2001:db8:${randomBytes(2).toString("hex")}:1`
+    const limit = emailLimits.magicLinksPerNetworkAddress
+    for (let i = 0; i < limit; i++) {
+      expect(
+        await queue(email(), { networkAddress: `${prefix}::${i + 1}` }),
+      ).toMatchObject({ queued: true })
+    }
+
+    expect(
+      await queue(email(), { networkAddress: `${prefix}:abcd::99` }),
+    ).toMatchObject({ queued: false, reason: "throttled" })
+    expect(
+      await queue(email(), { networkAddress: `${prefix.slice(0, -1)}2::1` }),
+    ).toMatchObject({ queued: true })
+  })
+
   it("holds under concurrent requests", async () => {
     const to = address()
     const results = await Promise.all(
@@ -238,6 +302,24 @@ describe("throttling", () => {
     expect(results.filter((r) => r.queued)).toHaveLength(
       emailLimits.perRecipient.magic_link,
     )
+  })
+})
+
+describe("throttleAddress", () => {
+  it.each([
+    [undefined, null],
+    ["not an address", null],
+    ["192.0.2.10", "192.0.2.10"],
+    ["::ffff:192.0.2.10", "192.0.2.10"],
+    ["::ffff:c000:20a", "192.0.2.10"],
+    ["2001:db8:1:2:3:4:5:6", "2001:db8:1:2::/64"],
+    ["2001:0DB8:0001:0002::1", "2001:db8:1:2::/64"],
+    ["2001:db8::1", "2001:db8:0:0::/64"],
+    ["fe80::1%eth0", "fe80:0:0:0::/64"],
+    ["::1", "0:0:0:0::/64"],
+    ["64:ff9b::192.0.2.10", "64:ff9b:0:0::/64"],
+  ])("keys %s as %s", (input, key) => {
+    expect(throttleAddress(input)).toBe(key)
   })
 })
 
@@ -430,7 +512,7 @@ describe("deliverEmail", () => {
 })
 
 describe("pruneEmailDeliveries", () => {
-  it("deletes records a week after they finished, and lost queued ones", async () => {
+  it("deletes records a week after they finished", async () => {
     const days = (n: number) => sql`now() - make_interval(days => ${n})`
     const values = {
       kind: "invitation" as const,
@@ -442,20 +524,51 @@ describe("pruneEmailDeliveries", () => {
       .values([
         { ...values, status: "sent", createdAt: days(9), finishedAt: days(8) },
         { ...values, status: "sent", createdAt: days(9), finishedAt: days(6) },
-        { ...values, message: content, createdAt: days(8) },
         { ...values, message: content },
       ])
       .returning({ id: schema.emailDeliveries.id })
 
-    expect(await pruneEmailDeliveries(asShinan(db))).toBeGreaterThanOrEqual(2)
+    const result = await pruneEmailDeliveries(asShinan(db))
+    expect(result.deleted).toBeGreaterThanOrEqual(1)
 
     const left = await db
       .select({ id: schema.emailDeliveries.id })
       .from(schema.emailDeliveries)
       .where(eq(schema.emailDeliveries.recipient, values.recipient))
     expect(left.map((r) => r.id).sort()).toEqual(
-      [rows[1]!.id, rows[3]!.id].sort(),
+      [rows[1]!.id, rows[2]!.id].sort(),
     )
+  })
+
+  it("gives up lost emails well past their deadline and removes their message", async () => {
+    const minutesAgo = (n: number) => new Date(Date.now() - n * 60_000)
+    const values = {
+      kind: "invitation" as const,
+      recipient: address(),
+      message: content,
+    }
+    const [lost, recent] = await db
+      .insert(schema.emailDeliveries)
+      .values([
+        { ...values, notAfter: minutesAgo(lostEmailGraceMinutes + 5) },
+        { ...values, notAfter: minutesAgo(lostEmailGraceMinutes - 5) },
+      ])
+      .returning({ id: schema.emailDeliveries.id })
+
+    const result = await pruneEmailDeliveries(asShinan(db))
+    expect(result.lost).toBeGreaterThanOrEqual(1)
+
+    expect(await delivery(lost!.id)).toMatchObject({
+      status: "given_up",
+      lastError: "Lost",
+      message: null,
+      finishedAt: expect.any(Date) as Date,
+    })
+    // Still within the grace period: a run may still be sending it.
+    expect(await delivery(recent!.id)).toMatchObject({
+      status: "queued",
+      message: content,
+    })
   })
 
   it("is Shinan's to do", async () => {
