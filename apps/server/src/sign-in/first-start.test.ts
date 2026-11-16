@@ -30,7 +30,7 @@ afterAll(async () => {
   await installation?.stop()
 })
 
-const browser = () => new Browser(installation.app)
+const browser = () => new Browser(installation)
 
 async function installationRow() {
   const [row] = await db.select().from(schema.installation)
@@ -70,6 +70,24 @@ describe("first start", () => {
     })
     expect(response.status).toBe(422)
     expect(await response.json()).toMatchObject({ rule: "not-operator" })
+    // An address no sign-in link could go to is refused plainly, not a 500.
+    const local = await browser().request("/api/setup", {
+      body: { token, email: "you@localhost" },
+    })
+    expect(local.status).toBe(422)
+    expect(await local.json()).toMatchObject({ rule: "email-format" })
+  })
+
+  it("works once", async () => {
+    const token = await prepareSetupLink({ db, actor: shinan })
+    const first = await browser().request("/api/setup", {
+      body: { token, email: operator },
+    })
+    expect(first.status).toBe(204)
+    const again = await browser().request("/api/setup", {
+      body: { token, email: "second-operator@example.com" },
+    })
+    expect(again.status).toBe(404)
   })
 
   it("claims the installation once the operator opens the link sent to them", async () => {
@@ -85,12 +103,19 @@ describe("first start", () => {
     await browser().requestLink("second-operator@example.com")
     expect(await emailsTo(db, "second-operator@example.com")).toBe(0)
 
-    const opened = await b.open((await latestLink(db, operator))!)
-    expect(opened.status).toBe(302)
+    // A double click: both openings at once leave exactly one signed in.
+    const link = (await latestLink(db, operator))!
+    const other = browser()
+    const [opened, raced] = await Promise.all([b.open(link), other.open(link)])
+    expect([opened.location, raced.location].sort()).toEqual([
+      "/",
+      "/sign-in?error=INVALID_TOKEN",
+    ])
+    const signedIn = opened.location === "/" ? b : other
     expect((await installationRow()).claimedAt).toBeInstanceOf(Date)
     expect(await db.select().from(schema.setupLinks)).toHaveLength(0)
 
-    const account = (await (await b.account()).json()) as Api.Account
+    const account = (await (await signedIn.account()).json()) as Api.Account
     expect(account.person.handle).toBe("operator")
     expect(account.operator).toBe(true)
     const actions = (

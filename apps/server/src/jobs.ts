@@ -8,6 +8,7 @@ import {
   getInstallation,
   jobQueues,
   pruneEmailDeliveries,
+  pruneSignInRecords,
   shinan,
 } from "@shinan/core"
 import type { EmailJob } from "@shinan/core"
@@ -29,6 +30,11 @@ export const queues = {
    * deletes old email records (architecture §4.2, §7).
    */
   emailPrune: "email-prune",
+  /**
+   * Hourly: deletes expired sign-in sessions and GitHub sign-ins that waited
+   * too long for an email address (identity §3.2, §3.3).
+   */
+  signInPrune: "sign-in-prune",
 } as const
 
 /**
@@ -115,6 +121,12 @@ export async function startWorker(options: WorkerOptions): Promise<Worker> {
       ? {}
       : { pollingIntervalSeconds: options.pollingIntervalSeconds }
   await boss.work(queues.heartbeat, polling, async () => heartbeat(options.db))
+
+  await boss.createQueue(queues.signInPrune)
+  await boss.schedule(queues.signInPrune, "15 * * * *")
+  await boss.work(queues.signInPrune, polling, async () =>
+    pruneSignInRecords({ db: options.db, actor: shinan }),
+  )
 
   await boss.createQueue(queues.emailPrune)
   await boss.schedule(queues.emailPrune, "30 * * * *")

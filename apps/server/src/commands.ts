@@ -29,9 +29,11 @@ Commands:
 
 Recovery, for installation operators (recorded in the security log):
   account end-sessions <handle>          End all of a person's sign-in sessions
-  account change-email <handle> <email>  Change a person's email address, add
-                                         it to the allowlist and end their
-                                         sign-in sessions`
+  account change-email <handle> <email>  Change a person's email address and
+                                         add it to the allowlist; remove the
+                                         old address from the allowlist,
+                                         withdraw invitations pending for it
+                                         and end their sign-in sessions`
 
 /** Runs one CLI command and resolves to the process exit code. */
 export async function runCommand(

@@ -741,6 +741,92 @@ describe("headers from the sign-in layer", () => {
   })
 })
 
+describe("POST /workspaces", () => {
+  it("lets any person create a workspace, as its first workspace owner", async () => {
+    const someone = await newPerson("someone")
+    const response = await call("/workspaces", {
+      body: { name: " Own " },
+      headers: as(someone, { reauthenticated: false }),
+    })
+    expect(response.status).toBe(201)
+    const created = await json<Api.Workspace>(response)
+    expect(created).toMatchObject({ name: "Own", role: "owner" })
+    const members = await json<Api.Member[]>(
+      await call(`/workspaces/${created.id}/members`, { headers: as(someone) }),
+    )
+    expect(members.map((m) => [m.personId, m.role])).toEqual([
+      [someone.id, "owner"],
+    ])
+  })
+
+  it("needs sign-in and a name", async () => {
+    expect((await call("/workspaces", { body: { name: "x" } })).status).toBe(
+      401,
+    )
+    const blank = await call("/workspaces", {
+      body: { name: " " },
+      headers: as(owner),
+    })
+    expect(blank.status).toBe(422)
+  })
+})
+
+describe("errors from the sign-in layer", () => {
+  function failingWith(statusCode: number): SignIn {
+    const error = Object.assign(new Error("echoes the request: secret"), {
+      name: "APIError",
+      statusCode,
+    })
+    return {
+      ...testSignIn,
+      startGitHubLink: () => Promise.reject(error),
+    }
+  }
+
+  it("answer a 4xx for a bad request, never a 500", async () => {
+    const response = await createApi({
+      db,
+      signIn: failingWith(400),
+    }).request("/account/github", {
+      method: "POST",
+      headers: { "content-type": "application/json", ...as(owner) },
+      body: JSON.stringify({ callbackURL: "/account" }),
+    })
+    expect(response.status).toBe(422)
+    expect(await response.json()).toMatchObject({ error: "invalid-input" })
+  })
+
+  it("log only the status when the sign-in layer fails", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {})
+    const response = await createApi({
+      db,
+      signIn: failingWith(500),
+    }).request("/account/github", {
+      method: "POST",
+      headers: { "content-type": "application/json", ...as(owner) },
+      body: JSON.stringify({ callbackURL: "/account" }),
+    })
+    expect(response.status).toBe(500)
+    expect(error).toHaveBeenCalledWith("Sign-in layer error: 500")
+    expect(JSON.stringify(error.mock.calls)).not.toContain("secret")
+    error.mockRestore()
+  })
+
+  it("refuse a return path off this site before the sign-in layer runs", async () => {
+    const startGitHubLink = vi.fn()
+    const response = await createApi({
+      db,
+      signIn: { ...testSignIn, startGitHubLink },
+    }).request("/account/github", {
+      method: "POST",
+      headers: { "content-type": "application/json", ...as(owner) },
+      body: JSON.stringify({ callbackURL: "https://evil.example/" }),
+    })
+    expect(response.status).toBe(422)
+    expect(startGitHubLink).not.toHaveBeenCalled()
+  })
+})
+
 describe("unexpected errors", () => {
   it("answer a generic 500 and are logged", async () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {})

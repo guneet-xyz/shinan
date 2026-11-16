@@ -7,6 +7,7 @@ import { parse, serialize } from "hono/utils/cookie"
 import type { CookieOptions } from "hono/utils/cookie"
 
 import {
+  clientDescription,
   findPendingGitHubSignIn,
   hashToken,
   maySignIn,
@@ -53,10 +54,18 @@ export interface BetterAuthSignInOptions {
   rateLimit?: boolean
 }
 
-/** Paths under `/api/auth` the web app uses; Better Auth's others are not served. */
+export interface BetterAuthSignIn extends SignIn {
+  /** Resolves when work started in the background has finished (tests). */
+  idle(): Promise<void>
+}
+
+/**
+ * Paths under `/api/auth` the web app uses; Better Auth's others are not
+ * served. Magic links are opened only through `openLink` (a POST from the
+ * confirm page), never by a GET that a mail scanner could fetch.
+ */
 const servedPaths: Record<string, readonly string[]> = {
   "/sign-in/magic-link": ["POST"],
-  "/magic-link/verify": ["GET"],
   "/sign-in/social": ["POST"],
   "/callback/github": ["GET", "POST"],
   "/sign-out": ["POST"],
@@ -85,7 +94,7 @@ const clientAddressHeader = "x-shinan-client-address"
  */
 export function createBetterAuthSignIn(
   options: BetterAuthSignInOptions,
-): SignIn {
+): BetterAuthSignIn {
   const { db, jobs, installationUrl } = options
   const base = new URL(installationUrl)
   const secure = base.protocol === "https:"
@@ -193,16 +202,34 @@ export function createBetterAuthSignIn(
         storeToken: "hashed",
         expiresIn: signInLinkMinutes * 60,
         disableSignUp: true,
-        sendMagicLink: async ({ email, url }, ctx) => {
-          await sendSignInLink(asShinan(), {
-            email,
-            link: url,
-            expiresAt: new Date(Date.now() + signInLinkMinutes * 60_000),
-            pendingGitHubToken: cookie(
-              ctx?.request?.headers ?? ctx?.headers,
-              cookieNames.pendingGitHub,
-            ),
-          })
+        sendMagicLink: ({ email, url, token, metadata }, ctx) => {
+          // The emailed link opens a page that asks for one click; the token
+          // is in the fragment, so it reaches no server log and a mail
+          // scanner fetching the link uses nothing up.
+          const next = new URL(url).searchParams.get("callbackURL") ?? "/"
+          const fragment = new URLSearchParams({ token, next }).toString()
+          const link = `${new URL("/sign-in/link", base).href}#${fragment}`
+          // Only the GitHub email step binds a waiting GitHub sign-in, so a
+          // later sign-in on a shared computer never picks it up.
+          const pendingGitHubToken =
+            metadata?.github === true
+              ? cookie(
+                  ctx?.request?.headers ?? ctx?.headers,
+                  cookieNames.pendingGitHub,
+                )
+              : undefined
+          const ctxForCore = asShinan()
+          // Answer before core decides, so the reply takes the same time
+          // whether or not the address may have a link (identity §10).
+          inBackground("Sign-in link not sent", () =>
+            sendSignInLink(ctxForCore, {
+              email,
+              link,
+              expiresAt: new Date(Date.now() + signInLinkMinutes * 60_000),
+              pendingGitHubToken,
+            }),
+          )
+          return Promise.resolve()
         },
       }),
     ],
@@ -216,7 +243,14 @@ export function createBetterAuthSignIn(
         create: {
           before: async (session) =>
             (await maySignIn(asShinan(), { personId: session.userId }))
-              ? undefined
+              ? {
+                  data: {
+                    ...session,
+                    userAgent: clientDescription(
+                      session.userAgent ?? undefined,
+                    ),
+                  },
+                }
               : false,
         },
       },
@@ -268,7 +302,7 @@ export function createBetterAuthSignIn(
     const input = (body ?? {}) as Record<string, unknown>
     const allowed =
       path === "/sign-in/magic-link"
-        ? ["email", "callbackURL", "errorCallbackURL"]
+        ? ["email", "callbackURL", "errorCallbackURL", "metadata"]
         : ["provider", "callbackURL", "errorCallbackURL", "disableRedirect"]
     const unexpected = Object.keys(input).filter(
       (key) => !allowed.includes(key),
@@ -277,6 +311,12 @@ export function createBetterAuthSignIn(
       throw new APIError("BAD_REQUEST", {
         message: `Unexpected fields: ${unexpected.join(", ")}`,
       })
+    }
+    if (
+      input.metadata !== undefined &&
+      JSON.stringify(input.metadata) !== JSON.stringify({ github: true })
+    ) {
+      throw new APIError("BAD_REQUEST", { message: "Unexpected metadata" })
     }
     if (path !== "/sign-in/magic-link" && input.provider !== "github") {
       throw new APIError("BAD_REQUEST", { message: "Only GitHub is offered" })
@@ -303,6 +343,11 @@ export function createBetterAuthSignIn(
    */
   async function openLink(ctx: HookContext) {
     const query = (ctx.query ?? {}) as Record<string, unknown>
+    // Without a return path Better Auth would answer with the session token
+    // itself; Shinan always gives one.
+    if (query.callbackURL === undefined) {
+      throw ctx.redirect(`${signInErrorPath(undefined)}?error=invalid_link`)
+    }
     for (const key of [
       "callbackURL",
       "errorCallbackURL",
@@ -466,6 +511,10 @@ export function createBetterAuthSignIn(
     const accountId = String(profile.id)
     const login = typeof profile.login === "string" ? profile.login : undefined
     currentStore().github = { accountId, login }
+    const accessToken = tokens.accessToken
+    inBackground("GitHub token not revoked", () =>
+      revokeGitHubToken(accessToken),
+    )
     return {
       user: {
         id: accountId,
@@ -477,13 +526,61 @@ export function createBetterAuthSignIn(
     }
   }
 
+  /**
+   * The user token is not needed after `/user` was read, so it is revoked at
+   * GitHub at once rather than left valid until it expires.
+   */
+  async function revokeGitHubToken(accessToken: string): Promise<void> {
+    const { clientId, clientSecret } = options.github!
+    const response = await fetch(
+      `https://api.github.com/applications/${encodeURIComponent(clientId)}/token`,
+      {
+        method: "DELETE",
+        headers: {
+          accept: "application/vnd.github+json",
+          authorization: `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString("base64")}`,
+          "content-type": "application/json",
+          "user-agent": "Shinan",
+          "x-github-api-version": "2022-11-28",
+        },
+        body: JSON.stringify({ access_token: accessToken }),
+      },
+    )
+    if (!response.ok && response.status !== 404) {
+      throw new Error(`GitHub answered ${response.status}`)
+    }
+  }
+
+  /**
+   * Work that must not hold up the answer. Failures are logged by kind
+   * only (no values, which could hold an address or a token).
+   */
+  const inFlight = new Set<Promise<void>>()
+  function inBackground(what: string, task: () => Promise<void>): void {
+    const running: Promise<void> = task()
+      .catch((error: unknown) => {
+        const kind = error instanceof Error ? error.name : "Error"
+        const status =
+          error instanceof Error && /^GitHub answered \d+$/.test(error.message)
+            ? `, ${error.message}`
+            : ""
+        console.error(`${what} (${kind}${status})`)
+      })
+      .finally(() => inFlight.delete(running))
+    inFlight.add(running)
+  }
+
   return {
     methods: { github: options.github !== undefined },
+
+    async idle() {
+      while (inFlight.size > 0) await Promise.all([...inFlight])
+    },
 
     async currentPerson(request) {
       return withRequestStore({ request: {} }, async () => {
         const { headers, response } = await auth.api.getSession({
-          headers: request.headers,
+          headers: forwardHeaders(request.headers),
           returnHeaders: true,
         })
         if (!response) return { person: null, headers }
@@ -516,34 +613,69 @@ export function createBetterAuthSignIn(
           { status: 404 },
         )
       }
-      const headers = new Headers(request.headers)
-      headers.delete(clientAddressHeader)
-      if (info.networkAddress)
-        headers.set(clientAddressHeader, info.networkAddress)
-      const forwarded = new Request(request, { headers })
+      const forwarded = new Request(request, {
+        headers: forwardHeaders(request.headers, info),
+      })
       return withRequestStore({ request: info }, () => auth.handler(forwarded))
     },
 
-    async startGitHubLink(request, input) {
-      return withRequestStore({ request: {} }, async () => {
+    async openLink(request, info, input) {
+      return withRequestStore({ request: info }, async () => {
+        let answer: unknown
+        try {
+          answer = await auth.api.magicLinkVerify({
+            query: {
+              token: input.token,
+              callbackURL: input.callbackURL,
+              errorCallbackURL: signInErrorPath(input.callbackURL),
+            },
+            headers: forwardHeaders(request.headers, info),
+            asResponse: true,
+          })
+        } catch (error) {
+          // A redirect from Shinan's own hook, such as a refused address.
+          answer = error
+        }
+        const headers = headersOf(answer)
+        const location = headers?.get("location")
+        if (!headers || !location) {
+          throw new Error("Opening a sign-in link gave no redirect")
+        }
+        const cookies = new Headers()
+        for (const value of headers.getSetCookie()) {
+          cookies.append("set-cookie", value)
+        }
+        const target = new URL(location, base)
+        return {
+          location:
+            target.origin === base.origin
+              ? target.pathname + target.search + target.hash
+              : "/",
+          headers: cookies,
+        }
+      })
+    },
+
+    async startGitHubLink(request, info, input) {
+      return withRequestStore({ request: info }, async () => {
         const { headers, response } = await auth.api.linkSocialAccount({
           body: {
             provider: "github",
             callbackURL: input.callbackURL,
             disableRedirect: true,
           },
-          headers: request.headers,
+          headers: forwardHeaders(request.headers, info),
           returnHeaders: true,
         })
         return { url: response.url, headers }
       })
     },
 
-    async sendSetupLink(request, input) {
-      await withRequestStore({ request: {} }, () =>
+    async sendSetupLink(request, info, input) {
+      await withRequestStore({ request: info }, () =>
         auth.api.signInMagicLink({
           body: { email: input.email, callbackURL: "/" },
-          headers: request.headers,
+          headers: forwardHeaders(request.headers, info),
         }),
       )
     },
@@ -586,6 +718,31 @@ export function createBetterAuthSignIn(
       return {}
     }
   }
+}
+
+/**
+ * Headers for a call into Better Auth: the client address header is only
+ * ever Shinan's own, set from the connection, never one the client sent.
+ */
+function forwardHeaders(headers: Headers, info?: RequestInfo): Headers {
+  const forwarded = new Headers(headers)
+  forwarded.delete(clientAddressHeader)
+  if (info?.networkAddress) {
+    forwarded.set(clientAddressHeader, info.networkAddress)
+  }
+  return forwarded
+}
+
+function headersOf(value: unknown): Headers | undefined {
+  if (typeof value !== "object" || value === null || !("headers" in value)) {
+    return undefined
+  }
+  const { headers } = value
+  if (headers instanceof Headers) return headers
+  if (typeof headers === "object" && headers !== null) {
+    return new Headers(headers)
+  }
+  return undefined
 }
 
 function cookie(

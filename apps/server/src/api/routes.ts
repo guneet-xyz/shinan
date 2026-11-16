@@ -7,7 +7,9 @@ import {
   addToAllowlist,
   changeRole,
   checkAddGitHub,
+  clientDescription,
   createInvitation,
+  createWorkspace,
   declineInvitation,
   endAllSignInSessions,
   endSignInSession,
@@ -49,6 +51,7 @@ import type {
 } from "@shinan/core"
 import type { Database } from "@shinan/db"
 
+import { isSafeReturnPath } from "../sign-in/paths.js"
 import { BadRequestError, errorResponse, handleError } from "./errors.js"
 import { appendHeaders, requirePerson } from "./sign-in.js"
 import type { SignedInEnv, SignIn } from "./sign-in.js"
@@ -108,8 +111,27 @@ export function createApi({ db, signIn, jobs, installationUrl }: ApiOptions) {
     })
     if (!signIn.sendSetupLink)
       throw new BadRequestError("Sign-in is not set up")
-    await signIn.sendSetupLink(c.req.raw, { email })
+    await signIn.sendSetupLink(c.req.raw, requestInfo(c), { email })
     return c.body(null, 204)
+  })
+
+  // The confirm page of an emailed sign-in link: one click opens it. The
+  // token comes in the body, so it is in no address (architecture §10.2).
+  api.post("/sign-in/link", async (c) => {
+    const body = await readBody(c)
+    const token = stringField(body, "token")
+    const callbackURL = returnPath(stringField(body, "next"))
+    if (!signIn.openLink) {
+      return errorResponse(c, 404, { error: "not-found", message: "Not found" })
+    }
+    const { location, headers } = await signIn.openLink(
+      c.req.raw,
+      requestInfo(c),
+      { token, callbackURL },
+    )
+    const response = c.json({ location } satisfies Api.SignInLinkOpened)
+    appendHeaders(response.headers, headers)
+    return response
   })
 
   // The GitHub sign-in waiting in this browser for an email address.
@@ -128,6 +150,7 @@ export function createApi({ db, signIn, jobs, installationUrl }: ApiOptions) {
   signedIn.use("/account/*", signInRequired)
   signedIn.use("/invitations/*", signInRequired)
   signedIn.use("/installation/*", signInRequired)
+  signedIn.use("/workspaces", signInRequired)
   signedIn.use("/workspaces/*", signInRequired)
 
   const ctx = (c: HonoContext<SignedInEnv>): Context => ({
@@ -177,14 +200,16 @@ export function createApi({ db, signIn, jobs, installationUrl }: ApiOptions) {
   // then the sign-in layer sends the person to GitHub.
   signedIn.post("/account/github", async (c) => {
     const body = await readBody(c)
-    const callbackURL = stringField(body, "callbackURL")
+    const callbackURL = returnPath(stringField(body, "callbackURL"))
     await checkAddGitHub(ctx(c))
     if (!signIn.startGitHubLink) {
       return errorResponse(c, 404, { error: "not-found", message: "Not found" })
     }
-    const { url, headers } = await signIn.startGitHubLink(c.req.raw, {
-      callbackURL,
-    })
+    const { url, headers } = await signIn.startGitHubLink(
+      c.req.raw,
+      requestInfo(c),
+      { callbackURL },
+    )
     const response = c.json({ url } satisfies Api.Redirect)
     appendHeaders(response.headers, headers)
     return response
@@ -253,6 +278,16 @@ export function createApi({ db, signIn, jobs, installationUrl }: ApiOptions) {
     const email = stringField(await readBody(c), "email")
     await removeFromAllowlist(ctx(c), { email })
     return c.body(null, 204)
+  })
+
+  // Any person may create a workspace and becomes its first workspace owner
+  // (identity §4).
+  signedIn.post("/workspaces", async (c) => {
+    const body = await readBody(c)
+    const { workspace } = await createWorkspace(ctx(c), {
+      name: stringField(body, "name"),
+    })
+    return c.json(workspaceJson(await getWorkspace(ctx(c), workspace.id)), 201)
   })
 
   signedIn.get("/workspaces/:workspaceId", async (c) => {
@@ -370,10 +405,22 @@ export function createApi({ db, signIn, jobs, installationUrl }: ApiOptions) {
 function requestInfo(c: HonoContext): RequestInfo {
   const env = c.env as
     { incoming?: { socket?: { remoteAddress?: string } } } | undefined
+  const client = c.req.header("user-agent")
   return {
     networkAddress: env?.incoming?.socket?.remoteAddress,
-    client: c.req.header("user-agent"),
+    client:
+      client === undefined
+        ? undefined
+        : (clientDescription(client) ?? undefined),
   }
+}
+
+/** A path on this site to return to, as received; anything else is 422. */
+function returnPath(value: string): string {
+  if (!isSafeReturnPath(value, "http://localhost")) {
+    throw new BadRequestError("The return path must be a path on this site")
+  }
+  return value
 }
 
 async function readBody(c: HonoContext): Promise<Record<string, unknown>> {

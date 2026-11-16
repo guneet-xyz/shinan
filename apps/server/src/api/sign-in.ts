@@ -26,19 +26,35 @@ export interface SignIn {
   /** The sign-in methods this installation offers besides email. */
   methods: { github: boolean }
   /**
+   * Opens a magic link when the person confirms on the page the emailed
+   * link leads to (never on a GET a mail scanner could fetch). Returns where
+   * to go next and the headers to add, such as the new session cookie; never
+   * the session token itself.
+   */
+  openLink?(
+    request: Request,
+    info: RequestInfo,
+    input: { token: string; callbackURL: string },
+  ): Promise<{ location: string; headers: Headers }>
+  /**
    * Starts adding GitHub as a sign-in method for the signed-in person, once
    * core has allowed it. Returns GitHub's authorization address, and headers
    * to add to the response.
    */
   startGitHubLink?(
     request: Request,
+    info: RequestInfo,
     input: { callbackURL: string },
   ): Promise<{ url: string; headers?: Headers }>
   /**
    * Emails a sign-in link to an operator address during the first start,
    * once core has accepted the setup link.
    */
-  sendSetupLink?(request: Request, input: { email: string }): Promise<void>
+  sendSetupLink?(
+    request: Request,
+    info: RequestInfo,
+    input: { email: string },
+  ): Promise<void>
   /** The GitHub sign-in waiting in this browser for an email address. */
   pendingGitHub?(request: Request): Promise<{ login: string | null } | null>
 }

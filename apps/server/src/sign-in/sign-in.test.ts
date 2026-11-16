@@ -36,7 +36,7 @@ async function allowlisted(prefix = "person"): Promise<string> {
 }
 
 function browser(userAgent?: string) {
-  return new Browser(installation.app, userAgent)
+  return new Browser(installation, userAgent)
 }
 
 async function account(b: Browser): Promise<Api.Account> {
@@ -83,13 +83,14 @@ describe("email magic links", () => {
     expect(await response.json()).toEqual({ status: true })
 
     const link = await latestLink(db, email)
+    // The link leads to a confirm page, with the token in the fragment.
     expect(link).toMatch(
-      /^http:\/\/shinan\.test\/api\/auth\/magic-link\/verify\?token=/,
+      /^http:\/\/shinan\.test\/sign-in\/link#token=[^&]+&next=%2Faccount$/,
     )
-    expect(await b.open(link!)).toEqual({
-      status: 302,
-      location: "http://shinan.test/account",
-    })
+    const opened = await b.open(link!)
+    expect(opened).toMatchObject({ status: 200, location: "/account" })
+    // The answer carries only where to go; the session is only in a cookie.
+    expect(opened.body).not.toContain(sessionToken(b))
 
     const me = await account(b)
     expect(me.person).toMatchObject({ email, name: me.person.handle })
@@ -121,7 +122,7 @@ describe("email magic links", () => {
     const b = browser()
     await b.requestLink(email)
     const link = new URL((await latestLink(db, email))!)
-    const token = link.searchParams.get("token")!
+    const token = new URLSearchParams(link.hash.slice(1)).get("token")!
     const verifications = await db.select().from(schema.signInVerifications)
     for (const row of verifications) {
       expect(row.identifier).not.toContain(token)
@@ -144,7 +145,7 @@ describe("email magic links", () => {
     const link = (await latestLink(db, email))!
     await b.open(link)
     const again = await browser().open(link)
-    expect(again.status).toBe(302)
+    expect(again.status).toBe(200)
     expect(again.location).toMatch(/\/sign-in\?error=/)
     const [failed] = await securityLog(null, "sign-in.failed")
     expect(failed).toBeDefined()
@@ -194,10 +195,72 @@ describe("email magic links", () => {
     }
     // An encoded slash is a same-site path, as received.
     expect((await b.requestLink(email, "/%2f/evil.example")).status).toBe(200)
-    const link = new URL((await latestLink(db, email))!)
-    link.searchParams.set("callbackURL", "//evil.example")
-    const opened = await b.open(link.href)
-    expect(opened.location).toBe("/sign-in?error=invalid_link")
+    const link = (await latestLink(db, email))!
+    const tampered = await b.open(link, { next: "//evil.example" })
+    expect(tampered.status).toBe(422)
+    expect((await b.open(link)).location).toBe("/%2f/evil.example")
+  })
+
+  it("answers before deciding, so the reply cannot tell addresses apart by time", async () => {
+    const email = await allowlisted()
+    const b = browser()
+    // Hold the installation record, which deciding reads, from another
+    // connection: if the reply waited for the decision, it would hang.
+    const holder = await installation.pool.connect()
+    try {
+      await holder.query("begin")
+      await holder.query("lock table installation in access exclusive mode")
+      for (const address of [email, "stranger-timing@example.com"]) {
+        const response = await b.request("/api/auth/sign-in/magic-link", {
+          body: { email: address, callbackURL: "/" },
+        })
+        expect(response.status).toBe(200)
+        expect(await response.json()).toEqual({ status: true })
+      }
+      expect(await emailsTo(db, email)).toBe(0)
+    } finally {
+      await holder.query("rollback")
+      holder.release()
+    }
+    await b.idle()
+    expect(await emailsTo(db, email)).toBe(1)
+    expect(await emailsTo(db, "stranger-timing@example.com")).toBe(0)
+  })
+
+  it("keeps the client address Shinan saw, not one the client claims", async () => {
+    const email = await allowlisted()
+    const b = browser()
+    await b.request("/api/auth/sign-in/magic-link", {
+      body: { email, callbackURL: "/" },
+      headers: { "x-shinan-client-address": "203.0.113.9" },
+    })
+    await b.idle()
+    const link = (await latestLink(db, email))!
+    const fragment = new URLSearchParams(new URL(link).hash.slice(1))
+    await b.request("/api/sign-in/link", {
+      body: { token: fragment.get("token"), next: "/" },
+      headers: { "x-shinan-client-address": "203.0.113.9" },
+    })
+    const [session] = await db
+      .select()
+      .from(schema.signInSessions)
+      .where(eq(schema.signInSessions.tokenHash, hashToken(sessionToken(b))))
+    expect(session!.ipAddress).not.toBe("203.0.113.9")
+  })
+
+  it("keeps at most 512 characters of a user agent", async () => {
+    const email = await allowlisted()
+    const b = browser(`Mozilla/5.0 ${"x".repeat(5000)}`)
+    await b.signIn(db, email)
+    const me = await account(b)
+    const [session] = await db
+      .select()
+      .from(schema.signInSessions)
+      .where(eq(schema.signInSessions.personId, me.person.id))
+    expect(session!.userAgent).toHaveLength(512)
+    for (const entry of await securityLog(me.person.id, "sign-in.succeeded")) {
+      expect(entry.client).toHaveLength(512)
+    }
   })
 
   it("refuses fields the sign-in page never sends", async () => {
@@ -220,6 +283,7 @@ describe("email magic links", () => {
       ["POST", "/api/auth/link-social"],
       ["POST", "/api/auth/update-user"],
       ["GET", "/api/auth/get-session"],
+      ["GET", "/api/auth/magic-link/verify?token=x&callbackURL=%2F"],
       ["GET", "/api/auth/sign-in/magic-link"],
     ] as const) {
       const response = await b.request(path, {
@@ -243,14 +307,13 @@ describe("sign-in sessions", () => {
     // Not an operator, so refused whatever the session's age.
     expect(created.status).toBe(403)
 
-    // A workspace rename needs a recent sign-in.
-    const workspace = await b.request("/api/workspaces", { body: {} })
-    expect(workspace.status).toBe(404)
-    const { createWorkspace } = await import("@shinan/core")
-    const { workspace: ws } = await createWorkspace(
-      { db, actor: { kind: "person", personId: me.person.id } },
-      { name: "Mine" },
-    )
+    // Any person may create a workspace; renaming it needs a recent sign-in.
+    const created2 = await b.request("/api/workspaces", {
+      body: { name: "Mine" },
+    })
+    expect(created2.status).toBe(201)
+    const ws = (await created2.json()) as Api.Workspace
+    expect(ws).toMatchObject({ name: "Mine", role: "owner" })
     const rename = (name: string) =>
       b.request(`/api/workspaces/${ws.id}`, { method: "PATCH", body: { name } })
     expect((await rename("Fresh")).status).toBe(200)
@@ -420,9 +483,9 @@ describe("GitHub sign-in", () => {
     const pending = await b.request("/api/sign-in/github")
     expect(await pending.json()).toEqual({ login: "octo" })
 
-    await b.requestLink(email, "/w/1")
+    await b.requestLink(email, "/w/1", { github: true })
     const opened = await b.open((await latestLink(db, email))!)
-    expect(opened.location).toBe("http://shinan.test/w/1")
+    expect(opened.location).toBe("/w/1")
     const me = await account(b)
     expect(me.signInMethods.github).toMatchObject({
       accountId: String(nextId),
@@ -445,7 +508,7 @@ describe("GitHub sign-in", () => {
     const email = await allowlisted()
     const first = browser()
     await signInWithGitHub(first)
-    await first.signIn(db, email)
+    await first.signIn(db, email, { fromGitHubStep: true })
     const me = await account(first)
     expect(me.signInMethods.github).not.toBeNull()
 
@@ -463,13 +526,38 @@ describe("GitHub sign-in", () => {
     expect(alert?.text).toContain("Chrome on macOS")
   })
 
+  it("forgets an unfinished GitHub sign-in when someone signs in by email in the same browser", async () => {
+    const shared = browser()
+    await signInWithGitHub(shared)
+    expect((await shared.request("/api/sign-in/github")).status).toBe(200)
+    // Someone else uses the plain sign-in page on the same computer.
+    const email = await allowlisted()
+    await shared.signIn(db, email)
+    expect((await account(shared)).signInMethods.github).toBeNull()
+    expect((await shared.request("/api/sign-in/github")).status).toBe(404)
+  })
+
+  it("revokes GitHub's user token once it has read who signed in", async () => {
+    const b = browser()
+    github.calls.length = 0
+    await signInWithGitHub(b)
+    const credentials = Buffer.from("test-client:test-client-secret").toString(
+      "base64",
+    )
+    expect(github.calls).toEqual([
+      "token",
+      "user",
+      `revoke Basic ${credentials} {"access_token":"gho_test_user_token"}`,
+    ])
+  })
+
   it("never links GitHub to someone else's account through their link", async () => {
     const victim = await allowlisted("victim")
     const attacker = browser()
     await signInWithGitHub(attacker)
     // The attacker asks for a link to the victim's address; the victim opens
     // it in their own browser.
-    await attacker.requestLink(victim)
+    await attacker.requestLink(victim, "/", { github: true })
     const victimBrowser = browser()
     await victimBrowser.open((await latestLink(db, victim))!)
     const me = await account(victimBrowser)
@@ -480,7 +568,7 @@ describe("GitHub sign-in", () => {
     const email = await allowlisted()
     const b = browser()
     await signInWithGitHub(b)
-    await b.signIn(db, email)
+    await b.signIn(db, email, { fromGitHubStep: true })
     await db
       .delete(schema.emailAllowlist)
       .where(eq(schema.emailAllowlist.email, email))
@@ -521,6 +609,11 @@ describe("GitHub sign-in", () => {
       "GitHub sign-in added to your Test Shinan account",
     )
 
+    const outside = await b.request("/api/account/github", {
+      body: { callbackURL: "https://evil.example/" },
+    })
+    expect(outside.status).toBe(422)
+
     const twice = await b.request("/api/account/github", {
       body: { callbackURL: "/account" },
     })
@@ -539,7 +632,7 @@ describe("GitHub sign-in", () => {
   it("refuses a GitHub account already linked to someone else", async () => {
     const first = browser()
     await signInWithGitHub(first)
-    await first.signIn(db, await allowlisted())
+    await first.signIn(db, await allowlisted(), { fromGitHubStep: true })
     const takenId = nextId
 
     const second = browser()

@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 
+import { isEmailAddress } from "@shinan/core"
 import type { EmailFrom } from "@shinan/email"
 
 export type Env = Record<string, string | undefined>
@@ -58,8 +59,11 @@ export function readWebConfig(
     .map((email) => email.trim().toLowerCase())
     .filter(Boolean)
   for (const email of operators) {
-    if (!/^[^\s@]+@[^\s@]+$/.test(email)) {
-      throw new Error(`SHINAN_OPERATORS has an invalid email address: ${email}`)
+    // The same rule as sign-in links, so every operator can be sent one.
+    if (!isEmailAddress(email)) {
+      throw new Error(
+        `SHINAN_OPERATORS has an address sign-in links cannot be sent to: ${email}`,
+      )
     }
   }
   if (production && operators.length === 0) {

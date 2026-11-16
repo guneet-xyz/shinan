@@ -61,6 +61,12 @@ export interface PendingGitHubSignIn {
   login: string | null
 }
 
+/** A sign-in link was opened: where to go next. */
+export interface SignInLinkOpened {
+  /** A path on this site, such as `/w/1` or `/sign-in?error=…`. */
+  location: string
+}
+
 /** Where to send the browser next. */
 export interface Redirect {
   url: string
@@ -277,7 +283,12 @@ export function createApiClient(options: ApiClientOptions = {}) {
 
     // Sign-in, served by the sign-in layer under /api/auth with the routes of
     // Better Auth's magic link and social sign-in.
-    requestSignInLink: (input: { email: string; callbackURL: string }) =>
+    requestSignInLink: (input: {
+      email: string
+      callbackURL: string
+      /** Set by the GitHub email step, to link the waiting GitHub sign-in. */
+      metadata?: { github: true }
+    }) =>
       request<unknown>("POST", "/api/auth/sign-in/magic-link", input).then(
         () => undefined,
       ),
@@ -289,6 +300,8 @@ export function createApiClient(options: ApiClientOptions = {}) {
     signOut: () =>
       request<unknown>("POST", "/api/auth/sign-out", {}).then(() => undefined),
 
+    openSignInLink: (input: { token: string; next: string }) =>
+      request<SignInLinkOpened>("POST", "/api/sign-in/link", input),
     pendingGitHubSignIn: () =>
       request<PendingGitHubSignIn>("GET", "/api/sign-in/github"),
     startSetup: (input: { token: string; email: string }) =>
@@ -333,6 +346,8 @@ export function createApiClient(options: ApiClientOptions = {}) {
     removeFromAllowlist: (email: string) =>
       request<void>("POST", "/api/installation/allowlist/remove", { email }),
 
+    createWorkspace: (name: string) =>
+      request<Workspace>("POST", "/api/workspaces", { name }),
     workspace: (workspaceId: string) =>
       request<Workspace>("GET", workspace(workspaceId)),
     renameWorkspace: (workspaceId: string, name: string) =>

@@ -122,9 +122,12 @@ describe("readWebConfig", () => {
     expect(() =>
       readWebConfig({ ...dev, SHINAN_URL: "https://x.example/app" }),
     ).toThrow(/origin/)
-    expect(() =>
-      readWebConfig({ ...dev, SHINAN_OPERATORS: "not-an-address" }),
-    ).toThrow(/SHINAN_OPERATORS/)
+    // Only addresses sign-in links can go to, checked at start.
+    for (const address of ["not-an-address", "you@localhost"]) {
+      expect(() =>
+        readWebConfig({ ...dev, SHINAN_OPERATORS: address }),
+      ).toThrow(/SHINAN_OPERATORS/)
+    }
     expect(() =>
       readWebConfig({ ...dev, SIGN_IN_SESSION_IDLE_MINUTES: "0" }),
     ).toThrow(/SIGN_IN_SESSION_IDLE_MINUTES/)

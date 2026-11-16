@@ -49,6 +49,7 @@ export async function startInstallation(
   const app = createApp({ db, signIn, jobs, installationUrl })
   return {
     db,
+    pool,
     app,
     signIn,
     async stop() {
@@ -66,18 +67,23 @@ export class Browser {
   readonly cookies = new Map<string, string>()
 
   constructor(
-    private readonly app: Installation["app"],
+    private readonly installation: Pick<Installation, "app" | "signIn">,
     readonly userAgent = "Mozilla/5.0 (X11; Linux x86_64) Gecko/20100101 Firefox/140.0",
   ) {}
 
   async request(
     path: string,
-    init: { method?: string; body?: unknown } = {},
+    init: {
+      method?: string
+      body?: unknown
+      headers?: Record<string, string>
+    } = {},
   ): Promise<Response> {
     const url = new URL(path, installationUrl)
     const headers = new Headers({
       origin: installationUrl,
       "user-agent": this.userAgent,
+      ...init.headers,
     })
     if (this.cookies.size > 0) {
       headers.set(
@@ -86,7 +92,7 @@ export class Browser {
       )
     }
     if (init.body !== undefined) headers.set("content-type", "application/json")
-    const response = await this.app.request(url.href, {
+    const response = await this.installation.app.request(url.href, {
       method: init.method ?? (init.body === undefined ? "GET" : "POST"),
       headers,
       body: init.body === undefined ? undefined : JSON.stringify(init.body),
@@ -102,26 +108,56 @@ export class Browser {
     return response
   }
 
-  /** Asks for a sign-in link, as the sign-in page does. */
-  async requestLink(email: string, callbackURL = "/") {
-    return this.request("/api/auth/sign-in/magic-link", {
-      body: { email, callbackURL },
+  /**
+   * Asks for a sign-in link, as the sign-in page does, and waits for the
+   * work the reply does not wait for.
+   */
+  async requestLink(
+    email: string,
+    callbackURL = "/",
+    metadata?: { github: true },
+  ) {
+    const response = await this.request("/api/auth/sign-in/magic-link", {
+      body: { email, callbackURL, ...(metadata ? { metadata } : {}) },
     })
+    await this.installation.signIn.idle()
+    return response
   }
 
-  /** Opens a link from an email and returns where it sends the browser. */
-  async open(link: string): Promise<{ status: number; location: string }> {
+  /**
+   * Opens a link from an email as its confirm page does when the person
+   * clicks: posts the token from the fragment. Returns where it sends the
+   * browser.
+   */
+  async open(
+    link: string,
+    change: { next?: string } = {},
+  ): Promise<{ status: number; location: string; body: string }> {
     const url = new URL(link)
-    const response = await this.request(url.pathname + url.search)
-    return {
-      status: response.status,
-      location: response.headers.get("location") ?? "",
-    }
+    const fragment = new URLSearchParams(url.hash.slice(1))
+    const response = await this.request("/api/sign-in/link", {
+      body: {
+        token: fragment.get("token"),
+        next: change.next ?? fragment.get("next"),
+      },
+    })
+    await this.installation.signIn.idle()
+    const body = await response.text()
+    const { location } = JSON.parse(body) as { location?: string }
+    return { status: response.status, location: location ?? "", body }
   }
 
   /** Signs in by email link, start to finish. */
-  async signIn(db: Database, email: string): Promise<void> {
-    const response = await this.requestLink(email)
+  async signIn(
+    db: Database,
+    email: string,
+    options: { fromGitHubStep?: boolean } = {},
+  ): Promise<void> {
+    const response = await this.requestLink(
+      email,
+      "/",
+      options.fromGitHubStep ? { github: true } : undefined,
+    )
     if (response.status !== 200) {
       throw new Error(`Sign-in request failed: ${response.status}`)
     }
@@ -132,6 +168,11 @@ export class Browser {
 
   async account() {
     return this.request("/api/account")
+  }
+
+  /** Waits for work started in the background, such as sending email. */
+  async idle() {
+    await this.installation.signIn.idle()
   }
 }
 
@@ -202,6 +243,13 @@ export function mockGitHub(account: { id: number; login: string }) {
           scope: "",
         })
       }
+      if (url === "https://api.github.com/applications/test-client/token") {
+        const request = new Request(url, init)
+        calls.push(
+          `revoke ${request.headers.get("authorization")} ${await request.text()}`,
+        )
+        return new Response(null, { status: 204 })
+      }
       if (url === "https://api.github.com/user") {
         calls.push("user")
         const headers = new Headers(
@@ -247,6 +295,7 @@ export async function signInWithGitHub(
   const callback = await browser.request(
     `/api/auth/callback/github?code=test-code&state=${encodeURIComponent(state)}`,
   )
+  await browser.idle()
   return {
     status: callback.status,
     location: callback.headers.get("location") ?? "",
