@@ -1,10 +1,14 @@
 import { randomBytes } from "node:crypto"
+import type { AddressInfo } from "node:net"
+import { serve } from "@hono/node-server"
 import { afterEach, describe, expect, inject, it, vi } from "vitest"
 
 import { schema } from "@shinan/db"
 import { connectTestDatabase } from "@shinan/db/testing"
 
+import { createInternalApp } from "./app.js"
 import { closeWeb, createEmailSender, runCommand, usage } from "./commands.js"
+import { checkHealth } from "./health.js"
 
 describe("runCommand", () => {
   afterEach(() => {
@@ -142,5 +146,85 @@ describe("createEmailSender", () => {
     })
     await ses.close()
     await smtp.close()
+  })
+})
+
+describe("health", () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  /** Serves the internal listener on a free loopback port. */
+  async function internalListener(ready: boolean) {
+    const app = createInternalApp({
+      checkDatabase: () =>
+        Promise.resolve({ reachable: true, migrationsCurrent: ready }),
+    })
+    const server = await new Promise<ReturnType<typeof serve>>((resolve) => {
+      const s = serve(
+        { fetch: app.fetch, hostname: "127.0.0.1", port: 0 },
+        () => resolve(s),
+      )
+    })
+    const { port } = server.address() as AddressInfo
+    return {
+      port: String(port),
+      close: () => new Promise((resolve) => server.close(resolve)),
+    }
+  }
+
+  it("exits 0 when the web role is ready", async () => {
+    vi.spyOn(console, "info").mockImplementation(() => {})
+    const listener = await internalListener(true)
+    try {
+      await expect(
+        runCommand(["health"], { INTERNAL_PORT: listener.port }),
+      ).resolves.toBe(0)
+    } finally {
+      await listener.close()
+    }
+  })
+
+  it("exits 1 when the web role is not ready", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {})
+    const listener = await internalListener(false)
+    try {
+      await expect(
+        runCommand(["health"], { INTERNAL_PORT: listener.port }),
+      ).resolves.toBe(1)
+      expect(error).toHaveBeenCalledWith(expect.stringContaining("503"))
+    } finally {
+      await listener.close()
+    }
+  })
+
+  it("exits 1 when nothing answers", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {})
+    const listener = await internalListener(true)
+    await listener.close()
+    await expect(
+      runCommand(["health"], { INTERNAL_PORT: listener.port }),
+    ).resolves.toBe(1)
+    expect(error).toHaveBeenCalledWith(expect.stringContaining("ECONNREFUSED"))
+  })
+
+  it("asks on loopback when the listener is on every address", async () => {
+    vi.spyOn(console, "info").mockImplementation(() => {})
+    const asked: string[] = []
+    const fetchReadiness = (url: string | URL | Request) => {
+      asked.push(url instanceof Request ? url.url : url.toString())
+      return Promise.resolve(new Response("{}"))
+    }
+    await checkHealth({ INTERNAL_HOST: "0.0.0.0" }, fetchReadiness)
+    await checkHealth(
+      { INTERNAL_HOST: "::", INTERNAL_PORT: "4001" },
+      fetchReadiness,
+    )
+    await checkHealth({ INTERNAL_HOST: "10.0.0.5" }, fetchReadiness)
+    expect(asked).toEqual([
+      "http://127.0.0.1:3001/readyz",
+      "http://[::1]:4001/readyz",
+      "http://10.0.0.5:3001/readyz",
+    ])
   })
 })

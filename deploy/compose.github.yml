@@ -1,0 +1,15 @@
+# GitHub sign-in for deploy/compose.yml (optional). Add it with
+# COMPOSE_FILE=compose.yml:compose.github.yml in .env, set GITHUB_CLIENT_ID
+# there and put the client secret in ./secrets/github_client_secret.
+# docs/operator-guide.md explains how to register the GitHub App.
+services:
+  web:
+    environment:
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:?Set GITHUB_CLIENT_ID in .env to the GitHub App's client ID}
+      GITHUB_CLIENT_SECRET_FILE: /run/secrets/github_client_secret
+    secrets:
+      - github_client_secret
+
+secrets:
+  github_client_secret:
+    file: ./secrets/github_client_secret

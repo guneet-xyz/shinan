@@ -25,6 +25,7 @@ import type { SignIn } from "./api/sign-in.js"
 import { createApp, createInternalApp } from "./app.js"
 import { readDatabaseUrl, readEmailConfig, readWebConfig } from "./config.js"
 import type { EmailConfig, Env } from "./config.js"
+import { checkHealth } from "./health.js"
 import { connectJobQueue, migrateJobQueue, startWorker } from "./jobs.js"
 import { createBetterAuthSignIn } from "./sign-in/better-auth.js"
 
@@ -34,6 +35,8 @@ Commands:
   web       Serve the API and, in production, the web app
   worker    Run background jobs
   migrate   Prepare the database (migrations, job queue, installation), then exit
+  health    Exit 0 if the web role on this machine is ready (for container
+            health checks; asks its internal listener's /readyz)
 
 Recovery, for installation operators (recorded in the security log):
   account end-sessions <handle>          End all of a person's sign-in sessions
@@ -65,6 +68,8 @@ export async function runCommand(
     case "migrate":
       await runMigrate(env)
       return 0
+    case "health":
+      return checkHealth(env)
     case "help":
     case "--help":
     case "-h":

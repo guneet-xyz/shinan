@@ -27,3 +27,26 @@ updates:
     groups:
       github-actions:
         patterns: ["*"]
+
+  # Base images in the Dockerfile and the reference Compose file, pinned by
+  # digest (security checklist 8.4). A merged update reaches
+  # shinan.guneet.dev with the next release.
+  - package-ecosystem: docker
+    directory: /deploy
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: fix(deps)
+    groups:
+      base-images:
+        patterns: ["*"]
+
+  - package-ecosystem: docker-compose
+    directory: /deploy
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: fix(deps)
+    groups:
+      compose-images:
+        patterns: ["*"]

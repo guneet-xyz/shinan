@@ -961,6 +961,21 @@ From the `workspace` repository's catalog and `infra/musashi` (read 2026-11-16):
 - **Proposed:** containers hardened as in [10.1](#101-threats-and-controls); the
   same image and reference Compose layout self-hosters get, adapted to
   Musashi's rules. Reason: proves the self-hosting path by using it.
+- **Prepared (M1-7, not deployed):** the `shinan` stack in a draft
+  `infra/musashi` pull request, awaiting deployment approval. Subnets
+  `10.88.14.0/24` (`caddy-public-shinan`), `10.88.15.0/24` (`shinan-backend`)
+  and `10.88.16.0/24` (`shinan-egress`), the next free ones after
+  `10.88.10.0/24` to `10.88.13.0/24`. Public Caddy gets the fixed address
+  `10.88.14.2` on `caddy-public-shinan`, so `SHINAN_TRUSTED_PROXIES` names
+  that one address rather than the bridge's whole range, which would include
+  its gateway.
+- **Proposed:** on Musashi, `web` and `worker` take their secrets as
+  environment variables from Obscuro, each container only its own (the SES key
+  only in `worker`; the session secret and GitHub client secret only in
+  `web`), not as `*_FILE` files. Reason: Obscuro supplies environment
+  variables, Musashi's rules forbid secrets in files on disk, and Compose can
+  turn an environment variable into a secret file only in a container whose
+  file system is writable. Docker administrators can read either form.
 
 ### 11.3 DNS and ingress
 
@@ -996,6 +1011,18 @@ From the `workspace` repository's catalog and `infra/musashi` (read 2026-11-16):
    charges
    ([GitHub docs](https://docs.github.com/en/actions/reference/runners/github-hosted-runners),
    checked 2026-11-16).
+
+   As built (M1-7, `.github/workflows/release.yml`): after the full CI suite
+   passes on the release commit, each architecture is built on its own runner
+   and pushed by digest only, with BuildKit's SLSA build provenance
+   (`mode=max`) and an SBOM attached in the registry; the first-start test
+   ([12](#12-self-hosting)) then runs against each pushed digest on its own
+   architecture, and only then are `vX.Y.Z`, `vX.Y` and `latest` created as
+   one multi-architecture index. Registry secrets `REGISTRY_USERNAME` and
+   `REGISTRY_PASSWORD` (the push key). GitHub's own artifact attestations are
+   not used: for a private repository they need GitHub Enterprise Cloud, so
+   mon uses them only because it is public. The CLI and plugin come later.
+
 3. A PR to `infra/musashi` pins the new digests and updates the stack README.
    Changing Compose files does not deploy anything (Musashi's rules).
 4. When a release is needed on Musashi, the owner gives deployment approval for
@@ -1004,7 +1031,9 @@ From the `workspace` repository's catalog and `infra/musashi` (read 2026-11-16):
    runs `migrate`, then `web` and `worker`, checks health and records evidence.
 
 - Musashi pulls with a project-scoped pull key stored in Obscuro (**Decided**,
-  owner, O-66).
+  owner, O-66). **Proposed:** the deploying agent logs in with it for the pull
+  only, into a temporary Docker configuration that is deleted afterwards, so
+  the key is never stored on disk.
 
 ### 11.5 Migrations and rollback
 
@@ -1044,7 +1073,13 @@ licensing (D-013); this section makes sure nothing blocks it. All **proposed**:
 
 - **Artifact:** one multi-architecture image, a reference Compose file
   (PostgreSQL, migrate, web, worker), an operator guide, and the CLI and plugin
-  with published checksums and attestations.
+  with published checksums and attestations. As built (M1-7):
+  [`deploy/Dockerfile`](../deploy/Dockerfile) (distroless Node.js, unprivileged
+  user, one image for `web`, `worker`, `migrate` and `health`),
+  [`deploy/compose.yml`](../deploy/compose.yml) with secrets as files, and the
+  [operator guide](operator-guide.md). `deploy/test/first-start.mjs` starts
+  the reference Compose file from nothing and claims the installation; CI runs
+  it on every pull request and against every release's images.
 - **Requirements:** PostgreSQL (supported major versions listed per release), an
   HTTPS reverse proxy, an AWS SES account for email in the first version
   ([9.2](#92-how-shinan-sends)), and a public URL if webhooks are wanted.
@@ -1103,7 +1138,9 @@ licensing (D-013); this section makes sure nothing blocks it. All **proposed**:
   `web` role serves `/healthz` (liveness) and `/readyz` (readiness, 503 when
   the database does not answer within 2 seconds or migrations are behind) on a
   separate internal listener (`INTERNAL_HOST`, default `127.0.0.1`, and
-  `INTERNAL_PORT`, default `3001`), which the reverse proxy never routes to;
+  `INTERNAL_PORT`, default `3001`), which the reverse proxy never routes to.
+  The image's container health check (M1-7) runs `shinan health` inside the
+  container, which asks `/readyz`; `worker` and `migrate` turn it off;
   the public listener answers 404 to any spelling of those paths. Reason: they need no credentials,
   and a readiness answer tells an outsider when the database is down. The
   public `/api/status` stays as the minimal check
