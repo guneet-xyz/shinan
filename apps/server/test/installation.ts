@@ -6,6 +6,7 @@ import type { Database } from "@shinan/db"
 import { createTestDatabase } from "@shinan/db/testing"
 
 import { createApp } from "../src/app.js"
+import { parseTrustedProxies } from "../src/client-address.js"
 import { connectJobQueue, migrateJobQueue } from "../src/jobs.js"
 import { createBetterAuthSignIn } from "../src/sign-in/better-auth.js"
 
@@ -20,8 +21,12 @@ export async function startInstallation(
   options: {
     operators?: string[]
     claimed?: boolean
-    /** Better Auth's and Shinan's per-address limits; off unless asked for. */
+    /** Shinan's per-address rate limits; off unless asked for. */
     rateLimit?: boolean
+    /** Proxies whose `X-Forwarded-For` header is believed. */
+    trustedProxies?: string
+    /** The installation's address; `http://shinan.test` by default. */
+    url?: string
   } = {},
 ) {
   const database = await createTestDatabase(
@@ -42,21 +47,29 @@ export async function startInstallation(
       .set({ claimedAt: new Date() })
       .where(eq(schema.installation.id, 1))
   }
+  const url = options.url ?? installationUrl
   const signIn = createBetterAuthSignIn({
     db,
     jobs,
-    installationUrl,
+    installationUrl: url,
     secret: "a-test-secret-that-is-long-enough-to-use",
     github: { clientId: "test-client", clientSecret: "test-client-secret" },
     sessions: { idleMinutes: 60, maxHours: 24 },
-    rateLimit: options.rateLimit ?? false,
   })
-  const app = createApp({ db, signIn, jobs, installationUrl })
+  const app = createApp({
+    db,
+    signIn,
+    jobs,
+    installationUrl: url,
+    rateLimit: options.rateLimit ?? false,
+    trustedProxies: parseTrustedProxies(options.trustedProxies ?? ""),
+  })
   return {
     db,
     pool,
     app,
     signIn,
+    url,
     async stop() {
       await jobs.stop({ graceful: false })
       await pool.end()
@@ -67,12 +80,20 @@ export async function startInstallation(
 
 export type Installation = Awaited<ReturnType<typeof startInstallation>>
 
-/** A browser: keeps cookies, sends the site's Origin, follows nothing. */
+/**
+ * A browser: keeps cookies, sends the site's Origin and
+ * `Sec-Fetch-Site: same-origin` as browsers do for the web app's requests,
+ * and follows nothing. `networkAddress` is the address its requests come
+ * from, as the server's socket sees it.
+ */
 export class Browser {
   readonly cookies = new Map<string, string>()
+  networkAddress: string | undefined
 
   constructor(
-    private readonly installation: Pick<Installation, "app" | "signIn">,
+    private readonly installation: Pick<Installation, "app" | "signIn"> & {
+      url?: string
+    },
     readonly userAgent = "Mozilla/5.0 (X11; Linux x86_64) Gecko/20100101 Firefox/140.0",
   ) {}
 
@@ -84,9 +105,11 @@ export class Browser {
       headers?: Record<string, string>
     } = {},
   ): Promise<Response> {
-    const url = new URL(path, installationUrl)
+    const site = this.installation.url ?? installationUrl
+    const url = new URL(path, site)
     const headers = new Headers({
-      origin: installationUrl,
+      origin: site,
+      "sec-fetch-site": "same-origin",
       "user-agent": this.userAgent,
       ...init.headers,
     })
@@ -97,11 +120,15 @@ export class Browser {
       )
     }
     if (init.body !== undefined) headers.set("content-type", "application/json")
-    const response = await this.installation.app.request(url.href, {
-      method: init.method ?? (init.body === undefined ? "GET" : "POST"),
-      headers,
-      body: init.body === undefined ? undefined : JSON.stringify(init.body),
-    })
+    const response = await this.installation.app.request(
+      url.href,
+      {
+        method: init.method ?? (init.body === undefined ? "GET" : "POST"),
+        headers,
+        body: init.body === undefined ? undefined : JSON.stringify(init.body),
+      },
+      { incoming: { socket: { remoteAddress: this.networkAddress } } },
+    )
     for (const cookie of response.headers.getSetCookie()) {
       const [pair] = cookie.split(";")
       const index = pair!.indexOf("=")

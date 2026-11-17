@@ -10,7 +10,7 @@ import {
 } from "vitest"
 
 import { emailQueue, getInstallation } from "@shinan/core"
-import { createDatabase, eq, schema } from "@shinan/db"
+import { createDatabase, eq, schema, sql } from "@shinan/db"
 import { connectTestDatabase, createTestDatabase } from "@shinan/db/testing"
 import type { EmailSender, SendResult } from "@shinan/email"
 
@@ -19,6 +19,7 @@ import {
   connectJobQueue,
   migrateJobQueue,
   queues,
+  safely,
   startWorker,
 } from "./jobs.js"
 import type { Worker } from "./jobs.js"
@@ -126,6 +127,29 @@ describe("worker", () => {
     expect(prune?.cron).toBe("30 * * * *")
     const signIn = await worker.boss.getSchedule(queues.signInPrune)
     expect(signIn?.cron).toBe("15 * * * *")
+    const rateLimits = await worker.boss.getSchedule(queues.rateLimitPrune)
+    expect(rateLimits?.cron).toBe("20 * * * *")
+  })
+
+  it("prunes rate-limit counts", async () => {
+    worker = await startWorker({
+      databaseUrl,
+      db,
+      emailSender,
+      pollingIntervalSeconds: 0.5,
+    })
+    const id = await worker.boss.send(queues.rateLimitPrune)
+
+    await vi.waitFor(
+      async () => {
+        const [job] = await worker!.boss.findJobs(queues.rateLimitPrune, {
+          id: id!,
+        })
+        expect(job?.state).toBe("completed")
+        expect(job?.output).toEqual({ deleted: expect.any(Number) as number })
+      },
+      { timeout: 10_000, interval: 200 },
+    )
   })
 
   it("prunes expired sign-in records", async () => {
@@ -304,6 +328,33 @@ describe("connectJobQueue", () => {
       expect(job?.state).toBe("created")
     } finally {
       await boss.stop({ graceful: false })
+    }
+  })
+})
+
+describe("safely", () => {
+  it("logs and passes on only a failed job's error name and code", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {})
+    try {
+      const failure = await safely("test-job", () =>
+        db.execute(
+          sql`select ${"203.0.113.7"}::int, ${"ada@example.com"}::int`,
+        ),
+      ).then(
+        () => new Error("did not fail"),
+        (e: unknown) => e as Error,
+      )
+
+      expect(failure).toBeInstanceOf(Error)
+      expect(failure.message).toBe("Job failed: DrizzleQueryError 22P02")
+      expect(failure.cause).toBeUndefined()
+      expect(error).toHaveBeenCalledWith(
+        "Job test-job failed: DrizzleQueryError 22P02",
+      )
+      const everything = JSON.stringify([error.mock.calls, failure.stack])
+      expect(everything).not.toMatch(/203\.0\.113\.7|ada@example\.com/)
+    } finally {
+      error.mockRestore()
     }
   })
 })

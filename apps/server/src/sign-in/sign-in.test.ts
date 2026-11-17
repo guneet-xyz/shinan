@@ -307,6 +307,45 @@ describe("email magic links", () => {
     }
   })
 
+  it("never logs a failed sign-in query's values", async () => {
+    const email = await allowlisted("failing")
+    const lines: string[] = []
+    const capture = (...args: unknown[]) => {
+      lines.push(
+        args.map((a) => (a instanceof Error ? a.stack : String(a))).join(" "),
+      )
+    }
+    const spies = [
+      vi.spyOn(console, "error").mockImplementation(capture),
+      vi.spyOn(console, "warn").mockImplementation(capture),
+      vi.spyOn(console, "info").mockImplementation(capture),
+      vi.spyOn(console, "log").mockImplementation(capture),
+    ]
+    // Storing the sign-in link fails, with the address and the token's
+    // hash in the failed query.
+    await db.execute(
+      sql`alter table sign_in_verifications add constraint test_refuse_all check (false) not valid`,
+    )
+    try {
+      const response = await browser().requestLink(email)
+      expect(response.status).toBe(500)
+      expect(await response.json()).toEqual({
+        error: "internal",
+        message: "Something went wrong",
+      })
+      const logged = lines.join("\n")
+      expect(logged).toContain("Request failed: DrizzleQueryError 23514")
+      expect(logged).not.toMatch(
+        /failing-\d+@example\.com|SERVER_ERROR|"type"|Failed query|params|insert into/,
+      )
+    } finally {
+      await db.execute(
+        sql`alter table sign_in_verifications drop constraint test_refuse_all`,
+      )
+      for (const spy of spies) spy.mockRestore()
+    }
+  })
+
   it("refuses fields the sign-in page never sends", async () => {
     const b = browser()
     const response = await b.request("/api/auth/sign-in/magic-link", {

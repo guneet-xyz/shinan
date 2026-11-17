@@ -183,6 +183,7 @@ describe("decide", () => {
         "installation.set-up",
         "email.deliver",
         "email.prune",
+        "rate-limit",
         "sign-in",
         "account.recover",
       ] as const) {

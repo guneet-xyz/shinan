@@ -23,16 +23,13 @@ import {
   shinan,
   signInLinkMinutes,
   startGitHubSignIn,
-  throttleAddress,
 } from "@shinan/core"
 import type { Context, JobQueue, RequestInfo } from "@shinan/core"
-import { eq, schema } from "@shinan/db"
+import { createLimitedLog, eq, schema } from "@shinan/db"
 import type { Database } from "@shinan/db"
 
-import { TooManyAttemptsError } from "../api/errors.js"
 import type { SignIn } from "../api/sign-in.js"
 import { safeLogText } from "../log-text.js"
-import { createAttemptLimiter } from "./attempt-limiter.js"
 import { isSafeReturnPath, signInErrorPath } from "./paths.js"
 import { requestStore, withRequestStore } from "./request-store.js"
 import type { RequestStore } from "./request-store.js"
@@ -55,8 +52,6 @@ export interface BetterAuthSignInOptions {
   /** The GitHub App's client ID and secret, used for sign-in only. */
   github?: { clientId: string; clientSecret: string }
   sessions: SessionLimits
-  /** Better Auth's own per-address rate limits; on unless turned off. */
-  rateLimit?: boolean
 }
 
 export interface BetterAuthSignIn extends SignIn {
@@ -72,15 +67,9 @@ export interface BetterAuthSignIn extends SignIn {
 const servedPaths: Record<string, readonly string[]> = {
   "/sign-in/magic-link": ["POST"],
   "/sign-in/social": ["POST"],
-  "/callback/github": ["GET", "POST"],
+  "/callback/github": ["GET"],
   "/sign-out": ["POST"],
 }
-
-/**
- * Opening sign-in links from one network address: the same limit Better
- * Auth's magic-link plugin puts on asking for them (5 a minute).
- */
-export const linkOpenLimit = { max: 5, windowSeconds: 60 }
 
 /**
  * The network address Better Auth records and rate-limits by. Shinan sets it
@@ -107,6 +96,7 @@ export function createBetterAuthSignIn(
   options: BetterAuthSignInOptions,
 ): BetterAuthSignIn {
   const { db, jobs, installationUrl } = options
+  const log = createLimitedLog()
   const base = new URL(installationUrl)
   const secure = base.protocol === "https:"
   const cookieNames = {
@@ -183,7 +173,10 @@ export function createBetterAuthSignIn(
       cookiePrefix: "shinan",
       useSecureCookies: secure,
     },
-    rateLimit: { enabled: options.rateLimit ?? true, storage: "memory" },
+    // Better Auth's limiter counts in each process's memory; Shinan's own
+    // limits, counted in PostgreSQL, apply to these routes instead
+    // (`rateLimits` in core, applied by the API).
+    rateLimit: { enabled: false },
     logger: {
       level: "warn",
       // Only the start of Better Auth's own message, never its extra values
@@ -199,17 +192,11 @@ export function createBetterAuthSignIn(
     },
     onAPIError: {
       errorURL: new URL("/sign-in", base).href,
-      // Better Auth's own error logging would print messages that can echo
-      // the request; only a status goes to Shinan's log, and only for
-      // failures of the server, not refused requests.
-      onError: (error) => {
-        const status = (error as { statusCode?: unknown }).statusCode
-        if (typeof status === "number" && status < 500) return
-        const kind = error instanceof Error ? error.name : "Error"
-        console.error(
-          `Sign-in (error): ${typeof status === "number" ? status : kind}`,
-        )
-      },
+      // Errors that are not Better Auth's own answers (such as a failed
+      // query) are thrown on to Shinan's error handler, which logs them by
+      // name and code only. Without this, Better Auth's router prints them
+      // in full, query values included (architecture §10.3).
+      throw: true,
     },
     socialProviders: options.github
       ? {
@@ -578,14 +565,6 @@ export function createBetterAuthSignIn(
     }
   }
 
-  const linkAttempts =
-    options.rateLimit === false
-      ? undefined
-      : createAttemptLimiter({
-          max: linkOpenLimit.max,
-          windowMs: linkOpenLimit.windowSeconds * 1000,
-        })
-
   /**
    * Work that must not hold up the answer. Failures are logged by kind
    * only (no values, which could hold an address or a token).
@@ -651,26 +630,16 @@ export function createBetterAuthSignIn(
       const forwarded = new Request(request, {
         headers: forwardHeaders(request.headers, info),
       })
-      return withRequestStore({ request: info }, () => auth.handler(forwarded))
+      const response = await withRequestStore({ request: info }, () =>
+        auth.handler(forwarded),
+      )
+      // A failure Better Auth answered itself: only its status is logged.
+      if (response.status >= 500) log(`Sign-in (error): ${response.status}`)
+      return response
     },
 
     async openLink(request, info, input) {
       return withRequestStore({ request: info }, async () => {
-        // The same limit per network address as asking for a link. Only the
-        // first refusal in a window is recorded: the log is kept forever,
-        // and a flood must not fill it.
-        if (linkAttempts) {
-          const attempt = linkAttempts.take(
-            throttleAddress(info.networkAddress) ?? "unknown",
-          )
-          if (attempt === "first-refusal") {
-            await recordSignInFailure(asShinan(), {
-              method: "email",
-              reason: "throttled",
-            })
-          }
-          if (attempt !== "allowed") throw new TooManyAttemptsError()
-        }
         let answer: unknown
         try {
           answer = await auth.api.magicLinkVerify({

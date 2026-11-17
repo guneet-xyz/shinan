@@ -9,7 +9,7 @@ import {
   shinan,
 } from "@shinan/core"
 import type { JobQueue, Person } from "@shinan/core"
-import { and, eq, schema } from "@shinan/db"
+import { and, eq, schema, sql } from "@shinan/db"
 import { connectTestDatabase } from "@shinan/db/testing"
 
 import { insertPerson } from "../../test/people.js"
@@ -30,6 +30,8 @@ const api = createApi({
   signIn: testSignIn,
   jobs,
   installationUrl: "http://shinan.test",
+  // Every request here comes from one unknown address.
+  rateLimit: false,
 })
 
 let owner: Person
@@ -71,6 +73,8 @@ async function call(path: string, { method, body, headers }: Call = {}) {
   return api.request(path, {
     method: method ?? (body === undefined ? "GET" : "POST"),
     headers: {
+      // As the web app's requests carry; security.test.ts checks refusals.
+      origin: "http://shinan.test",
       ...(body === undefined ? {} : { "content-type": "application/json" }),
       ...headers,
     },
@@ -82,6 +86,9 @@ async function call(path: string, { method, body, headers }: Call = {}) {
           : JSON.stringify(body),
   })
 }
+
+/** What the web app's requests carry; security.test.ts checks refusals. */
+const sameOrigin = { "sec-fetch-site": "same-origin" }
 
 async function json<T>(response: Response): Promise<T> {
   return (await response.json()) as T
@@ -687,7 +694,7 @@ describe("sign-in routes", () => {
     const signIn: SignIn = { ...testSignIn, handle }
     const response = await createApi({ db, signIn }).request(
       "/auth/sign-in/magic-link",
-      { method: "POST" },
+      { method: "POST", headers: sameOrigin },
     )
     expect(await response.json()).toEqual({
       path: "/auth/sign-in/magic-link",
@@ -779,7 +786,11 @@ describe("request bodies", () => {
     for (const path of ["/workspaces", "/auth/sign-in/magic-link"]) {
       const response = await app.request(path, {
         method: "POST",
-        headers: { "content-type": "application/json", ...as(owner) },
+        headers: {
+          "content-type": "application/json",
+          ...sameOrigin,
+          ...as(owner),
+        },
         body: big,
       })
       expect(response.status, path).toBe(413)
@@ -791,7 +802,11 @@ describe("request bodies", () => {
     // A normal body still works.
     const ok = await app.request("/workspaces", {
       method: "POST",
-      headers: { "content-type": "application/json", ...as(owner) },
+      headers: {
+        "content-type": "application/json",
+        ...sameOrigin,
+        ...as(owner),
+      },
       body: JSON.stringify({ name: "Small" }),
     })
     expect(ok.status).toBe(201)
@@ -816,7 +831,11 @@ describe("errors from the sign-in layer", () => {
       signIn: failingWith(400),
     }).request("/account/github", {
       method: "POST",
-      headers: { "content-type": "application/json", ...as(owner) },
+      headers: {
+        "content-type": "application/json",
+        ...sameOrigin,
+        ...as(owner),
+      },
       body: JSON.stringify({ callbackURL: "/account" }),
     })
     expect(response.status).toBe(422)
@@ -830,7 +849,11 @@ describe("errors from the sign-in layer", () => {
       signIn: failingWith(500),
     }).request("/account/github", {
       method: "POST",
-      headers: { "content-type": "application/json", ...as(owner) },
+      headers: {
+        "content-type": "application/json",
+        ...sameOrigin,
+        ...as(owner),
+      },
       body: JSON.stringify({ callbackURL: "/account" }),
     })
     expect(response.status).toBe(500)
@@ -846,7 +869,11 @@ describe("errors from the sign-in layer", () => {
       signIn: { ...testSignIn, startGitHubLink },
     }).request("/account/github", {
       method: "POST",
-      headers: { "content-type": "application/json", ...as(owner) },
+      headers: {
+        "content-type": "application/json",
+        ...sameOrigin,
+        ...as(owner),
+      },
       body: JSON.stringify({ callbackURL: "https://evil.example/" }),
     })
     expect(response.status).toBe(422)
@@ -870,7 +897,37 @@ describe("unexpected errors", () => {
       error: "internal",
       message: "Something went wrong",
     })
-    expect(error).toHaveBeenCalled()
+    expect(error).toHaveBeenCalledOnce()
+    expect(error.mock.calls[0]![0]).toMatch(/^Request failed: Error\n\s+at /)
+    expect(JSON.stringify(error.mock.calls)).not.toContain("password")
     error.mockRestore()
+  })
+
+  it("never log a failed query's values, and log a repeated failure once a minute", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {})
+    try {
+      // A query that quotes a network and an email address, and fails, as
+      // core's queries do with request values.
+      const failing: SignIn = {
+        ...testSignIn,
+        async currentPerson() {
+          await db.execute(
+            sql`select ${"203.0.113.88"}::int, ${"ada@example.com"}::int`,
+          )
+          return { person: null }
+        },
+      }
+      const app = createApi({ db, signIn: failing })
+      for (let n = 0; n < 3; n++) {
+        expect((await app.request("/account")).status).toBe(500)
+      }
+
+      expect(error).toHaveBeenCalledOnce()
+      const logged = JSON.stringify(error.mock.calls)
+      expect(logged).toContain("Request failed: DrizzleQueryError 22P02")
+      expect(logged).not.toMatch(/203\.0\.113\.88|ada@example\.com|select/)
+    } finally {
+      error.mockRestore()
+    }
   })
 })

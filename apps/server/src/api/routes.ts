@@ -52,8 +52,11 @@ import type {
 } from "@shinan/core"
 import type { Database } from "@shinan/db"
 
+import { clientAddress, noTrustedProxies } from "../client-address.js"
+import type { TrustedProxies } from "../client-address.js"
+import { rateLimited, sameOriginOnly } from "../security.js"
 import { isSafeReturnPath } from "../sign-in/paths.js"
-import { BadRequestError, errorResponse, handleError } from "./errors.js"
+import { BadRequestError, errorHandler, errorResponse } from "./errors.js"
 import { appendHeaders, requirePerson } from "./sign-in.js"
 import type { SignedInEnv, SignIn } from "./sign-in.js"
 
@@ -65,8 +68,15 @@ export interface ApiOptions {
   signIn: SignIn
   /** The job queue, for operations that send email. */
   jobs?: JobQueue
-  /** The installation's public address, for links in emails. */
+  /**
+   * The installation's public address, for links in emails. State-changing
+   * requests must come from this origin (or, without it, the request's own).
+   */
   installationUrl?: string
+  /** Proxies whose `X-Forwarded-For` gives the client's address. */
+  trustedProxies?: TrustedProxies
+  /** Per-address rate limits (architecture §10.1); on unless turned off. */
+  rateLimit?: boolean
 }
 
 /**
@@ -74,9 +84,64 @@ export interface ApiOptions {
  * call one core operation, and shape the answer. Permissions and rules are
  * core's (architecture §2.1).
  */
-export function createApi({ db, signIn, jobs, installationUrl }: ApiOptions) {
+export function createApi({
+  db,
+  signIn,
+  jobs,
+  installationUrl,
+  trustedProxies = noTrustedProxies,
+  rateLimit = true,
+}: ApiOptions) {
   const api = new Hono()
-  api.onError(handleError)
+  const onError = errorHandler()
+  api.onError(onError)
+
+  const requestInfo = (c: HonoContext): RequestInfo => {
+    const env = c.env as
+      { incoming?: { socket?: { remoteAddress?: string } } } | undefined
+    const client = c.req.header("user-agent")
+    return {
+      networkAddress: clientAddress(
+        env?.incoming?.socket?.remoteAddress,
+        c.req.header("x-forwarded-for"),
+        trustedProxies,
+      ),
+      client:
+        client === undefined
+          ? undefined
+          : (clientDescription(client) ?? undefined),
+    }
+  }
+
+  // Answers carry personal data; no browser or proxy keeps them.
+  api.use("*", async (c, next) => {
+    await next()
+    if (!c.res.headers.has("cache-control")) {
+      c.res.headers.set("cache-control", "no-store")
+    }
+  })
+  api.use("*", sameOriginOnly(installationUrl))
+  // The minimal public health check (identity §10): a constant answer,
+  // ahead of the rate limits, so it reads and writes nothing and says
+  // nothing about the database.
+  api.get("/status", (c) => c.json({ status: "ok" } satisfies Api.Status))
+  if (rateLimit) {
+    const limit = (
+      path: string,
+      name: Parameters<typeof rateLimited>[1],
+      methods?: readonly string[],
+    ) => api.use(path, rateLimited(db, name, requestInfo, methods))
+    limit("*", "api", ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"])
+    limit("/auth/sign-in/magic-link", "sign-in-link")
+    limit("/setup", "sign-in-link")
+    limit("/sign-in/link", "sign-in-link-open")
+    limit("/auth/sign-in/social", "github-sign-in")
+    limit("/auth/callback/github", "github-sign-in", ["GET"])
+    limit("/account/github", "github-sign-in")
+    limit("/invitations/find", "invitation-token")
+    limit("/invitations/accept", "invitation-token")
+    limit("/invitations/decline", "invitation-token")
+  }
   // Every API request body is small (forms of a few fields); a larger one is
   // refused before it is read in full.
   api.use(
@@ -90,8 +155,6 @@ export function createApi({ db, signIn, jobs, installationUrl }: ApiOptions) {
         }),
     }),
   )
-
-  api.get("/status", (c) => c.json({ status: "ok" } satisfies Api.Status))
 
   // Public: the sign-in and invitation pages show the installation's name
   // before sign-in (identity §5.2).
@@ -161,7 +224,7 @@ export function createApi({ db, signIn, jobs, installationUrl }: ApiOptions) {
   })
 
   const signedIn = new Hono<SignedInEnv>()
-  signedIn.onError(handleError)
+  signedIn.onError(onError)
   const signInRequired = requirePerson(signIn)
   signedIn.use("/account", signInRequired)
   signedIn.use("/account/*", signInRequired)
@@ -412,24 +475,6 @@ export function createApi({ db, signIn, jobs, installationUrl }: ApiOptions) {
     errorResponse(c, 404, { error: "not-found", message: "Not found" }),
   )
   return api
-}
-
-/**
- * The client's network address and user agent, for the security log. The
- * address is the connecting socket's; reading it from a reverse proxy's
- * headers needs the proxy to be trusted, which deployment configures (M1-6).
- */
-function requestInfo(c: HonoContext): RequestInfo {
-  const env = c.env as
-    { incoming?: { socket?: { remoteAddress?: string } } } | undefined
-  const client = c.req.header("user-agent")
-  return {
-    networkAddress: env?.incoming?.socket?.remoteAddress,
-    client:
-      client === undefined
-        ? undefined
-        : (clientDescription(client) ?? undefined),
-  }
 }
 
 /** A path on this site to return to, as received; anything else is 422. */

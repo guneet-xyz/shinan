@@ -73,6 +73,9 @@ instead be read from a file: set `NAME_FILE` to its path rather than `NAME`
 | `DATABASE_URL`                 | none (tests use the local service)                   | PostgreSQL connection string (secret)                                                                   |
 | `HOST`                         | `127.0.0.1`                                          | Address the `web` role listens on                                                                       |
 | `PORT`                         | `3000`                                               | Port the `web` role listens on                                                                          |
+| `INTERNAL_HOST`                | `127.0.0.1`                                          | Address of the internal listener for health checks (`/healthz`, `/readyz`); never route a proxy to it   |
+| `INTERNAL_PORT`                | `3001`                                               | Port of the internal listener                                                                           |
+| `SHINAN_TRUSTED_PROXIES`       | none                                                 | Reverse proxies (IP addresses or CIDR ranges) whose `X-Forwarded-For` gives the client's address        |
 | `NODE_ENV`                     | unset (`development` in `pnpm dev`)                  | `production` serves the built web app and requires SES and the sign-in settings                         |
 | `WEB_DIST_DIR`                 | `apps/web/dist` in production                        | Directory of the built web app to serve                                                                 |
 | `EMAIL_TRANSPORT`              | `smtp`, except in production (none)                  | `ses`, or `smtp` for the local mail catcher (not in production)                                         |
@@ -140,6 +143,33 @@ GitHub's OAuth endpoints and never call GitHub.
 
 To run the production build: `pnpm build`, then `pnpm start` (the `web` role
 serving the API and the built web app on port 3000).
+
+### Security baseline
+
+The [security checklist](docs/security-checklist.md) lists the controls and
+how each is tested. In short:
+
+- Every API request with a method other than GET, HEAD or OPTIONS must come
+  from the web app: any `Origin` must equal `SHINAN_URL`, any
+  `Sec-Fetch-Site` must be `same-origin`, and at least one of them must be
+  sent, as browsers do; others get 403 `cross-site`. Open the development
+  app at the address in `SHINAN_URL` (`http://localhost:5173`), not
+  `127.0.0.1`.
+- Rate limits per client address are counted in the `rate_limits` table
+  (core's `rateLimits`), shared by every `web` process; the worker prunes it
+  hourly. Behind a reverse proxy, set `SHINAN_TRUSTED_PROXIES` to the
+  proxy's address, or every visitor shares the proxy's address and limits.
+  A refusal is 429 with `Retry-After` (seconds left in the window).
+- Every answer carries security headers and a strict Content Security Policy
+  (no inline scripts or styles; `apps/server/src/security.ts`).
+- Health checks are only on the internal listener: `/healthz` (liveness) and
+  `/readyz` (database reachable and migrated); the public listener answers
+  404 to any spelling of those paths. `/api/status` is the public, minimal
+  check: a constant answer that touches no database and is not rate limited.
+- Errors are logged by name, database error code and stack frames only,
+  never their message (a failed query's message quotes its values), and the
+  same error at most once a minute. A lost database connection, idle or in
+  use, is logged by code and the pool reconnects.
 
 ### Checks
 

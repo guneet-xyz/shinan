@@ -1,12 +1,13 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { afterAll, beforeAll, describe, expect, it } from "vitest"
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest"
 
+import { checkDatabase } from "@shinan/db"
 import { connectTestDatabase } from "@shinan/db/testing"
 
 import { noSignIn } from "./api/sign-in.js"
-import { createApp as createAppWith } from "./app.js"
+import { createApp as createAppWith, createInternalApp } from "./app.js"
 import type { AppOptions } from "./app.js"
 
 const { db, pool } = connectTestDatabase()
@@ -20,11 +21,10 @@ function createApp(options: Partial<AppOptions> = {}) {
 }
 
 describe("createApp", () => {
-  it("answers the container health check", async () => {
+  it("does not serve health checks publicly", async () => {
     const response = await createApp().request("/healthz")
 
-    expect(response.status).toBe(200)
-    expect(await response.json()).toEqual({ status: "ok" })
+    expect(response.status).toBe(404)
   })
 
   it("reports status through the API", async () => {
@@ -102,10 +102,86 @@ describe("createApp", () => {
       const missing = await app.request("/api/nope")
       expect(missing.status).toBe(404)
       expect(await missing.json()).toEqual(notFound)
-
-      const health = await app.request("/healthz")
-      expect(await health.json()).toEqual({ status: "ok" })
     })
+
+    it("does not answer health checks with the app's page", async () => {
+      const app = createApp({ webDistDir })
+
+      for (const path of [
+        "/healthz",
+        "/readyz",
+        "/healthz/",
+        "/readyz/live",
+        "/HEALTHZ",
+        "/ReadyZ",
+        "//readyz",
+      ]) {
+        expect((await app.request(path)).status, path).toBe(404)
+      }
+      // Paths that only start with the same letters are the app's.
+      expect((await app.request("/healthzone")).status).toBe(200)
+    })
+  })
+})
+
+describe("createInternalApp", () => {
+  const ready = { reachable: true, migrationsCurrent: true }
+
+  it("answers the liveness check", async () => {
+    const app = createInternalApp({
+      checkDatabase: () => Promise.resolve(ready),
+    })
+    const response = await app.request("/healthz")
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ status: "ok" })
+  })
+
+  it("is ready when the database is reachable and migrated", async () => {
+    const app = createInternalApp({ checkDatabase: () => checkDatabase(pool) })
+    const response = await app.request("/readyz")
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ status: "ok", database: ready })
+  })
+
+  it("is not ready otherwise", async () => {
+    for (const database of [
+      { reachable: true, migrationsCurrent: false },
+      { reachable: false, migrationsCurrent: false },
+    ]) {
+      const app = createInternalApp({
+        checkDatabase: () => Promise.resolve(database),
+      })
+      const response = await app.request("/readyz")
+      expect(response.status).toBe(503)
+      expect(await response.json()).toEqual({ status: "unavailable", database })
+    }
+    const failing = createInternalApp({
+      checkDatabase: () => Promise.reject(new Error("down")),
+    })
+    expect((await failing.request("/readyz")).status).toBe(503)
+  })
+
+  it("gives up on a database that does not answer", async () => {
+    vi.useFakeTimers()
+    try {
+      const app = createInternalApp({
+        checkDatabase: () => new Promise(() => {}),
+      })
+      const answer = app.request("/readyz")
+      await vi.advanceTimersByTimeAsync(2000)
+      expect((await answer).status).toBe(503)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("serves nothing else", async () => {
+    const app = createInternalApp({
+      checkDatabase: () => Promise.resolve(ready),
+    })
+    expect((await app.request("/api/status")).status).toBe(404)
   })
 })
 
