@@ -511,6 +511,11 @@ All **proposed**:
   catalog; the Claude Code plugin bundles a copy; other tools get a file.
   Reason: one source keeps conventions current. Today the `workspace`
   repository's skills are copied to each machine by hand.
+- **Decided** (owner, [D-056](decisions/D-056-public-skill-path.md)): the
+  skill is served without sign-in at `/skills/`, because OpenCode loads HTTP
+  skill catalogs without credentials. It holds only product conventions; a
+  workspace's own rules reach agents through the agents' start-here path,
+  which needs a token.
 - **Decided** (owner, O-38, [#25](https://github.com/guneet-xyz/shinan/issues/25)): during the trial (D-018), the skill
   and MCP server are enabled only for trial projects.
 - **Decided** (owner, O-73): cross-project coordination for trial projects

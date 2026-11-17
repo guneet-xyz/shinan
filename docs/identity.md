@@ -117,8 +117,9 @@ remaining risk in one place.
 
 **Proposed**, each with its reason:
 
-1. **Closed by default.** Nothing is readable without sign-in, and every
-   request is refused unless a rule allows it. Reason: D-015 puts the app on
+1. **Closed by default.** Nothing is readable without sign-in, apart from
+   the exceptions listed in [§10](#10-protections-for-a-public-installation),
+   and every request is refused unless a rule allows it. Reason: D-015 puts the app on
    the public internet.
 2. **The workspace is the only visibility boundary.** Inside it, everyone sees
    everything (O-2, O-43); between workspaces, nothing crosses except the
@@ -1029,8 +1030,11 @@ restriction stays possible later.
 **Proposed:**
 
 - **Nothing without sign-in** except the sign-in pages, the invitation
-  acceptance page and a minimal health check. The wiki and agent index are
-  behind sign-in too. The public health check is `/api/status`, a constant
+  acceptance page, a minimal health check and the skill's files at
+  `/skills/` (decided, owner, [D-056](decisions/D-056-public-skill-path.md):
+  OpenCode loads HTTP skill catalogs without credentials, and the skill holds
+  only product conventions, never workspace content). The wiki and agent
+  index are behind sign-in too. The public health check is `/api/status`, a constant
   answer that touches no database; the liveness and readiness checks are served only inside the
   container network ([architecture §13](architecture.md#13-observability)).
 - **No passwords to guess** (N-7): sign-in is by magic link or GitHub.
