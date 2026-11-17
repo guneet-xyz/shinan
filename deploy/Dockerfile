@@ -15,13 +15,14 @@
 #
 # Base images are pinned by digest; Dependabot proposes updates.
 
-FROM --platform=$BUILDPLATFORM node:24-trixie-slim@sha256:af02d57b57719b9657a45199a79264a9437940cd55b3c7b3fc99615654f124a0 AS pnpm
+FROM --platform=$BUILDPLATFORM node:26-trixie-slim@sha256:e6bedef217677b276c591795e169840edd9096dbf13f29df8ef8d1856b8820bc AS pnpm
 ENV CI=true \
     COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 WORKDIR /src
 # Corepack installs the pnpm version in package.json's packageManager.
+# Node.js 25 and later no longer include Corepack, so it comes from npm.
 COPY package.json ./
-RUN corepack enable && pnpm --version
+RUN npm install --global corepack@0.36.0 && corepack enable && pnpm --version
 
 # Everything, built: the server, the packages it uses and the web app.
 FROM pnpm AS build
@@ -72,7 +73,7 @@ COPY --from=build /src/packages/email/dist packages/email/dist
 # code even where the root file system is writable. The base image already
 # runs as `nonroot`, and WORKDIR would create /app as that user, so COPY
 # creates it first (as root). The first-start test checks this.
-FROM gcr.io/distroless/nodejs24-debian13:nonroot@sha256:6abfcb367ebc291572c774c1592a986be2ab26a2486f73093401327495a5962a
+FROM gcr.io/distroless/nodejs26-debian13:nonroot@sha256:1d736cf8b5716c07a245301f92717143215d248fd55771ee1936ef4b3302e531
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
     PORT=3000 \

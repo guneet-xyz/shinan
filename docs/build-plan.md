@@ -42,7 +42,7 @@ types between server, web app, plugin and CLI, one CI.
 
 ## 3. Tooling (proposed)
 
-- **Node.js 24 LTS**, **pnpm**, **TypeScript** in strict mode.
+- **Node.js 26 LTS**, **pnpm**, **TypeScript** in strict mode.
 - **Prettier** exactly as the owner's
   [Prettier decision](https://git.guneet.dev/guneet/workspace/src/branch/main/decisions/prettier-configuration.md)
   sets out; **ESLint** for code rules.
