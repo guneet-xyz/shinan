@@ -9,7 +9,7 @@ import {
   shinan,
 } from "@shinan/core"
 import type { JobQueue, Person } from "@shinan/core"
-import { and, eq, schema } from "@shinan/db"
+import { and, eq, schema, sql } from "@shinan/db"
 import { connectTestDatabase } from "@shinan/db/testing"
 
 import { insertPerson } from "../../test/people.js"
@@ -897,7 +897,37 @@ describe("unexpected errors", () => {
       error: "internal",
       message: "Something went wrong",
     })
-    expect(error).toHaveBeenCalled()
+    expect(error).toHaveBeenCalledOnce()
+    expect(error.mock.calls[0]![0]).toMatch(/^Request failed: Error\n\s+at /)
+    expect(JSON.stringify(error.mock.calls)).not.toContain("password")
     error.mockRestore()
+  })
+
+  it("never log a failed query's values, and log a repeated failure once a minute", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {})
+    try {
+      // A query that quotes a network and an email address, and fails, as
+      // core's queries do with request values.
+      const failing: SignIn = {
+        ...testSignIn,
+        async currentPerson() {
+          await db.execute(
+            sql`select ${"203.0.113.88"}::int, ${"ada@example.com"}::int`,
+          )
+          return { person: null }
+        },
+      }
+      const app = createApi({ db, signIn: failing })
+      for (let n = 0; n < 3; n++) {
+        expect((await app.request("/account")).status).toBe(500)
+      }
+
+      expect(error).toHaveBeenCalledOnce()
+      const logged = JSON.stringify(error.mock.calls)
+      expect(logged).toContain("Request failed: DrizzleQueryError 22P02")
+      expect(logged).not.toMatch(/203\.0\.113\.88|ada@example\.com|select/)
+    } finally {
+      error.mockRestore()
+    }
   })
 })

@@ -9,6 +9,8 @@ import {
   ReauthenticationRequiredError,
   RuleViolationError,
 } from "@shinan/core"
+import { createLimitedLog, errorFrames, errorSummary } from "@shinan/db"
+import type { LimitedLog } from "@shinan/db"
 
 /** Raised by handlers for requests whose shape is wrong. */
 export class BadRequestError extends Error {
@@ -24,11 +26,21 @@ export function errorResponse(
 }
 
 /**
- * Translates the errors core raises on purpose into HTTP answers. Anything
- * else is logged and answered with a generic 500, so no internal detail
- * reaches the client (architecture §10.2).
+ * Makes the API's error handler, with its own limited log. Use one per app.
+ *
+ * It translates the errors core raises on purpose into HTTP answers. Anything
+ * else is answered with a generic 500, so no internal detail reaches the
+ * client (architecture §10.2), and logged by name, database error code and
+ * stack frames only: a database error's message quotes the failed query's
+ * values, such as email and network addresses (architecture §10.3). The
+ * same failure is logged at most once a minute, so a database that is down
+ * cannot flood the log.
  */
-export function handleError(error: Error, c: Context) {
+export function errorHandler(log: LimitedLog = createLimitedLog()) {
+  return (error: Error, c: Context) => handleError(error, c, log)
+}
+
+function handleError(error: Error, c: Context, log: LimitedLog) {
   if (error instanceof NotFoundError) {
     return errorResponse(c, 404, { error: "not-found", message: "Not found" })
   }
@@ -71,7 +83,7 @@ export function handleError(error: Error, c: Context) {
   const status = signInErrorStatus(error)
   if (status !== undefined) {
     if (status >= 500) {
-      console.error(`Sign-in layer error: ${status}`)
+      log(`Sign-in layer error: ${status}`)
     } else if (status === 401) {
       return errorResponse(c, 401, {
         error: "sign-in-required",
@@ -93,7 +105,9 @@ export function handleError(error: Error, c: Context) {
       message: "Something went wrong",
     })
   }
-  console.error(error)
+  const summary = `Request failed: ${errorSummary(error)}`
+  const frames = errorFrames(error)
+  log(summary, frames ? `${summary}\n${frames}` : summary)
   return errorResponse(c, 500, {
     error: "internal",
     message: "Something went wrong",

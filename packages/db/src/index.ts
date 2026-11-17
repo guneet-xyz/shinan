@@ -4,6 +4,7 @@ import { drizzle } from "drizzle-orm/node-postgres"
 import { migrate } from "drizzle-orm/node-postgres/migrator"
 import pg from "pg"
 
+import { createLimitedLog, databaseErrorCode } from "./log.js"
 import * as schema from "./schema.js"
 
 export { schema }
@@ -38,41 +39,40 @@ export type {
   SecurityOutcome,
 } from "./schema.js"
 
+export {
+  createLimitedLog,
+  databaseErrorCode,
+  errorFrames,
+  errorSummary,
+} from "./log.js"
+export type { LimitedLog } from "./log.js"
+
 export const migrationsFolder = fileURLToPath(
   new URL("../migrations", import.meta.url),
 )
 
 export function createDatabase(databaseUrl: string) {
   const pool = new pg.Pool({ connectionString: databaseUrl })
-  // An idle connection can fail at any time, for example when PostgreSQL
-  // restarts. Without a listener Node.js would crash the process; the pool
-  // has already dropped the connection and opens a new one when next used.
-  pool.on("error", (error) => {
-    console.error(
-      `Database connection lost (${databaseErrorCode(error)}); it is replaced when next needed`,
-    )
+  // A connection can fail at any time, idle or in use, for example when
+  // PostgreSQL restarts. Its client then emits "error", which Node.js turns
+  // into a crash unless something listens. pg-pool listens only while a
+  // client is idle, so every client gets its own listener for its whole
+  // life. A query that was running rejects as usual; the pool drops the
+  // connection and opens a new one when next needed. Only the code is
+  // logged, at most once a minute.
+  const log = createLimitedLog()
+  pool.on("connect", (client) => {
+    client.on("error", (error) => {
+      const code = databaseErrorCode(error)
+      const reason = code === "unknown" ? "" : ` (${code})`
+      log(`Database connection lost${reason}; it is replaced when next needed`)
+    })
   })
+  // The pool re-emits an idle client's error; the client's listener above
+  // has already logged it.
+  pool.on("error", () => {})
   const db = drizzle({ client: pool, schema })
   return { db, pool }
-}
-
-/**
- * A database error's code, such as a SQLSTATE (`57P01`) or a network error
- * (`ECONNRESET`), looking through wrappers. Only the code is ever logged: an
- * error's message and details can quote a query's values (architecture
- * §10.3).
- */
-export function databaseErrorCode(error: unknown): string {
-  let current: unknown = error
-  for (let depth = 0; depth < 5; depth++) {
-    if (typeof current !== "object" || current === null) break
-    const { code, cause } = current as { code?: unknown; cause?: unknown }
-    if (typeof code === "string" && /^[A-Za-z0-9_]{1,32}$/.test(code)) {
-      return code
-    }
-    current = cause
-  }
-  return "unknown"
 }
 
 export interface DatabaseReadiness {
@@ -137,6 +137,9 @@ export async function withMigrationLock<T>(
   work: () => Promise<T>,
 ): Promise<T> {
   const client = new pg.Client({ connectionString: databaseUrl })
+  // A lost connection fails the query in progress; without a listener its
+  // "error" event would also crash the process.
+  client.on("error", () => {})
   await client.connect()
   try {
     await client.query(`select pg_advisory_lock(${migrationLockKey})`)

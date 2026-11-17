@@ -10,7 +10,7 @@ import {
 } from "vitest"
 
 import { emailQueue, getInstallation } from "@shinan/core"
-import { createDatabase, eq, schema } from "@shinan/db"
+import { createDatabase, eq, schema, sql } from "@shinan/db"
 import { connectTestDatabase, createTestDatabase } from "@shinan/db/testing"
 import type { EmailSender, SendResult } from "@shinan/email"
 
@@ -19,6 +19,7 @@ import {
   connectJobQueue,
   migrateJobQueue,
   queues,
+  safely,
   startWorker,
 } from "./jobs.js"
 import type { Worker } from "./jobs.js"
@@ -327,6 +328,33 @@ describe("connectJobQueue", () => {
       expect(job?.state).toBe("created")
     } finally {
       await boss.stop({ graceful: false })
+    }
+  })
+})
+
+describe("safely", () => {
+  it("logs and passes on only a failed job's error name and code", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {})
+    try {
+      const failure = await safely("test-job", () =>
+        db.execute(
+          sql`select ${"203.0.113.7"}::int, ${"ada@example.com"}::int`,
+        ),
+      ).then(
+        () => new Error("did not fail"),
+        (e: unknown) => e as Error,
+      )
+
+      expect(failure).toBeInstanceOf(Error)
+      expect(failure.message).toBe("Job failed: DrizzleQueryError 22P02")
+      expect(failure.cause).toBeUndefined()
+      expect(error).toHaveBeenCalledWith(
+        "Job test-job failed: DrizzleQueryError 22P02",
+      )
+      const everything = JSON.stringify([error.mock.calls, failure.stack])
+      expect(everything).not.toMatch(/203\.0\.113\.7|ada@example\.com/)
+    } finally {
+      error.mockRestore()
     }
   })
 })

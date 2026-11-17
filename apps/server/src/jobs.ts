@@ -13,7 +13,7 @@ import {
   shinan,
 } from "@shinan/core"
 import type { EmailJob } from "@shinan/core"
-import { databaseErrorCode } from "@shinan/db"
+import { createLimitedLog, errorSummary } from "@shinan/db"
 import type { Database } from "@shinan/db"
 import type { EmailSender } from "@shinan/email"
 
@@ -124,24 +124,32 @@ export async function startWorker(options: WorkerOptions): Promise<Worker> {
     options.pollingIntervalSeconds === undefined
       ? {}
       : { pollingIntervalSeconds: options.pollingIntervalSeconds }
-  await boss.work(queues.heartbeat, polling, async () => heartbeat(options.db))
+  await boss.work(queues.heartbeat, polling, () =>
+    safely(queues.heartbeat, () => heartbeat(options.db)),
+  )
 
   await boss.createQueue(queues.signInPrune)
   await boss.schedule(queues.signInPrune, "15 * * * *")
-  await boss.work(queues.signInPrune, polling, async () =>
-    pruneSignInRecords({ db: options.db, actor: shinan }),
+  await boss.work(queues.signInPrune, polling, () =>
+    safely(queues.signInPrune, () =>
+      pruneSignInRecords({ db: options.db, actor: shinan }),
+    ),
   )
 
   await boss.createQueue(queues.rateLimitPrune)
   await boss.schedule(queues.rateLimitPrune, "20 * * * *")
-  await boss.work(queues.rateLimitPrune, polling, async () => ({
-    deleted: await pruneRateLimits({ db: options.db, actor: shinan }),
-  }))
+  await boss.work(queues.rateLimitPrune, polling, () =>
+    safely(queues.rateLimitPrune, async () => ({
+      deleted: await pruneRateLimits({ db: options.db, actor: shinan }),
+    })),
+  )
 
   await boss.createQueue(queues.emailPrune)
   await boss.schedule(queues.emailPrune, "30 * * * *")
-  await boss.work(queues.emailPrune, polling, async () =>
-    pruneEmailDeliveries({ db: options.db, actor: shinan }),
+  await boss.work(queues.emailPrune, polling, () =>
+    safely(queues.emailPrune, () =>
+      pruneEmailDeliveries({ db: options.db, actor: shinan }),
+    ),
   )
 
   await boss.work(
@@ -213,11 +221,31 @@ function errorCode(error: unknown): string {
     : "Error"
 }
 
+const jobLog = createLimitedLog()
+
 /**
- * The job queue's own errors, such as a lost database connection, by code
- * only: their messages can quote a query's values (architecture §10.3).
- * pg-boss reconnects by itself.
+ * Runs a job, and if it fails, logs and hands the job queue (which stores
+ * it) only the error's name and code: a database error's message can quote
+ * a query's values (architecture §10.3).
+ */
+export async function safely<T>(
+  job: string,
+  run: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await run()
+  } catch (error) {
+    const summary = errorSummary(error)
+    jobLog(`Job ${job} failed: ${summary}`)
+    // eslint-disable-next-line preserve-caught-error -- the cause is left out on purpose
+    throw new Error(`Job failed: ${summary}`)
+  }
+}
+
+/**
+ * The job queue's own errors, such as a lost database connection, by name
+ * and code only, at most once a minute each. pg-boss reconnects by itself.
  */
 function logError(error: Error) {
-  console.error(`Job queue error: ${databaseErrorCode(error)}`)
+  jobLog(`Job queue error: ${errorSummary(error)}`)
 }

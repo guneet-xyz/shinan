@@ -1,12 +1,7 @@
 import { sql } from "drizzle-orm"
 import { afterAll, describe, expect, inject, it, vi } from "vitest"
 
-import {
-  checkDatabase,
-  createDatabase,
-  databaseErrorCode,
-  migrateDatabase,
-} from "./index.js"
+import { checkDatabase, createDatabase, migrateDatabase } from "./index.js"
 import { connectTestDatabase, createTestDatabase } from "./testing.js"
 
 describe("database", () => {
@@ -58,16 +53,46 @@ describe("connection pool", () => {
   })
 })
 
-describe("databaseErrorCode", () => {
-  it("finds a code through wrappers and ignores anything else", () => {
-    expect(databaseErrorCode({ code: "ECONNRESET" })).toBe("ECONNRESET")
-    expect(
-      databaseErrorCode(new Error("wrapped", { cause: { code: "57P01" } })),
-    ).toBe("57P01")
-    expect(databaseErrorCode({ code: "with spaces and values 'x'" })).toBe(
-      "unknown",
-    )
-    expect(databaseErrorCode(undefined)).toBe("unknown")
+describe("a connection killed mid-transaction", () => {
+  it("fails only that transaction; the process survives and the pool recovers", async () => {
+    const { db, pool } = createDatabase(inject("databaseUrl"))
+    const admin = connectTestDatabase()
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {})
+    try {
+      let pid = 0
+      const transaction = db.transaction(async (tx) => {
+        const { rows } = await tx.execute<{ pid: number }>(
+          sql`select pg_backend_pid() as pid`,
+        )
+        pid = rows[0]!.pid
+        await tx.execute(sql`select pg_sleep(5)`)
+      })
+      await vi.waitFor(() => expect(pid).not.toBe(0))
+      // A PostgreSQL restart ends a busy connection the same way. Without a
+      // listener on the checked-out client, its "error" event would be an
+      // uncaught exception, which fails this run.
+      await admin.pool.query("select pg_terminate_backend($1)", [pid])
+
+      await expect(transaction).rejects.toThrow()
+      // The server's notice (57P01) fails the running query; the socket
+      // closing after it is the client's "error" event, which has no code.
+      await vi.waitFor(() =>
+        expect(errors).toHaveBeenCalledWith(
+          "Database connection lost; it is replaced when next needed",
+        ),
+      )
+      for (const call of errors.mock.calls) {
+        expect(call.join(" ")).not.toMatch(/pg_sleep|terminating/)
+      }
+      const again = await db.execute<{ answer: number }>(
+        sql`select 1 as answer`,
+      )
+      expect(again.rows).toEqual([{ answer: 1 }])
+    } finally {
+      errors.mockRestore()
+      await pool.end()
+      await admin.pool.end()
+    }
   })
 })
 

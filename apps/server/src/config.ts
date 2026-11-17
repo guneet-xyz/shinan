@@ -6,6 +6,7 @@ import type { EmailFrom } from "@shinan/email"
 
 import { parseTrustedProxies } from "./client-address.js"
 import type { TrustedProxies } from "./client-address.js"
+import { SettingsError } from "./settings-error.js"
 
 export type Env = Record<string, string | undefined>
 
@@ -64,7 +65,7 @@ export function readWebConfig(
 
   const url =
     env.SHINAN_URL || (production ? undefined : "http://localhost:5173")
-  if (!url) throw new Error("SHINAN_URL is not set")
+  if (!url) throw new SettingsError("SHINAN_URL is not set")
   const installationUrl = readInstallationUrl(url, production)
 
   const operators = (env.SHINAN_OPERATORS ?? "")
@@ -74,27 +75,30 @@ export function readWebConfig(
   for (const email of operators) {
     // The same rule as sign-in links, so every operator can be sent one.
     if (!isEmailAddress(email)) {
-      throw new Error(
+      throw new SettingsError(
         `SHINAN_OPERATORS has an address sign-in links cannot be sent to: ${email}`,
       )
     }
   }
   if (production && operators.length === 0) {
-    throw new Error("SHINAN_OPERATORS is not set")
+    throw new SettingsError("SHINAN_OPERATORS is not set")
   }
 
   const sessionSecret =
     readSecret(env, "SHINAN_SESSION_SECRET", readFile) ??
     (development ? developmentSessionSecret : undefined)
-  if (!sessionSecret) throw new Error("SHINAN_SESSION_SECRET is not set")
+  if (!sessionSecret)
+    throw new SettingsError("SHINAN_SESSION_SECRET is not set")
   if (sessionSecret.length < 32) {
-    throw new Error("SHINAN_SESSION_SECRET must be at least 32 characters")
+    throw new SettingsError(
+      "SHINAN_SESSION_SECRET must be at least 32 characters",
+    )
   }
 
   const clientId = env.GITHUB_CLIENT_ID || undefined
   const clientSecret = readSecret(env, "GITHUB_CLIENT_SECRET", readFile)
   if ((clientId === undefined) !== (clientSecret === undefined)) {
-    throw new Error(
+    throw new SettingsError(
       "Set both GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET, or neither",
     )
   }
@@ -102,7 +106,7 @@ export function readWebConfig(
   const port = readPort(env.PORT ?? "3000", "PORT")
   const internalPort = readPort(env.INTERNAL_PORT ?? "3001", "INTERNAL_PORT")
   if (internalPort === port && port !== 0) {
-    throw new Error("INTERNAL_PORT must differ from PORT")
+    throw new SettingsError("INTERNAL_PORT must differ from PORT")
   }
 
   return {
@@ -136,13 +140,13 @@ function readInstallationUrl(value: string, production: boolean): string {
   try {
     url = new URL(value)
   } catch {
-    throw new Error(`SHINAN_URL must be an address, got "${value}"`)
+    throw new SettingsError(`SHINAN_URL must be an address, got "${value}"`)
   }
   if (url.protocol !== "https:" && (production || url.protocol !== "http:")) {
-    throw new Error("SHINAN_URL must use https")
+    throw new SettingsError("SHINAN_URL must use https")
   }
   if (url.pathname !== "/" || url.search || url.hash) {
-    throw new Error(
+    throw new SettingsError(
       "SHINAN_URL must be an origin, such as https://shinan.example",
     )
   }
@@ -152,14 +156,16 @@ function readInstallationUrl(value: string, production: boolean): string {
 function readWhole(value: string, name: string): number {
   const number = Number(value)
   if (!/^\d+$/.test(value) || number < 1 || !Number.isSafeInteger(number)) {
-    throw new Error(`${name} must be a whole number above 0, got "${value}"`)
+    throw new SettingsError(
+      `${name} must be a whole number above 0, got "${value}"`,
+    )
   }
   return number
 }
 
 export function readDatabaseUrl(env: Env): string {
   const url = readSecret(env, "DATABASE_URL")
-  if (!url) throw new Error("DATABASE_URL is not set")
+  if (!url) throw new SettingsError("DATABASE_URL is not set")
   return url
 }
 
@@ -176,7 +182,7 @@ export function readSecret(
   const value = env[name] || undefined
   const file = env[`${name}_FILE`] || undefined
   if (value !== undefined && file !== undefined) {
-    throw new Error(`Set ${name} or ${name}_FILE, not both`)
+    throw new SettingsError(`Set ${name} or ${name}_FILE, not both`)
   }
   if (file === undefined) return value
 
@@ -184,10 +190,12 @@ export function readSecret(
   try {
     contents = readFile(file)
   } catch (error) {
-    throw new Error(`Could not read ${name}_FILE (${file})`, { cause: error })
+    throw new SettingsError(`Could not read ${name}_FILE (${file})`, {
+      cause: error,
+    })
   }
   const secret = contents.trim()
-  if (!secret) throw new Error(`${name}_FILE (${file}) is empty`)
+  if (!secret) throw new SettingsError(`${name}_FILE (${file}) is empty`)
   return secret
 }
 
@@ -216,13 +224,13 @@ export function readEmailConfig(
   switch (transport) {
     case "ses": {
       const address = env.EMAIL_FROM
-      if (!address) throw new Error("EMAIL_FROM is not set")
+      if (!address) throw new SettingsError("EMAIL_FROM is not set")
       const region = env.SES_REGION
-      if (!region) throw new Error("SES_REGION is not set")
+      if (!region) throw new SettingsError("SES_REGION is not set")
       const accessKeyId = readSecret(env, "SES_ACCESS_KEY_ID", readFile)
       const secretAccessKey = readSecret(env, "SES_SECRET_ACCESS_KEY", readFile)
       if ((accessKeyId === undefined) !== (secretAccessKey === undefined)) {
-        throw new Error(
+        throw new SettingsError(
           "Set both SES_ACCESS_KEY_ID and SES_SECRET_ACCESS_KEY, or neither",
         )
       }
@@ -240,7 +248,7 @@ export function readEmailConfig(
     }
     case "smtp":
       if (production) {
-        throw new Error(
+        throw new SettingsError(
           "EMAIL_TRANSPORT=smtp is only for the local mail catcher in development; use ses",
         )
       }
@@ -251,16 +259,18 @@ export function readEmailConfig(
         port: readPort(env.SMTP_PORT || "1025", "SMTP_PORT"),
       }
     case undefined:
-      throw new Error("EMAIL_TRANSPORT is not set (it must be ses)")
+      throw new SettingsError("EMAIL_TRANSPORT is not set (it must be ses)")
     default:
-      throw new Error(`EMAIL_TRANSPORT must be ses or smtp, got "${transport}"`)
+      throw new SettingsError(
+        `EMAIL_TRANSPORT must be ses or smtp, got "${transport}"`,
+      )
   }
 }
 
 function readPort(value: string, name: string): number {
   const port = Number(value)
   if (!Number.isInteger(port) || port < 0 || port > 65535) {
-    throw new Error(`${name} must be a port number, got "${value}"`)
+    throw new SettingsError(`${name} must be a port number, got "${value}"`)
   }
   return port
 }

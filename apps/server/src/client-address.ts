@@ -1,5 +1,7 @@
 import { BlockList, isIP } from "node:net"
 
+import { SettingsError } from "./settings-error.js"
+
 /**
  * The reverse proxies whose `X-Forwarded-For` header is believed, such as
  * Caddy in front of Shinan (architecture §11.3). Without any, the client
@@ -25,7 +27,7 @@ export function parseTrustedProxies(value: string): TrustedProxies {
     const [address = "", prefix, ...rest] = entry.split("/")
     const family = isIP(address)
     if (family === 0 || rest.length > 0) {
-      throw new Error(
+      throw new SettingsError(
         `SHINAN_TRUSTED_PROXIES has an entry that is not an IP address or range: ${entry}`,
       )
     }
@@ -36,7 +38,7 @@ export function parseTrustedProxies(value: string): TrustedProxies {
     }
     const bits = Number(prefix)
     if (!/^\d{1,3}$/.test(prefix) || bits > (family === 4 ? 32 : 128)) {
-      throw new Error(
+      throw new SettingsError(
         `SHINAN_TRUSTED_PROXIES has a range with a wrong prefix length: ${entry}`,
       )
     }
