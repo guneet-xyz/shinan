@@ -131,7 +131,9 @@ export async function removeFromAllowlist(
  * Records the operators the installation's configuration names, and adds
  * their addresses to the allowlist (identity §3.2, §12). The `web` role
  * calls this on every start, so a configuration change takes effect then.
- * Every change is recorded in the installation-level security log.
+ * Every change is recorded in the installation-level security log, once:
+ * several `web` processes starting together on the same database each run
+ * this, and only the one whose insert or delete took effect records it.
  */
 export async function syncOperators(
   ctx: Context,
@@ -140,14 +142,17 @@ export async function syncOperators(
   await atInstallation(ctx, "sign-in", async (scope) => {
     const emails = [...new Set(input.emails.map(normalizeEmail))].sort()
     const current = await scope.tx.select().from(schema.installationOperators)
-    const before = new Set(current.map((row) => row.email))
-    const gone = [...before].filter((email) => !emails.includes(email))
-    if (gone.length > 0) {
-      await scope.tx
-        .delete(schema.installationOperators)
-        .where(inArray(schema.installationOperators.email, gone))
-    }
-    for (const email of gone) {
+    const gone = current
+      .map((row) => row.email)
+      .filter((email) => !emails.includes(email))
+    const removed =
+      gone.length > 0
+        ? await scope.tx
+            .delete(schema.installationOperators)
+            .where(inArray(schema.installationOperators.email, gone))
+            .returning({ email: schema.installationOperators.email })
+        : []
+    for (const { email } of removed) {
       await recordSecurityEntry(scope.tx, {
         workspaceId: null,
         action: "operator.removed",
@@ -159,8 +164,12 @@ export async function syncOperators(
       })
     }
     for (const email of emails) {
-      if (!before.has(email)) {
-        await scope.tx.insert(schema.installationOperators).values({ email })
+      const operator = await scope.tx
+        .insert(schema.installationOperators)
+        .values({ email })
+        .onConflictDoNothing()
+        .returning()
+      if (operator.length > 0) {
         await recordSecurityEntry(scope.tx, {
           workspaceId: null,
           action: "operator.added",
