@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/guneet-xyz/shinan/compare/v0.1.0...v0.2.0) (2026-11-17)
+
+
+### Features
+
+* **web:** adopt Tailwind CSS and shadcn/ui ([#76](https://github.com/guneet-xyz/shinan/issues/76)) ([a2496eb](https://github.com/guneet-xyz/shinan/commit/a2496eb633112a182c95fa07ef685088a5b5bb4b))
+
 ## 0.1.0 (2026-11-17)
 
 
