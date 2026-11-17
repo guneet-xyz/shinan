@@ -33,8 +33,10 @@ The [build plan](docs/build-plan.md#2-code-layout-proposed) describes each part.
 
 ## Developing locally
 
-You need Node.js 24 (see `.nvmrc`), pnpm (the version in `package.json`'s
-`packageManager`; `corepack enable` picks it up) and Docker.
+You need Node.js 26 (see `.nvmrc`), pnpm (the version in `package.json`'s
+`packageManager`; Node.js 26 no longer includes Corepack, so run
+`npm install --global corepack` once, then `corepack enable` picks it up) and
+Docker.
 
 ```sh
 pnpm install
