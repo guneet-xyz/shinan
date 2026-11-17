@@ -15,7 +15,7 @@
 #
 # Base images are pinned by digest; Dependabot proposes updates.
 
-FROM --platform=$BUILDPLATFORM node:24-trixie-slim@sha256:af02d57b57719b9657a45199a79264a9437940cd55b3c7b3fc99615654f124a0 AS pnpm
+FROM --platform=$BUILDPLATFORM node:26-trixie-slim@sha256:e6bedef217677b276c591795e169840edd9096dbf13f29df8ef8d1856b8820bc AS pnpm
 ENV CI=true \
     COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 WORKDIR /src
