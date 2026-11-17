@@ -46,6 +46,13 @@ types between server, web app, plugin and CLI, one CI.
 - **Prettier** exactly as the owner's
   [Prettier decision](https://git.guneet.dev/guneet/workspace/src/branch/main/decisions/prettier-configuration.md)
   sets out; **ESLint** for code rules.
+- **TypeScript 7** (`tsc`) type-checks and builds. typescript-eslint needs
+  TypeScript's programmatic API, which TypeScript 7.0 does not have, so
+  `typescript` is an alias for `@typescript/typescript6` and TypeScript 7 is
+  installed as `@typescript/native`, as the
+  [TypeScript 7 announcement](https://devblogs.microsoft.com/typescript/announcing-typescript-7-0/#running-side-by-side-with-typescript-6.0)
+  recommends. Reason: TypeScript 7's faster checks without giving up type-aware
+  lint rules. Drop the alias once typescript-eslint supports TypeScript 7.
 - **Vitest** for tests; database tests run against a real PostgreSQL (a
   service container in CI, the development Compose file locally), and the test
   setup creates a fresh database for each run. Reason: no test touches
