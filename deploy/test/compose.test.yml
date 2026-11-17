@@ -19,7 +19,7 @@ services:
         condition: service_healthy
 
   mailpit:
-    image: axllent/mailpit:v1.33
+    image: axllent/mailpit:v1.33@sha256:aef2aacc11f075ec0fb6874275ee4a421e688e11a96ebb296134d1735c7761ce
     healthcheck:
       test: [CMD, /mailpit, readyz]
       interval: 2s

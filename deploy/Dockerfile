@@ -67,16 +67,19 @@ COPY --from=build /src/packages/db/migrations packages/db/migrations
 COPY --from=build /src/packages/email/dist packages/email/dist
 
 # Distroless: Node.js and nothing else, no shell or package manager. Runs as
-# the unprivileged `nonroot` user (65532); every file is owned by root, so the
-# server cannot change its own code, and nothing is written to the image.
+# the unprivileged `nonroot` user (65532). /app and everything in it is owned
+# by root and not writable by that user, so the server cannot change its own
+# code even where the root file system is writable. The base image already
+# runs as `nonroot`, and WORKDIR would create /app as that user, so COPY
+# creates it first (as root). The first-start test checks this.
 FROM gcr.io/distroless/nodejs24-debian13:nonroot@sha256:6abfcb367ebc291572c774c1592a986be2ab26a2486f73093401327495a5962a
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
     PORT=3000 \
     INTERNAL_HOST=127.0.0.1 \
     INTERNAL_PORT=3001
-WORKDIR /app
 COPY --from=production /src /app
+WORKDIR /app
 USER nonroot
 EXPOSE 3000
 # The web role's internal listener, from inside the container: it is never

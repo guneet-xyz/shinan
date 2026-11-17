@@ -25,9 +25,9 @@ not apply to anyone else's installation.
   user's access key ([architecture §9](architecture.md#9-email-and-notifications)).
   Sign-in needs email, including the first start.
 - Optionally, a GitHub App for GitHub sign-in (see [below](#github-sign-in)).
-- About 1.5 GiB of memory for the four containers (the Compose file's limits:
-  PostgreSQL 512 MiB, `web` 512 MiB, `worker` 384 MiB, `migrate` 256 MiB while
-  it runs).
+- Memory for the containers' limits: 1,408 MiB (about 1.4 GiB) while running
+  (PostgreSQL 512 MiB, `web` 512 MiB, `worker` 384 MiB), and 1,664 MiB (about
+  1.6 GiB) while `migrate` (256 MiB) runs at each start.
 
 ## What runs
 
@@ -130,8 +130,21 @@ docker network inspect shinan_egress --format '{{(index .IPAM.Config 0).Gateway}
 ```
 
 If your proxy runs in Docker instead, give it a network shared with `web` and
-use the proxy container's address on that network. Name single addresses
-rather than wide ranges: anything you trust can claim to be any visitor.
+a fixed address on it (`ipv4_address`), and name that address. Give the
+network an `ip_range` that leaves the fixed address out, so Docker never hands
+it to another container while the proxy is stopped:
+
+```yaml
+networks:
+  proxy:
+    ipam:
+      config:
+        - subnet: 10.89.0.0/24
+          ip_range: 10.89.0.128/25 # Docker's own choices; the proxy is 10.89.0.2
+```
+
+Name single addresses rather than wide ranges: anything you trust can claim to
+be any visitor.
 
 ## First start
 
@@ -143,7 +156,9 @@ docker compose logs web
 `migrate` prepares the database, then `web` and `worker` start. Until the
 first operator account exists, `web` prints a **one-time setup link** to its
 log (`https://…/setup#…`); nothing else shows it
-([architecture §12](architecture.md#12-self-hosting)):
+([architecture §12](architecture.md#12-self-hosting)). Both this link and the
+sign-in link use `SHINAN_URL`, so its DNS name and your proxy must already
+work:
 
 1. Open the link within 24 hours and type one of the `SHINAN_OPERATORS`
    addresses.
@@ -201,10 +216,12 @@ Git host data comes back through reconciliation, nothing else does.
 
 Back up:
 
-- **The database**, for example nightly, kept somewhere other than this host:
+- **The database**, for example nightly, kept somewhere other than this host.
+  A dump holds everything, including email addresses and the security log,
+  so write it readable only by you:
 
   ```sh
-  docker compose exec -T postgres pg_dump -U shinan -Fc shinan > shinan-$(date -u +%Y%m%dT%H%M%SZ).dump
+  (umask 077 && docker compose exec -T postgres pg_dump -U shinan -Fc shinan > shinan-$(date -u +%Y%m%dT%H%M%SZ).dump)
   ```
 
   To restore, replace the database with an empty one, restore into it and

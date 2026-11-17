@@ -3,7 +3,8 @@
 // self-hoster would, and checks the first start end to end (architecture
 // §12): migrations run, the one-time setup link appears in the `web` log,
 // the operator claims the installation through the email it sends, and the
-// containers run as the reference file says. Email goes to a local mail
+// containers run as the reference file says. It also checks that the image's
+// own files are not writable by the user it runs as. Email goes to a local mail
 // catcher and HTTPS comes from a proxy with a self-signed certificate
 // (deploy/test/compose.test.yml).
 //
@@ -150,11 +151,57 @@ async function request(path, init = {}) {
   return response
 }
 
+/**
+ * Walks /app inside the image as its own user, on a writable root file
+ * system and without a network, and lists what that user could write.
+ */
+function writableAppFiles() {
+  const walk = `
+    const fs = require("node:fs"), path = require("node:path")
+    let checked = 0
+    const writable = []
+    const visit = (p) => {
+      const stat = fs.lstatSync(p)
+      if (stat.isSymbolicLink()) return
+      checked++
+      try { fs.accessSync(p, fs.constants.W_OK); writable.push(p) } catch {}
+      if (stat.isDirectory()) for (const e of fs.readdirSync(p)) visit(path.join(p, e))
+    }
+    visit("/app")
+    console.log(JSON.stringify({ uid: process.getuid(), checked, writable }))`
+  return JSON.parse(
+    execFileSync(
+      "docker",
+      [
+        "run",
+        "--rm",
+        "--network",
+        "none",
+        "--entrypoint",
+        "/nodejs/bin/node",
+        image,
+        "-e",
+        walk,
+      ],
+      { encoding: "utf8" },
+    ),
+  )
+}
+
 async function healthy() {
   return inspect("web", "{{.State.Health.Status}}") === "healthy"
 }
 
 async function run() {
+  const files = writableAppFiles()
+  check(
+    files.uid === 65532 && files.checked > 1000 && files.writable.length === 0,
+    `the image's ${files.checked} files and directories under /app are not writable by its user` +
+      (files.writable.length
+        ? ` (writable: ${files.writable.slice(0, 5).join(", ")})`
+        : ""),
+  )
+
   console.info(`Starting ${project} in ${dir}`)
   compose("up", "--detach", "--quiet-pull")
 
@@ -286,9 +333,13 @@ async function run() {
     [...again.matchAll(/\/setup#/g)].length === 1,
     "after a restart, a claimed installation prints no setup link",
   )
+  const firstRun = inspect("migrate", "{{.State.StartedAt}}")
   compose("up", "--detach", "--quiet-pull")
-  await waitFor("migrate to finish again", () =>
-    inspect("migrate", "{{.State.Status}}") === "exited" ? true : null,
+  await waitFor("migrate to run and finish again", () =>
+    inspect("migrate", "{{.State.Status}}") === "exited" &&
+    inspect("migrate", "{{.State.StartedAt}}") !== firstRun
+      ? true
+      : null,
   )
   check(
     inspect("migrate", "{{.State.ExitCode}}") === "0",

@@ -968,7 +968,8 @@ From the `workspace` repository's catalog and `infra/musashi` (read 2026-11-16):
   `10.88.10.0/24` to `10.88.13.0/24`. Public Caddy gets the fixed address
   `10.88.14.2` on `caddy-public-shinan`, so `SHINAN_TRUSTED_PROXIES` names
   that one address rather than the bridge's whole range, which would include
-  its gateway.
+  its gateway. The bridge's `ip_range` (`10.88.14.128/25`) keeps Docker from
+  handing that address to `shinan-web` while Caddy is stopped.
 - **Proposed:** on Musashi, `web` and `worker` take their secrets as
   environment variables from Obscuro, each container only its own (the SES key
   only in `worker`; the session secret and GitHub client secret only in
