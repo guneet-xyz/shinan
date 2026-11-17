@@ -457,6 +457,16 @@ approval` flag.
 - Any member may give an agent a **read-only token** (only the `read` scopes,
   [7.2](#72-scopes)) when approving it. It is a choice of scopes, not a role.
   Reason: it limits what a leaked token can change.
+- **Proposed (M2-5, [#83](https://github.com/guneet-xyz/shinan/issues/83)):**
+  "own" agents are those of the member's current membership. A member
+  registers agents only for themselves; seeing, renaming, enabling and making
+  tokens stay with the agent's own member. A workspace owner sees every
+  agent in the workspace with its token's use, and may disable any agent and
+  revoke any token, but not rename, enable or make tokens for another
+  member's agent. Only making a token needs re-authentication; disabling,
+  revoking and renaming do not. Reason: making a token is the one action
+  that gives access; the others only take it away or change a label, and
+  revoking must be quick when a token leaks.
 - Every contributor can read and change the whole workspace, including
   infrastructure details and private-repository work (O-2, O-43, N-11). The
   invitation screen says so ([human experience](human-experience.md)).
@@ -538,6 +548,13 @@ workspace, acts for exactly one member, and never does more than that member.
   that agent.
 - Losing or retiring a machine (as Takezo was in November 2026) means
   disabling the agents on it, which revokes all their tokens and nothing else.
+- **Proposed (M2-5):** an agent belongs to the **membership** it was created
+  with, not only to its person. If a member leaves or is removed and later
+  rejoins, their old agents stay disabled and they register new ones. Reason:
+  an agent must not outlive the membership it acted through
+  ([5.3](#53-leaving-removal-and-role-changes)), and checking the agent's own
+  membership row on every request makes that hold even if a token were
+  somehow still live.
 - Every subagent is its own agent session of the same agent (owner, O-37).
 
 ### 6.2 Registering an agent
@@ -583,7 +600,12 @@ sequenceDiagram
 - **Token made by hand (fallback):** the person creates a token for an agent
   in the web app, with re-authentication, chooses its machine and scopes, sees
   it once, and places it on the machine. Reason: for tools or machines where
-  neither the plugin nor the CLI can run the approval.
+  neither the plugin nor the CLI can run the approval. **Proposed (M2-5):**
+  the person picks the workspace, the coding tool and the machine; if they
+  already have an agent with that handle, it gets the new token (and its old
+  one is revoked), otherwise the agent is created. A disabled agent gets no
+  token until it is enabled again ([7.5](#75-revocation)). The person can also
+  replace the token of an agent from its row, with the same access.
 - The token goes straight to the tool or to the person, never through a chat,
   issue or file in a repository. The `workspace` repository's policy already
   forbids pasting credentials into conversations.
@@ -743,7 +765,14 @@ no forced re-approval.
 - Removing a member, disabling an agent, removing someone from the allowlist,
   and deleting a workspace revoke tokens automatically.
 - Issuing a new token for an agent, by approval or by hand, revokes its
-  previous one. Reason: one token per agent (NO-1).
+  previous one. Reason: one token per agent (NO-1). **Proposed (M2-5):** the
+  database allows at most one token per agent that is not revoked. Revoked
+  tokens are kept, with when and why they were revoked and their use summary,
+  so the agent page and the security log can still explain them.
+- **Proposed (M2-5):** each token records its first and last use, the network
+  address of the last request, and how many requests it has made. "Unused
+  for 30 days" counts from the last use, or from when the token was made if
+  it was never used.
 
 ### 7.4 Handling
 
@@ -770,7 +799,18 @@ no forced re-approval.
   endpoint of the installation that issued it (the MCP endpoint, the REST API
   and the plugin stream) and nowhere else. **Proposed:** the token records the
   installation's address, and other installations reject it. Which endpoints
-  exist is for the [architecture](architecture.md) document.
+  exist is for the [architecture](architecture.md) document. **Proposed
+  (M2-5):** the address recorded is the origin of `SHINAN_URL` when the token
+  was made, and a token is refused whenever it differs from the current one.
+  So a copy of the database restored under another address accepts none of
+  its tokens, and an operator who changes the installation's address must
+  have every agent's token made again; the [operator guide](operator-guide.md)
+  says so.
+- **Proposed (M2-5):** an agent endpoint refuses a request that carries a
+  sign-in cookie as well as a token, and a request whose address carries a
+  token (a parameter such as `access_token`, or Shinan's prefix anywhere in
+  it). Token-only requests are exempt from the web app's same-origin check,
+  because they carry no credential a forged browser request could use.
 - Shinan's own token prefixes are refused in catalog proposals from the first
   version, as the [catalog](catalog.md) requires. Refusing them in other text
   (comments, progress updates) and revoking the exposed token automatically
@@ -795,6 +835,15 @@ no forced re-approval.
 - Revocation takes effect on the next request: Shinan checks on every request
   that the token is still valid. Reason: long-lived tokens (O-44) make instant
   revocation the main control.
+- **Proposed (M2-5):** what each automatic trigger does. Removing a member
+  and a member leaving **disable** the membership's agents (and so revoke
+  their tokens). Removal from the allowlist and "sign out everywhere" with
+  its option chosen **revoke** the person's tokens in every workspace but
+  leave the agents enabled, so the person can make new tokens once they are
+  back. "Sign out everywhere" offers the option unticked. Every revocation
+  records why: `revoked` (by hand), `replaced`, `agent-disabled`,
+  `member-removed`, `member-left`, `allowlist-removed` or
+  `signed-out-everywhere`.
 - When a running agent session loses its token, its next call fails, Shinan
   records an event, and the session is shown as having lost access. Claims are
   handled as [Tasks and work](tasks.md) decides.
@@ -941,7 +990,14 @@ written forms:
   `shinan` could not be told apart from Shinan itself.
 - An agent's handle is `<coding tool>-<machine>`, set when the agent is
   created on the approval page ([6.2](#62-registering-an-agent)), unique among
-  the person's agents in the workspace, and not changeable.
+  the person's agents in the workspace, and not changeable. **Proposed
+  (M2-5):** the coding tool and the machine are each lowercase letters,
+  digits and single hyphens, at most 32 characters; what a person types is
+  lowered, and spaces, dots and underscores become hyphens ("MacBook Air"
+  becomes `macbook-air`). The handle is unique among the agents of one
+  membership ([6.1](#61-what-one-agent-is)). An agent also has a **name** for
+  people, such as "OpenCode on Daedalus", which its member can rename;
+  renaming never changes the handle or any record.
 - The written form names the agent, not the agent session. The exact agent
   session is on the event that recorded the change, with attribution
   `recorded`. Reason: the text stays short and readable, and full detail lives
@@ -1050,7 +1106,12 @@ restriction stays possible later.
 - **No passwords to guess** (N-7): sign-in is by magic link or GitHub.
 - **Throttling** of sign-in and invitation emails (per address and per network
   address, so Shinan cannot be used to flood a mailbox) and of failed token
-  use. Failures are recorded.
+  use. Failures are recorded. **Proposed (M2-5):** after 10 failed agent token
+  attempts in a minute from one network address, every token attempt from
+  that address is refused (429) until the minute ends, valid tokens included;
+  each failure up to the limit is recorded with its reason, and then only the
+  first refusal. Each token is also limited to 600 requests a minute from
+  anywhere. Every refused token gets the same answer (401 `invalid-token`).
 - **Uniform answers** that do not reveal whether an email address is
   allowlisted or whether a person, workspace, task or repository exists.
   Reason: probing for names leaks information.
@@ -1092,7 +1153,14 @@ kinds (**proposed**):
   entries; operators see installation-level entries. Reason: the log holds
   network addresses, which are personal data.
 - Reads are recorded as per-token summaries and as bulk reads (agent index
-  downloads, exports), not page by page.
+  downloads, exports), not page by page. **Proposed (M2-5):** a token's first
+  use is recorded once (`agent-token.first-used`, with its network address);
+  every hour, each token used since the last summary gets one
+  `agent-token.used` entry with the number of requests, first and last use
+  and the last network address; and its revocation entry carries the same
+  summary. Agent and token entries are `agent.created`, `agent.renamed`,
+  `agent.disabled`, `agent.enabled`, `agent-token.issued`,
+  `agent-token.revoked` and `agent-token.failed`.
 - **Decided (owner, O-47, N-8, N-13, [#25](https://github.com/guneet-xyz/shinan/issues/25)):**
   the security log is kept forever, and no security-log entry can ever be
   purged, by anyone: neither installation-level entries nor a workspace's

@@ -689,6 +689,15 @@ sit behind NAT, firewalls or tailnets. The agent-facing parts of
     above). Installing the plugin also sets up MCP and the skill (owner, O-36),
     so the plugin writes that configuration without putting the token itself in
     a project file.
+- **One authentication seam (M2-5).** Every agent endpoint uses the same
+  check (`requireAgent` in `apps/server`, calling core's
+  `authenticateAgent`): the token only from `Authorization: Bearer`, no
+  sign-in cookie, the same 401 `invalid-token` answer for every refused
+  token, failed attempts throttled per network address and each token's
+  requests limited ([identity §7.4, §10](identity.md#74-handling)). The first
+  agent endpoint is `GET /api/agent`, which tells the agent who it is, which
+  workspace it is in and what its token allows, so a person setting up a
+  tool can check the connection. **Proposed.**
 - **Required checks.** Validate the `Origin` header and check that
   `MCP-Protocol-Version`, `Mcp-Method` and `Mcp-Name` match the request body, as
   the 2026-07-28 transport requires; reject tokens in query strings.
