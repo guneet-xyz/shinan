@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/guneet-xyz/shinan/compare/v0.2.0...v0.2.1) (2026-11-17)
+
+
+### Bug Fixes
+
+* **deps:** run on Node.js 26 LTS ([#72](https://github.com/guneet-xyz/shinan/issues/72)) ([d71ee62](https://github.com/guneet-xyz/shinan/commit/d71ee62553424f3e58dd25b45b6893dea577178c))
+
 ## [0.2.0](https://github.com/guneet-xyz/shinan/compare/v0.1.0...v0.2.0) (2026-11-17)
 
 
