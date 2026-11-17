@@ -1,12 +1,15 @@
 # Shinan: build plan for M2 (Catalog)
 
-Status: **proposed**, for the owner's review
-([issue #79](https://github.com/guneet-xyz/shinan/issues/79)).
+Status: **approved by the owner on 2026-11-17**
+([issue #79](https://github.com/guneet-xyz/shinan/issues/79)), with the
+answers in [section 7](#7-owner-answers).
 
 This plan splits milestone M2 into work packages, in the same way and under
-the same process as M1 ([build plan](build-plan.md), §4). It changes no
-decision. Where the documents leave a choice open, it says what it proposes
-and why; real choices for the owner are in [section 7](#7-questions-for-the-owner).
+the same process as M1 ([build plan](build-plan.md), §4). Where the documents
+left a choice open, it says what it proposes and why; the owner's answers to
+the real choices are in [section 7](#7-owner-answers). One answer is recorded
+as a new decision, [D-056](decisions/D-056-public-skill-path.md); the plan
+changes no other decision.
 
 M1 is complete and deployed as v0.2.0 at `shinan.guneet.dev`. M2 builds on its
 code: core's actors, scopes and single check path (`packages/core`), the
@@ -35,23 +38,23 @@ packages is **proposed**):
 | Wiki            | Entity pages, freshness display, type indexes (built-in and custom, with their schema documents), workspace-wide lists, search, page history with revision comparison, start here for people and for agents (with "preview as agent"), Suggest a change, Record a check, catalog review (waiting for approval, recent changes with revert), catalog settings (strict setting) | [Human experience](human-experience.md#the-wiki): the wiki, start here and onboarding, workspace settings (Catalog settings); [catalog §10, §11](catalog.md#10-the-wiki)                                                                                                                                        |
 | Agents          | Agents (person, coding tool, machine), one long-lived hashed token per agent with scopes (full or read-only), tokens made by hand after re-authentication, revocation (including on member removal, allowlist removal and "sign out everywhere"), token use recorded, security emails, per-token rate limits, Your agents and the workspace settings Agents screen            | [Identity §6, §7, §11](identity.md#6-agents); [D-031](decisions/D-031-agent-and-session-granularity.md), [D-035](decisions/D-035-tokens-security-log-purge.md), [D-050](decisions/D-050-agent-token-browser-approval.md) (hand-made fallback); [human experience, Your agents](human-experience.md#your-agents) |
 | MCP             | The hosted MCP endpoint (`/mcp`, Streamable HTTP, protocol versions 2026-07-28 and 2025-11-25), token-only authentication, the catalog tools, trust labels on every text field, server instructions pointing to the skill, retry-safe writes                                                                                                                                  | [Agent integrations](agent-integrations.md#mcp-server-and-tools): design rules, trust labels, the Context and Catalog rows of the tool set, authentication requirements; [architecture §8.1](architecture.md#81-mcp-server)                                                                                     |
-| Skill           | One `shinan` skill with its catalog conventions, served by the installation as an HTTP skill catalog; setup instructions for OpenCode with a hand-made token                                                                                                                                                                                                                  | [Agent integrations, the skill and conventions](agent-integrations.md#the-skill)                                                                                                                                                                                                                                |
-| Trial           | A trial guide for the catalog part, the GitHub `trial` label for findings, configuration that enables Shinan for trial projects only, and the trial-start steps in [section 4](#4-starting-the-catalog-part-of-the-trial)                                                                                                                                                     | [Roadmap 4.3, 4.5](roadmap.md#43-the-catalog-during-the-trial)                                                                                                                                                                                                                                                  |
+| Skill           | One `shinan` skill with its catalog conventions, served by the installation as an HTTP skill catalog on the public path `/skills/` ([D-056](decisions/D-056-public-skill-path.md)); setup instructions for OpenCode with a hand-made token                                                                                                                                    | [Agent integrations, the skill and conventions](agent-integrations.md#the-skill)                                                                                                                                                                                                                                |
+| Trial           | A trial guide for the catalog part, the GitHub `trial` label for findings, machine-level OpenCode configuration on Daedalus that enables Shinan for the trial projects only, and the trial-start steps in [section 4](#4-starting-the-catalog-part-of-the-trial)                                                                                                              | [Roadmap 4.3, 4.5](roadmap.md#43-the-catalog-during-the-trial)                                                                                                                                                                                                                                                  |
 
 ### What M2 does not deliver
 
-| Not in M2                                                                                                             | When                                                                         | Reason                                                                                                                                                                                                                                                                                        |
-| --------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Tasks, related tasks on entity pages, `from-task` resolution, the workspace timeline screen, the readiness report     | M3                                                                           | [Roadmap 3.3](roadmap.md#33-build-milestones).                                                                                                                                                                                                                                                |
-| Agent sessions, presence, the OpenCode plugin, the "start agent session" and "check in" tools                         | M4                                                                           | Roadmap 3.3. In M2 every MCP call is credited to the agent with no agent session, which the [glossary](domain-model.md#agent-session) allows; the written actor form names the agent anyway ([identity §8.7](identity.md#87-how-an-actor-is-written-in-text)).                                |
-| Browser approval of agents (device flow with a short code)                                                            | **Proposed:** M4, with the plugin ([question 1](#7-questions-for-the-owner)) | Only the plugin or the CLI can start it, and neither exists in M2. Hand-made tokens are the decided fallback ([D-050](decisions/D-050-agent-token-browser-approval.md)).                                                                                                                      |
-| The CLI, including its local MCP bridge                                                                               | **Proposed:** after M4, before G2                                            | On the cut line ([roadmap 3.2](roadmap.md#32-cut-line)). Every trial agent is OpenCode, which reaches a remote MCP server with a header.                                                                                                                                                      |
-| Workspace export and import                                                                                           | Before G2                                                                    | On the cut line. The wiki's export link for owners waits for it.                                                                                                                                                                                                                              |
-| The migration importer and the rollback converter                                                                     | Before the rehearsal (R14), before G2                                        | The trial copies only pointers ([O-71](roadmap.md#43-the-catalog-during-the-trial)); a bulk importer is not needed for it ([architecture §5.4](architecture.md#54-importing-the-workspace-repositorys-catalog), [catalog §13](catalog.md#13-mapping-from-the-workspace-repositorys-catalog)). |
-| Automatic fact checks by Shinan                                                                                       | Phase 2a                                                                     | Cut line; they need git host connections (M3) anyway ([catalog §12.3](catalog.md#123-automatic-fact-checks-by-shinan)).                                                                                                                                                                       |
-| Nudges and the `messages` field in MCP answers                                                                        | Phase 2 (field added when nudges or task notices exist)                      | [Agent integrations, design rule 4](agent-integrations.md#design-rules).                                                                                                                                                                                                                      |
-| Git mirror, MCP-specific OAuth, MCP resources, agent signing keys, external link checking, body embeds of fact values | Later or not planned                                                         | [D-043](decisions/D-043-no-git-mirror-for-now.md), [D-050](decisions/D-050-agent-token-browser-approval.md); the defaults in [section 7.2](#72-defaults-for-open-questions-in-the-documents).                                                                                                 |
-| Screens for a second member (contributor role in catalog screens, nudges from others)                                 | Before a second member joins                                                 | [Identity §13](identity.md#13-first-version-scope). Core still enforces the role rules, as M1 does.                                                                                                                                                                                           |
+| Not in M2                                                                                                             | When                                                    | Reason                                                                                                                                                                                                                                                                                        |
+| --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Tasks, related tasks on entity pages, `from-task` resolution, the workspace timeline screen, the readiness report     | M3                                                      | [Roadmap 3.3](roadmap.md#33-build-milestones).                                                                                                                                                                                                                                                |
+| Agent sessions, presence, the OpenCode plugin, the "start agent session" and "check in" tools                         | M4                                                      | Roadmap 3.3. In M2 every MCP call is credited to the agent with no agent session, which the [glossary](domain-model.md#agent-session) allows; the written actor form names the agent anyway ([identity §8.7](identity.md#87-how-an-actor-is-written-in-text)).                                |
+| Browser approval of agents (device flow with a short code), formerly package M2-11                                    | **Decided (owner, M2-Q1):** M4, with the plugin         | Only the plugin or the CLI can start it, and neither exists in M2. Hand-made tokens are the decided fallback ([D-050](decisions/D-050-agent-token-browser-approval.md)). The M4 plan picks up the content in [section 3.11](#311-moved-to-m4-browser-approval).                               |
+| The CLI, including its local MCP bridge                                                                               | **Proposed:** after M4, before G2                       | On the cut line ([roadmap 3.2](roadmap.md#32-cut-line)). Every trial agent is OpenCode, which reaches a remote MCP server with a header.                                                                                                                                                      |
+| Workspace export and import                                                                                           | Before G2                                               | On the cut line. The wiki's export link for owners waits for it.                                                                                                                                                                                                                              |
+| The migration importer and the rollback converter                                                                     | Before the rehearsal (R14), before G2                   | The trial copies only pointers ([O-71](roadmap.md#43-the-catalog-during-the-trial)); a bulk importer is not needed for it ([architecture §5.4](architecture.md#54-importing-the-workspace-repositorys-catalog), [catalog §13](catalog.md#13-mapping-from-the-workspace-repositorys-catalog)). |
+| Automatic fact checks by Shinan                                                                                       | Phase 2a                                                | Cut line; they need git host connections (M3) anyway ([catalog §12.3](catalog.md#123-automatic-fact-checks-by-shinan)).                                                                                                                                                                       |
+| Nudges and the `messages` field in MCP answers                                                                        | Phase 2 (field added when nudges or task notices exist) | [Agent integrations, design rule 4](agent-integrations.md#design-rules).                                                                                                                                                                                                                      |
+| Git mirror, MCP-specific OAuth, MCP resources, agent signing keys, external link checking, body embeds of fact values | Later or not planned                                    | [D-043](decisions/D-043-no-git-mirror-for-now.md), [D-050](decisions/D-050-agent-token-browser-approval.md); the defaults in [section 7.2](#72-defaults-for-open-questions-in-the-documents).                                                                                                 |
+| Screens for a second member (contributor role in catalog screens, nudges from others)                                 | Before a second member joins                            | [Identity §13](identity.md#13-first-version-scope). Core still enforces the role rules, as M1 does.                                                                                                                                                                                           |
 
 ## 2. Code layout additions (proposed)
 
@@ -74,21 +77,21 @@ reviewer agent against the documents it implements, as in M1. Every package
 updates the documents its behaviour changes, and the
 [security checklist](security-checklist.md) items it builds.
 
-| #     | Package                                                                          | Implements                                                                                                                                           | Depends on                               |
-| ----- | -------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
-| M2-1  | **Catalog documents: parser, type schemas, validation**                          | Catalog §2, §3, §4, §5, §7.3, §8.3, §11 (document shape)                                                                                             | M1                                       |
-| M2-2  | **Operations as text edits, and conflict checks**                                | Catalog §4.2, §4.3, §8.1 (operations), §8.5; architecture §5.2 (rules 2 and 5)                                                                       | M2-1                                     |
-| M2-3  | **Agent index and search**                                                       | Catalog §12.1, §12.2; architecture §4.1, §5.2 (rules 3 and 6), §5.3                                                                                  | M2-1                                     |
-| M2-4  | **Catalog storage, proposals and approval**                                      | Catalog §8, §9 (without purge); architecture §5.2 (rule 4), §5.3, §7; identity §5.1 (catalog rows), §11 (catalog approvals)                          | M2-2, M2-3                               |
-| M2-5  | **Agents and tokens**                                                            | Identity §6.1, §6.3, §7, §11 (agent rows), §10 (token throttling); human experience "Your agents" (hand-made tokens) and workspace settings "Agents" | M1                                       |
-| M2-6  | **MCP server and catalog tools**                                                 | Agent integrations: MCP server and tools, trust labels, authentication requirements; architecture §8.1                                               | M2-4, M2-5                               |
-| M2-7  | **Wiki: reading**                                                                | Human experience: an entity page, freshness, moving around the wiki, start here; catalog §10, §11                                                    | M2-4                                     |
-| M2-8  | **Wiki: changing the catalog and catalog review**                                | Human experience: changing the catalog from the wiki, reviewing catalog changes, catalog settings; catalog §8.2, §8.6                                | M2-4; the page shell of M2-7             |
-| M2-9  | **The skill and agent setup**                                                    | Agent integrations: the skill, conventions agents follow (catalog parts), authentication requirement 3                                               | Drafted with M2-6, finished after it     |
-| M2-10 | **Catalog purge** ([question 4](#7-questions-for-the-owner))                     | Catalog §9 (purge); architecture §4.4; identity §11                                                                                                  | M2-4                                     |
-| M2-11 | **Browser approval** (proposed for M4, [question 1](#7-questions-for-the-owner)) | Identity §6.2; architecture §8.1; human experience "Your agents" steps 2 to 5                                                                        | M2-5                                     |
-| M2-12 | **Security review and deployment preparation**                                   | Security checklist (the M2 **Later** items); operator guide; architecture §11.6                                                                      | All packages that ship in M2             |
-| M2-13 | **Trial start kit**                                                              | Roadmap 4.3, 4.5; agent integrations, the skill (O-38)                                                                                               | Drafting: none; steps: the M2 deployment |
+| #     | Package                                                                            | Implements                                                                                                                                           | Depends on                                        |
+| ----- | ---------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| M2-1  | **Catalog documents: parser, type schemas, validation**                            | Catalog §2, §3, §4, §5, §7.3, §8.3, §11 (document shape)                                                                                             | M1                                                |
+| M2-2  | **Operations as text edits, and conflict checks**                                  | Catalog §4.2, §4.3, §8.1 (operations), §8.5; architecture §5.2 (rules 2 and 5)                                                                       | M2-1                                              |
+| M2-3  | **Agent index and search**                                                         | Catalog §12.1, §12.2; architecture §4.1, §5.2 (rules 3 and 6), §5.3                                                                                  | M2-1                                              |
+| M2-4  | **Catalog storage, proposals and approval**                                        | Catalog §8, §9 (without purge); architecture §5.2 (rule 4), §5.3, §7; identity §5.1 (catalog rows), §11 (catalog approvals)                          | M2-2, M2-3                                        |
+| M2-5  | **Agents and tokens**                                                              | Identity §6.1, §6.3, §7, §11 (agent rows), §10 (token throttling); human experience "Your agents" (hand-made tokens) and workspace settings "Agents" | M1                                                |
+| M2-6  | **MCP server and catalog tools**                                                   | Agent integrations: MCP server and tools, trust labels, authentication requirements; architecture §8.1                                               | M2-4, M2-5                                        |
+| M2-7  | **Wiki: reading**                                                                  | Human experience: an entity page, freshness, moving around the wiki, start here; catalog §10, §11                                                    | M2-4                                              |
+| M2-8  | **Wiki: changing the catalog and catalog review**                                  | Human experience: changing the catalog from the wiki, reviewing catalog changes, catalog settings; catalog §8.2, §8.6                                | M2-4; the page shell of M2-7                      |
+| M2-9  | **The skill and agent setup**                                                      | Agent integrations: the skill, conventions agents follow (catalog parts), authentication requirement 3                                               | Drafted with M2-6, finished after it              |
+| M2-10 | **Catalog purge** (owner, M2-Q4)                                                   | Catalog §9 (purge); architecture §4.4; identity §11                                                                                                  | M2-4                                              |
+| M2-11 | _Not in M2: browser approval moved to M4 (owner, M2-Q1); the number is not reused_ | Identity §6.2                                                                                                                                        | —                                                 |
+| M2-12 | **Security review and deployment preparation**                                     | Security checklist (the M2 **Later** items); operator guide; architecture §11.6                                                                      | All packages that ship in M2                      |
+| M2-13 | **Trial start kit**                                                                | Roadmap 4.3, 4.5; agent integrations, the skill (O-38)                                                                                               | Drafting: none; steps: the M2 deployment and M2-9 |
 
 ### Order and parallel work
 
@@ -379,16 +382,20 @@ a second PR, so M2-2 and M2-3 can start earlier.
   conventions are added in M3 and M4.
 - **Served** as an HTTP skill catalog at `/skills/` with `index.json`, whose
   `version` changes when the files change ([OpenCode skills](https://opencode.ai/docs/skills),
-  checked 2026-11-17). OpenCode's HTTP catalogs send no credentials, so
-  serving it needs a public path ([question 2](#7-questions-for-the-owner)).
-- **Setup guide** for OpenCode with a hand-made token: the MCP entry
-  (`type: remote`, `oauth: false`, the `Authorization` header read from a file
-  or an environment variable, never written into a project file), the skill
-  catalog URL, and how to check the connection. Linked from Your agents.
+  checked 2026-11-17). OpenCode's HTTP catalogs send no credentials, so the
+  path is public ([D-056](decisions/D-056-public-skill-path.md)): it serves
+  only the built skill files, never workspace content, and the PR adds it to
+  the public routes test and checklist item 1.12.
+- **Setup guide** for OpenCode with a hand-made token, for any machine: the
+  MCP entry (`type: remote`, `oauth: false`, the `Authorization` header read
+  with `{file:…}` from a file only its user can read, never written into a
+  project file), the skill catalog URL, and how to check the connection
+  (`opencode mcp list`). Linked from Your agents. For the trial, the
+  machine-level layout on Daedalus is M2-13's ([3.13](#313-m2-13-trial-start-kit)).
 
 ### 3.10 M2-10: Catalog purge
 
-Only if the owner wants it in M2 ([question 4](#7-questions-for-the-owner)).
+In M2 (owner, M2-Q4), for catalog content only.
 A workspace owner, after re-authentication, purges content from catalog
 revisions, proposals and comments: the content is replaced by a marker, the
 record keeps its shape, the purge is an event and a security-log entry, and
@@ -399,13 +406,15 @@ must be rotated at its source ([catalog §9](catalog.md#9-history-and-purge),
 triggers in a migration and never touches the `security_log` ones (note in
 [PR #61](https://github.com/guneet-xyz/shinan/pull/61)).
 
-### 3.11 M2-11: Browser approval
+### 3.11 Moved to M4: Browser approval
 
-Proposed for M4 ([question 1](#7-questions-for-the-owner)). If built in M2:
+Not in M2 (owner, M2-Q1); the number M2-11 is not reused. The M4 plan
+includes it with the plugin, which is the first client that can start it:
 the device-style flow of [identity §6.2](identity.md#62-registering-an-agent)
 (link and short code, sign-in and re-authentication, choose or create the
 agent, full or read-only, approve), its throttling and expiry, the approval
-page, and "waiting for first contact".
+page, and "waiting for first contact". Until then agents use tokens made by
+hand (M2-5).
 
 ### 3.12 M2-12: Security review and deployment preparation
 
@@ -430,19 +439,52 @@ page, and "waiting for first contact".
   `workspace` repository and the trial catalog (O-72) as an agent procedure,
   and how trial findings are filed.
 - The GitHub `trial` label for findings ([roadmap 4.4](roadmap.md#44-tasks-during-the-trial)).
-- The configuration that enables the MCP server and skill for trial projects
-  only (O-38; [question 3](#7-questions-for-the-owner)).
+- **Machine-level OpenCode configuration on Daedalus** that enables the MCP
+  server and skill for the trial projects only (O-38; owner, M2-Q3). Nothing
+  is committed to any repository, and nothing to mon or easyshell.
+  - **How OpenCode scopes it** ([config](https://opencode.ai/docs/config),
+    checked 2026-11-17): for each session OpenCode merges every
+    `opencode.json(c)` it finds from the session's directory up to the
+    filesystem root, on top of the global `~/.config/opencode` configuration.
+    A file in a folder above a repository therefore applies to every session
+    and task worktree below that folder, and to nothing else. The global and
+    system (`/etc/opencode`) files are not used, because they apply to every
+    project.
+  - **Files:** `/mnt/projects/shinan/opencode.jsonc`,
+    `/mnt/projects/mon/opencode.jsonc` and
+    `/mnt/projects/easyshell/opencode.jsonc`, the same content in each: the
+    MCP server `shinan` (`type: remote`, `url: https://shinan.guneet.dev/mcp`,
+    `oauth: false`, an `Authorization` header read with `{file:…}`) and
+    `skills: ["https://shinan.guneet.dev/skills/"]`. These folders hold the
+    trial projects' task worktrees (`/mnt/projects/<project>/<task>`) and
+    mon's clone (`/mnt/projects/mon/mon`), following Daedalus's worktree
+    convention in the `workspace` catalog. They contain no secret.
+  - **Token file:** `/root/.config/shinan/token`, owned by root, mode `0600`
+    in a `0700` folder, written by the owner (owner action). If a `{file:…}`
+    reference inside a longer string does not work, the file holds the whole
+    header value (`Bearer …`) and the header is exactly `{file:…}`, the form
+    the OpenCode docs show.
+  - **Limits:** sessions started outside these folders, such as in the
+    canonical checkout `/root/shinan`, do not get Shinan. Trial work therefore
+    starts in `/mnt/projects/<project>` or a task worktree there, as
+    Daedalus's convention already says. The setup is checked with
+    `opencode mcp list`: `shinan` connected from a trial worktree, absent
+    from `/root` and from another project's folder.
+  - **Documentation:** the `workspace` repository's Daedalus machine entry
+    records where these files are (with the trial note, step 6 of section 4).
 - A draft of the trial note for the `workspace` repository (section 4, step 6).
 
 ## 4. Starting the catalog part of the trial
 
 After the owner approves the M2 deployment and it is verified:
 
-1. **Agents.** The owner creates a hand-made token for each machine used in
-   the trial (proposed: OpenCode on Daedalus only, [question 5](#7-questions-for-the-owner))
-   and places it on the machine. Agents never see, copy or relay it.
-2. **Trial configuration.** Pull requests enable the MCP server and skill in
-   the three trial projects (M2-13).
+1. **Agent and token.** The owner creates the agent "OpenCode on Daedalus"
+   (`opencode-daedalus`) with a full token made by hand (owner, M2-Q5) and
+   writes it to `/root/.config/shinan/token`. Agents never see, copy or relay
+   it.
+2. **Trial configuration.** An agent writes the three machine-level
+   configuration files of [M2-13](#313-m2-13-trial-start-kit) on Daedalus and
+   checks with `opencode mcp list` that only trial folders connect.
 3. **First documents.** `person/guneet` (the entity owner of everything) and
    the start-here document, both gated: the owner writes them or approves an
    agent's proposal. The agents' path links to the `workspace` repository's
@@ -471,11 +513,13 @@ After the owner approves the M2 deployment and it is verified:
 6. **Trial note.** A `workspace` repository pull request, through that
    repository's own workflow (a Forgejo issue, its own branch and review), adds
    the catalog part of the trial note ([roadmap 4.5](roadmap.md#45-agents-in-the-trial)):
-   for trial projects, connect to Shinan; make a catalog proposal whenever a
+   for trial projects, use Shinan (on Daedalus it is already configured for
+   them); make a catalog proposal whenever a
    trial entity is updated in the `workspace` repository; fall back to the
    `workspace` repository if Shinan is down. The task and plugin parts are
-   added at M3 and M4. This is a separate change in that repository, not part
-   of any Shinan PR.
+   added at M3 and M4. The same PR records the configuration files in the
+   Daedalus machine entry. This is a separate change in that repository, not
+   part of any Shinan PR.
 7. **From then on:** agents keep both in step (O-72), the weekly comparison
    runs, and evidence for R5, R6 and R7 starts to accumulate
    ([roadmap 5](roadmap.md#5-readiness-criteria)).
@@ -490,9 +534,9 @@ After the owner approves the M2 deployment and it is verified:
 | **MCP authentication.** A public endpoint with long-lived tokens (O-44, O-45); MCP clients send no cookies, browsers do.                                                                                                                                                                      | Token only in the `Authorization` header; cookies refused at `/mcp`; `Origin` validated; per-token rate limits; token use recorded; instant revocation checked on every request; the SDK's support for both protocol versions confirmed at the start of M2-6, with a fallback of handling the 2026-07-28 headers in Shinan's own code. |
 | **Trust labels and prompt injection.** Catalog text is written by agents that may have read outside text; the author of a body is spread over many revisions.                                                                                                                                 | All catalog text is `instruction: no`; per-section and per-fact authors derived from history; a test that walks every MCP answer for missing labels; the skill wording from agent integrations.                                                                                                                                        |
 | **Content Security Policy with the wiki's Markdown.** Rendering Markdown to HTML usually means raw HTML, inline styles or `innerHTML`.                                                                                                                                                        | Rendering into React elements with raw HTML off, a URL allow-list, no images from elsewhere, no highlighting in M2; hostile-Markdown tests; checking every new screen in a browser under the real headers, as in M1-8.                                                                                                                 |
-| **The token on the agent's machine.** A token in an environment variable or file is readable by the agent's own shell commands, so "never in the model's sight" ([authentication requirement 3](agent-integrations.md#authentication-requirements)) holds only while the agent does not look. | The skill forbids reading or printing it; the setup guide stores it in a `0600` file read by the MCP configuration; revocation is instant and the security email shows new tokens. The plugin (M4) moves it to the machine's credential store where possible.                                                                          |
-| **Secrets slipping into the catalog** during seeding.                                                                                                                                                                                                                                         | The secret check blocks near-certain credentials and holds weaker matches for approval; seeding rules forbid values; purge (M2-10) if the owner wants it before the trial. A leak is a pause condition (RM-10).                                                                                                                        |
-| **M2 is the largest milestone.**                                                                                                                                                                                                                                                              | The pure document model first, so most rules are tested without a database or a browser; browser approval and the CLI out of M2; purge optional; the owner's review at the end of M2 checks scope against the cut line.                                                                                                                |
+| **The token on the agent's machine.** A token in an environment variable or file is readable by the agent's own shell commands, so "never in the model's sight" ([authentication requirement 3](agent-integrations.md#authentication-requirements)) holds only while the agent does not look. | The skill forbids reading or printing it; on Daedalus it is a root-only `0600` file read by the machine-level MCP configuration (M2-13); revocation is instant and the security email shows new tokens. The plugin (M4) moves it to the machine's credential store where possible.                                                     |
+| **Secrets slipping into the catalog** during seeding.                                                                                                                                                                                                                                         | The secret check blocks near-certain credentials and holds weaker matches for approval; seeding rules forbid values; catalog purge (M2-10) before the trial starts. A leak is a pause condition (RM-10).                                                                                                                               |
+| **M2 is the largest milestone.**                                                                                                                                                                                                                                                              | The pure document model first, so most rules are tested without a database or a browser; browser approval and the CLI out of M2; the owner's review at the end of M2 checks scope against the cut line.                                                                                                                                |
 | **Seeding cost and double maintenance** (roadmap risks).                                                                                                                                                                                                                                      | Small trial catalog (O-71); one agent session per entity group; owner approvals limited to the person entity and the start-here document.                                                                                                                                                                                              |
 | **Attribution without agent sessions.** M2 credits agents, not agent sessions.                                                                                                                                                                                                                | Accepted for M2; the written form already names only the agent. M4 adds agent sessions, matched as O-29 decides.                                                                                                                                                                                                                       |
 
@@ -500,16 +544,17 @@ After the owner approves the M2 deployment and it is verified:
 
 People type secrets; agents never handle them. Agents prepare every step.
 
-1. **Approve this plan** and answer [section 7](#7-questions-for-the-owner).
+1. **Approve this plan** (done, 2026-11-17, [section 7](#7-owner-answers)).
 2. **Release:** merge the release-please PR for the M2 version (proposed
    v0.3.0). Merging is the approval to release; it does not deploy.
 3. **Approve the M2 deployment** to Musashi ([D-039](decisions/D-039-deploy-as-needed.md)):
    the image pin in `infra/musashi`. New database migrations run with it. No
    DNS, route, network or new server credential is expected; the request says
    so explicitly or lists what changed.
-4. **Create the agent token(s) by hand** in Your agents, after signing in
-   again, and place each on its machine as the setup guide says. No new
-   server-side credential is needed in M2.
+4. **Create the agent token by hand** for OpenCode on Daedalus in Your agents,
+   after signing in again, and write it to `/root/.config/shinan/token`
+   (root-only, [M2-13](#313-m2-13-trial-start-kit)). No new server-side
+   credential is needed in M2.
 5. **Catalog approvals** for the first gated documents: `person/guneet` and
    the start-here document (minutes).
 6. **Review the trial note** in the `workspace` repository (recommended,
@@ -518,51 +563,41 @@ People type secrets; agents never handle them. Agents prepare every step.
 7. **M2 milestone review:** a short demo note, what was built against the
    roadmap, anything cut, and decisions that came up, as for M1.
 
-## 7. Questions for the owner
+## 7. Owner answers
 
-### 7.1 Choices
+Decided by the owner on 2026-11-17 ("Approve and start",
+[issue #79](https://github.com/guneet-xyz/shinan/issues/79)). The labels
+M2-Q1 to M2-Q5 name the questions this plan asked.
 
-1. **Browser approval in M2 or in M4?**
-   **Recommendation: M4,** built with the plugin. In M2 the only clients are
-   hand-configured OpenCode installs, which nothing can start an approval
-   from (the CLI is on the cut line), and the roadmap already plans
-   hand-made tokens until M4. Building it in M2 means a flow with no caller
-   to test it end to end.
-2. **May the skill be served on a public path?** OpenCode loads HTTP skill
-   catalogs without credentials, and [identity §10](identity.md#10-protections-for-a-public-installation)
-   allows nothing without sign-in except sign-in, invitation and health
-   pages. **Recommendation: yes,** at `/skills/`. It holds only product
-   conventions, the same for every workspace and like the web app's own
-   JavaScript files, which are already public; workspace rules reach agents
-   only through the authenticated agents' start-here path. The M2-9 PR
-   updates identity §10 and the security checklist to list it. The other
-   option is copying the skill to each machine by hand, which is how the
-   `workspace` skills drift today.
-3. **How are the MCP server and skill enabled for trial projects only
-   (O-38)?** **Recommendation:** a committed project `opencode.json` in each
-   trial repository (`guneet-xyz/shinan`, `guneet-xyz/mon`,
-   `guneet-xyz/easyshell`) that adds the MCP server and the skill catalog,
-   with the token read from a file on the machine. It travels with every task
-   worktree. mon and easyshell are public, so this publishes only the
-   address `shinan.guneet.dev` (already public in DNS) and that they use
-   Shinan, never a token. The alternative, machine-local configuration, has
-   to be recreated in every new worktree.
-4. **Catalog purge in M2?** **Recommendation: yes** (M2-10, catalog content
-   only). Agents fill the trial catalog, a leaked secret is a pause condition,
-   and without purge the only way to remove one would be a hand edit in the
-   production database, which breaks "revisions are not edited" without a
-   record. Purge of other content follows with the features that hold it.
-5. **Which agents at trial start?** **Recommendation:** OpenCode on Daedalus
-   only, where trial agent sessions run ([roadmap 4.2](roadmap.md#42-trial-projects));
-   other machines get an agent when they are used for trial work.
+### 7.1 Answers
+
+1. **M2-Q1, browser approval:** moves to M4, with the plugin. M2 uses tokens
+   made by hand; package M2-11 is removed from M2
+   ([3.11](#311-moved-to-m4-browser-approval)). This only schedules
+   [D-050](decisions/D-050-agent-token-browser-approval.md), which already
+   names hand-made tokens as the fallback, so no decision record changes.
+2. **M2-Q2, the skill on a public path:** yes, at `/skills/`. Recorded as
+   [D-056](decisions/D-056-public-skill-path.md), because it adds an exception
+   to "nothing without sign-in"; [identity §10](identity.md#10-protections-for-a-public-installation),
+   [architecture §10.2](architecture.md#102-web-hardening) and
+   [agent integrations, the skill](agent-integrations.md#the-skill) say so.
+   The question's reason: OpenCode loads HTTP skill catalogs without
+   credentials, and the skill holds only product conventions.
+3. **M2-Q3, enabling Shinan for trial projects only (O-38):** machine-level
+   OpenCode configuration on Daedalus, with the token in a root-only file,
+   scoped to the trial projects' folders; nothing is committed to mon or
+   easyshell, or to any repository. How it is scoped is in
+   [M2-13](#313-m2-13-trial-start-kit). This implements O-38; no decision
+   record changes.
+4. **M2-Q4, catalog purge:** in M2 (M2-10), catalog content only.
+5. **M2-Q5, agents at trial start:** OpenCode on Daedalus only.
 
 ### 7.2 Defaults for open questions in the documents
 
-M2 has to settle these to build. Each default is **proposed** and can be
-changed later without changing stored catalog text; the owner may override
-any of them.
+Accepted by the owner with the answers above. Each can be changed later
+without changing stored catalog text.
 
-| Open question                                                                       | Proposed default for M2                          |
+| Open question                                                                       | Default for M2                                   |
 | ----------------------------------------------------------------------------------- | ------------------------------------------------ |
 | Body embeds of fact values (catalog 1)                                              | Not supported. Raw Markdown stays readable.      |
 | Recheck intervals for built-in keys (catalog 2)                                     | Proposed per key in the M2-1 PR, reviewed there. |
@@ -573,9 +608,11 @@ any of them.
 | Agent index JSON schema (catalog 7)                                                 | Written by M2-3 into the catalog document.       |
 | The agent index as MCP resources (agent integrations 5)                             | Not offered; tools only.                         |
 
+The packages that settle these update the owning documents' open questions
+in the same PR.
+
 ## 8. What this plan does not do
 
-- No code is written for M2 until the owner approves this plan.
 - No deployment, DNS change or credential is created by agents.
-- The `workspace` repository's trial note is a separate change in that
-  repository.
+- The `workspace` repository's trial note and its Daedalus entry update are a
+  separate change in that repository.

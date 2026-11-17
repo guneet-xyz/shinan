@@ -882,8 +882,9 @@ current result.
 scripts; `frame-ancestors 'none'`; a strict `Referrer-Policy`; no sensitive data
 in URLs; uniform, generic error pages; no stack traces to clients. Nothing is
 served without sign-in except the sign-in and invitation pages, the magic-link
-landing page and the webhook and MCP endpoints, which need their own
-credentials.
+landing page, the skill's files at `/skills/` (**Decided**, owner,
+[D-056](decisions/D-056-public-skill-path.md)), and the webhook and MCP
+endpoints, which need their own credentials.
 
 As built in M1-6 (details and tests in the [checklist](security-checklist.md)):
 

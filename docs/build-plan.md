@@ -99,7 +99,7 @@ M1-1 starts first. M1-2 follows; then M1-3, M1-4 and M1-5 run in parallel, then
 M1-6 and M1-7. M1-8 was added after the first deployment, at the owner's
 request, so the owner's M1 review sees the redesigned screens. M2 to M4 get
 their own package lists at each milestone review: M2's are in the
-[M2 build plan](build-plan-m2.md) (proposed, [#79](https://github.com/guneet-xyz/shinan/issues/79)).
+[M2 build plan](build-plan-m2.md) (approved by the owner on 2026-11-17, [#79](https://github.com/guneet-xyz/shinan/issues/79)).
 
 ## 6. Owner actions for M1
 
