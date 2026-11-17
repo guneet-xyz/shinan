@@ -804,13 +804,16 @@ are human experience's:
 **Proposed**, following path A of the `workspace` repository's SES sender
 onboarding runbook (the SDK path proven by Walls; runbook verified 2026-11-07):
 
-- Sender `shinan@guneet.dev`, display name "Shinan", on the already verified
+- Sender `auth@guneet.dev`, display name "Shinan", on the already verified
   `guneet.dev` identity (any local part on `guneet.dev` is sendable, per the
   runbook), in `us-east-1`, with the `guneet-dev` configuration set used by the
-  other senders.
-- A **dedicated IAM user** whose only permission is `ses:SendEmail` for that From
-  address. Not the shared `mail` key that Walls, easyshell and Drawspace use.
-  Reason: the runbook's rule, and a leaked key can then only send as Shinan.
+  other senders. The address is **decided** (owner, 2026-11-17,
+  [#73](https://github.com/guneet-xyz/shinan/issues/73)): the IAM user
+  `mail-shinan` sends only as `auth@guneet.dev`.
+- A **dedicated IAM user** (`mail-shinan`) whose only permission is
+  `ses:SendEmail` for that From address. Not the shared `mail` key that Walls,
+  easyshell and Drawspace use. Reason: the runbook's rule, and a leaked key can
+  then only send as `auth@guneet.dev`.
 - Its access key goes into the `shinan` Obscuro namespace and reaches only the
   worker. Creating the IAM user and key is an owner action in the AWS console.
 - Outgoing HTTPS from the worker to the SES API uses `shinan-egress`.
@@ -931,7 +934,8 @@ From the `workspace` repository's catalog and `infra/musashi` (read 2026-11-16):
   app, owned by public Caddy. Private bridges do not block outgoing internet
   access unless an egress restriction is approved.
 - Images come from `cr.guneet.dev` (Dockyard, also on Musashi), pinned by
-  digest. mon and easyshell images are pulled anonymously from public projects.
+  digest. mon and easyshell images are pulled anonymously from public projects;
+  so is Shinan's ([D-054](decisions/D-054-public-image-registry-project.md)).
 - DNS for `guneet.dev` is owned by the Terraform project's guarded workflow;
   `tools.guneet.dev` and `mon.guneet.dev` are CNAMEs to `musashi.guneet.xyz`.
 - Fleet backups are paused and Musashi's backup tooling was retired.
@@ -1004,9 +1008,12 @@ From the `workspace` repository's catalog and `infra/musashi` (read 2026-11-16):
 1. Work merges to `main` of the private `guneet-xyz/shinan` repository through
    reviewed PRs; GitHub Actions runs tests (with PostgreSQL) on every PR.
 2. A release (release-please, as mon and Walls use) builds `arm64` and `amd64`
-   images on native runners and pushes them to a private `shinan` project on
+   images on native runners and pushes them to a public `shinan` project on
    `cr.guneet.dev` with build provenance attestations, using a project-scoped
-   push key in GitHub secrets (mon's model). The CLI and plugin are released
+   push key in GitHub secrets (mon's model). The project is public
+   (**Decided**, owner, [D-054](decisions/D-054-public-image-registry-project.md),
+   reversing O-66), so anyone can download the image and its provenance while
+   the source repository stays private (D-011). The CLI and plugin are released
    with checksums and attestations. GitHub offers `ubuntu-24.04-arm` runners to
    private repositories, drawing on included minutes and then per-minute
    charges
@@ -1031,10 +1038,9 @@ From the `workspace` repository's catalog and `infra/musashi` (read 2026-11-16):
 5. The deploying agent takes a pre-deployment database dump to the data disk,
    runs `migrate`, then `web` and `worker`, checks health and records evidence.
 
-- Musashi pulls with a project-scoped pull key stored in Obscuro (**Decided**,
-  owner, O-66). **Proposed:** the deploying agent logs in with it for the pull
-  only, into a temporary Docker configuration that is deleted afterwards, so
-  the key is never stored on disk.
+- Musashi pulls the image anonymously, with no pull key and no registry login
+  (**Decided**, owner, [D-054](decisions/D-054-public-image-registry-project.md),
+  reversing O-66's project-scoped pull key in Obscuro).
 
 ### 11.5 Migrations and rollback
 
@@ -1060,7 +1066,7 @@ is **Proposed**). None of it is done by this document.
 | Public Caddy route and `caddy-public-shinan` bridge (one Caddy recreation) | Deployment                                  |
 | `shinan-backend` internal network (approved in principle, O-67)            | Deployment                                  |
 | Obscuro namespace `shinan` and its secrets (the owner types the values)    | Credentials                                 |
-| Registry project, push key in GitHub secrets, pull key on Musashi          | Credentials                                 |
+| Public registry project and push key in GitHub secrets (D-054)             | Credentials                                 |
 | Registering the GitHub App and installing it on `guneet-xyz`               | Credentials ([git hosts](git-hosts.md))     |
 | GitHub sign-in credentials                                                 | Credentials ([identity](identity.md))       |
 | Forgejo token (read-only use) and webhook                                  | Credentials ([git hosts](git-hosts.md))     |

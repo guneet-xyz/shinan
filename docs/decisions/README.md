@@ -51,6 +51,7 @@ the owner's answers on [issue #25](https://github.com/guneet-xyz/shinan/issues/2
 O-numbers (batches 1 to 11) and N-numbers (batches 12 and 13, follow-up questions).
 D-050 to D-053 record the owner's answers to the integration review on
 [issue #26](https://github.com/guneet-xyz/shinan/issues/26) (NO-numbers).
+D-054 records a later owner decision made in conversation and reverses O-66.
 The numbers are in each record's `evidence` field and in the mappings for
 [issue #25](#owner-answers-on-issue-25) and [issue #26](#owner-answers-on-issue-26).
 
@@ -109,6 +110,7 @@ The numbers are in each record's `evidence` field and in the mappings for
 | [D-051](D-051-new-issues-setting.md)                      | Each repository has a "turn new issues into tasks" setting, on by default                                             | Accepted | 2026-11-16 | Amends D-003                   | Tasks and work; Git host integrations                                                                             |
 | [D-052](D-052-notification-ownership.md)                  | Architecture owns sending notifications; human experience owns what is sent and personal settings                     | Accepted | 2026-11-16 |                                | Architecture and operations; Human experience                                                                     |
 | [D-053](D-053-deployment-approval-events.md)              | Deployment approval requests and answers are always recorded as task events                                           | Accepted | 2026-11-16 |                                | Tasks and work; Agent integrations; Identity, agents and permissions; Human experience; Domain model and glossary |
+| [D-054](D-054-public-image-registry-project.md)           | The `shinan` image project on `cr.guneet.dev` is public; Musashi pulls without a key                                  | Accepted | 2026-11-17 |                                | Architecture and operations; Build plan; Operator guide                                                           |
 
 The full list of owning documents, with planned paths, is in each record.
 
@@ -125,40 +127,41 @@ accepted a document's own recommendation inside that document (or, for O-93
 to O-96 and O-98, this README's rules); they are decided in the documents,
 which cite the O-number or N-number.
 
-| Owner answers                 | Record                                                    |
-| ----------------------------- | --------------------------------------------------------- |
-| O-4, O-10                     | [D-021](D-021-status-from-work-and-events.md)             |
-| O-11, O-12                    | [D-022](D-022-catalog-storage-and-git-mirror.md)          |
-| O-2, O-43                     | [D-023](D-023-workspace-wide-visibility-no-secrets.md)    |
-| O-3, O-46                     | [D-024](D-024-gated-catalog-approval.md)                  |
-| O-5                           | [D-025](D-025-fact-state-planned.md)                      |
-| O-17                          | [D-026](D-026-custom-entity-types.md)                     |
-| O-6                           | [D-027](D-027-workspace-task-id-prefix.md)                |
-| O-7, O-8                      | [D-028](D-028-task-flags.md)                              |
-| O-21                          | [D-029](D-029-subtasks.md)                                |
-| O-25                          | [D-030](D-030-related-links-from-mentions.md)             |
-| O-37, O-40                    | [D-031](D-031-agent-and-session-granularity.md)           |
-| O-1                           | [D-032](D-032-no-writes-as-a-person-on-github.md)         |
-| O-53, O-54                    | [D-033](D-033-forgejo-connection.md)                      |
-| O-41, O-48 (O-42 cited)       | [D-034](D-034-sign-in-and-accounts.md)                    |
-| O-44, O-47, O-50              | [D-035](D-035-tokens-security-log-purge.md)               |
-| O-49                          | [D-036](D-036-design-now-build-before-second-member.md)   |
-| O-60, O-61                    | [D-037](D-037-typescript-node-react.md)                   |
-| O-62, O-63, O-64 (O-65 cited) | [D-038](D-038-no-built-in-backups.md)                     |
-| O-83                          | [D-039](D-039-deploy-as-needed.md)                        |
-| O-73 (O-74 cited)             | [D-040](D-040-trial-coordination-in-shinan.md)            |
-| O-97, O-88                    | [D-041](D-041-no-outside-tracker-integrations.md)         |
-| O-93, O-94, O-95, O-96, O-98  | This README (no record)                                   |
-| All other O-numbers           | No record; decided in the owning document                 |
-| N-4                           | [D-042](D-042-no-writes-on-forgejo.md)                    |
-| N-5, N-9                      | [D-043](D-043-no-git-mirror-for-now.md)                   |
-| N-7, N-6                      | [D-044](D-044-sign-in-magic-link-or-github.md)            |
-| N-11                          | [D-045](D-045-no-viewer-role.md)                          |
-| N-1                           | [D-046](D-046-subtasks-any-depth.md)                      |
-| N-8                           | [D-047](D-047-installation-security-log-not-purgeable.md) |
-| N-12                          | [D-048](D-048-refuse-private-forgejo-addresses.md)        |
-| N-13                          | [D-049](D-049-security-log-never-purged.md)               |
-| N-2, N-3, N-10                | No record; decided in the owning document                 |
+| Owner answers                 | Record                                                                                        |
+| ----------------------------- | --------------------------------------------------------------------------------------------- |
+| O-4, O-10                     | [D-021](D-021-status-from-work-and-events.md)                                                 |
+| O-11, O-12                    | [D-022](D-022-catalog-storage-and-git-mirror.md)                                              |
+| O-2, O-43                     | [D-023](D-023-workspace-wide-visibility-no-secrets.md)                                        |
+| O-3, O-46                     | [D-024](D-024-gated-catalog-approval.md)                                                      |
+| O-5                           | [D-025](D-025-fact-state-planned.md)                                                          |
+| O-17                          | [D-026](D-026-custom-entity-types.md)                                                         |
+| O-6                           | [D-027](D-027-workspace-task-id-prefix.md)                                                    |
+| O-7, O-8                      | [D-028](D-028-task-flags.md)                                                                  |
+| O-21                          | [D-029](D-029-subtasks.md)                                                                    |
+| O-25                          | [D-030](D-030-related-links-from-mentions.md)                                                 |
+| O-37, O-40                    | [D-031](D-031-agent-and-session-granularity.md)                                               |
+| O-1                           | [D-032](D-032-no-writes-as-a-person-on-github.md)                                             |
+| O-53, O-54                    | [D-033](D-033-forgejo-connection.md)                                                          |
+| O-41, O-48 (O-42 cited)       | [D-034](D-034-sign-in-and-accounts.md)                                                        |
+| O-44, O-47, O-50              | [D-035](D-035-tokens-security-log-purge.md)                                                   |
+| O-49                          | [D-036](D-036-design-now-build-before-second-member.md)                                       |
+| O-60, O-61                    | [D-037](D-037-typescript-node-react.md)                                                       |
+| O-62, O-63, O-64 (O-65 cited) | [D-038](D-038-no-built-in-backups.md)                                                         |
+| O-83                          | [D-039](D-039-deploy-as-needed.md)                                                            |
+| O-73 (O-74 cited)             | [D-040](D-040-trial-coordination-in-shinan.md)                                                |
+| O-97, O-88                    | [D-041](D-041-no-outside-tracker-integrations.md)                                             |
+| O-93, O-94, O-95, O-96, O-98  | This README (no record)                                                                       |
+| O-66                          | No record; reversed for the image registry by [D-054](D-054-public-image-registry-project.md) |
+| All other O-numbers           | No record; decided in the owning document                                                     |
+| N-4                           | [D-042](D-042-no-writes-on-forgejo.md)                                                        |
+| N-5, N-9                      | [D-043](D-043-no-git-mirror-for-now.md)                                                       |
+| N-7, N-6                      | [D-044](D-044-sign-in-magic-link-or-github.md)                                                |
+| N-11                          | [D-045](D-045-no-viewer-role.md)                                                              |
+| N-1                           | [D-046](D-046-subtasks-any-depth.md)                                                          |
+| N-8                           | [D-047](D-047-installation-security-log-not-purgeable.md)                                     |
+| N-12                          | [D-048](D-048-refuse-private-forgejo-addresses.md)                                            |
+| N-13                          | [D-049](D-049-security-log-never-purged.md)                                                   |
+| N-2, N-3, N-10                | No record; decided in the owning document                                                     |
 
 ## Owner answers on issue #26
 
@@ -451,3 +454,7 @@ None.
   I-77, I-78). Index rows for D-050 and D-053 match their records; the plan
   pointer (O-96) and the plan section 8 note (D-052) are recorded as done; two
   suggestions adopted by Roadmap and Architecture were removed.
+- 2026-11-17: D-054 added for the owner's decision to make the `shinan`
+  image project on `cr.guneet.dev` public, reversing O-66
+  ([issue #73](https://github.com/guneet-xyz/shinan/issues/73)). O-66 had no
+  record, so D-054 amends none.
