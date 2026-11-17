@@ -5,8 +5,10 @@ This guide describes the reference Compose file in
 [`deploy/compose.yml`](../deploy/compose.yml), as built and tested. Shinan is
 self-hostable by design ([D-012](decisions/D-012-self-hostable.md));
 distribution waits on licensing ([D-013](decisions/D-013-business-model-deferred.md)),
-so for now the image is published only to the owner's private registry, and
-anyone else builds it from this repository. [Architecture §12](architecture.md#12-self-hosting)
+so for now the image is published only to the owner's registry, as
+`cr.guneet.dev/shinan/shinan`. That project is public, so the image can be
+pulled without logging in ([D-054](decisions/D-054-public-image-registry-project.md));
+building it yourself needs a checkout of this repository. [Architecture §12](architecture.md#12-self-hosting)
 owns the rules this guide follows.
 
 The owner's own installation, `shinan.guneet.dev`, follows the same layout,

@@ -5,16 +5,17 @@ name: Release
 # runs the full CI suite on that exact commit, builds the image for
 # linux/amd64 and linux/arm64 on native runners, pushes each by digest only,
 # runs the first-start test against those digests on their own architecture,
-# and only then creates the multi-architecture tags in the private `shinan`
-# project on cr.guneet.dev (architecture §11.4).
+# and only then creates the multi-architecture tags in the public `shinan`
+# project on cr.guneet.dev (architecture §11.4, D-054).
 #
 # Publishing an image deploys nothing: shinan.guneet.dev runs only the digests
 # pinned in infra/musashi, and every deployment needs the owner's approval.
 #
 # Registry credentials: repository secrets REGISTRY_USERNAME and
 # REGISTRY_PASSWORD, a Dockyard key with pull and push on the `shinan`
-# project only. There is no manual trigger; recover a failed publication with
-# "Re-run failed jobs" on the release run.
+# project only. The project is public, so pulling needs no key; pushing does.
+# There is no manual trigger; recover a failed publication with "Re-run failed
+# jobs" on the release run.
 on:
   push:
     branches: [main]

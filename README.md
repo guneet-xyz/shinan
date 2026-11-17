@@ -223,10 +223,11 @@ breaking change before 1.0.0 bumps the minor version. Releasing does not deploy
 anything.
 
 A release then builds the image ([`deploy/Dockerfile`](deploy/Dockerfile))
-for `linux/amd64` and `linux/arm64` and publishes it to the private `shinan`
-project on `cr.guneet.dev`, once CI and the first-start test pass on the
-release commit (`.github/workflows/release.yml`). To build and test the image
-locally:
+for `linux/amd64` and `linux/arm64` and publishes it to the public `shinan`
+project on `cr.guneet.dev`
+([D-054](docs/decisions/D-054-public-image-registry-project.md)), once CI and
+the first-start test pass on the release commit
+(`.github/workflows/release.yml`). To build and test the image locally:
 
 ```sh
 docker build -f deploy/Dockerfile -t shinan:local .
