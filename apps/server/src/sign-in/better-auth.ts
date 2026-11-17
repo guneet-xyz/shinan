@@ -25,7 +25,7 @@ import {
   startGitHubSignIn,
 } from "@shinan/core"
 import type { Context, JobQueue, RequestInfo } from "@shinan/core"
-import { eq, schema } from "@shinan/db"
+import { createLimitedLog, eq, schema } from "@shinan/db"
 import type { Database } from "@shinan/db"
 
 import type { SignIn } from "../api/sign-in.js"
@@ -96,6 +96,7 @@ export function createBetterAuthSignIn(
   options: BetterAuthSignInOptions,
 ): BetterAuthSignIn {
   const { db, jobs, installationUrl } = options
+  const log = createLimitedLog()
   const base = new URL(installationUrl)
   const secure = base.protocol === "https:"
   const cookieNames = {
@@ -191,17 +192,11 @@ export function createBetterAuthSignIn(
     },
     onAPIError: {
       errorURL: new URL("/sign-in", base).href,
-      // Better Auth's own error logging would print messages that can echo
-      // the request; only a status goes to Shinan's log, and only for
-      // failures of the server, not refused requests.
-      onError: (error) => {
-        const status = (error as { statusCode?: unknown }).statusCode
-        if (typeof status === "number" && status < 500) return
-        const kind = error instanceof Error ? error.name : "Error"
-        console.error(
-          `Sign-in (error): ${typeof status === "number" ? status : kind}`,
-        )
-      },
+      // Errors that are not Better Auth's own answers (such as a failed
+      // query) are thrown on to Shinan's error handler, which logs them by
+      // name and code only. Without this, Better Auth's router prints them
+      // in full, query values included (architecture §10.3).
+      throw: true,
     },
     socialProviders: options.github
       ? {
@@ -635,7 +630,12 @@ export function createBetterAuthSignIn(
       const forwarded = new Request(request, {
         headers: forwardHeaders(request.headers, info),
       })
-      return withRequestStore({ request: info }, () => auth.handler(forwarded))
+      const response = await withRequestStore({ request: info }, () =>
+        auth.handler(forwarded),
+      )
+      // A failure Better Auth answered itself: only its status is logged.
+      if (response.status >= 500) log(`Sign-in (error): ${response.status}`)
+      return response
     },
 
     async openLink(request, info, input) {

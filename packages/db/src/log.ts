@@ -51,12 +51,24 @@ export function errorSummary(error: unknown): string {
 }
 
 /**
- * An error's stack frames, without the first line (which repeats the
- * message): where the error happened, never what it was about. At most 10.
+ * An error's stack frames: where the error happened, never what it was
+ * about. At most 10. The stack starts with the message, which can span
+ * several lines (a failed query's values can hold a newline followed by
+ * `at …`), so everything up to the end of the message is cut off by length
+ * first; only then are lines read. If the message cannot be found in the
+ * stack, no frames are given.
  */
 export function errorFrames(error: unknown): string {
   if (!(error instanceof Error) || typeof error.stack !== "string") return ""
-  return error.stack
+  const { stack, message } = error
+  const end = message ? stack.indexOf(message) : -1
+  const afterMessage =
+    end >= 0
+      ? stack.slice(end + message.length)
+      : message
+        ? ""
+        : stack.slice(stack.indexOf("\n") + 1)
+  return afterMessage
     .split("\n")
     .filter((line) => /^\s+at /.test(line))
     .slice(0, 10)

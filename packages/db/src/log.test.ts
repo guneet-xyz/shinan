@@ -37,6 +37,19 @@ describe("errorSummary and errorFrames", () => {
     { name: "DrizzleQueryError" },
   )
 
+  it("never take a line of a message spanning several lines for a frame", () => {
+    const sneaky = new Error(
+      "Failed query: insert …\nparams: x\n    at ada@example.com (token)",
+    )
+    const frames = errorFrames(sneaky)
+    expect(frames).toMatch(/^\s+at /)
+    expect(frames).not.toMatch(/ada@example\.com|token/)
+    // A message changed after the stack was taken: no frames rather than
+    // a guess.
+    sneaky.message = "changed"
+    expect(errorFrames(sneaky)).toBe("")
+  })
+
   it("keep the name, code and stack frames, never the message", () => {
     expect(errorSummary(failed)).toBe("DrizzleQueryError 22P02")
     expect(errorSummary(new TypeError("x is ada@example.com"))).toBe(
