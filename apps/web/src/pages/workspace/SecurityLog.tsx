@@ -19,6 +19,15 @@ const actionNames: Record<string, string> = {
   "member.removed": "Removed a member",
   "member.left": "Left the workspace",
   "request.refused": "Request refused",
+  "agent.created": "Registered an agent",
+  "agent.renamed": "Renamed an agent",
+  "agent.disabled": "Disabled an agent",
+  "agent.enabled": "Enabled an agent",
+  "agent-token.issued": "Made an agent token",
+  "agent-token.revoked": "Revoked an agent token",
+  "agent-token.first-used": "Agent token first used",
+  "agent-token.used": "Agent token use",
+  "agent-token.failed": "Agent token refused",
 }
 
 const outcomeNames: Record<SecurityLogEntry["outcome"], string> = {
