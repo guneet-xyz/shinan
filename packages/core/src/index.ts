@@ -94,7 +94,7 @@ export type {
   InvitationKey,
 } from "./identity/invitations.js"
 export { changeEmailOf, endSessionsOf } from "./identity/recovery.js"
-export { hashToken } from "./tokens.js"
+export { agentTokenPrefix, hashToken } from "./tokens.js"
 export { isEmailAddress } from "./validation.js"
 export { clientDescription } from "./security-log.js"
 export { getAccount } from "./identity/account.js"

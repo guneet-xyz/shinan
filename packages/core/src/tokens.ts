@@ -1,5 +1,12 @@
 import { createHash, randomBytes } from "node:crypto"
 
+/**
+ * The prefix every agent token starts with (identity §7.4), so leak scanners
+ * and Shinan's own secret check (catalog) can spot one in text. Tokens made
+ * from it look like `shinan_agent_` followed by 43 URL-safe characters.
+ */
+export const agentTokenPrefix = "shinan_agent_"
+
 /** A new random secret for a link or cookie: 32 bytes, URL-safe. */
 export function newToken(): string {
   return randomBytes(32).toString("base64url")
