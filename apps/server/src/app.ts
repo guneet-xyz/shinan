@@ -4,6 +4,7 @@ import { Hono } from "hono"
 
 import type { DatabaseReadiness } from "@shinan/db"
 
+import { errorHandler } from "./api/errors.js"
 import { createApi } from "./api/routes.js"
 import type { ApiOptions } from "./api/routes.js"
 import { securityHeaders } from "./security.js"
@@ -19,6 +20,7 @@ export interface AppOptions extends ApiOptions {
  */
 export function createApp(options: AppOptions) {
   const app = new Hono()
+  app.onError(errorHandler())
 
   app.use(
     "*",
@@ -28,10 +30,12 @@ export function createApp(options: AppOptions) {
   )
 
   app.route("/api", createApi(options))
-  // Not the web app either, so a health check pointed here by mistake fails
-  // rather than seeing the app's page.
-  app.all("/healthz", (c) => c.notFound())
-  app.all("/readyz", (c) => c.notFound())
+  // Not the web app either, so a health check pointed here by mistake, by
+  // any spelling of these paths, fails rather than seeing the app's page.
+  app.use("*", async (c, next) => {
+    if (/^\/+(healthz|readyz)(\/|$)/i.test(c.req.path)) return c.notFound()
+    await next()
+  })
 
   if (options.webDistDir) {
     const root = options.webDistDir
@@ -63,6 +67,7 @@ export function createInternalApp(options: {
   checkDatabase: () => Promise<DatabaseReadiness>
 }) {
   const app = new Hono()
+  app.onError(errorHandler())
   app.get("/healthz", (c) => c.json({ status: "ok" }))
   app.get("/readyz", async (c) => {
     let timer: NodeJS.Timeout | undefined

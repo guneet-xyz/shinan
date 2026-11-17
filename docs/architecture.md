@@ -870,8 +870,9 @@ As built in M1-6 (details and tests in the [checklist](security-checklist.md)):
   opener and resource policies. An HTTPS installation adds HSTS (two years,
   with subdomains) and `upgrade-insecure-requests`. API answers are
   `Cache-Control: no-store`.
-- Public API routes, besides the sign-in routes: `/api/status` (a minimal
-  status answer, which the external uptime check can use), `/api/installation`
+- Public API routes, besides the sign-in routes: `/api/status` (a constant
+  status answer, which the external uptime check can use; it touches no
+  database and is not rate limited), `/api/installation`
   (the installation's name and sign-in methods, for the sign-in pages), the
   first-start setup and the sign-in link confirm page.
 
@@ -1092,17 +1093,23 @@ licensing (D-013); this section makes sure nothing blocks it. All **proposed**:
 
 - **Logs:** structured JSON to standard output, with a request ID on every line,
   IDs instead of content, and secrets removed ([10.3](#103-secrets-and-credentials)).
+  As built so far (M1-6): plain text lines; an unexpected error is logged by
+  its name, database error code and stack frames only, never its message,
+  which for a failed query quotes the query's values; the same error is
+  logged at most once a minute, so a database that is down cannot flood the
+  log.
 - **Health endpoints:** liveness and readiness (database reachable, migrations
   current), served only inside the container network. As built (M1-6): the
   `web` role serves `/healthz` (liveness) and `/readyz` (readiness, 503 when
   the database does not answer within 2 seconds or migrations are behind) on a
   separate internal listener (`INTERNAL_HOST`, default `127.0.0.1`, and
   `INTERNAL_PORT`, default `3001`), which the reverse proxy never routes to;
-  the public listener does not serve them. Reason: they need no credentials,
+  the public listener answers 404 to any spelling of those paths. Reason: they need no credentials,
   and a readiness answer tells an outsider when the database is down. The
   public `/api/status` stays as the minimal check
   [identity §10](identity.md#10-protections-for-a-public-installation) allows,
-  for the external uptime tile; it reads nothing.
+  for the external uptime tile; it is a constant answer that reads and
+  writes nothing, so it says nothing about the database.
 - **Metrics:** Prometheus-format metrics on an unpublished internal port,
   scraped by Musashi's monitoring agent into VictoriaMetrics and Grafana
   (**Decided**, owner, O-69). Key metrics: request rates and errors by route type

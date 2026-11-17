@@ -1030,8 +1030,8 @@ restriction stays possible later.
 
 - **Nothing without sign-in** except the sign-in pages, the invitation
   acceptance page and a minimal health check. The wiki and agent index are
-  behind sign-in too. The public health check is `/api/status`, which reads
-  nothing; the liveness and readiness checks are served only inside the
+  behind sign-in too. The public health check is `/api/status`, a constant
+  answer that touches no database; the liveness and readiness checks are served only inside the
   container network ([architecture §13](architecture.md#13-observability)).
 - **No passwords to guess** (N-7): sign-in is by magic link or GitHub.
 - **Throttling** of sign-in and invitation emails (per address and per network

@@ -1,10 +1,10 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest"
+import { afterAll, beforeAll, describe, expect, inject, it, vi } from "vitest"
 
 import { rateLimits } from "@shinan/core"
-import { and, eq, schema, sql } from "@shinan/db"
+import { and, createDatabase, eq, schema, sql } from "@shinan/db"
 import { connectTestDatabase } from "@shinan/db/testing"
 
 import {
@@ -457,7 +457,10 @@ describe("rate limits", () => {
 
     const refused = await ask()
     expect(refused.status).toBe(429)
-    expect(refused.headers.get("retry-after")).toBe(String(windowSeconds))
+    // The time left in the window, in whole seconds.
+    const retryAfter = Number(refused.headers.get("retry-after"))
+    expect(retryAfter).toBeGreaterThanOrEqual(windowSeconds - 5)
+    expect(retryAfter).toBeLessThanOrEqual(windowSeconds)
     expect(await refused.json()).toMatchObject({ error: "too-many-requests" })
     for (let n = 0; n < 5; n++) expect((await ask()).status).toBe(429)
     expect(await throttled("192.0.2.1")).toHaveLength(1)
@@ -519,7 +522,7 @@ describe("rate limits", () => {
     const b = browserAt("192.0.2.5")
     const { max } = rateLimits.api
     const answers = await Promise.all(
-      Array.from({ length: max + 1 }, () => b.request("/api/status")),
+      Array.from({ length: max + 1 }, () => b.request("/api/installation")),
     )
     expect(answers.filter((r) => r.status === 200)).toHaveLength(max)
     expect(answers.filter((r) => r.status === 429)).toHaveLength(1)
@@ -529,5 +532,33 @@ describe("rate limits", () => {
       .from(schema.securityLog)
       .where(sql`${schema.securityLog.networkAddress} = '192.0.2.5'::inet`)
     expect(entries).toHaveLength(0)
+  })
+
+  it("leave out the public status check, which touches no database", async () => {
+    const b = browserAt("192.0.2.6")
+    for (let n = 0; n < rateLimits.api.max + 5; n++) {
+      expect((await b.request("/api/status")).status).toBe(200)
+    }
+    const counted = await installation.db
+      .select()
+      .from(schema.rateLimits)
+      .where(eq(schema.rateLimits.key, "api:192.0.2.6"))
+    expect(counted).toHaveLength(0)
+
+    // With the database unreachable, it still answers the same.
+    const url = new URL(inject("databaseUrl"))
+    url.pathname = "/shinan_database_that_does_not_exist"
+    const down = createDatabase(url.toString())
+    const error = vi.spyOn(console, "error").mockImplementation(() => {})
+    try {
+      const app = createApp({ db: down.db, signIn: testSignIn })
+      const status = await app.request("/api/status")
+      expect(status.status).toBe(200)
+      expect(await status.json()).toEqual({ status: "ok" })
+      expect((await app.request("/api/installation")).status).toBe(500)
+    } finally {
+      error.mockRestore()
+      await down.pool.end()
+    }
   })
 })

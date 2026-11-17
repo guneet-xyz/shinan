@@ -1,0 +1,29 @@
+# Dependency update pull requests (security checklist 8.3). They are handled
+# like any other pull request: a build agent, the reviewer agent and CI.
+# Dependabot alerts and security updates are turned on in the repository's
+# settings by the owner.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: fix(deps)
+      prefix-development: chore(deps)
+    groups:
+      production:
+        dependency-type: production
+      development:
+        dependency-type: development
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: ci
+    groups:
+      github-actions:
+        patterns: ["*"]

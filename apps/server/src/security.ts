@@ -1,6 +1,6 @@
 import type { Context as HonoContext, MiddlewareHandler } from "hono"
 
-import { rateLimits, shinan, takeRateLimit } from "@shinan/core"
+import { shinan, takeRateLimit } from "@shinan/core"
 import type { RateLimitName, RequestInfo } from "@shinan/core"
 import type { Database } from "@shinan/db"
 
@@ -142,15 +142,12 @@ export function rateLimited(
       { db, actor: shinan, request: requestInfo(c) },
       name,
     )
-    if (outcome === "refused") {
+    if (!outcome.allowed) {
       const response = errorResponse(c, 429, {
         error: "too-many-requests",
         message: "Too many attempts. Wait a minute and try again.",
       })
-      response.headers.set(
-        "retry-after",
-        String(rateLimits[name].windowSeconds),
-      )
+      response.headers.set("retry-after", String(outcome.retryAfterSeconds))
       return response
     }
     await next()

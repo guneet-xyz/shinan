@@ -60,7 +60,10 @@ export const rateLimits = {
 
 export type RateLimitName = keyof typeof rateLimits
 
-export type RateLimitOutcome = "allowed" | "refused"
+export type RateLimitOutcome =
+  | { allowed: true }
+  /** Refused; the window ends in `retryAfterSeconds` (at least 1). */
+  | { allowed: false; retryAfterSeconds: number }
 
 /**
  * Counts one request against a rate limit for the request's network address
@@ -90,9 +93,12 @@ export async function takeRateLimit(
           count: sql`case when ${expired} then 1 else least(${t.count} + 1, ${limit.max + 2}) end`,
         },
       })
-      .returning({ count: t.count })
-    const count = row!.count
-    if (count <= limit.max) return "allowed"
+      .returning({
+        count: t.count,
+        retryAfterSeconds: sql<number>`greatest(1, ceil(extract(epoch from ${t.windowStart} + make_interval(secs => ${limit.windowSeconds}) - now())))::int`,
+      })
+    const { count, retryAfterSeconds } = row!
+    if (count <= limit.max) return { allowed: true }
     if (count === limit.max + 1 && limit.record) {
       await recordSecurityEntry(scope.tx, {
         workspaceId: null,
@@ -107,7 +113,7 @@ export async function takeRateLimit(
             : { limit: name },
       })
     }
-    return "refused"
+    return { allowed: false, retryAfterSeconds }
   })
 }
 

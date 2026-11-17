@@ -56,7 +56,7 @@ import { clientAddress, noTrustedProxies } from "../client-address.js"
 import type { TrustedProxies } from "../client-address.js"
 import { rateLimited, sameOriginOnly } from "../security.js"
 import { isSafeReturnPath } from "../sign-in/paths.js"
-import { BadRequestError, errorResponse, handleError } from "./errors.js"
+import { BadRequestError, errorHandler, errorResponse } from "./errors.js"
 import { appendHeaders, requirePerson } from "./sign-in.js"
 import type { SignedInEnv, SignIn } from "./sign-in.js"
 
@@ -93,7 +93,8 @@ export function createApi({
   rateLimit = true,
 }: ApiOptions) {
   const api = new Hono()
-  api.onError(handleError)
+  const onError = errorHandler()
+  api.onError(onError)
 
   const requestInfo = (c: HonoContext): RequestInfo => {
     const env = c.env as
@@ -120,6 +121,10 @@ export function createApi({
     }
   })
   api.use("*", sameOriginOnly(installationUrl))
+  // The minimal public health check (identity §10): a constant answer,
+  // ahead of the rate limits, so it reads and writes nothing and says
+  // nothing about the database.
+  api.get("/status", (c) => c.json({ status: "ok" } satisfies Api.Status))
   if (rateLimit) {
     const limit = (
       path: string,
@@ -150,8 +155,6 @@ export function createApi({
         }),
     }),
   )
-
-  api.get("/status", (c) => c.json({ status: "ok" } satisfies Api.Status))
 
   // Public: the sign-in and invitation pages show the installation's name
   // before sign-in (identity §5.2).
@@ -221,7 +224,7 @@ export function createApi({
   })
 
   const signedIn = new Hono<SignedInEnv>()
-  signedIn.onError(handleError)
+  signedIn.onError(onError)
   const signInRequired = requirePerson(signIn)
   signedIn.use("/account", signInRequired)
   signedIn.use("/account/*", signInRequired)

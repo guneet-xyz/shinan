@@ -107,9 +107,19 @@ describe("createApp", () => {
     it("does not answer health checks with the app's page", async () => {
       const app = createApp({ webDistDir })
 
-      for (const path of ["/healthz", "/readyz"]) {
+      for (const path of [
+        "/healthz",
+        "/readyz",
+        "/healthz/",
+        "/readyz/live",
+        "/HEALTHZ",
+        "/ReadyZ",
+        "//readyz",
+      ]) {
         expect((await app.request(path)).status, path).toBe(404)
       }
+      // Paths that only start with the same letters are the app's.
+      expect((await app.request("/healthzone")).status).toBe(200)
     })
   })
 })
