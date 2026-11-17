@@ -4,6 +4,7 @@ import { shinan, takeRateLimit } from "@shinan/core"
 import type { RateLimitName, RequestInfo } from "@shinan/core"
 import type { Database } from "@shinan/db"
 
+import { bearerToken } from "./api/agent-auth.js"
 import { errorResponse } from "./api/errors.js"
 
 /**
@@ -96,8 +97,11 @@ const safeMethods = new Set(["GET", "HEAD", "OPTIONS"])
  * needs no state and no change to the web app. `SameSite=Lax` cookies alone
  * are not enough: other sites under the same domain (other services on
  * `guneet.dev`) count as the same site, and forms can post without a body.
- * Requests without a cookie (agent tokens, from M2) are not at risk; they can
- * be let through here when they arrive.
+ *
+ * Requests with an agent token and no cookie are let through: they carry no
+ * ambient credential a forged request could use, and agents call from
+ * outside any browser. A request with both a token and a cookie is still
+ * checked here, and agent endpoints refuse it (`requireAgent`).
  */
 export function sameOriginOnly(
   installationUrl: string | undefined,
@@ -107,6 +111,12 @@ export function sameOriginOnly(
     : undefined
   return async (c, next) => {
     if (safeMethods.has(c.req.method)) return next()
+    if (
+      bearerToken(c.req.header("authorization")) !== null &&
+      c.req.header("cookie") === undefined
+    ) {
+      return next()
+    }
     const expected = configured ?? new URL(c.req.url).origin
     const origin = c.req.header("origin")
     const site = c.req.header("sec-fetch-site")

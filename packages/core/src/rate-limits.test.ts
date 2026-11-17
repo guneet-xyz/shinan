@@ -5,7 +5,12 @@ import { and, eq, schema, sql } from "@shinan/db"
 import { testDatabase } from "../test/helpers.js"
 import { shinan } from "./actor.js"
 import type { Context } from "./context.js"
-import { pruneRateLimits, rateLimits, takeRateLimit } from "./rate-limits.js"
+import {
+  pruneRateLimits,
+  rateLimitReached,
+  rateLimits,
+  takeRateLimit,
+} from "./rate-limits.js"
 import type { RateLimitName } from "./rate-limits.js"
 
 const { db, pool } = testDatabase()
@@ -44,6 +49,35 @@ async function throttledEntries(networkAddress: string, action: string) {
 }
 
 describe("takeRateLimit", () => {
+  it("counts by a key instead of the address when given one", async () => {
+    const key = crypto.randomUUID()
+    const { max } = rateLimits["agent-token"]
+    // Two addresses taking turns: the key is what is counted.
+    const addresses = [freshAddress(), freshAddress()]
+    for (let n = 0; n < max; n++) {
+      const outcome = await takeRateLimit(
+        from(addresses[n % 2]!),
+        "agent-token",
+        { key },
+      )
+      expect(outcome.allowed).toBe(true)
+    }
+    const refused = await takeRateLimit(from(addresses[0]!), "agent-token", {
+      key,
+    })
+    expect(refused.allowed).toBe(false)
+    const [entry] = await db
+      .select()
+      .from(schema.securityLog)
+      .where(
+        and(
+          eq(schema.securityLog.action, "request.throttled"),
+          sql`${schema.securityLog.details}->>'key' = ${key}`,
+        ),
+      )
+    expect(entry?.details).toEqual({ limit: "agent-token", key })
+  })
+
   it("allows up to the limit in a window, then refuses", async () => {
     const address = freshAddress()
     const { max } = rateLimits["sign-in-link"]
@@ -191,5 +225,30 @@ describe("pruneRateLimits", () => {
     const keys = (await db.select().from(schema.rateLimits)).map((r) => r.key)
     expect(keys).not.toContain(`api:${old}`)
     expect(keys).toContain(`api:${current}`)
+  })
+})
+
+describe("rateLimitReached", () => {
+  it("says whether a limit is used up without counting", async () => {
+    const address = freshAddress()
+    const { max } = rateLimits["agent-token-failure"]
+    for (let n = 0; n < 3 * max; n++) {
+      expect(
+        (await rateLimitReached(from(address), "agent-token-failure")).allowed,
+      ).toBe(true)
+    }
+    for (let n = 0; n < max - 1; n++) {
+      await takeRateLimit(from(address), "agent-token-failure")
+    }
+    expect(
+      (await rateLimitReached(from(address), "agent-token-failure")).allowed,
+    ).toBe(true)
+    await takeRateLimit(from(address), "agent-token-failure")
+    const reached = await rateLimitReached(from(address), "agent-token-failure")
+    expect(reached).toMatchObject({ allowed: false })
+    expect(
+      (await rateLimitReached(from(freshAddress()), "agent-token-failure"))
+        .allowed,
+    ).toBe(true)
   })
 })

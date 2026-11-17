@@ -18,13 +18,16 @@ export {
   eq,
   getTableColumns,
   gt,
+  gte,
   inArray,
+  isNotNull,
   isNull,
   lt,
   ne,
   or,
   sql,
 } from "drizzle-orm"
+export type { SQL } from "drizzle-orm"
 export { alias } from "drizzle-orm/pg-core"
 export type {
   ActorKind,
@@ -37,6 +40,7 @@ export type {
   InvitationState,
   Role,
   SecurityOutcome,
+  TokenRevocationReason,
 } from "./schema.js"
 
 export {

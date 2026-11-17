@@ -148,7 +148,7 @@ describe("a person in two workspaces", () => {
   })
 
   it("has agents that work only in their own workspace", async () => {
-    const agentOfOne = asAgent(db, both, one)
+    const agentOfOne = await asAgent(db, both, one)
     expect(await listMembers(agentOfOne, one)).toHaveLength(2)
     await expect(listMembers(agentOfOne, two)).rejects.toBeInstanceOf(
       NotFoundError,
@@ -156,8 +156,8 @@ describe("a person in two workspaces", () => {
   })
 
   it("has agents whose attempts elsewhere are recorded at installation level", async () => {
-    const agentOfOne = asAgent(db, both, one)
-    const { agentId } = agentOfOne.actor as AgentActor
+    const agentOfOne = await asAgent(db, both, one)
+    const { agentId, agentHandle } = agentOfOne.actor as AgentActor
     await expect(listMembers(agentOfOne, two)).rejects.toBeInstanceOf(
       NotFoundError,
     )
@@ -176,7 +176,7 @@ describe("a person in two workspaces", () => {
         workspaceId: null,
         actorKind: "agent",
         actorPersonId: both.id,
-        actorLabel: `${both.handle} via opencode-daedalus`,
+        actorLabel: `${both.handle} via ${agentHandle}`,
         details: {
           action: "workspace.read",
           reason: "not-member",
@@ -194,7 +194,7 @@ describe("a person in two workspaces", () => {
       await listMembers(asPerson(db, both), two.toUpperCase()),
     ).toHaveLength(2)
     expect(
-      await listMembers(asAgent(db, both, one.toUpperCase()), one),
+      await listMembers(await asAgent(db, both, one.toUpperCase()), one),
     ).toHaveLength(2)
   })
 

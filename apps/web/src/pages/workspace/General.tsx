@@ -138,8 +138,9 @@ function LeaveWorkspace(props: { onlyOwner: boolean }) {
       ) : confirming ? (
         <Confirm>
           <p>
-            You will lose access to {workspace.name} at once. Your past activity
-            stays credited to you. To come back you need a new invitation.
+            You will lose access to {workspace.name} at once, and your agents in
+            it are disabled. Your past activity stays credited to you. To come
+            back you need a new invitation.
           </p>
           <Actions>
             <Button

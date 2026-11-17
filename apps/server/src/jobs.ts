@@ -11,6 +11,7 @@ import {
   pruneRateLimits,
   pruneSignInRecords,
   shinan,
+  summarizeAgentTokenUse,
 } from "@shinan/core"
 import type { EmailJob } from "@shinan/core"
 import { createLimitedLog, errorSummary } from "@shinan/db"
@@ -39,6 +40,11 @@ export const queues = {
   signInPrune: "sign-in-prune",
   /** Hourly: deletes rate-limit counts whose windows have ended. */
   rateLimitPrune: "rate-limit-prune",
+  /**
+   * Hourly: records each agent token's use since the last summary in the
+   * security log (identity §11).
+   */
+  agentTokenUse: "agent-token-use",
 } as const
 
 /**
@@ -141,6 +147,17 @@ export async function startWorker(options: WorkerOptions): Promise<Worker> {
   await boss.work(queues.rateLimitPrune, polling, () =>
     safely(queues.rateLimitPrune, async () => ({
       deleted: await pruneRateLimits({ db: options.db, actor: shinan }),
+    })),
+  )
+
+  await boss.createQueue(queues.agentTokenUse)
+  await boss.schedule(queues.agentTokenUse, "25 * * * *")
+  await boss.work(queues.agentTokenUse, polling, () =>
+    safely(queues.agentTokenUse, async () => ({
+      summarized: await summarizeAgentTokenUse({
+        db: options.db,
+        actor: shinan,
+      }),
     })),
   )
 

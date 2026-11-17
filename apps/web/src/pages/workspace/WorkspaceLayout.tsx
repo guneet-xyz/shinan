@@ -32,8 +32,8 @@ export function WorkspaceLayout() {
 /**
  * Workspace settings (human experience, Workspace settings). They are for
  * workspace owners; contributors see what they may read and no actions.
- * Agents, git host connections, task flags, catalog settings and data come
- * with later milestones.
+ * Git host connections, task flags, catalog settings and data come with
+ * later milestones.
  */
 export function SettingsLayout() {
   const { workspace } = useWorkspace()
@@ -52,7 +52,7 @@ export function SettingsLayout() {
         <div
           className={cn(
             "grid gap-1 rounded-lg bg-muted p-1 sm:flex",
-            owner ? "grid-cols-2" : "grid-cols-3",
+            "grid-cols-3",
           )}
         >
           <NavLink to="general" className={tab}>
@@ -64,6 +64,11 @@ export function SettingsLayout() {
           {owner && (
             <NavLink to="invitations" className={tab}>
               Invitations
+            </NavLink>
+          )}
+          {owner && (
+            <NavLink to="agents" className={tab}>
+              Agents
             </NavLink>
           )}
           <NavLink to="security-log" className={tab}>

@@ -6,6 +6,7 @@ import { vi } from "vitest"
 import { ApiError } from "@shinan/api-client"
 import type {
   Account,
+  Agent,
   ApiClient,
   ErrorBody,
   Member,
@@ -59,6 +60,7 @@ export const ownerMember: Member = {
   role: "owner",
   joinedAt: "2026-11-01T10:00:00.000Z",
   invitedByHandle: null,
+  agents: [],
 }
 
 export const contributorMember: Member = {
@@ -69,6 +71,37 @@ export const contributorMember: Member = {
   role: "contributor",
   joinedAt: "2026-11-02T10:00:00.000Z",
   invitedByHandle: "guneet",
+  agents: [],
+}
+
+/** One of the signed-in person's agents, with a token in use. */
+export const agent: Agent = {
+  id: "66666666-6666-4666-8666-666666666666",
+  workspaceId,
+  workspaceName: "Team",
+  memberId: account.workspaces[0]!.memberId,
+  personId: person.id,
+  personHandle: person.handle,
+  personName: person.name,
+  codingTool: "opencode",
+  machine: "daedalus",
+  handle: "opencode-daedalus",
+  name: "OpenCode on Daedalus",
+  machineEntityId: null,
+  enabled: true,
+  createdAt: "2026-11-10T10:00:00.000Z",
+  disabledAt: null,
+  token: {
+    id: "77777777-7777-4777-8777-777777777777",
+    access: "full",
+    scopes: ["catalog:read"],
+    createdAt: "2026-11-10T10:00:00.000Z",
+    firstUsedAt: "2026-11-10T11:00:00.000Z",
+    lastUsedAt: "2026-11-16T09:30:00.000Z",
+    lastNetworkAddress: "203.0.113.7",
+    requestCount: 1234,
+    unused: false,
+  },
 }
 
 export function apiError(status: number, body: ErrorBody): ApiError {
@@ -139,6 +172,14 @@ export function fakeApi(overrides: Partial<ApiClient> = {}): Fake {
     "withdrawInvitation",
     "events",
     "securityLog",
+    "yourAgents",
+    "agents",
+    "createAgentToken",
+    "issueAgentToken",
+    "revokeAgentToken",
+    "renameAgent",
+    "disableAgent",
+    "enableAgent",
   ]
   const fake = {} as Record<string, unknown>
   for (const name of names) {

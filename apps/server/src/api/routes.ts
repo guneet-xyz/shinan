@@ -9,16 +9,22 @@ import {
   changeRole,
   checkAddGitHub,
   clientDescription,
+  createAgentToken,
   createInvitation,
   createWorkspace,
   declineInvitation,
+  disableAgent,
+  enableAgent,
   endAllSignInSessions,
   endSignInSession,
   findInvitation,
   getAccount,
+  getConnectedAgent,
   getInstallation,
   getWorkspace,
+  issueAgentToken,
   leaveWorkspace,
+  listAgents,
   listAllowlist,
   listEvents,
   listInvitations,
@@ -26,22 +32,27 @@ import {
   listMembers,
   listSecurityLog,
   listSignInSessions,
+  listYourAgents,
   pageSize,
   productName,
   removeFromAllowlist,
   removeGitHub,
   removeMember,
+  renameAgent,
   renameWorkspace,
   resendInvitation,
+  revokeAgentToken,
   shinan,
   startSetup,
   withdrawInvitation,
 } from "@shinan/core"
 import type {
+  Agent,
   Context,
   Event,
   Invitation,
   InvitationForYou,
+  IssuedToken,
   JobQueue,
   MemberSummary,
   Page,
@@ -56,6 +67,8 @@ import { clientAddress, noTrustedProxies } from "../client-address.js"
 import type { TrustedProxies } from "../client-address.js"
 import { rateLimited, sameOriginOnly } from "../security.js"
 import { isSafeReturnPath } from "../sign-in/paths.js"
+import { requireAgent } from "./agent-auth.js"
+import type { AgentEnv } from "./agent-auth.js"
 import { BadRequestError, errorHandler, errorResponse } from "./errors.js"
 import { appendHeaders, requirePerson } from "./sign-in.js"
 import type { SignedInEnv, SignIn } from "./sign-in.js"
@@ -223,6 +236,23 @@ export function createApi({
     return c.json({ login: pending.login } satisfies Api.PendingGitHubSignIn)
   })
 
+  // Agent endpoints (identity §7.4): an agent token in the Authorization
+  // header, never a sign-in cookie. `GET /api/agent` tells an agent, and
+  // the person setting it up, whether its token works and what it allows.
+  const agentApi = new Hono<AgentEnv>()
+  agentApi.onError(onError)
+  agentApi.use("*", requireAgent({ db, installationUrl, requestInfo }))
+  agentApi.get("/", async (c) => {
+    const connected = await getConnectedAgent({
+      db,
+      actor: c.var.agent,
+      origin: "shinan_action",
+      request: requestInfo(c),
+    })
+    return c.json(connected satisfies Api.ConnectedAgent)
+  })
+  api.route("/agent", agentApi)
+
   const signedIn = new Hono<SignedInEnv>()
   signedIn.onError(onError)
   const signInRequired = requirePerson(signIn)
@@ -265,10 +295,19 @@ export function createApi({
     return c.json(sessions.map(signInSessionJson))
   })
 
-  // "Sign out everywhere" ends this session too (identity §3.3).
+  // "Sign out everywhere" ends this session too (identity §3.3), and
+  // revokes the person's agent tokens if they ask (§7.5).
   signedIn.post("/account/sessions/end-all", async (c) => {
-    await endAllSignInSessions(ctx(c))
+    const body = await readOptionalBody(c)
+    await endAllSignInSessions(ctx(c), {
+      revokeAgentTokens: booleanField(body, "revokeAgentTokens"),
+    })
     return c.body(null, 204)
+  })
+
+  signedIn.get("/account/agents", async (c) => {
+    const agents = await listYourAgents(ctx(c))
+    return c.json(agents.map(agentJson))
   })
 
   signedIn.delete("/account/sessions/:sessionId", async (c) => {
@@ -413,6 +452,79 @@ export function createApi({
     return c.body(null, 204)
   })
 
+  signedIn.get("/workspaces/:workspaceId/agents", async (c) => {
+    const agents = await listAgents(ctx(c), c.req.param("workspaceId"))
+    return c.json(agents.map(agentJson))
+  })
+
+  // A token made by hand (identity §6.2), shown in this answer only.
+  signedIn.post("/workspaces/:workspaceId/agents", async (c) => {
+    const body = await readBody(c)
+    const issued = await createAgentToken(ctx(c), {
+      workspaceId: c.req.param("workspaceId"),
+      codingTool: stringField(body, "codingTool"),
+      machine: stringField(body, "machine"),
+      name: optionalStringField(body, "name"),
+      // Core checks the access and the entity ID.
+      access: stringField(body, "access") as Api.TokenAccess,
+      machineEntityId: optionalStringField(body, "machineEntityId"),
+    })
+    return c.json(issuedTokenJson(issued), 201)
+  })
+
+  signedIn.patch("/workspaces/:workspaceId/agents/:agentId", async (c) => {
+    const body = await readBody(c)
+    const agent = await renameAgent(ctx(c), {
+      workspaceId: c.req.param("workspaceId"),
+      agentId: c.req.param("agentId"),
+      name: stringField(body, "name"),
+    })
+    return c.json(agentJson(agent))
+  })
+
+  signedIn.post("/workspaces/:workspaceId/agents/:agentId/token", async (c) => {
+    const body = await readBody(c)
+    const issued = await issueAgentToken(ctx(c), {
+      workspaceId: c.req.param("workspaceId"),
+      agentId: c.req.param("agentId"),
+      access: stringField(body, "access") as Api.TokenAccess,
+    })
+    return c.json(issuedTokenJson(issued), 201)
+  })
+
+  signedIn.delete(
+    "/workspaces/:workspaceId/agents/:agentId/token",
+    async (c) => {
+      const agent = await revokeAgentToken(ctx(c), {
+        workspaceId: c.req.param("workspaceId"),
+        agentId: c.req.param("agentId"),
+      })
+      return c.json(agentJson(agent))
+    },
+  )
+
+  signedIn.post(
+    "/workspaces/:workspaceId/agents/:agentId/disable",
+    async (c) => {
+      const agent = await disableAgent(ctx(c), {
+        workspaceId: c.req.param("workspaceId"),
+        agentId: c.req.param("agentId"),
+      })
+      return c.json(agentJson(agent))
+    },
+  )
+
+  signedIn.post(
+    "/workspaces/:workspaceId/agents/:agentId/enable",
+    async (c) => {
+      const agent = await enableAgent(ctx(c), {
+        workspaceId: c.req.param("workspaceId"),
+        agentId: c.req.param("agentId"),
+      })
+      return c.json(agentJson(agent))
+    },
+  )
+
   signedIn.get("/workspaces/:workspaceId/events", async (c) => {
     const page = readPage(c)
     const events = await listEvents(ctx(c), c.req.param("workspaceId"), page)
@@ -495,6 +607,41 @@ async function readBody(c: HonoContext): Promise<Record<string, unknown>> {
   return body as Record<string, unknown>
 }
 
+/** A JSON object body, or an empty one when the request has no body. */
+async function readOptionalBody(
+  c: HonoContext,
+): Promise<Record<string, unknown>> {
+  const text = await c.req.text()
+  if (text.trim() === "") return {}
+  let body: unknown
+  try {
+    body = JSON.parse(text)
+  } catch {
+    throw new BadRequestError("The request body must be JSON")
+  }
+  if (typeof body !== "object" || body === null || Array.isArray(body)) {
+    throw new BadRequestError("The request body must be a JSON object")
+  }
+  return body as Record<string, unknown>
+}
+
+function optionalStringField(
+  body: Record<string, unknown>,
+  field: string,
+): string | undefined {
+  return body[field] === undefined || body[field] === null
+    ? undefined
+    : stringField(body, field)
+}
+
+function booleanField(body: Record<string, unknown>, field: string): boolean {
+  const value = body[field] ?? false
+  if (typeof value !== "boolean") {
+    throw new BadRequestError(`"${field}" must be true or false`)
+  }
+  return value
+}
+
 function stringField(body: Record<string, unknown>, field: string): string {
   const value = body[field]
   if (typeof value !== "string") {
@@ -547,6 +694,25 @@ function workspaceJson(workspace: WorkspaceDetails): Api.Workspace {
 
 function memberJson(member: MemberSummary): Api.Member {
   return { ...member, joinedAt: iso(member.joinedAt) }
+}
+
+function agentJson(agent: Agent): Api.Agent {
+  const { token } = agent
+  return {
+    ...agent,
+    createdAt: iso(agent.createdAt),
+    disabledAt: agent.disabledAt && iso(agent.disabledAt),
+    token: token && {
+      ...token,
+      createdAt: iso(token.createdAt),
+      firstUsedAt: token.firstUsedAt && iso(token.firstUsedAt),
+      lastUsedAt: token.lastUsedAt && iso(token.lastUsedAt),
+    },
+  }
+}
+
+function issuedTokenJson(issued: IssuedToken): Api.IssuedAgentToken {
+  return { ...issued, agent: agentJson(issued.agent) }
 }
 
 function invitationJson(invitation: Invitation): Api.Invitation {

@@ -13,8 +13,9 @@ import { formatDate, roleNames } from "../../format"
 import { useWorkspace } from "./context"
 
 /**
- * Members and roles (human experience, Workspace settings). Linked git host
- * accounts, agents and last activity join each row when they exist (M2, M3).
+ * Members and roles (human experience, Workspace settings), with each
+ * member's agents. Linked git host accounts and last activity join each row
+ * when they exist (M3).
  */
 export function Members() {
   const api = useApi()
@@ -102,6 +103,14 @@ function MemberRow(props: {
         <dd>{formatDate(member.joinedAt)}</dd>
         <dt>Invited by</dt>
         <dd>{member.invitedByHandle ?? "Nobody (created the workspace)"}</dd>
+        <dt>Agents</dt>
+        <dd>
+          {member.agents.length === 0
+            ? "None"
+            : member.agents
+                .map((a) => (a.enabled ? a.name : `${a.name} (disabled)`))
+                .join(", ")}
+        </dd>
       </Facts>
       {manage && props.onlyOwner && (
         <p className="text-sm text-muted-foreground">
@@ -137,6 +146,16 @@ function MemberRow(props: {
           <p className="font-medium">Before you remove {member.name}:</p>
           <ul className="ml-5 list-disc space-y-1">
             <li>They lose access to this workspace on their next request.</li>
+            {member.agents.some((a) => a.enabled) && (
+              <li>
+                Their agents here are disabled and their tokens stop working:{" "}
+                {member.agents
+                  .filter((a) => a.enabled)
+                  .map((a) => a.name)
+                  .join(", ")}
+                .
+              </li>
+            )}
             <li>Their past activity stays credited to them.</li>
             <li>
               Removing them here does not remove their access on GitHub or

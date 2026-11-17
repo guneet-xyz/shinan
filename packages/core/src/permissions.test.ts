@@ -266,6 +266,53 @@ describe("decide", () => {
     })
   })
 
+  describe("agents and tokens", () => {
+    it("lets every member see, register and change their agents", () => {
+      for (const person of [owner, contributor]) {
+        for (const action of [
+          "agent.read",
+          "agent.create",
+          "agent.change",
+        ] as const) {
+          expect(allowed(action, person)).toEqual({ allowed: true })
+        }
+      }
+    })
+
+    it("asks for re-authentication only to issue a token", () => {
+      const stale = { ...contributor, reauthenticated: false }
+      expect(allowed("agent.create", stale)).toEqual({
+        allowed: false,
+        reason: "reauthentication",
+      })
+      expect(allowed("agent.change", stale)).toEqual({ allowed: true })
+      expect(allowed("agent.read", stale)).toEqual({ allowed: true })
+    })
+
+    it("never lets an agent register agents or touch tokens", () => {
+      for (const action of [
+        "agent.read",
+        "agent.create",
+        "agent.change",
+      ] as const) {
+        expect(allowed(action, ownersAgent)).toEqual({
+          allowed: false,
+          reason: "people-only",
+        })
+      }
+    })
+
+    it("leaves checking tokens to Shinan", () => {
+      expect(allowed("agent-token.authenticate", { kind: "shinan" })).toEqual({
+        allowed: true,
+      })
+      expect(allowed("agent-token.authenticate", owner)).toEqual({
+        allowed: false,
+        reason: "actor",
+      })
+    })
+  })
+
   it("never lets Shinan act inside a workspace yet", () => {
     for (const action of Object.keys(rules) as (keyof typeof rules)[]) {
       if (rules[action].level !== "workspace") continue

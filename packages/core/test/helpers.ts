@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto"
 import { PgBoss } from "pg-boss"
 import { inject } from "vitest"
 
+import { and, eq, isNull, schema } from "@shinan/db"
 import { connectTestDatabase } from "@shinan/db/testing"
 
 import type { AgentActor, PersonActor, Scope } from "../src/actor.js"
@@ -10,6 +11,8 @@ import type { Context } from "../src/context.js"
 import { createPerson } from "../src/identity/people.js"
 import type { Person } from "../src/identity/people.js"
 import { jobQueues } from "../src/queues.js"
+import { hashToken, newToken } from "../src/tokens.js"
+import { isId } from "../src/validation.js"
 
 type Db = Context["db"]
 
@@ -46,7 +49,12 @@ export function asPerson(
   }
 }
 
-export function asAgent(
+/**
+ * An agent of the person in the workspace, as its token would authenticate
+ * it: a real agent and token when the person is a current member there,
+ * otherwise IDs that exist nowhere.
+ */
+export async function asAgent(
   db: Db,
   person: Person,
   workspaceId: string,
@@ -57,11 +65,55 @@ export function asAgent(
     "tasks:write",
     "presence",
   ],
-): Context {
+): Promise<Context> {
+  let agentId: string = crypto.randomUUID()
+  let tokenId: string = crypto.randomUUID()
+  let agentHandle = "opencode-daedalus"
+  const [member] = isId(workspaceId)
+    ? await db
+        .select({ id: schema.members.id })
+        .from(schema.members)
+        .where(
+          and(
+            eq(schema.members.workspaceId, workspaceId.toLowerCase()),
+            eq(schema.members.personId, person.id),
+            isNull(schema.members.removedAt),
+          ),
+        )
+    : []
+  if (member) {
+    const machine = uniqueHandle("machine")
+    const [agent] = await db
+      .insert(schema.agents)
+      .values({
+        workspaceId: workspaceId.toLowerCase(),
+        memberId: member.id,
+        personId: person.id,
+        codingTool: "opencode",
+        machine,
+        handle: `opencode-${machine}`,
+        name: `OpenCode on ${machine}`,
+      })
+      .returning()
+    const [token] = await db
+      .insert(schema.agentTokens)
+      .values({
+        workspaceId: agent!.workspaceId,
+        agentId: agent!.id,
+        tokenHash: hashToken(newToken()),
+        scopes: [...scopes],
+        installationUrl: "http://shinan.test",
+      })
+      .returning()
+    agentId = agent!.id
+    tokenId = token!.id
+    agentHandle = agent!.handle
+  }
   const actor: AgentActor = {
     kind: "agent",
-    agentId: crypto.randomUUID(),
-    agentHandle: "opencode-daedalus",
+    agentId,
+    tokenId,
+    agentHandle,
     personId: person.id,
     workspaceId,
     scopes,

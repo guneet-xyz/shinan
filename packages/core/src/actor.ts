@@ -27,9 +27,16 @@ export interface PersonActor {
   signInSessionId?: string
 }
 
+/**
+ * An agent, as authenticated by its token (identity §6, §7). Only
+ * `authenticateAgent` builds one from a request; core still checks the
+ * agent, its token and its membership on every operation.
+ */
 export interface AgentActor {
   kind: "agent"
   agentId: string
+  /** The token the request used. */
+  tokenId: string
   /** `<coding tool>-<machine>` (identity §8.7). */
   agentHandle: string
   /** The person the agent acts for. */

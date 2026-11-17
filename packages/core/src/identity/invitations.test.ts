@@ -211,7 +211,7 @@ describe("createInvitation", () => {
       createInvitation(as(owner, { reauthenticated: false }), input),
     ).rejects.toBeInstanceOf(ReauthenticationRequiredError)
     await expect(
-      createInvitation(asAgent(db, owner, workspaceId), input),
+      createInvitation(await asAgent(db, owner, workspaceId), input),
     ).rejects.toMatchObject({ reason: "people-only" })
     await expect(
       listInvitations(as(contributor), workspaceId),
@@ -315,8 +315,10 @@ describe("acceptInvitation", () => {
         acceptInvitation(as(contributor), key),
       ).rejects.toBeInstanceOf(NotFoundError)
     }
+    // Agents never answer invitations, not even for an address their
+    // person could accept (an agent of a non-member cannot exist).
     await expect(
-      acceptInvitation(asAgent(db, invitee, workspaceId), { token }),
+      acceptInvitation(await asAgent(db, contributor, workspaceId), { token }),
     ).rejects.toBeInstanceOf(ForbiddenError)
   })
 

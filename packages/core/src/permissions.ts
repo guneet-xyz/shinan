@@ -266,6 +266,53 @@ export const rules = deepFreeze({
     agents: "people",
     reauthentication: false,
   },
+  /**
+   * Check an agent token on a request to an agent endpoint, and count and
+   * summarise its use (identity §7, §10, §11). Shinan does this before
+   * anyone is known.
+   */
+  "agent-token.authenticate": {
+    level: "installation",
+    access: "write",
+    people: false,
+    shinan: true,
+  },
+  /**
+   * See agents and their tokens: workspace owners see every agent,
+   * contributors only their own (identity §5.1, "own"). Reserved for people:
+   * token use includes network addresses (identity §11).
+   */
+  "agent.read": {
+    level: "workspace",
+    access: "read",
+    roles: ["owner", "contributor"],
+    agents: "people",
+    reauthentication: false,
+  },
+  /**
+   * Register an agent or issue its token by hand, for the member themselves
+   * only, after signing in again (identity §5.1, §6.2, §6.3).
+   */
+  "agent.create": {
+    level: "workspace",
+    access: "write",
+    roles: ["owner", "contributor"],
+    agents: "people",
+    reauthentication: true,
+  },
+  /**
+   * Rename, enable or disable an agent, or revoke its token: the member for
+   * their own agents; a workspace owner may also disable any agent and
+   * revoke any token (identity §5.1, §7.5). Each takes access away or
+   * changes only a label, so no new sign-in is needed.
+   */
+  "agent.change": {
+    level: "workspace",
+    access: "write",
+    roles: ["owner", "contributor"],
+    agents: "people",
+    reauthentication: false,
+  },
 } as const satisfies Record<string, Rule>)
 
 export type Action = keyof typeof rules

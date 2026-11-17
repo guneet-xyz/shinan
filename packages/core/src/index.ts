@@ -95,6 +95,31 @@ export type {
 } from "./identity/invitations.js"
 export { changeEmailOf, endSessionsOf } from "./identity/recovery.js"
 export {
+  agentHandlePartLimit,
+  authenticateAgent,
+  createAgentToken,
+  disableAgent,
+  enableAgent,
+  getConnectedAgent,
+  issueAgentToken,
+  listAgents,
+  listYourAgents,
+  renameAgent,
+  revokeAgentToken,
+  summarizeAgentTokenUse,
+  tokenScopes,
+  unusedTokenDays,
+} from "./identity/agents.js"
+export type {
+  Agent,
+  AgentAuthentication,
+  AgentLabel,
+  AgentToken,
+  ConnectedAgent,
+  IssuedToken,
+  TokenAccess,
+} from "./identity/agents.js"
+export {
   agentTokenPattern,
   agentTokenPrefix,
   hashToken,
@@ -139,6 +164,7 @@ export { pruneRateLimits, rateLimits, takeRateLimit } from "./rate-limits.js"
 export type {
   RateLimit,
   RateLimitName,
+  RateLimitOptions,
   RateLimitOutcome,
 } from "./rate-limits.js"
 // Message templates are pure functions, so they bypass no check. The core
