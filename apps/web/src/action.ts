@@ -4,8 +4,13 @@ import { needsReauthentication } from "@shinan/api-client"
 
 import { useSignInRedirect } from "./api"
 
-/** Opens the prompt to sign in again; provided by `ReauthProvider`. */
-export const ReauthContext = createContext<(() => void) | null>(null)
+/**
+ * Opens the prompt to sign in again; provided by `ReauthProvider`. Focus
+ * goes back to `returnFocus` when the prompt closes.
+ */
+export const ReauthContext = createContext<
+  ((returnFocus: HTMLElement | null) => void) | null
+>(null)
 
 export interface Action {
   /**
@@ -25,6 +30,12 @@ export function useAction(): Action {
   useSignInRedirect(error)
 
   const run = (change: () => Promise<unknown>, onDone?: () => void) => {
+    // The control that started the change; it is disabled while pending, so
+    // the browser moves focus away from it. Safari does not focus buttons on
+    // click, so there it is the page itself: then nothing is remembered.
+    const active = document.activeElement
+    const started =
+      active instanceof HTMLElement && active !== document.body ? active : null
     setPending(true)
     setError(undefined)
     change().then(
@@ -34,8 +45,9 @@ export function useAction(): Action {
       },
       (failure: unknown) => {
         setPending(false)
-        if (needsReauthentication(failure) && askToSignIn) askToSignIn()
-        else setError(failure)
+        if (needsReauthentication(failure) && askToSignIn) {
+          askToSignIn(started)
+        } else setError(failure)
       },
     )
   }

@@ -2,10 +2,15 @@ import { useState } from "react"
 import type { FormEvent } from "react"
 import { useNavigate } from "react-router"
 
+import { Button } from "@/components/ui/button"
+import { Field, FieldLabel } from "@/components/ui/field"
+import { Input } from "@/components/ui/input"
+
 import { useAccount } from "../../account"
 import { useAction } from "../../action"
 import { useApi, useResource } from "../../api"
-import { ErrorMessage } from "../../components/status"
+import { Actions, Confirm, Facts, Section } from "../../components/page"
+import { ErrorMessage, Notice } from "../../components/status"
 import { formatDate, roleNames } from "../../format"
 import { useWorkspace } from "./context"
 
@@ -18,18 +23,17 @@ export function General() {
   const owners = members.data?.filter((m) => m.role === "owner")
 
   return (
-    <>
-      <section aria-labelledby="general-heading">
-        <h2 id="general-heading">General</h2>
+    <div className="flex max-w-3xl flex-col gap-6">
+      <Section title="General">
         {workspace.role === "owner" ? (
           <RenameForm />
         ) : (
-          <dl className="facts">
+          <Facts>
             <dt>Name</dt>
             <dd>{workspace.name}</dd>
-          </dl>
+          </Facts>
         )}
-        <dl className="facts">
+        <Facts>
           <dt>Created</dt>
           <dd>{formatDate(workspace.createdAt)}</dd>
           <dt>Your role</dt>
@@ -40,14 +44,14 @@ export function General() {
               ? owners.map((m) => `${m.name} (${m.handle})`).join(", ")
               : "…"}
           </dd>
-        </dl>
-      </section>
+        </Facts>
+      </Section>
       {owners && (
         <LeaveWorkspace
           onlyOwner={workspace.role === "owner" && owners.length === 1}
         />
       )}
-    </>
+    </div>
   )
 }
 
@@ -73,26 +77,28 @@ function RenameForm() {
   }
 
   return (
-    <form onSubmit={save} className="stack">
-      <label htmlFor="workspace-name">Name</label>
-      <div className="inline">
-        <input
-          id="workspace-name"
-          value={name}
-          required
-          onChange={(event) => {
-            setName(event.target.value)
-            setSaved(false)
-          }}
-        />
-        <button
-          type="submit"
-          disabled={rename.pending || name.trim() === workspace.name}
-        >
-          Rename
-        </button>
-      </div>
-      {saved && <p role="status">Saved.</p>}
+    <form onSubmit={save} className="flex flex-col gap-3">
+      <Field>
+        <FieldLabel htmlFor="workspace-name">Name</FieldLabel>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <Input
+            id="workspace-name"
+            value={name}
+            required
+            onChange={(event) => {
+              setName(event.target.value)
+              setSaved(false)
+            }}
+          />
+          <Button
+            type="submit"
+            disabled={rename.pending || name.trim() === workspace.name}
+          >
+            Rename
+          </Button>
+        </div>
+      </Field>
+      {saved && <Notice>Saved.</Notice>}
       {rename.error !== undefined && <ErrorMessage error={rename.error} />}
     </form>
   )
@@ -123,50 +129,51 @@ function LeaveWorkspace(props: { onlyOwner: boolean }) {
     )
 
   return (
-    <section aria-labelledby="leave-heading" className="danger-zone">
-      <h2 id="leave-heading">Leave this workspace</h2>
+    <Section title="Leave this workspace">
       {props.onlyOwner ? (
-        <p className="muted">
+        <p className="text-sm text-muted-foreground">
           You are the only workspace owner, and a workspace always has at least
           one. Make another member a workspace owner before you leave.
         </p>
       ) : confirming ? (
-        <div className="confirm">
+        <Confirm>
           <p>
             You will lose access to {workspace.name} at once. Your past activity
             stays credited to you. To come back you need a new invitation.
           </p>
-          <div className="actions">
-            <button
+          <Actions>
+            <Button
               type="button"
-              className="danger"
+              variant="destructive"
               disabled={leave.pending}
               onClick={confirm}
             >
               Leave {workspace.name}
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
-              className="quiet"
+              variant="ghost"
               onClick={() => {
                 setConfirming(false)
                 leave.clear()
               }}
             >
               Cancel
-            </button>
-          </div>
-        </div>
+            </Button>
+          </Actions>
+        </Confirm>
       ) : (
-        <button
-          type="button"
-          className="danger"
-          onClick={() => setConfirming(true)}
-        >
-          Leave workspace…
-        </button>
+        <Actions>
+          <Button
+            type="button"
+            variant="destructive"
+            onClick={() => setConfirming(true)}
+          >
+            Leave workspace…
+          </Button>
+        </Actions>
       )}
       {leave.error !== undefined && <ErrorMessage error={leave.error} />}
-    </section>
+    </Section>
   )
 }

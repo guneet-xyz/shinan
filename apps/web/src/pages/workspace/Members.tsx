@@ -2,9 +2,12 @@ import { useState } from "react"
 
 import type { Member, Role } from "@shinan/api-client"
 
+import { Button } from "@/components/ui/button"
+
 import { useAccount } from "../../account"
 import { useAction } from "../../action"
 import { useApi, useResource } from "../../api"
+import { Actions, Confirm, Facts, Rows, Section } from "../../components/page"
 import { ErrorMessage, Loading } from "../../components/status"
 import { formatDate, roleNames } from "../../format"
 import { useWorkspace } from "./context"
@@ -21,13 +24,13 @@ export function Members() {
   )
 
   return (
-    <section aria-labelledby="members-heading">
-      <h2 id="members-heading">Members</h2>
-      {workspace.role === "owner" && (
-        <p className="muted">
-          Every member can read and change everything in this workspace.
-        </p>
-      )}
+    <Section
+      title="Members"
+      description={
+        workspace.role === "owner" &&
+        "Every member can read and change everything in this workspace."
+      }
+    >
       {members.data ? (
         <MemberList members={members.data} reload={members.reload} />
       ) : members.error ? (
@@ -35,14 +38,14 @@ export function Members() {
       ) : (
         <Loading />
       )}
-    </section>
+    </Section>
   )
 }
 
 function MemberList(props: { members: Member[]; reload: () => void }) {
   const owners = props.members.filter((m) => m.role === "owner").length
   return (
-    <ul className="cards">
+    <Rows>
       {props.members.map((member) => (
         <MemberRow
           key={member.id}
@@ -51,7 +54,7 @@ function MemberList(props: { members: Member[]; reload: () => void }) {
           reload={props.reload}
         />
       ))}
-    </ul>
+    </Rows>
   )
 }
 
@@ -84,52 +87,55 @@ function MemberRow(props: {
   const nextRole: Role = member.role === "owner" ? "contributor" : "owner"
 
   return (
-    <li className="card member">
-      <div className="member-who">
-        <strong>{member.name}</strong>{" "}
-        <span className="muted">
+    <li>
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <strong className="font-medium">{member.name}</strong>{" "}
+        <span className="text-sm text-muted-foreground">
           {member.handle}
           {you && " (you)"}
         </span>
       </div>
-      <dl className="facts compact">
+      <Facts>
         <dt>Role</dt>
         <dd>{roleNames[member.role]}</dd>
         <dt>Joined</dt>
         <dd>{formatDate(member.joinedAt)}</dd>
         <dt>Invited by</dt>
         <dd>{member.invitedByHandle ?? "Nobody (created the workspace)"}</dd>
-      </dl>
+      </Facts>
       {manage && props.onlyOwner && (
-        <p className="muted">
+        <p className="text-sm text-muted-foreground">
           The last workspace owner cannot be removed or made a contributor.
         </p>
       )}
       {manage && !props.onlyOwner && !confirmingRemoval && (
-        <div className="actions">
-          <button
+        <Actions>
+          <Button
             type="button"
+            variant="outline"
+            size="sm"
             disabled={action.pending}
             onClick={() => changeRole(nextRole)}
           >
             Make {roleNames[nextRole].toLowerCase()}
-          </button>
+          </Button>
           {!you && (
-            <button
+            <Button
               type="button"
-              className="danger"
+              variant="destructive"
+              size="sm"
               disabled={action.pending}
               onClick={() => setConfirmingRemoval(true)}
             >
               Remove…
-            </button>
+            </Button>
           )}
-        </div>
+        </Actions>
       )}
       {confirmingRemoval && (
-        <div className="confirm">
-          <p>Before you remove {member.name}:</p>
-          <ul>
+        <Confirm>
+          <p className="font-medium">Before you remove {member.name}:</p>
+          <ul className="ml-5 list-disc space-y-1">
             <li>They lose access to this workspace on their next request.</li>
             <li>Their past activity stays credited to them.</li>
             <li>
@@ -138,27 +144,27 @@ function MemberRow(props: {
               change anything it pointed to that they should no longer use.
             </li>
           </ul>
-          <div className="actions">
-            <button
+          <Actions>
+            <Button
               type="button"
-              className="danger"
+              variant="destructive"
               disabled={action.pending}
               onClick={remove}
             >
               Remove {member.name}
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
-              className="quiet"
+              variant="ghost"
               onClick={() => {
                 setConfirmingRemoval(false)
                 action.clear()
               }}
             >
               Cancel
-            </button>
-          </div>
-        </div>
+            </Button>
+          </Actions>
+        </Confirm>
       )}
       {action.error !== undefined && <ErrorMessage error={action.error} />}
     </li>

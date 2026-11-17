@@ -2,7 +2,11 @@ import { useState } from "react"
 
 import type { Page, SecurityLogEntry } from "@shinan/api-client"
 
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+
 import { useApi, useResource } from "../../api"
+import { Facts, OrderedRows, Section } from "../../components/page"
 import { ErrorMessage, Loading } from "../../components/status"
 import { formatTime } from "../../format"
 import { useWorkspace } from "./context"
@@ -37,14 +41,17 @@ export function SecurityLog() {
   )
 
   return (
-    <section aria-labelledby="security-log-heading">
-      <h2 id="security-log-heading">Security log</h2>
-      <p className="muted">
-        Security-relevant events in this workspace. They are kept forever and
-        are never purged.
-        {workspace.role !== "owner" &&
-          " You see the entries you made and the entries about you."}
-      </p>
+    <Section
+      title="Security log"
+      description={
+        <>
+          Security-relevant events in this workspace. They are kept forever and
+          are never purged.
+          {workspace.role !== "owner" &&
+            " You see the entries you made and the entries about you."}
+        </>
+      }
+    >
       {first.data ? (
         <Entries key={workspace.id} first={first.data} />
       ) : first.error ? (
@@ -52,7 +59,7 @@ export function SecurityLog() {
       ) : (
         <Loading />
       )}
-    </section>
+    </Section>
   )
 }
 
@@ -82,19 +89,28 @@ function Entries(props: { first: Page<SecurityLogEntry> }) {
   }
 
   const entries = [...props.first.entries, ...older]
-  if (entries.length === 0) return <p className="muted">No entries yet.</p>
+  if (entries.length === 0) {
+    return <p className="text-sm text-muted-foreground">No entries yet.</p>
+  }
 
   return (
     <>
-      <ol className="cards log">
+      <OrderedRows>
         {entries.map((entry) => (
           <Entry key={entry.id} entry={entry} />
         ))}
-      </ol>
+      </OrderedRows>
       {next !== null && (
-        <button type="button" disabled={loading} onClick={loadOlder}>
-          Show older entries
-        </button>
+        <div>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={loading}
+            onClick={loadOlder}
+          >
+            Show older entries
+          </Button>
+        </div>
       )}
       {error !== undefined && <ErrorMessage error={error} />}
     </>
@@ -104,14 +120,18 @@ function Entries(props: { first: Page<SecurityLogEntry> }) {
 function Entry({ entry }: { entry: SecurityLogEntry }) {
   const details = Object.entries(entry.details)
   return (
-    <li className={`card outcome-${entry.outcome}`}>
-      <div className="log-head">
-        <strong>{actionNames[entry.action] ?? entry.action}</strong>
-        <span className={`badge outcome-${entry.outcome}`}>
+    <li>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <strong className="font-medium">
+          {actionNames[entry.action] ?? entry.action}
+        </strong>
+        <Badge
+          variant={entry.outcome === "succeeded" ? "secondary" : "destructive"}
+        >
           {outcomeNames[entry.outcome]}
-        </span>
+        </Badge>
       </div>
-      <dl className="facts compact">
+      <Facts>
         <dt>When</dt>
         <dd>
           <time dateTime={entry.occurredAt}>
@@ -122,7 +142,7 @@ function Entry({ entry }: { entry: SecurityLogEntry }) {
         <dd>
           {entry.actorLabel}
           {entry.confidence !== "recorded" && (
-            <span className="muted"> ({entry.confidence})</span>
+            <span className="text-muted-foreground"> ({entry.confidence})</span>
           )}
         </dd>
         {entry.subjectHandle && (
@@ -140,13 +160,13 @@ function Entry({ entry }: { entry: SecurityLogEntry }) {
         {entry.client && (
           <>
             <dt>Client</dt>
-            <dd className="wrap">{entry.client}</dd>
+            <dd>{entry.client}</dd>
           </>
         )}
         {details.map(([key, value]) => (
           <DetailRow key={key} name={key} value={value} />
         ))}
-      </dl>
+      </Facts>
     </li>
   )
 }
@@ -155,7 +175,7 @@ function DetailRow(props: { name: string; value: unknown }) {
   return (
     <>
       <dt>{props.name}</dt>
-      <dd className="wrap">
+      <dd>
         {typeof props.value === "string"
           ? props.value
           : JSON.stringify(props.value)}

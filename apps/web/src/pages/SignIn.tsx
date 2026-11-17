@@ -2,7 +2,18 @@ import { useEffect, useState } from "react"
 import type { FormEvent } from "react"
 import { useNavigate, useSearchParams } from "react-router"
 
+import { Button } from "@/components/ui/button"
+import {
+  Field,
+  FieldGroup,
+  FieldLabel,
+  FieldSeparator,
+} from "@/components/ui/field"
+import { Input } from "@/components/ui/input"
+
 import { useApi, useResource } from "../api"
+import { AuthPage } from "../components/AuthPage"
+import { ErrorAlert } from "../components/status"
 import { safeNextPath } from "../format"
 import { signInErrorMessage } from "../messages"
 import { leaveApp } from "../navigation"
@@ -69,65 +80,67 @@ export function SignIn() {
   }
 
   return (
-    <main id="content" className="page narrow sign-in">
-      <h1>Sign in to {name}</h1>
+    <AuthPage title={`Sign in to ${name}`}>
       {sentTo ? (
-        <section aria-live="polite">
-          <h2>Check your email</h2>
-          <p>
-            If <strong>{sentTo}</strong> can have an account here, we sent it a
-            sign-in link. The link works once and expires soon.
+        <section aria-live="polite" className="flex flex-col gap-3">
+          <h2 className="font-medium">Check your email</h2>
+          <p className="text-sm text-muted-foreground">
+            If <strong className="text-foreground">{sentTo}</strong> can have an
+            account here, we sent it a sign-in link. The link works once and
+            expires soon.
           </p>
-          <button
+          <Button
             type="button"
-            className="quiet"
+            variant="outline"
             onClick={() => setSentTo(undefined)}
           >
             Use a different address
-          </button>
+          </Button>
         </section>
       ) : (
         <>
           {failed && (
-            <p className="error" role="alert">
+            <ErrorAlert>
               That sign-in did not work. The link may have expired or been used
               already, or this address cannot sign in here. Try again.
-            </p>
+            </ErrorAlert>
           )}
-          <form onSubmit={sendLink} className="stack">
-            <label htmlFor="sign-in-email">Email address</label>
-            <input
-              id="sign-in-email"
-              type="email"
-              autoComplete="email"
-              required
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-            />
-            <button type="submit" disabled={pending}>
-              Email me a sign-in link
-            </button>
+          <form onSubmit={sendLink}>
+            <FieldGroup>
+              <Field>
+                <FieldLabel htmlFor="sign-in-email">Email address</FieldLabel>
+                <Input
+                  id="sign-in-email"
+                  type="email"
+                  autoComplete="email"
+                  required
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                />
+              </Field>
+              <Button type="submit" disabled={pending}>
+                Email me a sign-in link
+              </Button>
+            </FieldGroup>
           </form>
           {github && (
             <>
-              <p className="divider">or</p>
-              <button
+              <FieldSeparator>or</FieldSeparator>
+              <Button
                 type="button"
-                className="github"
+                variant="outline"
                 disabled={pending}
                 onClick={useGitHub}
               >
                 Sign in with GitHub
-              </button>
+              </Button>
             </>
           )}
           {error !== undefined && (
-            <p className="error" role="alert">
-              {signInErrorMessage(error)}
-            </p>
+            <ErrorAlert>{signInErrorMessage(error)}</ErrorAlert>
           )}
         </>
       )}
-    </main>
+    </AuthPage>
   )
 }

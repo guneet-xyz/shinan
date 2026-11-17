@@ -52,6 +52,7 @@ O-numbers (batches 1 to 11) and N-numbers (batches 12 and 13, follow-up question
 D-050 to D-053 record the owner's answers to the integration review on
 [issue #26](https://github.com/guneet-xyz/shinan/issues/26) (NO-numbers).
 D-054 records a later owner decision made in conversation and reverses O-66.
+D-055 records a later owner decision on the web app's styling.
 The numbers are in each record's `evidence` field and in the mappings for
 [issue #25](#owner-answers-on-issue-25) and [issue #26](#owner-answers-on-issue-26).
 
@@ -111,6 +112,7 @@ The numbers are in each record's `evidence` field and in the mappings for
 | [D-052](D-052-notification-ownership.md)                  | Architecture owns sending notifications; human experience owns what is sent and personal settings                     | Accepted | 2026-11-16 |                                | Architecture and operations; Human experience                                                                     |
 | [D-053](D-053-deployment-approval-events.md)              | Deployment approval requests and answers are always recorded as task events                                           | Accepted | 2026-11-16 |                                | Tasks and work; Agent integrations; Identity, agents and permissions; Human experience; Domain model and glossary |
 | [D-054](D-054-public-image-registry-project.md)           | The `shinan` image project on `cr.guneet.dev` is public; Musashi pulls without a key                                  | Accepted | 2026-11-17 |                                | Architecture and operations; Build plan; Operator guide                                                           |
+| [D-055](D-055-tailwind-and-shadcn.md)                     | The web app uses Tailwind CSS and shadcn/ui components                                                                | Accepted | 2026-11-17 |                                | Architecture and operations; Build plan                                                                           |
 
 The full list of owning documents, with planned paths, is in each record.
 
@@ -458,3 +460,7 @@ None.
   image project on `cr.guneet.dev` public, reversing O-66
   ([issue #73](https://github.com/guneet-xyz/shinan/issues/73)). O-66 had no
   record, so D-054 amends none.
+- 2026-11-17: D-055 added for the owner's decision to style the web app with
+  Tailwind CSS and shadcn/ui components
+  ([issue #75](https://github.com/guneet-xyz/shinan/issues/75)). It amends
+  no record.

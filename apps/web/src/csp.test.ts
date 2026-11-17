@@ -28,6 +28,15 @@ describe("the web app under the Content Security Policy", () => {
     expect(html).not.toMatch(/<style\b|\sstyle=|\son[a-z]+=/i)
   })
 
+  it("turns off the <style> tags Base UI adds, and has their rules in its stylesheet", () => {
+    const main = readFileSync(join(webRoot, "src", "main.tsx"), "utf8")
+    expect(main).toMatch(/<CSPProvider disableStyleElements>/)
+    const css = readFileSync(join(webRoot, "src", "index.css"), "utf8")
+    expect(css).toMatch(
+      /\.base-ui-disable-scrollbar\s*\{\s*scrollbar-width: none;/,
+    )
+  })
+
   it("writes no raw HTML, whose inline scripts and styles would be refused", () => {
     for (const file of sourceFiles(join(webRoot, "src"))) {
       const source = readFileSync(file, "utf8")

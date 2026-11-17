@@ -1,9 +1,12 @@
 import { useEffect, useState } from "react"
 import { useLocation } from "react-router"
 
+import { Button } from "@/components/ui/button"
+
 import { useApi, useResource } from "../api"
+import { AuthPage } from "../components/AuthPage"
+import { ErrorMessage } from "../components/status"
 import { safeNextPath } from "../format"
-import { errorMessage } from "../messages"
 import { leaveApp } from "../navigation"
 
 /**
@@ -49,26 +52,23 @@ export function SignInLink() {
   }
 
   return (
-    <main id="content" className="page narrow sign-in">
-      <h1>Sign in to {name}</h1>
+    <AuthPage title={`Sign in to ${name}`}>
       {link.token ? (
         <>
-          <p>This link signs you in once, in this browser.</p>
-          <button type="button" disabled={pending} onClick={continueSigningIn}>
+          <p className="text-sm text-muted-foreground">
+            This link signs you in once, in this browser.
+          </p>
+          <Button type="button" disabled={pending} onClick={continueSigningIn}>
             Continue signing in
-          </button>
+          </Button>
         </>
       ) : (
-        <p>
+        <p className="text-sm text-muted-foreground">
           This sign-in link is incomplete. Open it again from the email, or ask
           for a new one.
         </p>
       )}
-      {error !== undefined && (
-        <p className="error" role="alert">
-          {errorMessage(error)}
-        </p>
-      )}
-    </main>
+      {error !== undefined && <ErrorMessage error={error} />}
+    </AuthPage>
   )
 }

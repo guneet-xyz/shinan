@@ -2,6 +2,7 @@ import { Navigate } from "react-router"
 
 import { useAccount } from "../account"
 import { CreateWorkspace } from "../components/CreateWorkspace"
+import { PageHeader, Section } from "../components/page"
 
 /** The start page: the person's first workspace, if they have one. */
 export function Home() {
@@ -10,14 +11,14 @@ export function Home() {
   if (first) return <Navigate to={`/w/${first.id}`} replace />
 
   return (
-    <section className="narrow">
-      <h1>Welcome, {account.person.name}</h1>
-      <p>
-        You are not a member of any workspace yet. Joining a workspace needs an
-        invitation from one of its workspace owners; it arrives by email. Or
-        create a workspace of your own, and become its workspace owner.
-      </p>
-      <CreateWorkspace />
-    </section>
+    <div className="mx-auto max-w-xl">
+      <PageHeader title={`Welcome, ${account.person.name}`} />
+      <Section
+        title="Workspaces"
+        description="You are not a member of any workspace yet. Joining a workspace needs an invitation from one of its workspace owners; it arrives by email. Or create a workspace of your own, and become its workspace owner."
+      >
+        <CreateWorkspace />
+      </Section>
+    </div>
   )
 }

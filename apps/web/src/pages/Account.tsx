@@ -3,11 +3,16 @@ import { Link, useLocation, useNavigate, useSearchParams } from "react-router"
 
 import type { InvitationForYou, SignInSession } from "@shinan/api-client"
 
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+
 import { useAccount } from "../account"
 import { useAction } from "../action"
 import { useApi, useResource } from "../api"
 import { CreateWorkspace } from "../components/CreateWorkspace"
-import { ErrorMessage, Loading } from "../components/status"
+import { Actions, Facts, PageHeader, Rows, Section } from "../components/page"
+import { ErrorAlert, ErrorMessage, Loading } from "../components/status"
 import { formatDate, formatTime, roleNames } from "../format"
 import { signInErrorMessage } from "../messages"
 import { leaveApp } from "../navigation"
@@ -26,18 +31,23 @@ export function Account() {
   const { person } = account
 
   return (
-    <>
-      <h1>Your account</h1>
-      {notice && <p role="status">{notice}</p>}
+    <div className="mx-auto flex max-w-3xl flex-col gap-6">
+      <PageHeader title="Your account" />
+      {notice && (
+        <Alert role="status">
+          <AlertDescription className="text-foreground">
+            {notice}
+          </AlertDescription>
+        </Alert>
+      )}
       {params.has("error") && (
-        <p className="error" role="alert">
+        <ErrorAlert>
           GitHub could not be added. That GitHub account may already be a way to
           sign in to another account here.
-        </p>
+        </ErrorAlert>
       )}
-      <section aria-labelledby="profile-heading">
-        <h2 id="profile-heading">Profile</h2>
-        <dl className="facts">
+      <Section title="Profile">
+        <Facts>
           <dt>Name</dt>
           <dd>{person.name}</dd>
           <dt>Handle</dt>
@@ -46,40 +56,52 @@ export function Account() {
           <dd>{person.email}</dd>
           <dt>Account created</dt>
           <dd>{formatDate(person.createdAt)}</dd>
-        </dl>
-      </section>
-      <section aria-labelledby="workspaces-heading">
-        <h2 id="workspaces-heading">Workspaces</h2>
+        </Facts>
+      </Section>
+      <Section title="Workspaces">
         {account.workspaces.length === 0 ? (
-          <p className="muted">You are not a member of any workspace.</p>
+          <p className="text-sm text-muted-foreground">
+            You are not a member of any workspace.
+          </p>
         ) : (
-          <ul className="cards">
+          <Rows>
             {account.workspaces.map((workspace) => (
-              <li key={workspace.id} className="card">
-                <Link to={`/w/${workspace.id}`}>{workspace.name}</Link>
-                <dl className="facts compact">
+              <li key={workspace.id}>
+                <Link
+                  to={`/w/${workspace.id}`}
+                  className="w-fit font-medium underline-offset-4 hover:underline"
+                >
+                  {workspace.name}
+                </Link>
+                <Facts>
                   <dt>Role</dt>
                   <dd>{roleNames[workspace.role]}</dd>
                   <dt>Joined</dt>
                   <dd>{formatDate(workspace.joinedAt)}</dd>
-                </dl>
+                </Facts>
               </li>
             ))}
-          </ul>
+          </Rows>
         )}
         <CreateWorkspace />
-      </section>
+      </Section>
       <PendingInvitations />
       <SignInMethods />
       <SignInSessions />
       <SignOut />
       {account.operator && (
-        <p>
+        <p className="text-sm text-muted-foreground">
           You are an installation operator:{" "}
-          <Link to="/installation">installation settings</Link>.
+          <Link
+            to="/installation"
+            className="text-foreground underline underline-offset-4"
+          >
+            installation settings
+          </Link>
+          .
         </p>
       )}
-    </>
+    </div>
   )
 }
 
@@ -93,10 +115,9 @@ function PendingInvitations() {
   if (invitations.data?.length === 0) return null
 
   return (
-    <section aria-labelledby="pending-invitations-heading">
-      <h2 id="pending-invitations-heading">Pending invitations</h2>
+    <Section title="Pending invitations">
       {invitations.data ? (
-        <ul className="cards">
+        <Rows>
           {invitations.data.map((invitation) => (
             <PendingInvitation
               key={invitation.id}
@@ -107,13 +128,13 @@ function PendingInvitations() {
               }}
             />
           ))}
-        </ul>
+        </Rows>
       ) : invitations.error ? (
         <ErrorMessage error={invitations.error} />
       ) : (
         <Loading />
       )}
-    </section>
+    </Section>
   )
 }
 
@@ -126,18 +147,18 @@ function PendingInvitation(props: {
   const action = useAction()
 
   return (
-    <li className="card">
-      <strong>{invitation.workspaceName}</strong>
-      <dl className="facts compact">
+    <li>
+      <strong className="font-medium">{invitation.workspaceName}</strong>
+      <Facts>
         <dt>Invited by</dt>
         <dd>{invitation.invitedByHandle}</dd>
         <dt>Role</dt>
         <dd>{roleNames[invitation.role]}</dd>
         <dt>Expires</dt>
         <dd>{formatDate(invitation.expiresAt)}</dd>
-      </dl>
-      <div className="actions">
-        <button
+      </Facts>
+      <Actions>
+        <Button
           type="button"
           disabled={action.pending}
           onClick={() =>
@@ -148,10 +169,10 @@ function PendingInvitation(props: {
           }
         >
           Accept
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
-          className="quiet"
+          variant="outline"
           disabled={action.pending}
           onClick={() =>
             action.run(
@@ -161,8 +182,8 @@ function PendingInvitation(props: {
           }
         >
           Decline
-        </button>
-      </div>
+        </Button>
+      </Actions>
       {action.error !== undefined && <ErrorMessage error={action.error} />}
     </li>
   )
@@ -187,9 +208,8 @@ function SignInMethods() {
     })
 
   return (
-    <section aria-labelledby="sign-in-methods-heading">
-      <h2 id="sign-in-methods-heading">Sign-in methods</h2>
-      <dl className="facts">
+    <Section title="Sign-in methods">
+      <Facts>
         <dt>Email link</dt>
         <dd>{email}</dd>
         <dt>GitHub</dt>
@@ -200,28 +220,33 @@ function SignInMethods() {
               ? "Not linked"
               : "Not offered on this installation"}
         </dd>
-      </dl>
-      <div className="actions">
-        {github ? (
-          <button
-            type="button"
-            className="danger"
-            disabled={remove.pending}
-            onClick={() => remove.run(() => api.removeGitHub(), reload)}
-          >
-            Remove GitHub
-          </button>
-        ) : (
-          githubAvailable && (
-            <button type="button" disabled={add.pending} onClick={addGitHub}>
+      </Facts>
+      {(github || githubAvailable) && (
+        <Actions>
+          {github ? (
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={remove.pending}
+              onClick={() => remove.run(() => api.removeGitHub(), reload)}
+            >
+              Remove GitHub
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={add.pending}
+              onClick={addGitHub}
+            >
               Add GitHub
-            </button>
-          )
-        )}
-      </div>
+            </Button>
+          )}
+        </Actions>
+      )}
       {add.error !== undefined && <ErrorMessage error={add.error} />}
       {remove.error !== undefined && <ErrorMessage error={remove.error} />}
-    </section>
+    </Section>
   )
 }
 
@@ -233,10 +258,9 @@ function SignInSessions() {
   const everywhere = useAction()
 
   return (
-    <section aria-labelledby="sign-in-sessions-heading">
-      <h2 id="sign-in-sessions-heading">Sign-in sessions</h2>
+    <Section title="Sign-in sessions">
       {sessions.data ? (
-        <ul className="cards">
+        <Rows>
           {sessions.data.map((session) => (
             <SignInSessionRow
               key={session.id}
@@ -244,29 +268,31 @@ function SignInSessions() {
               reload={sessions.reload}
             />
           ))}
-        </ul>
+        </Rows>
       ) : sessions.error ? (
         <ErrorMessage error={sessions.error} />
       ) : (
         <Loading />
       )}
-      <button
-        type="button"
-        className="danger"
-        disabled={everywhere.pending}
-        onClick={() =>
-          everywhere.run(
-            () => api.signOutEverywhere(),
-            () => void navigate("/sign-in", { replace: true }),
-          )
-        }
-      >
-        Sign out everywhere
-      </button>
+      <Actions>
+        <Button
+          type="button"
+          variant="destructive"
+          disabled={everywhere.pending}
+          onClick={() =>
+            everywhere.run(
+              () => api.signOutEverywhere(),
+              () => void navigate("/sign-in", { replace: true }),
+            )
+          }
+        >
+          Sign out everywhere
+        </Button>
+      </Actions>
       {everywhere.error !== undefined && (
         <ErrorMessage error={everywhere.error} />
       )}
-    </section>
+    </Section>
   )
 }
 
@@ -279,12 +305,14 @@ function SignInSessionRow(props: {
   const end = useAction()
 
   return (
-    <li className="card">
-      <div>
-        <strong title={session.client ?? undefined}>{session.browser}</strong>
-        {session.current && <span className="badge"> This browser</span>}
+    <li>
+      <div className="flex flex-wrap items-center gap-2">
+        <strong className="font-medium" title={session.client ?? undefined}>
+          {session.browser}
+        </strong>
+        {session.current && <Badge variant="secondary">This browser</Badge>}
       </div>
-      <dl className="facts compact">
+      <Facts>
         <dt>Signed in</dt>
         <dd>{formatTime(session.createdAt)}</dd>
         <dt>Last active</dt>
@@ -295,20 +323,21 @@ function SignInSessionRow(props: {
             <dd>{session.networkAddress}</dd>
           </>
         )}
-      </dl>
+      </Facts>
       {!session.current && (
-        <div className="actions">
-          <button
+        <Actions>
+          <Button
             type="button"
-            className="danger"
+            variant="destructive"
+            size="sm"
             disabled={end.pending}
             onClick={() =>
               end.run(() => api.endSignInSession(session.id), props.reload)
             }
           >
             End this session
-          </button>
-        </div>
+          </Button>
+        </Actions>
       )}
       {end.error !== undefined && <ErrorMessage error={end.error} />}
     </li>
@@ -334,16 +363,20 @@ function SignOut() {
   }
 
   return (
-    <section aria-labelledby="sign-out-heading">
-      <h2 id="sign-out-heading">Sign out</h2>
-      <button type="button" disabled={pending} onClick={signOut}>
-        Sign out
-      </button>
+    <Section title="Sign out">
+      <Actions>
+        <Button
+          type="button"
+          variant="outline"
+          disabled={pending}
+          onClick={signOut}
+        >
+          Sign out
+        </Button>
+      </Actions>
       {error !== undefined && (
-        <p className="error" role="alert">
-          {signInErrorMessage(error)}
-        </p>
+        <ErrorAlert>{signInErrorMessage(error)}</ErrorAlert>
       )}
-    </section>
+    </Section>
   )
 }

@@ -2,7 +2,13 @@ import { useState } from "react"
 import type { FormEvent } from "react"
 import { Link, useSearchParams } from "react-router"
 
+import { Button, buttonVariants } from "@/components/ui/button"
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
+import { Input } from "@/components/ui/input"
+
 import { useApi, useResource } from "../api"
+import { AuthPage } from "../components/AuthPage"
+import { ErrorAlert } from "../components/status"
 import { safeNextPath } from "../format"
 import { signInErrorMessage } from "../messages"
 
@@ -52,30 +58,34 @@ export function GitHubEmail() {
   const startAgain = `/sign-in${next === "/" ? "" : `?next=${encodeURIComponent(next)}`}`
 
   return (
-    <main id="content" className="page narrow sign-in">
-      <h1>Finish signing in with GitHub</h1>
+    <AuthPage title="Finish signing in with GitHub">
       {pending.loading ? null : pending.error || !pending.data ? (
         <>
-          <p>
+          <p className="text-sm text-muted-foreground">
             This GitHub sign-in has expired or was finished in another browser.
           </p>
-          <Link to={startAgain}>Start again</Link>
+          <Link to={startAgain} className={buttonVariants()}>
+            Start again
+          </Link>
         </>
       ) : sentTo ? (
-        <section aria-live="polite">
-          <h2>Check your email</h2>
-          <p>
-            If <strong>{sentTo}</strong> can have an account here, we sent it a
-            sign-in link. Open it in this browser to sign in and link your
-            GitHub account.
+        <section aria-live="polite" className="flex flex-col gap-3">
+          <h2 className="font-medium">Check your email</h2>
+          <p className="text-sm text-muted-foreground">
+            If <strong className="text-foreground">{sentTo}</strong> can have an
+            account here, we sent it a sign-in link. Open it in this browser to
+            sign in and link your GitHub account.
           </p>
         </section>
       ) : (
         <>
-          <p>
+          <p className="text-sm text-muted-foreground">
             The GitHub account
             {pending.data.login ? (
-              <strong> @{pending.data.login}</strong>
+              <strong className="text-foreground">
+                {" "}
+                @{pending.data.login}
+              </strong>
             ) : (
               ""
             )}{" "}
@@ -83,27 +93,29 @@ export function GitHubEmail() {
             will email you a link, and opening it in this browser signs you in
             and links GitHub as a way to sign in.
           </p>
-          <form onSubmit={send} className="stack">
-            <label htmlFor="github-email">Email address</label>
-            <input
-              id="github-email"
-              type="email"
-              autoComplete="email"
-              required
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-            />
-            <button type="submit" disabled={sending}>
-              Email me a sign-in link
-            </button>
+          <form onSubmit={send}>
+            <FieldGroup>
+              <Field>
+                <FieldLabel htmlFor="github-email">Email address</FieldLabel>
+                <Input
+                  id="github-email"
+                  type="email"
+                  autoComplete="email"
+                  required
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                />
+              </Field>
+              <Button type="submit" disabled={sending}>
+                Email me a sign-in link
+              </Button>
+            </FieldGroup>
           </form>
           {error !== undefined && (
-            <p className="error" role="alert">
-              {signInErrorMessage(error)}
-            </p>
+            <ErrorAlert>{signInErrorMessage(error)}</ErrorAlert>
           )}
         </>
       )}
-    </main>
+    </AuthPage>
   )
 }

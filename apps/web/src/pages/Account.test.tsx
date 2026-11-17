@@ -1,4 +1,4 @@
-import { screen } from "@testing-library/react"
+import { screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { describe, expect, it, vi } from "vitest"
 
@@ -111,12 +111,18 @@ describe("sign-in methods, sessions and invitations", () => {
     })
     renderApp("/account", api)
 
-    await userEvent.click(
-      await screen.findByRole("button", { name: "Add GitHub" }),
+    const add = await screen.findByRole("button", { name: "Add GitHub" })
+    await userEvent.click(add)
+    const dialog = await screen.findByRole("dialog", {
+      name: "Sign in again to continue",
+    })
+    await waitFor(() =>
+      expect(dialog.contains(document.activeElement)).toBe(true),
     )
-    expect(
-      await screen.findByRole("dialog", { name: "Sign in again to continue" }),
-    ).toBeTruthy()
+
+    await userEvent.keyboard("{Escape}")
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
+    await waitFor(() => expect(document.activeElement).toBe(add))
   })
 
   it("lists sign-in sessions and ends them", async () => {

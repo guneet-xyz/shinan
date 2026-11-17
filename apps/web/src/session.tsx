@@ -25,13 +25,13 @@ export function RequireSignIn() {
   }
   if (account.error) {
     return (
-      <main className="page">
+      <main className="mx-auto w-full max-w-5xl p-4 sm:p-6">
         <ErrorMessage error={account.error} />
       </main>
     )
   }
   return (
-    <main className="page">
+    <main className="mx-auto w-full max-w-5xl p-4 sm:p-6">
       <Loading />
     </main>
   )
