@@ -38,7 +38,7 @@ types between server, web app, plugin and CLI, one CI.
 | `packages/email`                           | The email sender interface ([architecture 9.2](architecture.md#92-how-shinan-sends)), the AWS SES sender, and an SMTP sender used only for the local mail catcher in development and tests. Core defines what is sent, queues and records it; this package only sends. |
 | `packages/api-client`                      | Typed client for the REST API, shared by the web app, CLI and plugin.                                                                                                                                                                                                  |
 | `packages/cli`, `packages/opencode-plugin` | Built in M2/M4 (CLI may slip to G2).                                                                                                                                                                                                                                   |
-| `deploy/`                                  | The development Compose file (`compose.dev.yml`: PostgreSQL and a local mail catcher, M1-1); later the Dockerfile, the reference Compose file (PostgreSQL, migrate, web, worker) and the operator guide (M1-7).                                                        |
+| `deploy/`                                  | The development Compose file (`compose.dev.yml`: PostgreSQL and a local mail catcher, M1-1); the Dockerfile, the reference Compose file (PostgreSQL, migrate, web, worker) and its first-start test (M1-7). The operator guide is `docs/operator-guide.md`.            |
 
 ## 3. Tooling (proposed)
 

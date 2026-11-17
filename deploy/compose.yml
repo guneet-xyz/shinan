@@ -1,0 +1,166 @@
+# Reference Compose file for running Shinan yourself (architecture §12).
+# The operator guide (docs/operator-guide.md) explains every setting, the
+# first start, upgrades and the risks. In short, next to this file:
+#
+#   .env        settings that are not secret (copy .env.example)
+#   secrets/    one file per secret, the directory readable only by you
+#
+#   docker compose up -d
+#   docker compose logs web     the one-time setup link, on first start
+#
+# Services: PostgreSQL, `migrate` (prepares the database, then exits), `web`
+# (pages and API) and `worker` (background jobs and email). Put an HTTPS
+# reverse proxy in front of `web`; Shinan never serves plain HTTP to the
+# internet. This file starts no proxy.
+name: shinan
+
+x-shinan: &shinan
+  image: ${SHINAN_IMAGE:?Set SHINAN_IMAGE in .env to a Shinan image, pinned by digest}
+  restart: unless-stopped
+  init: true
+  read_only: true
+  tmpfs:
+    - /tmp
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+  pids_limit: 256
+  logging: &logging
+    driver: json-file
+    options:
+      max-size: 10m
+      max-file: "5"
+
+networks:
+  # PostgreSQL and every Shinan role. No internet access.
+  backend:
+    internal: true
+  # Outgoing internet access for `web` (GitHub sign-in) and `worker` (SES).
+  egress: {}
+
+services:
+  postgres:
+    image: postgres:18.7-alpine@sha256:b6972e1115a4ff8eba5d7f7d19184926d1e16d7d1136ae1e1a7ebf286da0f015
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: shinan
+      POSTGRES_DB: shinan
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+      - postgres_password
+    volumes:
+      - postgres:/var/lib/postgresql
+    healthcheck:
+      test: [CMD, pg_isready, -U, shinan, -d, shinan]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /var/run/postgresql
+    # The entrypoint prepares the data directory as root, then runs as
+    # `postgres`.
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETGID
+      - SETUID
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 512m
+    shm_size: 128m
+    logging: *logging
+    networks:
+      - backend
+
+  # Runs on every `up`: applies new migrations, then exits. `web` and `worker`
+  # start only after it succeeds.
+  migrate:
+    <<: *shinan
+    command: migrate
+    restart: "no"
+    environment:
+      DATABASE_URL_FILE: /run/secrets/database_url
+    secrets:
+      - database_url
+    healthcheck:
+      disable: true
+    depends_on:
+      postgres:
+        condition: service_healthy
+    mem_limit: 256m
+    networks:
+      - backend
+
+  web:
+    <<: *shinan
+    command: web
+    environment:
+      SHINAN_URL: ${SHINAN_URL:?Set SHINAN_URL in .env to the installation's https address}
+      SHINAN_OPERATORS: ${SHINAN_OPERATORS:?Set SHINAN_OPERATORS in .env to the operators' email addresses}
+      SHINAN_TRUSTED_PROXIES: ${SHINAN_TRUSTED_PROXIES:-}
+      DATABASE_URL_FILE: /run/secrets/database_url
+      SHINAN_SESSION_SECRET_FILE: /run/secrets/session_secret
+    secrets:
+      - database_url
+      - session_secret
+    # For a reverse proxy on this machine. The internal listener for health
+    # checks (port 3001) stays inside the container.
+    ports:
+      - 127.0.0.1:${SHINAN_PORT:-3000}:3000
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    mem_limit: 512m
+    stop_grace_period: 30s
+    networks:
+      - backend
+      - egress
+
+  worker:
+    <<: *shinan
+    command: worker
+    environment:
+      DATABASE_URL_FILE: /run/secrets/database_url
+      EMAIL_TRANSPORT: ses
+      EMAIL_FROM: ${EMAIL_FROM:?Set EMAIL_FROM in .env to the address Shinan sends from}
+      EMAIL_FROM_NAME: ${EMAIL_FROM_NAME:-Shinan}
+      SES_REGION: ${SES_REGION:?Set SES_REGION in .env, such as us-east-1}
+      SES_CONFIGURATION_SET: ${SES_CONFIGURATION_SET:-}
+      SES_ACCESS_KEY_ID_FILE: /run/secrets/ses_access_key_id
+      SES_SECRET_ACCESS_KEY_FILE: /run/secrets/ses_secret_access_key
+    secrets:
+      - database_url
+      - ses_access_key_id
+      - ses_secret_access_key
+    # The worker has no listener to check.
+    healthcheck:
+      disable: true
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    mem_limit: 384m
+    stop_grace_period: 30s
+    networks:
+      - backend
+      - egress
+
+secrets:
+  postgres_password:
+    file: ./secrets/postgres_password
+  database_url:
+    file: ./secrets/database_url
+  session_secret:
+    file: ./secrets/session_secret
+  ses_access_key_id:
+    file: ./secrets/ses_access_key_id
+  ses_secret_access_key:
+    file: ./secrets/ses_secret_access_key
+
+volumes:
+  postgres:

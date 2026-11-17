@@ -1,0 +1,14 @@
+# Build context for deploy/Dockerfile: sources only. Dependencies and build
+# output are made inside the image. Settings and secrets are left out at any
+# depth: the operator guide puts .env and secrets/ next to a Compose file,
+# which may be inside a checkout.
+**/node_modules
+**/dist
+**/coverage
+**/*.tsbuildinfo
+**/.env
+**/.env.*
+**/secrets/
+.git
+.github
+docs

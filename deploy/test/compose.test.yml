@@ -1,0 +1,65 @@
+# Additions to compose.yml for deploy/test/first-start.mjs, which starts the
+# reference Compose file from scratch and claims the installation. Never use
+# this for a real installation: it sends email to a local mail catcher
+# instead of SES and puts a proxy with a self-signed certificate in front.
+services:
+  web:
+    networks:
+      - proxy
+
+  worker:
+    environment:
+      # SMTP is refused in production; it exists only for the mail catcher.
+      NODE_ENV: test
+      EMAIL_TRANSPORT: smtp
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+    depends_on:
+      mailpit:
+        condition: service_healthy
+
+  mailpit:
+    image: axllent/mailpit:v1.33@sha256:aef2aacc11f075ec0fb6874275ee4a421e688e11a96ebb296134d1735c7761ce
+    healthcheck:
+      test: [CMD, /mailpit, readyz]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+    ports:
+      - 127.0.0.1:${TEST_MAILPIT_PORT:?}:8025
+    networks:
+      - backend
+      - egress
+
+  # HTTPS in front of `web`, at a fixed address that `web` trusts for the
+  # visitor's address (SHINAN_TRUSTED_PROXIES), as on shinan.guneet.dev.
+  caddy:
+    image: ${TEST_CADDY_IMAGE:-caddy:2.11.2-alpine@sha256:834468128c7696cec0ceea6172f7d692daf645ae51983ca76e39da54a97c570d}
+    configs:
+      - source: caddyfile
+        target: /etc/caddy/Caddyfile
+    ports:
+      - 127.0.0.1:${TEST_HTTPS_PORT:?}:443
+    networks:
+      proxy:
+        ipv4_address: ${TEST_PROXY_ADDRESS:?}
+
+networks:
+  proxy:
+    ipam:
+      config:
+        - subnet: ${TEST_PROXY_SUBNET:?}
+
+configs:
+  caddyfile:
+    content: |
+      {
+        admin off
+        local_certs
+        skip_install_trust
+        auto_https disable_redirects
+      }
+      https://localhost {
+        tls internal
+        reverse_proxy web:3000
+      }

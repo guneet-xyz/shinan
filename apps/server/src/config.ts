@@ -6,6 +6,7 @@ import type { EmailFrom } from "@shinan/email"
 
 import { parseTrustedProxies } from "./client-address.js"
 import type { TrustedProxies } from "./client-address.js"
+import { readInternalListener, readPort } from "./health.js"
 import { SettingsError } from "./settings-error.js"
 
 export type Env = Record<string, string | undefined>
@@ -104,15 +105,15 @@ export function readWebConfig(
   }
 
   const port = readPort(env.PORT ?? "3000", "PORT")
-  const internalPort = readPort(env.INTERNAL_PORT ?? "3001", "INTERNAL_PORT")
-  if (internalPort === port && port !== 0) {
+  const internal = readInternalListener(env)
+  if (internal.port === port && port !== 0) {
     throw new SettingsError("INTERNAL_PORT must differ from PORT")
   }
 
   return {
     host: env.HOST ?? "127.0.0.1",
     port,
-    internal: { host: env.INTERNAL_HOST ?? "127.0.0.1", port: internalPort },
+    internal,
     trustedProxies: parseTrustedProxies(env.SHINAN_TRUSTED_PROXIES ?? ""),
     webDistDir: production
       ? (env.WEB_DIST_DIR ?? defaultWebDistDir)
@@ -265,12 +266,4 @@ export function readEmailConfig(
         `EMAIL_TRANSPORT must be ses or smtp, got "${transport}"`,
       )
   }
-}
-
-function readPort(value: string, name: string): number {
-  const port = Number(value)
-  if (!Number.isInteger(port) || port < 0 || port > 65535) {
-    throw new SettingsError(`${name} must be a port number, got "${value}"`)
-  }
-  return port
 }

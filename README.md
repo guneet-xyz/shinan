@@ -13,20 +13,21 @@ now in its build phase.
 - [Build plan](docs/build-plan.md): milestones, code layout and how work is done
 - [Architecture](docs/architecture.md) and the [roadmap](docs/roadmap.md)
 - [Domain model and glossary](docs/domain-model.md)
+- [Operator guide](docs/operator-guide.md): running Shinan yourself
 - [Decision log](docs/decisions/README.md)
 - [Agent instructions](AGENTS.md)
 
 ## Code layout
 
-| Path                  | What it holds                                                                  |
-| --------------------- | ------------------------------------------------------------------------------ |
-| `apps/server`         | The Node.js program (Hono): the `web` and `worker` roles and `migrate` command |
-| `apps/web`            | The React single-page app (Vite), served by `apps/server` in production        |
-| `packages/core`       | Application modules, permissions and rules                                     |
-| `packages/db`         | Drizzle schema and migrations                                                  |
-| `packages/email`      | The email sender interface, the SES sender and an SMTP sender for development  |
-| `packages/api-client` | Typed client for the REST API                                                  |
-| `deploy/`             | Local development services; later the image and reference Compose file         |
+| Path                  | What it holds                                                                   |
+| --------------------- | ------------------------------------------------------------------------------- |
+| `apps/server`         | The Node.js program (Hono): the `web` and `worker` roles and `migrate` command  |
+| `apps/web`            | The React single-page app (Vite), served by `apps/server` in production         |
+| `packages/core`       | Application modules, permissions and rules                                      |
+| `packages/db`         | Drizzle schema and migrations                                                   |
+| `packages/email`      | The email sender interface, the SES sender and an SMTP sender for development   |
+| `packages/api-client` | Typed client for the REST API                                                   |
+| `deploy/`             | The production image, the reference Compose file and local development services |
 
 The [build plan](docs/build-plan.md#2-code-layout-proposed) describes each part.
 
@@ -220,3 +221,20 @@ keeps a release pull request open on `main`; merging it creates the `vX.Y.Z`
 tag, the GitHub Release and `CHANGELOG.md`. Versions start at `0.1.0`, and a
 breaking change before 1.0.0 bumps the minor version. Releasing does not deploy
 anything.
+
+A release then builds the image ([`deploy/Dockerfile`](deploy/Dockerfile))
+for `linux/amd64` and `linux/arm64` and publishes it to the private `shinan`
+project on `cr.guneet.dev`, once CI and the first-start test pass on the
+release commit (`.github/workflows/release.yml`). To build and test the image
+locally:
+
+```sh
+docker build -f deploy/Dockerfile -t shinan:local .
+SHINAN_IMAGE=shinan:local node deploy/test/first-start.mjs
+```
+
+The test starts the [reference Compose file](deploy/compose.yml) from nothing
+with a local mail catcher and an HTTPS proxy, claims the installation through
+its setup link, and checks the containers' hardening. CI runs it on every pull
+request. The [operator guide](docs/operator-guide.md) explains running it for
+real.
