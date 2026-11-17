@@ -20,7 +20,7 @@ export function AppShell() {
   return (
     <div className="flex min-h-svh flex-col">
       <a
-        className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:rounded-md focus:bg-background focus:px-3 focus:py-2 focus:ring-3 focus:ring-ring/50"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:rounded-md focus:bg-background focus:px-3 focus:py-2 focus:ring-3 focus:ring-ring"
         href="#content"
       >
         Skip to content
@@ -29,7 +29,7 @@ export function AppShell() {
         <div className="mx-auto flex h-14 w-full max-w-5xl items-center gap-2 px-4 sm:gap-4 sm:px-6">
           <Link
             to="/"
-            className="rounded-md text-base font-semibold tracking-tight outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+            className="rounded-md text-base font-semibold tracking-tight outline-none focus-visible:ring-3 focus-visible:ring-ring"
           >
             Shinan
           </Link>
@@ -71,7 +71,10 @@ function WorkspaceSwitcher() {
     <DropdownMenu>
       <DropdownMenuTrigger
         render={
-          <Button variant="outline" className="max-w-48 min-w-0 sm:max-w-64" />
+          <Button
+            variant="outline"
+            className="max-w-48 min-w-0 shrink sm:max-w-64"
+          />
         }
       >
         <span className="truncate">
@@ -100,7 +103,7 @@ function WorkspaceSwitcher() {
               className="justify-between gap-4 aria-[current=page]:font-medium"
             >
               <span className="truncate">{workspace.name}</span>
-              <span className="text-xs text-muted-foreground">
+              <span className="text-xs text-foreground/70">
                 {roleNames[workspace.role]}
               </span>
             </DropdownMenuLinkItem>

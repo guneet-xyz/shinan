@@ -62,9 +62,15 @@ function ManageInvitations() {
   )
 
   return (
-    <div className="flex max-w-3xl flex-col gap-6">
+    <section
+      aria-labelledby="invitations-heading"
+      className="flex max-w-3xl flex-col gap-6"
+    >
+      <h2 id="invitations-heading" className="text-lg font-semibold">
+        Invitations
+      </h2>
       <InviteForm onInvited={invitations.reload} />
-      <Section title="Sent invitations">
+      <Section level={3} title="Sent invitations">
         {invitations.data ? (
           <InvitationList
             invitations={invitations.data}
@@ -76,7 +82,7 @@ function ManageInvitations() {
           <Loading />
         )}
       </Section>
-    </div>
+    </section>
   )
 }
 
@@ -104,6 +110,7 @@ function InviteForm(props: { onInvited: () => void }) {
 
   return (
     <Section
+      level={3}
       title="Invite someone"
       description="Every member can read and change everything in this workspace, including infrastructure details and work from private repositories. The address must be on this installation's email allowlist; an installation operator adds it."
     >

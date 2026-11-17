@@ -21,21 +21,26 @@ export function PageHeader(props: { title: ReactNode; children?: ReactNode }) {
   )
 }
 
-/** One part of a page: a card with a heading that names the section. */
+/**
+ * One part of a page: a card with a heading that names the section. `level`
+ * 3 is for a section inside another headed section.
+ */
 export function Section(props: {
   title: ReactNode
+  level?: 2 | 3
   description?: ReactNode
   children?: ReactNode
   className?: string
 }) {
   const headingId = useId()
+  const Heading = props.level === 3 ? "h3" : "h2"
   return (
     <section aria-labelledby={headingId} className={props.className}>
       <Card className="max-sm:[--card-spacing:--spacing(4)]">
         <CardHeader>
-          <h2 id={headingId} className="text-base font-semibold">
+          <Heading id={headingId} className="text-base font-semibold">
             {props.title}
-          </h2>
+          </Heading>
           {props.description && (
             <CardDescription>{props.description}</CardDescription>
           )}

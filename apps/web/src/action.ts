@@ -31,11 +31,11 @@ export function useAction(): Action {
 
   const run = (change: () => Promise<unknown>, onDone?: () => void) => {
     // The control that started the change; it is disabled while pending, so
-    // the browser moves focus away from it.
+    // the browser moves focus away from it. Safari does not focus buttons on
+    // click, so there it is the page itself: then nothing is remembered.
+    const active = document.activeElement
     const started =
-      document.activeElement instanceof HTMLElement
-        ? document.activeElement
-        : null
+      active instanceof HTMLElement && active !== document.body ? active : null
     setPending(true)
     setError(undefined)
     change().then(

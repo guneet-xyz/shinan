@@ -131,8 +131,13 @@ declarative mode for its pages. It is styled with
 components on [Base UI](https://base-ui.com/react/overview/quick-start),
 copied into `apps/web/src/components/ui`
 ([D-055](docs/decisions/D-055-tailwind-and-shadcn.md)). Add another with
-`pnpm exec shadcn add <component>` from `apps/web`; `components.json`
-holds the settings. Light and dark follow the device's setting. Screens are
+`pnpm dlx shadcn@4.23.0 add <component>` from `apps/web` (`components.json`
+holds the settings; the CLI is not a dependency), then check its colours and
+focus ring against the theme test (`apps/web/src/theme.test.ts`) and give its
+focus styles the full `ring-ring` colour. `index.css` carries the variants
+from `shadcn/tailwind.css` that the components use. Light and dark follow the
+device's setting. Text meets WCAG AA contrast (4.5:1) and focus indicators
+3:1 in both themes. Screens are
 narrow first, for phones. The page may have no inline `<style>` or script
 (the Content Security Policy refuses them): `main.tsx` turns off Base UI's
 inline style tags with `CSPProvider`, and `index.css` carries their rules. The

@@ -41,7 +41,7 @@ export function SettingsLayout() {
 
   const tab = ({ isActive }: { isActive: boolean }) =>
     cn(
-      "inline-flex h-8 shrink-0 items-center justify-center rounded-md px-3 text-sm font-medium whitespace-nowrap text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50",
+      "inline-flex h-8 shrink-0 items-center justify-center rounded-md px-3 text-sm font-medium whitespace-nowrap text-foreground/70 transition-colors outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring",
       isActive && "bg-background text-foreground shadow-sm dark:bg-input/30",
     )
 
@@ -49,7 +49,12 @@ export function SettingsLayout() {
     <div className="flex flex-col gap-6">
       <PageHeader title={workspace.name}>Workspace settings</PageHeader>
       <nav aria-label="Workspace settings" className="-mt-2 sm:self-start">
-        <div className="grid grid-cols-2 gap-1 rounded-lg bg-muted p-1 sm:flex">
+        <div
+          className={cn(
+            "grid gap-1 rounded-lg bg-muted p-1 sm:flex",
+            owner ? "grid-cols-2" : "grid-cols-3",
+          )}
+        >
           <NavLink to="general" className={tab}>
             General
           </NavLink>
