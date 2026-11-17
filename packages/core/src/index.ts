@@ -180,3 +180,6 @@ export type {
   SecurityAlert,
   SecurityAlertEmail,
 } from "./email/templates.js"
+// The catalog document model is pure, like the templates: it reads text and
+// bypasses no check. Catalog operations with permissions are built on it.
+export * from "./catalog/document/index.js"

@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest"
 
-import { agentTokenPrefix, productName } from "./index.js"
+import {
+  agentTokenPrefix,
+  parseCatalogDocument,
+  parserVersion,
+  productName,
+} from "./index.js"
 
 describe("core", () => {
   it("exports the product name", () => {
@@ -9,5 +14,12 @@ describe("core", () => {
 
   it("exports a recognisable agent-token prefix", () => {
     expect(agentTokenPrefix).toBe("shinan_agent_")
+  })
+
+  it("exports the catalog document model", () => {
+    expect(parserVersion).toBe(1)
+    expect(parseCatalogDocument("---\nid: start-here\n---\n").kind).toBe(
+      "start-here",
+    )
   })
 })
