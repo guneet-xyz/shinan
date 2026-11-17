@@ -93,6 +93,28 @@ single-page app; no Next.js.
 | CLI             | TypeScript compiled to a single executable                                                                                                | Shares the API client with the plugin.                                                                                                                             |
 | OpenCode plugin | TypeScript                                                                                                                                | OpenCode loads `.ts` and `.js` plugins ([docs](https://opencode.ai/docs/plugins/), checked 2026-11-16).                                                            |
 
+**Decided (owner, [D-055](decisions/D-055-tailwind-and-shadcn.md)):** the web
+app is styled with [Tailwind CSS](https://tailwindcss.com/docs) and built from
+[shadcn/ui](https://ui.shadcn.com/docs) components, copied into
+`apps/web/src/components/ui`. Reason: the owner wants shadcn components
+because they look better.
+
+**Proposed** (M1-8, [#75](https://github.com/guneet-xyz/shinan/issues/75);
+versions checked 2026-11-17: Tailwind CSS 4.3, shadcn 4.23, Base UI 1.9):
+
+- Tailwind CSS v4 through its Vite plugin, set up as shadcn's
+  [Vite guide](https://ui.shadcn.com/docs/installation/vite) describes, with
+  `apps/web/src/index.css` as the stylesheet.
+- Components on [Base UI](https://base-ui.com/react/overview/quick-start)
+  rather than Radix, in shadcn's `vega` style with the neutral base colour.
+  Reason: Base UI's `CSPProvider` turns off the few inline `<style>` tags its
+  components add, so the Content Security Policy stays strict
+  ([10.2](#102-web-hardening)); Radix's dialogs add an inline `<style>` tag
+  to lock page scrolling, which the policy refuses.
+- Light and dark follow the device's setting (`prefers-color-scheme`), with
+  no switch. Reason: choosing the theme before the first paint would need an
+  inline script, which the policy refuses.
+
 **Proposed:** keep business logic and authorization in plain modules that do
 not import the web framework. Reason: a framework change stays possible, and no
 authorization lives only in framework middleware (the class of bug behind

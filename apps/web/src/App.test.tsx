@@ -1,4 +1,5 @@
 import { screen, waitFor, within } from "@testing-library/react"
+import userEvent from "@testing-library/user-event"
 import { describe, expect, it, vi } from "vitest"
 
 import {
@@ -74,13 +75,35 @@ describe("the app shell", () => {
     renderApp(`/w/${workspaceId}/settings/general`, api)
 
     const banner = await screen.findByRole("banner")
-    const links = within(banner).getAllByRole("link")
-    expect(links.map((l) => l.textContent)).toEqual([
-      "Shinan",
+    expect(
+      within(banner)
+        .getAllByRole("link")
+        .map((l) => l.textContent),
+    ).toEqual(["Shinan", "Your account"])
+
+    await userEvent.click(
+      within(banner).getByRole("button", {
+        name: /^Team\s*\(switch workspace\)$/,
+      }),
+    )
+    const menu = await screen.findByRole("menu")
+    const items = within(menu).getAllByRole("menuitem")
+    expect(items.map((item) => item.textContent)).toEqual([
       "TeamWorkspace owner",
       "OtherContributor",
-      "Your account",
     ])
+    expect(items[0]!.getAttribute("aria-current")).toBe("page")
+    expect(items[1]!.getAttribute("href")).toBe(
+      "/w/66666666-6666-4666-8666-666666666666",
+    )
+
+    await userEvent.click(items[1]!)
+    await waitFor(() =>
+      expect(currentPath()).toBe(
+        "/w/66666666-6666-4666-8666-666666666666/settings/general",
+      ),
+    )
+    expect(screen.queryByRole("menu")).toBeNull()
   })
 
   it("answers not found for unknown pages", async () => {

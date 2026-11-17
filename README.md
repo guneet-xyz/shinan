@@ -125,10 +125,19 @@ node dist/cli.js account change-email <handle> <email>   # change their address 
 ### Web app and API
 
 The web app (`apps/web`) uses [React Router](https://reactrouter.com/) in
-declarative mode for its pages and one plain stylesheet
-(`apps/web/src/styles.css`, narrow screens first) with no CSS framework or
-design system. It talks to the server only through `@shinan/api-client`,
-which also defines the REST API's JSON shapes and error codes.
+declarative mode for its pages. It is styled with
+[Tailwind CSS](https://tailwindcss.com/docs) v4 (stylesheet
+`apps/web/src/index.css`) and built from [shadcn/ui](https://ui.shadcn.com/docs)
+components on [Base UI](https://base-ui.com/react/overview/quick-start),
+copied into `apps/web/src/components/ui`
+([D-055](docs/decisions/D-055-tailwind-and-shadcn.md)). Add another with
+`pnpm exec shadcn add <component>` from `apps/web`; `components.json`
+holds the settings. Light and dark follow the device's setting. Screens are
+narrow first, for phones. The page may have no inline `<style>` or script
+(the Content Security Policy refuses them): `main.tsx` turns off Base UI's
+inline style tags with `CSPProvider`, and `index.css` carries their rules. The
+web app talks to the server only through `@shinan/api-client`, which also
+defines the REST API's JSON shapes and error codes.
 
 API handlers in `apps/server/src/api` only translate: they call one core
 operation and map its errors (`NotFoundError` to 404, `ForbiddenError` to 403,

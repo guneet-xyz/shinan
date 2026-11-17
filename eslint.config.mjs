@@ -39,5 +39,11 @@ export default defineConfig([
     files: ["apps/web/src/test/**", "apps/web/src/**/*.test.tsx"],
     rules: { "react-refresh/only-export-components": "off" },
   },
+  {
+    // shadcn/ui components, kept as shadcn ships them, export their style
+    // helpers (such as `buttonVariants`) next to the components.
+    files: ["apps/web/src/components/ui/**"],
+    rules: { "react-refresh/only-export-components": "off" },
+  },
   prettier,
 ])

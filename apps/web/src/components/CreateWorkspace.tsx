@@ -2,6 +2,9 @@ import { useState } from "react"
 import type { FormEvent } from "react"
 import { useNavigate } from "react-router"
 
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+
 import { useAccount } from "../account"
 import { useAction } from "../action"
 import { useApi } from "../api"
@@ -35,20 +38,22 @@ export function CreateWorkspace() {
   }
 
   return (
-    <form onSubmit={submit} className="inline">
-      <label htmlFor="new-workspace-name" className="visually-hidden">
-        New workspace name
-      </label>
-      <input
-        id="new-workspace-name"
-        required
-        placeholder="Workspace name"
-        value={name}
-        onChange={(event) => setName(event.target.value)}
-      />
-      <button type="submit" disabled={create.pending}>
-        Create workspace
-      </button>
+    <form onSubmit={submit} className="flex flex-col gap-3">
+      <div className="flex flex-col gap-2 sm:flex-row">
+        <label htmlFor="new-workspace-name" className="sr-only">
+          New workspace name
+        </label>
+        <Input
+          id="new-workspace-name"
+          required
+          placeholder="Workspace name"
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+        />
+        <Button type="submit" disabled={create.pending}>
+          Create workspace
+        </Button>
+      </div>
       {create.error !== undefined && <ErrorMessage error={create.error} />}
     </form>
   )

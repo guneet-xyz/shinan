@@ -4,9 +4,17 @@ import type { FormEvent } from "react"
 import { roles } from "@shinan/api-client"
 import type { Invitation, InvitationState, Role } from "@shinan/api-client"
 
+import { Badge } from "@/components/ui/badge"
+import type { badgeVariants } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
+import { Input } from "@/components/ui/input"
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select"
+
 import { useAction } from "../../action"
 import { useApi, useResource } from "../../api"
-import { ErrorMessage, Loading } from "../../components/status"
+import { Actions, Facts, Rows, Section } from "../../components/page"
+import { ErrorMessage, Loading, Notice } from "../../components/status"
 import { formatDate, roleNames } from "../../format"
 import { useWorkspace } from "./context"
 
@@ -18,6 +26,17 @@ const stateNames: Record<InvitationState, string> = {
   withdrawn: "Withdrawn",
 }
 
+const stateBadges: Record<
+  InvitationState,
+  NonNullable<Parameters<typeof badgeVariants>[0]>["variant"]
+> = {
+  pending: "default",
+  accepted: "secondary",
+  declined: "outline",
+  expired: "outline",
+  withdrawn: "outline",
+}
+
 /**
  * Invitations (human experience, Workspace settings; identity §5.2). Joining
  * a workspace needs one; whether the address may have an account at all is
@@ -27,10 +46,11 @@ export function Invitations() {
   const { workspace } = useWorkspace()
   if (workspace.role === "owner") return <ManageInvitations />
   return (
-    <section aria-labelledby="invitations-heading">
-      <h2 id="invitations-heading">Invitations</h2>
-      <p>Only workspace owners invite people and manage invitations.</p>
-    </section>
+    <Section title="Invitations">
+      <p className="text-sm text-muted-foreground">
+        Only workspace owners invite people and manage invitations.
+      </p>
+    </Section>
   )
 }
 
@@ -42,21 +62,21 @@ function ManageInvitations() {
   )
 
   return (
-    <section aria-labelledby="invitations-heading">
-      <h2 id="invitations-heading">Invitations</h2>
+    <div className="flex max-w-3xl flex-col gap-6">
       <InviteForm onInvited={invitations.reload} />
-      <h3>Sent invitations</h3>
-      {invitations.data ? (
-        <InvitationList
-          invitations={invitations.data}
-          reload={invitations.reload}
-        />
-      ) : invitations.error ? (
-        <ErrorMessage error={invitations.error} />
-      ) : (
-        <Loading />
-      )}
-    </section>
+      <Section title="Sent invitations">
+        {invitations.data ? (
+          <InvitationList
+            invitations={invitations.data}
+            reload={invitations.reload}
+          />
+        ) : invitations.error ? (
+          <ErrorMessage error={invitations.error} />
+        ) : (
+          <Loading />
+        )}
+      </Section>
+    </div>
   )
 }
 
@@ -83,40 +103,47 @@ function InviteForm(props: { onInvited: () => void }) {
   }
 
   return (
-    <form onSubmit={send} className="stack card">
-      <h3>Invite someone</h3>
-      <p className="muted">
-        Every member can read and change everything in this workspace, including
-        infrastructure details and work from private repositories. The address
-        must be on this installation&apos;s email allowlist; an installation
-        operator adds it.
-      </p>
-      <label htmlFor="invite-email">Email address</label>
-      <input
-        id="invite-email"
-        type="email"
-        required
-        value={email}
-        onChange={(event) => setEmail(event.target.value)}
-      />
-      <label htmlFor="invite-role">Role</label>
-      <select
-        id="invite-role"
-        value={role}
-        onChange={(event) => setRole(event.target.value as Role)}
-      >
-        {roles.map((r) => (
-          <option key={r} value={r}>
-            {roleNames[r]}
-          </option>
-        ))}
-      </select>
-      <button type="submit" disabled={invite.pending}>
-        Send invitation
-      </button>
-      {sentTo && <p role="status">Invitation sent to {sentTo}.</p>}
-      {invite.error !== undefined && <ErrorMessage error={invite.error} />}
-    </form>
+    <Section
+      title="Invite someone"
+      description="Every member can read and change everything in this workspace, including infrastructure details and work from private repositories. The address must be on this installation's email allowlist; an installation operator adds it."
+    >
+      <form onSubmit={send}>
+        <FieldGroup>
+          <Field>
+            <FieldLabel htmlFor="invite-email">Email address</FieldLabel>
+            <Input
+              id="invite-email"
+              type="email"
+              required
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+            />
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="invite-role">Role</FieldLabel>
+            <NativeSelect
+              id="invite-role"
+              className="w-full sm:w-64"
+              value={role}
+              onChange={(event) => setRole(event.target.value as Role)}
+            >
+              {roles.map((r) => (
+                <NativeSelectOption key={r} value={r}>
+                  {roleNames[r]}
+                </NativeSelectOption>
+              ))}
+            </NativeSelect>
+          </Field>
+          <div>
+            <Button type="submit" disabled={invite.pending}>
+              Send invitation
+            </Button>
+          </div>
+          {sentTo && <Notice>Invitation sent to {sentTo}.</Notice>}
+          {invite.error !== undefined && <ErrorMessage error={invite.error} />}
+        </FieldGroup>
+      </form>
+    </Section>
   )
 }
 
@@ -125,7 +152,7 @@ function InvitationList(props: {
   reload: () => void
 }) {
   if (props.invitations.length === 0) {
-    return <p className="muted">No invitations yet.</p>
+    return <p className="text-sm text-muted-foreground">No invitations yet.</p>
   }
   // Pending invitations first: they are the ones that can still change.
   const sorted = [...props.invitations].sort(
@@ -134,7 +161,7 @@ function InvitationList(props: {
       b.createdAt.localeCompare(a.createdAt),
   )
   return (
-    <ul className="cards">
+    <Rows>
       {sorted.map((invitation) => (
         <InvitationRow
           key={invitation.id}
@@ -142,7 +169,7 @@ function InvitationList(props: {
           reload={props.reload}
         />
       ))}
-    </ul>
+    </Rows>
   )
 }
 
@@ -154,14 +181,14 @@ function InvitationRow(props: { invitation: Invitation; reload: () => void }) {
   const [resent, setResent] = useState(false)
 
   return (
-    <li className="card">
-      <div>
-        <strong>{invitation.email}</strong>{" "}
-        <span className={`badge state-${invitation.state}`}>
+    <li>
+      <div className="flex flex-wrap items-center gap-2">
+        <strong className="font-medium break-all">{invitation.email}</strong>{" "}
+        <Badge variant={stateBadges[invitation.state]}>
           {stateNames[invitation.state]}
-        </span>
+        </Badge>
       </div>
-      <dl className="facts compact">
+      <Facts>
         <dt>Role</dt>
         <dd>{roleNames[invitation.role]}</dd>
         <dt>Invited by</dt>
@@ -174,11 +201,13 @@ function InvitationRow(props: { invitation: Invitation; reload: () => void }) {
             <dd>{formatDate(invitation.expiresAt)}</dd>
           </>
         )}
-      </dl>
+      </Facts>
       {(invitation.state === "pending" || invitation.state === "expired") && (
-        <div className="actions">
-          <button
+        <Actions>
+          <Button
             type="button"
+            variant="outline"
+            size="sm"
             disabled={action.pending}
             onClick={() =>
               action.run(
@@ -191,11 +220,12 @@ function InvitationRow(props: { invitation: Invitation; reload: () => void }) {
             }
           >
             Resend
-          </button>
+          </Button>
           {invitation.state === "pending" && (
-            <button
+            <Button
               type="button"
-              className="danger"
+              variant="destructive"
+              size="sm"
               disabled={action.pending}
               onClick={() =>
                 action.run(
@@ -205,11 +235,11 @@ function InvitationRow(props: { invitation: Invitation; reload: () => void }) {
               }
             >
               Withdraw
-            </button>
+            </Button>
           )}
-        </div>
+        </Actions>
       )}
-      {resent && <p role="status">Sent again.</p>}
+      {resent && <Notice>Sent again.</Notice>}
       {action.error !== undefined && <ErrorMessage error={action.error} />}
     </li>
   )

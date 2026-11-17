@@ -3,9 +3,21 @@ import type { FormEvent } from "react"
 
 import type { AllowlistEntry } from "@shinan/api-client"
 
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+
 import { useAccount } from "../account"
 import { useAction } from "../action"
 import { useApi, useResource } from "../api"
+import {
+  Actions,
+  Confirm,
+  Facts,
+  PageHeader,
+  Rows,
+  Section,
+} from "../components/page"
 import { ErrorMessage, Loading } from "../components/status"
 import { formatDate } from "../format"
 
@@ -16,19 +28,17 @@ import { formatDate } from "../format"
  */
 export function Installation() {
   const { account } = useAccount()
-  if (!account.operator) {
-    return (
-      <>
-        <h1>Installation settings</h1>
-        <p>Only installation operators change installation settings.</p>
-      </>
-    )
-  }
   return (
-    <>
-      <h1>Installation settings</h1>
-      <Allowlist />
-    </>
+    <div className="mx-auto flex max-w-3xl flex-col gap-6">
+      <PageHeader title="Installation settings" />
+      {account.operator ? (
+        <Allowlist />
+      ) : (
+        <p className="text-muted-foreground">
+          Only installation operators change installation settings.
+        </p>
+      )}
+    </div>
   )
 }
 
@@ -37,17 +47,13 @@ function Allowlist() {
   const entries = useResource("allowlist", () => api.allowlist())
 
   return (
-    <section aria-labelledby="allowlist-heading">
-      <h2 id="allowlist-heading">Email allowlist</h2>
-      <p>
-        Only these addresses can have an account. Removing an address ends that
-        person&apos;s sign-in sessions and stops them signing in.
-        Operators&apos; addresses come from the installation&apos;s
-        configuration.
-      </p>
+    <Section
+      title="Email allowlist"
+      description="Only these addresses can have an account. Removing an address ends that person's sign-in sessions and stops them signing in. Operators' addresses come from the installation's configuration."
+    >
       <AddAddress onAdded={entries.reload} />
       {entries.data ? (
-        <ul className="cards">
+        <Rows>
           {entries.data.map((entry) => (
             <AllowlistRow
               key={entry.email}
@@ -55,13 +61,13 @@ function Allowlist() {
               reload={entries.reload}
             />
           ))}
-        </ul>
+        </Rows>
       ) : entries.error ? (
         <ErrorMessage error={entries.error} />
       ) : (
         <Loading />
       )}
-    </section>
+    </Section>
   )
 }
 
@@ -83,21 +89,23 @@ function AddAddress(props: { onAdded: () => void }) {
   }
 
   return (
-    <form onSubmit={submit} className="inline">
-      <label htmlFor="allowlist-email" className="visually-hidden">
-        Email address to allow
-      </label>
-      <input
-        id="allowlist-email"
-        type="email"
-        required
-        placeholder="name@example.com"
-        value={email}
-        onChange={(event) => setEmail(event.target.value)}
-      />
-      <button type="submit" disabled={add.pending}>
-        Add address
-      </button>
+    <form onSubmit={submit} className="flex flex-col gap-3">
+      <div className="flex flex-col gap-2 sm:flex-row">
+        <label htmlFor="allowlist-email" className="sr-only">
+          Email address to allow
+        </label>
+        <Input
+          id="allowlist-email"
+          type="email"
+          required
+          placeholder="name@example.com"
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
+        />
+        <Button type="submit" disabled={add.pending}>
+          Add address
+        </Button>
+      </div>
       {add.error !== undefined && <ErrorMessage error={add.error} />}
     </form>
   )
@@ -110,29 +118,29 @@ function AllowlistRow(props: { entry: AllowlistEntry; reload: () => void }) {
   const [confirming, setConfirming] = useState(false)
 
   return (
-    <li className="card">
-      <div>
-        <strong>{entry.email}</strong>
-        {entry.operator && <span className="badge"> Operator</span>}
+    <li>
+      <div className="flex flex-wrap items-center gap-2">
+        <strong className="font-medium break-all">{entry.email}</strong>
+        {entry.operator && <Badge variant="secondary">Operator</Badge>}
       </div>
-      <dl className="facts compact">
+      <Facts>
         <dt>Account</dt>
         <dd>{entry.handle ?? "None yet"}</dd>
         <dt>Added</dt>
         <dd>{formatDate(entry.addedAt)}</dd>
-      </dl>
+      </Facts>
       {!entry.operator &&
         (confirming ? (
-          <div className="confirm">
+          <Confirm>
             <p>
               Remove {entry.email}?
               {entry.handle &&
                 ` ${entry.handle} is signed out everywhere and can no longer sign in.`}
             </p>
-            <div className="actions">
-              <button
+            <Actions>
+              <Button
                 type="button"
-                className="danger"
+                variant="destructive"
                 disabled={remove.pending}
                 onClick={() =>
                   remove.run(
@@ -145,26 +153,27 @@ function AllowlistRow(props: { entry: AllowlistEntry; reload: () => void }) {
                 }
               >
                 Remove
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
-                className="quiet"
+                variant="ghost"
                 onClick={() => setConfirming(false)}
               >
                 Cancel
-              </button>
-            </div>
-          </div>
+              </Button>
+            </Actions>
+          </Confirm>
         ) : (
-          <div className="actions">
-            <button
+          <Actions>
+            <Button
               type="button"
-              className="danger"
+              variant="destructive"
+              size="sm"
               onClick={() => setConfirming(true)}
             >
               Remove…
-            </button>
-          </div>
+            </Button>
+          </Actions>
         ))}
       {remove.error !== undefined && <ErrorMessage error={remove.error} />}
     </li>

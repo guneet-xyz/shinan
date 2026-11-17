@@ -33,6 +33,11 @@ export default defineConfig({
       },
       {
         extends: true,
+        resolve: {
+          alias: {
+            "@": fileURLToPath(new URL("./apps/web/src", import.meta.url)),
+          },
+        },
         test: {
           name: "web",
           root: "apps/web",

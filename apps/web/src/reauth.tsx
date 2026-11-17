@@ -1,10 +1,21 @@
-import { useCallback, useState } from "react"
+import { useCallback, useRef, useState } from "react"
 import type { ReactNode } from "react"
 import { useLocation } from "react-router"
 
+import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+
 import { ReauthContext } from "./action"
 import { useApi } from "./api"
-import { Dialog } from "./components/Dialog"
+import { ErrorAlert } from "./components/status"
 import { signInErrorMessage } from "./messages"
 import { leaveApp } from "./navigation"
 
@@ -15,18 +26,31 @@ import { leaveApp } from "./navigation"
  */
 export function ReauthProvider(props: { email: string; children: ReactNode }) {
   const [open, setOpen] = useState(false)
-  const ask = useCallback(() => setOpen(true), [])
-  const close = useCallback(() => setOpen(false), [])
+  const returnFocus = useRef<HTMLElement | null>(null)
+  const ask = useCallback((from: HTMLElement | null) => {
+    returnFocus.current = from
+    setOpen(true)
+  }, [])
 
   return (
     <ReauthContext value={ask}>
       {props.children}
-      {open && <ReauthDialog email={props.email} onClose={close} />}
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent
+          showCloseButton={false}
+          finalFocus={() =>
+            returnFocus.current?.isConnected ? returnFocus.current : true
+          }
+        >
+          <ReauthDialog email={props.email} />
+        </DialogContent>
+      </Dialog>
     </ReauthContext>
   )
 }
 
-function ReauthDialog(props: { email: string; onClose: () => void }) {
+/** The dialog's content; it starts afresh each time the dialog opens. */
+function ReauthDialog(props: { email: string }) {
   const api = useApi()
   const location = useLocation()
   const callbackURL = location.pathname + location.search
@@ -47,38 +71,39 @@ function ReauthDialog(props: { email: string; onClose: () => void }) {
   }
 
   return (
-    <Dialog title="Sign in again to continue" onClose={props.onClose}>
-      {sent ? (
-        <p>
-          We sent a sign-in link to <strong>{props.email}</strong>. Open it,
-          then try again.
-        </p>
-      ) : (
-        <>
-          <p>
-            For your safety, this action needs a recent sign-in. Sign in again,
-            then try the action once more.
-          </p>
-          <div className="actions">
-            <button type="button" onClick={sendLink}>
-              Email me a sign-in link
-            </button>
-            <button type="button" onClick={useGitHub}>
-              Sign in with GitHub
-            </button>
-          </div>
-        </>
+    <>
+      <DialogHeader>
+        <DialogTitle>Sign in again to continue</DialogTitle>
+        <DialogDescription>
+          {sent ? (
+            <>
+              We sent a sign-in link to{" "}
+              <strong className="text-foreground">{props.email}</strong>. Open
+              it, then try again.
+            </>
+          ) : (
+            "For your safety, this action needs a recent sign-in. Sign in again, then try the action once more."
+          )}
+        </DialogDescription>
+      </DialogHeader>
+      {!sent && (
+        <div className="flex flex-col gap-2">
+          <Button type="button" onClick={sendLink}>
+            Email me a sign-in link
+          </Button>
+          <Button type="button" variant="outline" onClick={useGitHub}>
+            Sign in with GitHub
+          </Button>
+        </div>
       )}
       {error !== undefined && (
-        <p className="error" role="alert">
-          {signInErrorMessage(error)}
-        </p>
+        <ErrorAlert>{signInErrorMessage(error)}</ErrorAlert>
       )}
-      <div className="actions">
-        <button type="button" className="quiet" onClick={props.onClose}>
+      <DialogFooter>
+        <DialogClose render={<Button type="button" variant="ghost" />}>
           {sent ? "Close" : "Cancel"}
-        </button>
-      </div>
-    </Dialog>
+        </DialogClose>
+      </DialogFooter>
+    </>
   )
 }
