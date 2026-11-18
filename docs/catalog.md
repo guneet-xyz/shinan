@@ -157,16 +157,30 @@ lines, then a Markdown body.
   limit (at most 452 blocks and 220 lazy lines, counted this way, across the
   `workspace` repository and Shinan's own documents).
 
-  Emphasis, inline HTML and hard line breaks are not parsed in the body
-  model, which uses only headings and links. Longer or more complex
-  documents are refused (`too-large`, `body-invalid`). Reason: the Markdown
-  parser's time grows with the square of these shapes on hostile input (a
-  64 KB body of nested lists took over a minute), and every proposal, MCP
-  write and index rebuild reads documents. The scan cannot be proven
-  complete, so proposal and MCP text is also read off the main event loop
-  with a time limit
+  Longer or more complex documents are refused (`too-large`,
+  `body-invalid`). Reason: the limits were set when the body model used a
+  Markdown parser (micromark) whose time grows with the square of these
+  shapes on hostile input (a 64 KB body of nested lists took over a minute),
+  and every proposal, MCP write and index rebuild reads documents. The scan
+  cannot be proven complete, so proposal and MCP text is also read off the
+  main event loop with a time limit
   ([security checklist 10.8](security-checklist.md#10-features-not-built-yet);
   M2-4, M2-6).
+
+- **Proposed (M2-1b, [#102](https://github.com/guneet-xyz/shinan/issues/102)):**
+  the body is read with markdown-it, in one shared configuration
+  (`@shinan/markdown`) that the wiki renders with too, so the server and the
+  wiki agree on what is a heading and what is a link: CommonMark plus
+  GitHub-style tables and strikethrough, raw HTML shown as text, no
+  automatic links from bare addresses, no typographic replacements, and a
+  nesting limit (100 levels) above anything the depth limit lets through.
+  markdown-it reads every hostile shape above in about linear time (the
+  slowest, 64 KiB of `[`, in about 0.15 s), so the count limits are no
+  longer needed for speed; they are kept as a cheap guard, and the depth
+  limit is what keeps markdown-it from silently stopping at its nesting
+  limit. Reason: the parser that showed the quadratic cases is replaced
+  rather than fenced in, and the reader in the wiki is protected the same
+  way as the server.
 
 ### 2.2 Export: the exit path
 

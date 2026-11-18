@@ -1,6 +1,10 @@
-import type { Nodes, Root } from "mdast"
-import { fromMarkdown } from "mdast-util-from-markdown"
-import { toString } from "mdast-util-to-string"
+import { createMarkdown } from "@shinan/markdown"
+import type {
+  MarkdownIt,
+  StateBlock,
+  StateInline,
+  Token,
+} from "@shinan/markdown"
 
 import { bodyShape, tooComplex } from "./limits.js"
 import type { Range } from "./source.js"
@@ -29,7 +33,11 @@ export interface Section {
   anchor: string | null
   /** From the heading's first character to the next heading at any level, or the end of the body. */
   range: Range
-  /** The heading line itself; null for the text before the first heading. */
+  /**
+   * The heading itself, from its first character to the end of its last
+   * line (both lines of an underlined heading); null for the text before the
+   * first heading.
+   */
   headingRange: Range | null
   /** Exactly the source text of `range`. */
   text: string
@@ -47,26 +55,22 @@ export interface BodyLink {
    * validation's job.
    */
   reference: string | null
+  /**
+   * Where the link is written: from `[` (or `<`, `![`) to the closing `)`
+   * or `>`, or for a definition its first and last lines. If the text
+   * cannot be found where the parser read it (a tab inside a list item
+   * that the parser expanded to spaces), the range covers the line.
+   */
   range: Range
 }
 
 /**
- * Markdown constructs the body model never uses, turned off: emphasis,
- * inline HTML and hard line breaks. Emphasis (`attention`) and inline HTML
- * take quadratic time in micromark on hostile input such as repeated `*a_`
- * or `<!--`. Heading text keeps any literal `*` or `_`, which anchors drop
- * anyway. Links, code, headings, quotes, lists and HTML blocks stay, since
- * they decide what is a heading or a link.
+ * The parser: Shinan's shared Markdown configuration (`@shinan/markdown`,
+ * the same one the wiki renders with), plus rules that note where each link
+ * and definition is written, since markdown-it keeps source lines for
+ * blocks but no positions for inline content.
  */
-const options = {
-  extensions: [
-    {
-      disable: {
-        null: ["attention", "htmlText", "hardBreakEscape", "hardBreakTrailing"],
-      },
-    },
-  ],
-}
+const markdown = withPositions(createMarkdown())
 
 /**
  * Thrown when a body goes past the limits of `limits.ts`;
@@ -78,28 +82,40 @@ export class BodyTooComplexError extends Error {}
 export function parseBody(text: string, offset: number): Body {
   const refusal = tooComplex(bodyShape(text))
   if (refusal) throw new BodyTooComplexError(refusal)
-  const tree = fromMarkdown(text, options)
+  const tokens = markdown.parse(text, {})
+  const lines = new Lines(text)
   return {
     range: { start: offset, end: offset + text.length },
     text,
-    sections: splitSections(tree, text, offset),
-    links: collectLinks(tree, offset),
+    sections: splitSections(tokens, lines, text, offset),
+    links: collectLinks(tokens, lines, offset),
   }
 }
 
-function splitSections(tree: Root, text: string, offset: number): Section[] {
-  const headings = tree.children.flatMap((node) =>
-    node.type === "heading" && node.position?.start.offset !== undefined
-      ? [
-          {
-            start: node.position.start.offset,
-            end: node.position.end.offset ?? node.position.start.offset,
-            level: node.depth,
-            heading: toString(node),
-          },
-        ]
-      : [],
-  )
+interface Heading {
+  start: number
+  end: number
+  level: number
+  heading: string
+}
+
+function splitSections(
+  tokens: Token[],
+  lines: Lines,
+  text: string,
+  offset: number,
+): Section[] {
+  const headings: Heading[] = []
+  tokens.forEach((token, i) => {
+    if (token.type !== "heading_open" || token.level !== 0 || !token.map) return
+    const [first, after] = token.map
+    headings.push({
+      start: lines.firstText(first),
+      end: lines.end(after - 1, true),
+      level: Number(token.tag.slice(1)),
+      heading: plainText(tokens[i + 1]?.children ?? []),
+    })
+  })
   const sections: Section[] = []
   const first = headings[0]?.start ?? text.length
   if (first > 0 || headings.length === 0) {
@@ -127,35 +143,281 @@ function splitSections(tree: Root, text: string, offset: number): Section[] {
   return sections
 }
 
-function collectLinks(tree: Root, offset: number): BodyLink[] {
+/** The text of inline tokens, without Markdown: what a reader sees. */
+function plainText(children: Token[]): string {
+  let result = ""
+  for (const token of children) {
+    if (token.type === "text" || token.type === "code_inline")
+      result += token.content
+    else if (token.type === "image") result += plainText(token.children ?? [])
+    else if (token.type === "softbreak" || token.type === "hardbreak")
+      result += "\n"
+  }
+  return result
+}
+
+function collectLinks(
+  tokens: Token[],
+  lines: Lines,
+  offset: number,
+): BodyLink[] {
   const links: BodyLink[] = []
-  // An explicit stack, not recursion: deeply nested quotes or lists must not
-  // overflow the call stack.
-  const stack: Nodes[] = [tree]
-  while (stack.length > 0) {
-    const node = stack.pop() as Nodes
-    if (
-      (node.type === "link" ||
-        node.type === "image" ||
-        node.type === "definition") &&
-      node.position?.start.offset !== undefined
-    ) {
-      links.push({
-        kind: node.type,
-        url: node.url,
-        reference: referenceTarget(node.url),
-        range: {
-          start: offset + node.position.start.offset,
-          end:
-            offset + (node.position.end.offset ?? node.position.start.offset),
-        },
-      })
+  // Table cells carry no lines of their own; their row's do.
+  let lastMap: [number, number] | null = null
+  const cursor = new Map<number, number>()
+  for (const token of tokens) {
+    if (token.map) lastMap = token.map
+    if (token.type === "reference_definition" && token.map) {
+      const meta = token.meta as { href?: string } | null
+      if (meta?.href === undefined) continue
+      const [first, after] = token.map
+      const start = lines.indexOf(first, "[") ?? lines.firstText(first)
+      links.push(
+        link("definition", meta.href, {
+          start: offset + start,
+          end: offset + lines.end(after - 1, true),
+        }),
+      )
+      continue
     }
-    if ("children" in node)
-      for (let i = node.children.length - 1; i >= 0; i--)
-        stack.push(node.children[i] as Nodes)
+    if (token.type !== "inline" || !lastMap) continue
+    const place = new ContentPlace(
+      token.content,
+      token.map ?? lastMap,
+      lines,
+      cursor,
+    )
+    for (const child of token.children ?? []) {
+      const kind =
+        child.type === "link_open"
+          ? "link"
+          : child.type === "image"
+            ? "image"
+            : null
+      if (!kind) continue
+      const href = String(
+        child.attrGet(kind === "image" ? "src" : "href") ?? "",
+      )
+      const at = child.meta as {
+        start?: number
+        end?: number
+        viaDefinition?: boolean
+      } | null
+      if (at?.viaDefinition) continue
+      const range =
+        at?.start !== undefined && at.end !== undefined
+          ? { start: place.source(at.start), end: place.source(at.end) }
+          : place.whole()
+      links.push(
+        link(kind, href, {
+          start: offset + range.start,
+          end: offset + Math.max(range.start, range.end),
+        }),
+      )
+    }
   }
   return links
+}
+
+function link(kind: BodyLink["kind"], href: string, range: Range): BodyLink {
+  const url = markdown.normalizeLinkText(href)
+  return { kind, url, reference: referenceTarget(url), range }
+}
+
+/** The body's lines, as markdown-it numbers them (`\n`, `\r\n` or `\r` ends one). */
+class Lines {
+  private readonly starts: number[] = [0]
+  private readonly ends: number[] = []
+
+  constructor(readonly text: string) {
+    const breaks = /\r\n?|\n/g
+    for (let m = breaks.exec(text); m; m = breaks.exec(text)) {
+      this.ends.push(m.index)
+      this.starts.push(m.index + m[0].length)
+    }
+    this.ends.push(text.length)
+  }
+
+  get count(): number {
+    return this.starts.length
+  }
+
+  start(line: number): number {
+    return this.starts[Math.min(line, this.count - 1)] ?? this.text.length
+  }
+
+  /** The end of a line, before its line break; with `trim`, before trailing spaces. */
+  end(line: number, trim = false): number {
+    const end = this.ends[Math.min(line, this.count - 1)] ?? this.text.length
+    if (!trim) return end
+    let at = end
+    const start = this.start(line)
+    while (at > start && /[ \t]/.test(this.text[at - 1] ?? "")) at--
+    return at
+  }
+
+  line(line: number): string {
+    return this.text.slice(this.start(line), this.end(line))
+  }
+
+  /** The first character on a line that is not a space or tab. */
+  firstText(line: number): number {
+    const start = this.start(line)
+    const end = this.end(line)
+    let at = start
+    while (at < end && /[ \t]/.test(this.text[at] ?? "")) at++
+    return at < end ? at : start
+  }
+
+  /** Where `search` first appears on a line, or null. */
+  indexOf(line: number, search: string): number | null {
+    const found = this.line(line).indexOf(search)
+    return found < 0 ? null : this.start(line) + found
+  }
+}
+
+/**
+ * Maps offsets in an inline token's content back to the body's text. The
+ * content is the block's lines, each without its quote and list markers and
+ * indentation, joined with line breaks and trimmed; so each line of content
+ * is found at the end of its source line (or, for a table cell or a heading
+ * with closing `#`, inside it).
+ */
+class ContentPlace {
+  private readonly pieces: {
+    content: number
+    source: number | null
+    line: number
+  }[] = []
+
+  constructor(
+    content: string,
+    map: [number, number],
+    private readonly lines: Lines,
+    cursor: Map<number, number>,
+  ) {
+    let at = 0
+    content.split("\n").forEach((piece, i) => {
+      const line = Math.min(map[0] + i, Math.max(map[0], map[1] - 1))
+      const source = lines.line(line)
+      const core = piece.trimStart()
+      const lead = piece.length - core.length
+      let found: number | null = null
+      const trimmed = source.trimEnd()
+      if (core !== "" && trimmed.endsWith(core)) {
+        found = trimmed.length - core.length - lead
+      } else {
+        const from = cursor.get(line) ?? 0
+        const index = core === "" ? -1 : source.indexOf(core, from)
+        if (index >= 0) {
+          found = index - lead
+          cursor.set(line, index + core.length)
+        }
+      }
+      this.pieces.push({
+        content: at,
+        source: found === null ? null : lines.start(line) + Math.max(0, found),
+        line,
+      })
+      at += piece.length + 1
+    })
+  }
+
+  /** The body offset of a content offset. */
+  source(offset: number): number {
+    let piece = this.pieces[0]
+    for (const p of this.pieces) {
+      if (p.content > offset) break
+      piece = p
+    }
+    if (!piece) return 0
+    if (piece.source === null) return this.lines.start(piece.line)
+    return Math.min(
+      piece.source + (offset - piece.content),
+      this.lines.end(piece.line),
+    )
+  }
+
+  /** The lines the content was read from. */
+  whole(): Range {
+    const first = this.pieces[0]?.line ?? 0
+    const last = this.pieces.at(-1)?.line ?? first
+    return { start: this.lines.start(first), end: this.lines.end(last) }
+  }
+}
+
+type InlineRule = (state: StateInline, silent: boolean) => boolean
+type BlockRule = (
+  state: StateBlock,
+  startLine: number,
+  endLine: number,
+  silent: boolean,
+) => boolean
+
+interface RuleList<T> {
+  __rules__: { name: string; fn: T }[]
+}
+
+/**
+ * Adds positions to links and definitions: each link, image and autolink
+ * token gets `meta.start` and `meta.end`, offsets in its inline content;
+ * each definition token gets its destination in `meta.href`, even when its
+ * label repeats an earlier one (markdown-it keeps only the first).
+ */
+function withPositions(md: MarkdownIt): MarkdownIt {
+  // markdown-it has no public way to wrap a rule; its rule list is read
+  // here once, when the parser is set up.
+  const inline = md.inline.ruler as unknown as RuleList<InlineRule>
+  for (const name of ["link", "image", "autolink"]) {
+    const rule = inline.__rules__.find((r) => r.name === name)?.fn
+    if (!rule) throw new Error(`markdown-it has no inline rule "${name}"`)
+    md.inline.ruler.at(name, (state, silent) => {
+      const start = state.pos
+      const before = state.tokens.length
+      const matched = rule(state, silent)
+      if (matched && !silent) {
+        const token = state.tokens
+          .slice(before)
+          .find((t) => t.type === "link_open" || t.type === "image")
+        if (token) {
+          const written = state.src.slice(start, state.pos)
+          // A reference-style link (`[text][label]`) takes its destination
+          // from a definition, which is listed itself.
+          const viaDefinition = name !== "autolink" && !written.includes("](")
+          token.meta = { ...token.meta, start, end: state.pos, viaDefinition }
+        }
+      }
+      return matched
+    })
+  }
+  const block = md.block.ruler as unknown as RuleList<BlockRule>
+  const reference = block.__rules__.find((r) => r.name === "reference")?.fn
+  if (!reference) throw new Error('markdown-it has no block rule "reference"')
+  md.block.ruler.at("reference", (state, startLine, endLine, silent) => {
+    const env = state.env as { references?: Record<string, unknown> }
+    const kept = env.references
+    const own: Record<string, { href: string }> = {}
+    env.references = own
+    let matched: boolean
+    try {
+      matched = reference(state, startLine, endLine, silent)
+    } finally {
+      env.references = kept ?? {}
+      for (const [label, value] of Object.entries(own))
+        if (!(label in env.references)) env.references[label] = value
+    }
+    if (matched && !silent) {
+      const token = state.tokens.at(-1)
+      const href = Object.values(own)[0]?.href
+      if (token?.type === "reference_definition" && href !== undefined)
+        token.meta = { ...token.meta, href }
+    }
+    return matched
+  })
+  // Keep the definition tokens: markdown-it drops them before reading
+  // inline content, but the body model lists definitions as links.
+  md.core.ruler.disable("strip_references")
+  return md
 }
 
 /** The entity ID a link destination names, or null if it is not a reference. */

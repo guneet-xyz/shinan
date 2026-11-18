@@ -51,6 +51,7 @@ COPY packages/api-client/package.json packages/api-client/
 COPY packages/core/package.json packages/core/
 COPY packages/db/package.json packages/db/
 COPY packages/email/package.json packages/email/
+COPY packages/markdown/package.json packages/markdown/
 RUN --mount=type=cache,id=shinan-pnpm,target=/pnpm/store,sharing=locked \
     pnpm install --frozen-lockfile --prod --no-optional \
       --filter "@shinan/server..." --store-dir /pnpm/store
@@ -68,6 +69,7 @@ COPY --from=build /src/packages/core/dist packages/core/dist
 COPY --from=build /src/packages/db/dist packages/db/dist
 COPY --from=build /src/packages/db/migrations packages/db/migrations
 COPY --from=build /src/packages/email/dist packages/email/dist
+COPY --from=build /src/packages/markdown/dist packages/markdown/dist
 # Every owner and mode set here rather than kept from whatever pnpm, the
 # build context's checkout or a cached layer left: root, directories 755,
 # files 644 or 755 if executable. Done here because the runtime stage has
