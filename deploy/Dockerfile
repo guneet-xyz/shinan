@@ -25,12 +25,14 @@ COPY package.json ./
 RUN npm install --global corepack@0.36.0 && corepack enable && pnpm --version
 
 # Everything, built: the server, the packages it uses and the web app.
+# BuildKit runs this stage and `production` at the same time; the store's
+# cache mount is locked so that only one pnpm writes it at a time.
 FROM pnpm AS build
 COPY pnpm-lock.yaml pnpm-workspace.yaml ./
-RUN --mount=type=cache,id=shinan-pnpm,target=/pnpm/store \
+RUN --mount=type=cache,id=shinan-pnpm,target=/pnpm/store,sharing=locked \
     pnpm fetch --store-dir /pnpm/store
 COPY . .
-RUN --mount=type=cache,id=shinan-pnpm,target=/pnpm/store \
+RUN --mount=type=cache,id=shinan-pnpm,target=/pnpm/store,sharing=locked \
     pnpm install --offline --frozen-lockfile --store-dir /pnpm/store
 RUN pnpm build
 
@@ -49,7 +51,7 @@ COPY packages/api-client/package.json packages/api-client/
 COPY packages/core/package.json packages/core/
 COPY packages/db/package.json packages/db/
 COPY packages/email/package.json packages/email/
-RUN --mount=type=cache,id=shinan-pnpm,target=/pnpm/store \
+RUN --mount=type=cache,id=shinan-pnpm,target=/pnpm/store,sharing=locked \
     pnpm install --frozen-lockfile --prod --no-optional \
       --filter "@shinan/server..." --store-dir /pnpm/store
 # Native code built here would be for the build machine, not the target.
@@ -72,14 +74,17 @@ COPY --from=build /src/packages/email/dist packages/email/dist
 # by root and not writable by that user, so the server cannot change its own
 # code even where the root file system is writable. The base image already
 # runs as `nonroot`, and WORKDIR would create /app as that user, so COPY
-# creates it first (as root). The first-start test checks this.
+# creates it first (as root). COPY also sets every owner and mode itself
+# (directories 755, files 644, or 755 if executable) rather than keeping
+# whatever pnpm, the build context's checkout or a cached layer left. The
+# first-start test checks this.
 FROM gcr.io/distroless/nodejs26-debian13:nonroot@sha256:1d736cf8b5716c07a245301f92717143215d248fd55771ee1936ef4b3302e531
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
     PORT=3000 \
     INTERNAL_HOST=127.0.0.1 \
     INTERNAL_PORT=3001
-COPY --from=production /src /app
+COPY --from=production --chown=0:0 --chmod=u=rwX,go=rX /src /app
 WORKDIR /app
 USER nonroot
 EXPOSE 3000
