@@ -552,6 +552,26 @@ indexing (**Proposed**).
     at `/api/installation/catalog-index`; workspaces whose index is behind
     get a rebuild instead. The text → parse → apply no operations → text half
     of rule 5 joins the job when operations as text edits (M2-2) land.
+  - **Sharing the worker's event loop** (**proposed**,
+    [#135](https://github.com/guneet-xyz/shinan/issues/135)). Rebuilds and
+    the daily check run in the `worker` process beside every other job
+    (email, invitations, clean-ups), so they give the event loop back
+    between documents (and between the revisions of a long history) once
+    50 ms of work have passed since the last time. The result does not
+    depend on when they yield (rule 5 still holds), and the index lock is
+    held as before. Measured on Daedalus (load 11 to 15) in a container
+    limited to 384 MiB (V8 heap limit 268 MiB), on the production base
+    image, with the longest the event loop was held before → after:
+    5,000 entities 2.3 s → 80 ms; 20,000 entities 7.1 s → 104 to 176 ms;
+    1,000 entities with 48 KB of body each (48 MB) 6.7 s → 137 ms; a 50 ms
+    timer ran at most 126 ms late. The time to rebuild stayed within the
+    machine's noise (20,000 entities: 69 to 103 s against 81 s before). Memory
+    stayed well inside the limit: RSS peak 127 MiB at 20,000 entities, as
+    before; with the large bodies 219 to 243 MiB against 191 MiB before, heap
+    82 to 91 MiB of 268.
+    Reason: a job waiting seconds delays sign-in links and invitations;
+    yields are cheaper and simpler than moving the rebuild to a worker
+    thread, which would need the database reads moved there too.
 - **As built (M2-4, [#86](https://github.com/guneet-xyz/shinan/issues/86)),
   proposed:**
   - **Proposals and revisions.** A catalog proposal is stored with its

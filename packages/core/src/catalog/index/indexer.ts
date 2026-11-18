@@ -22,6 +22,7 @@ import { attributeSections } from "./attribution.js"
 import type { AttributedSection, RevisionAuthor } from "./attribution.js"
 import { deriveDocumentRows, indexRulesVersion } from "./derive.js"
 import type { DocumentRows } from "./derive.js"
+import { pauser } from "./pause.js"
 import { Provenance } from "./provenance.js"
 import {
   latestRevision,
@@ -330,7 +331,7 @@ async function replayDocument(
     workspaceId,
     history.map((h) => h.revision),
   )
-  const { attribution, provenance } = replay(history, authors)
+  const { attribution, provenance } = await replay(history, authors, pauser())
   return { attribution, provenance }
 }
 
@@ -345,16 +346,18 @@ async function replayDocument(
  * with its own failures caught (`parseCatalogDocument`). Only a bug that
  * throws while reading frontmatter (`read-failed`) would empty the sections
  * of a revision this skips; the daily round-trip check would then report
- * the document.
+ * the document. `pause` is called between revisions read, so a long
+ * history never holds the event loop for long.
  */
-function replay(
+async function replay(
   history: readonly StoredText[],
   authors: ReadonlyMap<number, RevisionAuthor>,
-): {
+  pause: () => Promise<void>,
+): Promise<{
   attribution: AttributedSection[]
   provenance: Provenance
   document: CatalogDocument | null
-} {
+}> {
   let attribution: AttributedSection[] = []
   const provenance = new Provenance()
   let document: CatalogDocument | null = null
@@ -368,6 +371,8 @@ function replay(
     previousBody = body
     previousFits = fits
     if (unchanged && !last) continue
+    // A long history gives the event loop back between revisions.
+    await pause()
     const read = parseCatalogDocument(text)
     if (last) document = read
     const author = authors.get(revision)
@@ -471,13 +476,17 @@ const registryCacheSize = 32
  * text of every document, read with the type schemas of the same revision,
  * and each document's history for its section credits. Calls `sink` with
  * the rows of each batch of documents, so a large catalog is never held in
- * memory at once.
+ * memory at once. Gives the event loop back between documents, every
+ * `eventLoopBudgetMs` at most, so a rebuild or the daily check never holds
+ * up the other jobs of the worker's process for long (#135); what it derives
+ * does not depend on when it yields.
  */
 export async function deriveWorkspace(
   tx: Transaction,
   workspaceId: string,
   sink: (rows: DocumentRows[]) => Promise<void>,
   batchSize = 200,
+  pause: () => Promise<void> = pauser(),
 ): Promise<number> {
   const latest = await latestTexts(tx, workspaceId)
   // Only type schema documents are needed before the rest, so only their
@@ -485,6 +494,7 @@ export async function deriveWorkspace(
   const schemas: SchemaDocument[] = []
   const schemaIds = new Set<string>()
   for (const { documentId, text } of latest) {
+    await pause()
     if (!readDocumentId(text)?.startsWith(schemaIdPrefix)) continue
     const document = parseCatalogDocument(text)
     if (document.kind === "schema") schemas.push(document)
@@ -509,7 +519,12 @@ export async function deriveWorkspace(
       while (end < history.length && history[end]!.documentId === documentId)
         end++
       const own = history.slice(start, end)
-      const { attribution, provenance, document } = replay(own, authors)
+      await pause()
+      const { attribution, provenance, document } = await replay(
+        own,
+        authors,
+        pause,
+      )
       if (document?.kind === "schema" && !schemaIds.has(documentId))
         throw new Error(
           `Document ${documentId} is a type schema document that reading its frontmatter missed`,
@@ -637,12 +652,14 @@ export async function compareWorkspaceIndex(
   workspaceId: string,
 ): Promise<IndexComparison> {
   const differences: IndexCheckDifference[] = []
+  const pause = pauser()
   const documents = await deriveWorkspace(tx, workspaceId, async (batch) => {
     const stored = await storedRows(
       tx,
       batch.map((b) => b.document.documentId),
     )
     for (const derived of batch) {
+      await pause()
       const id = derived.document.documentId
       const differing = (Object.keys(tables) as TableName[]).filter(
         (name) =>
