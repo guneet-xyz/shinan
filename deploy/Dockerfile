@@ -68,23 +68,27 @@ COPY --from=build /src/packages/core/dist packages/core/dist
 COPY --from=build /src/packages/db/dist packages/db/dist
 COPY --from=build /src/packages/db/migrations packages/db/migrations
 COPY --from=build /src/packages/email/dist packages/email/dist
+# Every owner and mode set here rather than kept from whatever pnpm, the
+# build context's checkout or a cached layer left: root, directories 755,
+# files 644 or 755 if executable. Done here because the runtime stage has
+# no shell, and not with `COPY --chmod`, whose `X` older builders (BuildKit
+# before v0.21, as in Docker Engine before 28.1) ignore without an error.
+RUN chown -R 0:0 /src && chmod -R u=rwX,go=rX /src
 
 # Distroless: Node.js and nothing else, no shell or package manager. Runs as
 # the unprivileged `nonroot` user (65532). /app and everything in it is owned
 # by root and not writable by that user, so the server cannot change its own
 # code even where the root file system is writable. The base image already
 # runs as `nonroot`, and WORKDIR would create /app as that user, so COPY
-# creates it first (as root). COPY also sets every owner and mode itself
-# (directories 755, files 644, or 755 if executable) rather than keeping
-# whatever pnpm, the build context's checkout or a cached layer left. The
-# first-start test checks this.
+# creates it first (as root) and keeps the owners and modes the `production`
+# stage set. The first-start test checks this.
 FROM gcr.io/distroless/nodejs26-debian13:nonroot@sha256:1d736cf8b5716c07a245301f92717143215d248fd55771ee1936ef4b3302e531
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
     PORT=3000 \
     INTERNAL_HOST=127.0.0.1 \
     INTERNAL_PORT=3001
-COPY --from=production --chown=0:0 --chmod=u=rwX,go=rX /src /app
+COPY --from=production /src /app
 WORKDIR /app
 USER nonroot
 EXPOSE 3000
