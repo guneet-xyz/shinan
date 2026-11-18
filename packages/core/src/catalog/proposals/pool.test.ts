@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest"
 
 import * as fixtures from "../../../test/catalog-index-fixtures.js"
+import { parseCatalogDocument } from "../document/index.js"
 import { CatalogWorker } from "./pool.js"
 import type { LatestDocument } from "./pool.js"
 import type { PrepareInput } from "./work.js"
@@ -51,6 +52,12 @@ describe("the catalog worker", () => {
       outcome: "ready",
       documents: [{ documentId: "b" }],
     })
+    // What comes back by structured clone is the parse of its own text, as
+    // appendCatalogRevision requires.
+    if (first.outcome !== "ready") throw new Error(first.outcome)
+    const [written] = first.documents
+    expect(written!.parsed.text).toBe(written!.text)
+    expect(written!.parsed).toEqual(parseCatalogDocument(written!.text))
     // The cache holds one document, so the worker dropped `a` and said so.
     await worker.prepare(documents, load, input)
     await worker.prepare(
