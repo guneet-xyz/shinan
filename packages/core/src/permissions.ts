@@ -108,6 +108,16 @@ export const rules = deepFreeze({
     shinan: false,
     reauthentication: true,
   },
+  /**
+   * Shinan records pending invitations past their expiry as `expired`, with
+   * the event, in a scheduled job (identity §5.2, §11).
+   */
+  "invitation.expire": {
+    level: "installation",
+    access: "write",
+    people: false,
+    shinan: true,
+  },
   /** A person accepts or declines an invitation to their address (§5.2). */
   "invitation.respond": {
     level: "installation",

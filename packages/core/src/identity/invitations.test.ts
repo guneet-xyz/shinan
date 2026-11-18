@@ -9,6 +9,7 @@ import {
   startTestJobQueue,
   testDatabase,
 } from "../../test/helpers.js"
+import { shinan } from "../actor.js"
 import type { Context } from "../context.js"
 import {
   ForbiddenError,
@@ -22,6 +23,7 @@ import {
   acceptInvitation,
   createInvitation,
   declineInvitation,
+  expireInvitations,
   findInvitation,
   listInvitations,
   listInvitationsForYou,
@@ -195,6 +197,12 @@ describe("createInvitation", () => {
     expect(states).toEqual([
       [again.id, "pending"],
       [invitation.id, "expired"],
+    ]) // Its expiry is recorded as the job would, credited to Shinan.
+    const expired = (await listEvents(as(owner), workspaceId)).filter(
+      (e) => e.kind === "invitation.expired",
+    )
+    expect(expired).toMatchObject([
+      { actorKind: "shinan", subjects: [{ id: invitation.id }] },
     ])
   })
 
@@ -361,5 +369,188 @@ describe("declineInvitation", () => {
     await expect(
       declineInvitation(as(invitee), { invitationId: invitation.id }),
     ).rejects.toBeInstanceOf(NotFoundError)
+  })
+})
+
+describe("expireInvitations", () => {
+  async function pastExpiry(id: string, minutes = 5) {
+    await db
+      .update(schema.invitations)
+      .set({ expiresAt: sql`now() - make_interval(mins => ${minutes})` })
+      .where(eq(schema.invitations.id, id))
+  }
+
+  it("records pending invitations past their expiry once, as Shinan", async () => {
+    const { invitation } = await invite()
+    await pastExpiry(invitation.id)
+    const other = await newPerson(db, "other")
+    await db
+      .insert(schema.emailAllowlist)
+      .values({ email: other.email })
+      .onConflictDoNothing()
+    const current = await createInvitation(as(owner), {
+      workspaceId,
+      email: other.email,
+      role: "contributor",
+    })
+
+    expect(await expireInvitations({ db, actor: shinan })).toBeGreaterThan(0)
+    const [stored] = await db
+      .select()
+      .from(schema.invitations)
+      .where(eq(schema.invitations.id, invitation.id))
+    expect(stored).toMatchObject({ state: "expired" })
+    // As of its expiry, not of the job's run.
+    expect(stored!.decidedAt).toEqual(stored!.expiresAt)
+    const [still] = await db
+      .select()
+      .from(schema.invitations)
+      .where(eq(schema.invitations.id, current.id))
+    expect(still).toMatchObject({ state: "pending", decidedAt: null })
+
+    const events = (await listEvents(as(owner), workspaceId)).filter(
+      (e) => e.kind === "invitation.expired",
+    )
+    expect(events).toMatchObject([
+      {
+        actorKind: "shinan",
+        actorLabel: "shinan",
+        subjects: [{ type: "invitation", id: invitation.id }],
+        data: { email: invitee.email, role: "contributor" },
+      },
+    ])
+    const entries = (await listSecurityLog(as(owner), workspaceId)).filter(
+      (e) => e.action === "invitation.expired",
+    )
+    expect(entries).toMatchObject([
+      {
+        actorKind: "shinan",
+        outcome: "succeeded",
+        subjectPersonId: invitee.id,
+        details: { invitationId: invitation.id },
+      },
+    ])
+
+    // A second run finds nothing more to record for it.
+    await expireInvitations({ db, actor: shinan })
+    expect(
+      (await listEvents(as(owner), workspaceId)).filter(
+        (e) => e.kind === "invitation.expired",
+      ),
+    ).toHaveLength(1)
+    // And the owners' list shows it as expired, as before.
+    expect(
+      (await listInvitations(as(owner), workspaceId)).find(
+        (i) => i.id === invitation.id,
+      ),
+    ).toMatchObject({ state: "expired" })
+  })
+
+  it("leaves answered and withdrawn invitations alone", async () => {
+    const { invitation } = await invite()
+    await withdrawInvitation(as(owner), {
+      workspaceId,
+      invitationId: invitation.id,
+    })
+    await pastExpiry(invitation.id)
+    await expireInvitations({ db, actor: shinan })
+    const [stored] = await db
+      .select()
+      .from(schema.invitations)
+      .where(eq(schema.invitations.id, invitation.id))
+    expect(stored).toMatchObject({ state: "withdrawn" })
+  })
+
+  it("lets an owner send a recorded-expired invitation again, reopening it", async () => {
+    const { invitation } = await invite()
+    await pastExpiry(invitation.id)
+    await expireInvitations({ db, actor: shinan })
+    const resent = await resendInvitation(as(owner), {
+      workspaceId,
+      invitationId: invitation.id,
+    })
+    expect(resent).toMatchObject({ id: invitation.id, state: "pending" })
+    const [stored] = await db
+      .select()
+      .from(schema.invitations)
+      .where(eq(schema.invitations.id, invitation.id))
+    expect(stored).toMatchObject({ state: "pending", decidedAt: null })
+    // The new link works.
+    const token = await latestToken(invitee.email)
+    await acceptInvitation(as(invitee), { token })
+  })
+
+  it("refuses to reopen an expired invitation that a newer one replaced", async () => {
+    const { invitation } = await invite()
+    await pastExpiry(invitation.id)
+    const { invitation: newer } = await invite()
+    await expect(
+      resendInvitation(as(owner), {
+        workspaceId,
+        invitationId: invitation.id,
+      }),
+    ).rejects.toMatchObject({ rule: "already-invited" })
+    // The newer one can be sent again as usual.
+    await resendInvitation(as(owner), {
+      workspaceId,
+      invitationId: newer.id,
+    })
+  })
+
+  it("never deadlocks with an owner changing the workspace's invitations", async () => {
+    const { invitation } = await invite()
+    await pastExpiry(invitation.id)
+    // An owner inviting the address again: the workspace is locked first,
+    // then the old invitation is updated.
+    const owner_ = await pool.connect()
+    try {
+      await owner_.query("begin")
+      await owner_.query("select id from workspaces where id = $1 for update", [
+        workspaceId,
+      ])
+      const job = expireInvitations({ db, actor: shinan })
+      // Let the job reach this workspace while the owner holds it.
+      await new Promise((resolve) => setTimeout(resolve, 300))
+      await owner_.query(
+        "update invitations set state = 'expired', decided_at = expires_at where id = $1",
+        [invitation.id],
+      )
+      await owner_.query("commit")
+      // The job leaves the busy workspace for its next run.
+      await expect(job).resolves.toEqual(expect.any(Number))
+    } finally {
+      owner_.release()
+    }
+    const events = (await listEvents(as(owner), workspaceId)).filter(
+      (e) => e.kind === "invitation.expired",
+    )
+    expect(events).toEqual([])
+  })
+
+  it("records the expiry of a replaced invitation as Shinan's, with no request", async () => {
+    const { invitation } = await invite()
+    await pastExpiry(invitation.id)
+    await invite()
+    const [event] = (await listEvents(as(owner), workspaceId)).filter(
+      (e) => e.kind === "invitation.expired",
+    )
+    expect(event).toMatchObject({
+      actorKind: "shinan",
+      origin: "shinan_action",
+    })
+    const [entry] = (await listSecurityLog(as(owner), workspaceId)).filter(
+      (e) => e.action === "invitation.expired",
+    )
+    expect(entry).toMatchObject({
+      actorKind: "shinan",
+      networkAddress: null,
+      client: null,
+    })
+  })
+
+  it("is Shinan's own job", async () => {
+    await expect(expireInvitations(as(owner))).rejects.toBeInstanceOf(
+      ForbiddenError,
+    )
   })
 })

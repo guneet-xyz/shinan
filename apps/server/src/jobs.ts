@@ -7,6 +7,7 @@ import {
   deliverEmail,
   emailQueue,
   EmailRetryError,
+  expireInvitations,
   getInstallation,
   jobQueues,
   pruneEmailDeliveries,
@@ -53,6 +54,11 @@ export const queues = {
    * security log (identity §11).
    */
   agentTokenUse: "agent-token-use",
+  /**
+   * Hourly: records pending invitations past their expiry as expired, with
+   * the event (identity §5.2).
+   */
+  invitationExpiry: "invitation-expiry",
   /**
    * Daily: the agent index's round-trip check, text → parse → index
    * compared with the stored index (architecture §5.2, rule 5), and rebuilds
@@ -176,6 +182,14 @@ export async function startWorker(options: WorkerOptions): Promise<Worker> {
         db: options.db,
         actor: shinan,
       }),
+    })),
+  )
+
+  await boss.createQueue(queues.invitationExpiry)
+  await boss.schedule(queues.invitationExpiry, "35 * * * *")
+  await boss.work(queues.invitationExpiry, polling, () =>
+    safely(queues.invitationExpiry, async () => ({
+      expired: await expireInvitations({ db: options.db, actor: shinan }),
     })),
   )
 

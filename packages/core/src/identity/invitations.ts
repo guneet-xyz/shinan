@@ -1,10 +1,12 @@
 import { alias, and, desc, eq, gt, isNull, or, schema, sql } from "@shinan/db"
 import type { InvitationState, Role, Transaction } from "@shinan/db"
 
+import type { ResolvedActor } from "../actor.js"
 import {
   atInstallation,
   inWorkspace,
   joinWorkspaceByInvitation,
+  shinanInWorkspace,
 } from "../authorize.js"
 import type { Context, WorkspaceScope } from "../context.js"
 import { queueEmail } from "../email/queue.js"
@@ -108,10 +110,8 @@ export async function createInvitation(
           "That address already has a pending invitation; send it again instead",
         )
       }
-      await scope.tx
-        .update(schema.invitations)
-        .set({ state: "expired", decidedAt: sql`now()` })
-        .where(eq(schema.invitations.id, earlier.id))
+      // Replaced before the expiry job reached it: recorded as it would.
+      await recordExpired(scope, earlier)
     }
 
     const token = newToken()
@@ -152,12 +152,34 @@ export async function resendInvitation(
   input: { workspaceId: string; invitationId: string },
 ): Promise<Invitation> {
   return inWorkspace(ctx, input.workspaceId, "member.invite", async (scope) => {
-    const invitation = await pendingInvitation(scope, input.invitationId)
+    // The workspace first, as everything that changes its invitations.
+    await lockWorkspace(scope)
+    const invitation = await invitationToResend(scope, input.invitationId)
     await checkInvitable(scope, invitation.email)
+    if (invitation.state === "expired") {
+      // Reopened only while it is still the address's latest invitation.
+      const [newer] = await scope.tx
+        .select({ id: schema.invitations.id })
+        .from(schema.invitations)
+        .where(
+          and(
+            eq(schema.invitations.workspaceId, scope.workspaceId),
+            eq(schema.invitations.email, invitation.email),
+            eq(schema.invitations.state, "pending"),
+          ),
+        )
+      if (newer)
+        throw new RuleViolationError(
+          "already-invited",
+          "That address already has a newer pending invitation; send that one again instead",
+        )
+    }
     const token = newToken()
     const [updated] = await scope.tx
       .update(schema.invitations)
       .set({
+        state: "pending",
+        decidedAt: null,
         tokenHash: hashToken(token),
         expiresAt: sql`now() + make_interval(days => ${invitationDays})`,
       })
@@ -371,6 +393,112 @@ function invitationsForYou(tx: Transaction) {
     .innerJoin(inviterPerson, eq(inviterPerson.id, inviter.personId))
 }
 
+/** Shinan as it is recorded: an invitation's expiry is credited to it. */
+const shinanResolved: ResolvedActor = Object.freeze({
+  kind: "shinan",
+  personId: null,
+  agentId: null,
+  agentSessionId: null,
+  label: "shinan",
+  confidence: "recorded",
+  member: null,
+  operator: false,
+})
+
+/**
+ * Marks a pending invitation past its expiry as `expired`, as of its
+ * expiry, and records it: an `invitation.expired` event and security-log
+ * entry, credited to Shinan, as a Shinan action with no request of its own
+ * (identity §5.2, §11), whichever request found it expired.
+ */
+async function recordExpired(
+  scope: WriteScope,
+  invitation: typeof schema.invitations.$inferSelect,
+): Promise<void> {
+  const [expired] = await scope.tx
+    .update(schema.invitations)
+    .set({ state: "expired", decidedAt: invitation.expiresAt })
+    .where(
+      and(
+        eq(schema.invitations.id, invitation.id),
+        eq(schema.invitations.state, "pending"),
+      ),
+    )
+    .returning()
+  if (!expired) return
+  const asShinan = {
+    ...scope,
+    actor: shinanResolved,
+    origin: "shinan_action" as const,
+    request: {},
+  } as WriteScope
+  await recordInvitation(asShinan, "invitation.expired", expired, {
+    summary: `The invitation for ${expired.email} expired`,
+  })
+}
+
+/** How many invitations one run of the expiry job records at most. */
+export const expiryBatch = 500
+
+/**
+ * Records every pending invitation past its expiry as `expired` (identity
+ * §5.2): the scheduled job's work, hourly. Until it runs, reads already show
+ * such an invitation as expired, and it cannot be accepted. Returns how many
+ * it recorded; a run takes at most `expiryBatch`, and the next run the rest.
+ *
+ * One short transaction per workspace, which locks the workspace row first,
+ * as inviting and resending do, so the job never deadlocks with them; a
+ * workspace busy with such a change is left for the next run, and a failure
+ * in one workspace does not undo the others.
+ */
+export async function expireInvitations(ctx: Context): Promise<number> {
+  const workspaces = await atInstallation(
+    ctx,
+    "invitation.expire",
+    async (installation) =>
+      (
+        await installation.tx
+          .selectDistinct({ workspaceId: schema.invitations.workspaceId })
+          .from(schema.invitations)
+          .where(dueForExpiry)
+      ).map((row) => row.workspaceId),
+  )
+  let recorded = 0
+  for (const workspaceId of workspaces) {
+    if (recorded >= expiryBatch) break
+    recorded += await atInstallation(
+      ctx,
+      "invitation.expire",
+      async (installation) => {
+        const [locked] = await installation.tx
+          .select({ id: schema.workspaces.id })
+          .from(schema.workspaces)
+          .where(eq(schema.workspaces.id, workspaceId))
+          .for("update", { skipLocked: true })
+        if (!locked) return 0
+        const scope = shinanInWorkspace(installation, workspaceId)
+        const due = await installation.tx
+          .select()
+          .from(schema.invitations)
+          .where(
+            and(eq(schema.invitations.workspaceId, workspaceId), dueForExpiry),
+          )
+          .orderBy(schema.invitations.expiresAt, schema.invitations.id)
+          .limit(expiryBatch - recorded)
+          .for("update")
+        for (const invitation of due) await recordExpired(scope, invitation)
+        return due.length
+      },
+    )
+  }
+  return recorded
+}
+
+const dueForExpiry = and(
+  eq(schema.invitations.state, "pending"),
+  sql`${schema.invitations.expiresAt} <= now()`,
+)
+
 function withExpiry<T extends { state: InvitationState; expiresAt: Date }>(
   row: T,
 ): T {
@@ -425,6 +553,30 @@ async function checkInvitable(
       "Someone with that address is already a member",
     )
   }
+}
+
+/**
+ * An invitation that may be sent again: pending, or expired (whether or not
+ * the expiry job has recorded it yet).
+ */
+async function invitationToResend(scope: WorkspaceScope, invitationId: string) {
+  if (!isId(invitationId)) throw new NotFoundError()
+  const [invitation] = await scope.tx
+    .select()
+    .from(schema.invitations)
+    .where(
+      and(
+        eq(schema.invitations.id, invitationId),
+        eq(schema.invitations.workspaceId, scope.workspaceId),
+        or(
+          eq(schema.invitations.state, "pending"),
+          eq(schema.invitations.state, "expired"),
+        ),
+      ),
+    )
+    .for("update")
+  if (!invitation) throw new NotFoundError()
+  return invitation
 }
 
 async function pendingInvitation(scope: WorkspaceScope, invitationId: string) {

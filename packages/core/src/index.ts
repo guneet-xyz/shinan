@@ -82,6 +82,8 @@ export {
   acceptInvitation,
   createInvitation,
   declineInvitation,
+  expireInvitations,
+  expiryBatch,
   findInvitation,
   invitationDays,
   listInvitations,

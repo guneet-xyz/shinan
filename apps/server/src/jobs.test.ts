@@ -135,6 +135,8 @@ describe("worker", () => {
     expect(rateLimits?.cron).toBe("20 * * * *")
     const tokenUse = await worker.boss.getSchedule(queues.agentTokenUse)
     expect(tokenUse?.cron).toBe("25 * * * *")
+    const expiry = await worker.boss.getSchedule(queues.invitationExpiry)
+    expect(expiry?.cron).toBe("35 * * * *")
     const indexCheck = await worker.boss.getSchedule(queues.catalogIndexCheck)
     expect(indexCheck?.cron).toBe("40 3 * * *")
   })
@@ -235,6 +237,27 @@ describe("worker", () => {
         })
         expect(job?.state).toBe("completed")
         expect(job?.output).toEqual({ deleted: expect.any(Number) as number })
+      },
+      { timeout: 10_000, interval: 200 },
+    )
+  })
+
+  it("records expired invitations", async () => {
+    worker = await startWorker({
+      databaseUrl,
+      db,
+      emailSender,
+      pollingIntervalSeconds: 0.5,
+    })
+    const id = await worker.boss.send(queues.invitationExpiry)
+
+    await vi.waitFor(
+      async () => {
+        const [job] = await worker!.boss.findJobs(queues.invitationExpiry, {
+          id: id!,
+        })
+        expect(job?.state).toBe("completed")
+        expect(job?.output).toEqual({ expired: expect.any(Number) as number })
       },
       { timeout: 10_000, interval: 200 },
     )

@@ -31,11 +31,15 @@ export interface RequestInfo {
 declare const scopeBrand: unique symbol
 
 /**
- * Actions a workspace scope can be for: the workspace actions, and creating
- * the workspace, whose first owner acts in it straight away.
+ * Actions a workspace scope can be for: the workspace actions, creating the
+ * workspace, whose first owner acts in it straight away, accepting an
+ * invitation, and Shinan recording an invitation's expiry in its workspace.
  */
 export type WorkspaceScopeAction =
-  WorkspaceAction | "workspace.create" | "invitation.respond"
+  | WorkspaceAction
+  | "workspace.create"
+  | "invitation.respond"
+  | "invitation.expire"
 
 /**
  * Proof that the permission check passed for one action in one workspace.
