@@ -1,5 +1,5 @@
-import { useState } from "react"
-import { Link } from "react-router"
+import { useEffect, useState } from "react"
+import { Link, useLocation } from "react-router"
 
 import type {
   AgentStartHerePreviewAnswer,
@@ -15,7 +15,8 @@ import { PageHeader, Section } from "../../components/page"
 import { ErrorMessage, Loading } from "../../components/status"
 import { useWorkspace } from "../workspace/context"
 import { EntityLink, linkClass, MaybeLink } from "./facts"
-import { agentPathWarningBytes, sizeText, wikiPath } from "./format"
+import { agentPathWarningBytes, entityPath, sizeText, wikiPath } from "./format"
+import { Markdown } from "./markdown"
 import { IndexBehind, PageNotice, SavedNotice } from "./notices"
 
 /**
@@ -36,21 +37,49 @@ export function StartHerePage() {
     const ids = (people.start_here?.steps ?? []).flatMap((s) =>
       "to" in s ? [s.to] : [],
     )
-    const opened =
+    const [opened, editable] = await Promise.all([
       ids.length === 0
         ? { items: [] }
-        : await api.catalogPagesOpened(workspace.id, ids)
-    return { people, agents, preview, opened: opened.items }
+        : api.catalogPagesOpened(workspace.id, ids),
+      // The document's own text, so links to its sections land on them.
+      people.start_here
+        ? api
+            .catalogEditable(workspace.id, "start-here")
+            // Optional: the paths are shown without it.
+            .catch(() => null)
+        : null,
+    ])
+    return {
+      people,
+      agents,
+      preview,
+      opened: opened.items,
+      body: editable?.document.body.sections ?? [],
+    }
   })
+  const location = useLocation()
+  const loaded = paths.data !== undefined
+  // A link to one of its sections (`#section-…`) scrolls there once the
+  // page has its text, as on an entity page.
+  useEffect(() => {
+    if (!loaded || location.hash.length < 2) return
+    let target: string
+    try {
+      target = decodeURIComponent(location.hash.slice(1))
+    } catch {
+      return
+    }
+    document.getElementById(target)?.scrollIntoView()
+  }, [loaded, location.hash])
 
   if (paths.error) return <ErrorMessage error={paths.error} />
   if (!paths.data) return <Loading />
-  const { people, agents, preview, opened } = paths.data
-  const document = people.start_here
+  const { people, agents, preview, opened, body } = paths.data
+  const startHere = people.start_here
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title={document?.title ?? "Start here"}>
-        {document?.summary ??
+      <PageHeader title={startHere?.title ?? "Start here"}>
+        {startHere?.summary ??
           "The path through this workspace's catalog, for people and for agents."}
       </PageHeader>
       <SavedNotice workspaceId={workspace.id} />
@@ -59,11 +88,11 @@ export function StartHerePage() {
           to={wikiPath(workspace.id, "/edit/start-here")}
           className={buttonVariants({ variant: "outline" })}
         >
-          {document ? "Suggest a change" : "Write Start here"}
+          {startHere ? "Suggest a change" : "Write Start here"}
         </Link>
       </div>
       <IndexBehind behind={people.index_behind || agents.index_behind} />
-      {!document ? (
+      {!startHere ? (
         <PageNotice>
           This workspace has no start-here document yet. It is written like any
           catalog document, and changing it needs catalog approval.
@@ -74,11 +103,11 @@ export function StartHerePage() {
             title="For people"
             description="Each step says whether you have opened it, and whether it changed since you did."
           >
-            {document.steps.length === 0 ? (
+            {startHere.steps.length === 0 ? (
               <p className="text-sm text-muted-foreground">No steps yet.</p>
             ) : (
               <ol className="flex flex-col gap-3">
-                {document.steps.map((step, i) => (
+                {startHere.steps.map((step, i) => (
                   <li key={i} className="flex gap-3 text-sm">
                     <span
                       aria-hidden="true"
@@ -107,6 +136,17 @@ export function StartHerePage() {
             answer={agents}
             preview={preview}
           />
+          {body.some((s) => s.text.trim() !== "") && (
+            <Section title="About these paths">
+              <Markdown
+                text={body.map((s) => s.text).join("")}
+                anchors={body
+                  .filter((s) => s.heading !== null)
+                  .map((s) => s.anchor)}
+                entityPath={(id) => entityPath(workspace.id, id)}
+              />
+            </Section>
+          )}
         </>
       )}
     </div>

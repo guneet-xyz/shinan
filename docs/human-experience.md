@@ -894,7 +894,9 @@ details of the page as built.
   The page itself shows the catalog as it is now. Recent changes also say
   who approved each revision.
 - **Links** in the body to a type schema document (`schema/<type>`) open
-  the type's page, and links to `start-here` open Start here; the
+  the type's page, and links to `start-here` open Start here, which shows
+  the document's own text under its paths, so a link to one of its sections
+  lands on it; the
   "Waiting for approval" step of a start-here path opens catalog review.
 - **A page that could not be read in full** lists what could not be read.
   For a workspace owner it links **Repair this page**; others are told a

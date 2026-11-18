@@ -634,6 +634,75 @@ describe("start here", () => {
   })
 })
 
+describe("Start here's own text", () => {
+  it("is shown with its sections, and a link to one lands on it", async () => {
+    const scrolled: string[] = []
+    const original = Object.getOwnPropertyDescriptor(
+      Element.prototype,
+      "scrollIntoView",
+    )
+    Element.prototype.scrollIntoView = function (this: Element) {
+      scrolled.push(this.id)
+    }
+    try {
+      renderApp(
+        `/w/${workspaceId}/wiki/start-here#section-access`,
+        fakeApi({
+          catalogStartHere: (_w, path) =>
+            Promise.resolve({
+              ...answer,
+              start_here: {
+                path,
+                title: "Start here",
+                summary: null,
+                revision: 2,
+                steps: [],
+              },
+            }),
+          catalogAgentPreview: () =>
+            Promise.resolve({
+              ...answer,
+              start_here: {},
+              text: "{}",
+              bytes: 2,
+            }),
+          catalogEditable: () =>
+            Promise.resolve({
+              ...answer,
+              id: "start-here",
+              revision: 2,
+              document: {
+                kind: "start-here",
+                fields: { title: "Start here", summary: null, owner: null },
+                body: {
+                  text: "# Access\n\nAsk the owner for SSH access.\n",
+                  sections: [
+                    {
+                      anchor: "access",
+                      heading: "Access",
+                      level: 1,
+                      text: "# Access\n\nAsk the owner for SSH access.\n",
+                    },
+                  ],
+                },
+                paths: { people: [], agents: [] },
+              },
+            }),
+        }),
+      )
+      const about = (
+        await screen.findByRole("heading", { name: "About these paths" })
+      ).closest("section")!
+      expect(about.querySelector("#section-access")?.textContent).toBe("Access")
+      await waitFor(() => expect(scrolled).toEqual(["section-access"]))
+    } finally {
+      if (original)
+        Object.defineProperty(Element.prototype, "scrollIntoView", original)
+      else delete (Element.prototype as Partial<Element>).scrollIntoView
+    }
+  })
+})
+
 describe("moving around the wiki", () => {
   it("indexes a type with its schema and a sortable table", async () => {
     renderApp(
