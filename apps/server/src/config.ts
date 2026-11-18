@@ -151,9 +151,9 @@ function readCatalogWorkers(env: Env): WebConfig["catalogWorkers"] {
     "SHINAN_CATALOG_WORKER_HEAP_MB",
   )
   // Below this, a catalog at its limits may not fit (architecture §5.3).
-  if (heapMb < 512)
+  if (heapMb < 640)
     throw new SettingsError(
-      `SHINAN_CATALOG_WORKER_HEAP_MB must be at least 512, got "${heapMb}"`,
+      `SHINAN_CATALOG_WORKER_HEAP_MB must be at least 640, got "${heapMb}"`,
     )
   return { workers, heapMb }
 }

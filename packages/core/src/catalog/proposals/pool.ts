@@ -62,8 +62,9 @@ export const defaultWorkerOptions: Required<CatalogWorkerOptions> = {
   /**
    * 768 MiB. Applying a one-field change to a catalog at its limits peaked
    * at 413 MiB of heap (1,620 documents of 100 facts, the shape that takes
-   * the most), and at 109 to 344 MiB for other shapes. Operators set it
-   * with `SHINAN_CATALOG_WORKER_HEAP_MB`.
+   * the most), and at 109 to 344 MiB for other shapes; the worst shapes
+   * also applied with 640 MiB, the least the server accepts. Operators set
+   * it with `SHINAN_CATALOG_WORKER_HEAP_MB`.
    */
   heapMb: 768,
   /**

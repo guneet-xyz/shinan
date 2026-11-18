@@ -26,11 +26,12 @@ import type { ProposalOutcome } from "./proposals.js"
  *
  * By default a small catalog whose reading is slowed down to take longer
  * than a 1.5 s limit, so the run stays short. Set
- * SHINAN_PROPOSAL_SCALE_DOCUMENTS (such as 1500) for that many documents
- * of about 57 KB, read at full speed under the usual 20 s limit; with
- * SHINAN_PROPOSAL_SCALE_SHAPE=facts, documents of 100 facts instead, the
- * shape that takes the most memory (1,550 of them are at the catalog's
- * limit).
+ * SHINAN_PROPOSAL_SCALE_DOCUMENTS (such as 450) for that many documents
+ * of about 57 KB, read at full speed under the usual 20 s limit. With
+ * SHINAN_PROPOSAL_SCALE_SHAPE, other shapes at their memory limit: `facts`
+ * (100 facts in one check group; 1,600 documents) or `groups` (100 facts
+ * each in its own group; 770 documents). SHINAN_PROPOSAL_SCALE_HEAP_MB
+ * sets the worker's heap, such as the 640 MiB floor.
  */
 
 const { db, pool } = testDatabase()
@@ -50,9 +51,18 @@ let workspaceId: string
 let otherWorkspaceId: string
 let agent: Context
 
-const facts = process.env.SHINAN_PROPOSAL_SCALE_SHAPE === "facts"
+const shape = process.env.SHINAN_PROPOSAL_SCALE_SHAPE
+const facts = shape === "facts"
+const groups = shape === "groups"
+const heapMb = process.env.SHINAN_PROPOSAL_SCALE_HEAP_MB
 
 function machine(i: number, person: string): string {
+  if (groups) {
+    let written = ""
+    for (let k = 0; k < 100; k++)
+      written += `  - checked: 2026-11-${String(1 + (k % 14)).padStart(2, "0")}\n    by: ${owner.handle}\n    scope: Check ${k}\n    source: ssh ${k}\n    observed:\n      x${k}: v${k}\n`
+    return `---\nid: machine/m${i}\ntype: machine\ntitle: Machine ${i}\nsummary: M.\nstatus: active\nowner: ${person}\nfacts:\n${written}---\n\n# M\n`
+  }
   if (facts) {
     let written = ""
     for (let k = 0; k < 100; k++)
@@ -162,7 +172,10 @@ describe("proposals after a restart", () => {
   it("applies the first proposals after a restart, with nobody else waiting on them", async () => {
     // A new set of workers, as after a restart: nothing is parsed yet.
     const workers = large
-      ? new CatalogWorkers({ queuePerWorkspace: 3 })
+      ? new CatalogWorkers({
+          queuePerWorkspace: 3,
+          ...(heapMb ? { heapMb: Number(heapMb) } : {}),
+        })
       : new SlowReading({
           queuePerWorkspace: 3,
           readBatch: 10,

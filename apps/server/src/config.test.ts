@@ -93,9 +93,9 @@ describe("readWebConfig", () => {
     expect(() =>
       readWebConfig({
         NODE_ENV: "development",
-        SHINAN_CATALOG_WORKER_HEAP_MB: "256",
+        SHINAN_CATALOG_WORKER_HEAP_MB: "600",
       }),
-    ).toThrow("SHINAN_CATALOG_WORKER_HEAP_MB must be at least 512")
+    ).toThrow("SHINAN_CATALOG_WORKER_HEAP_MB must be at least 640")
   })
 
   it("reads the internal listener and trusted proxies", () => {

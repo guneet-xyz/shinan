@@ -592,18 +592,21 @@ indexing (**Proposed**).
     - **A proposal past its limit** stops only its own workspace's worker;
       the next proposal there loads that catalog again.
     - **Memory.** Each worker's cache is limited to 384 MiB as estimated by
-      `estimatedBytes`: 3 × text bytes + 1,792 × facts + 256 × body
-      sections + 128 × body links + 16 KiB per document, above the heap
-      measured for every shape tried (typical entities, 100 long-form or
+      `estimatedBytes`: 3 × text bytes + 1,792 × facts + 2,048 × fact
+      check groups + 256 × body sections + 128 × body links + 16 KiB per
+      document, above the heap measured for every shape tried (typical
+      entities, 100 long-form facts in one check group or each in its own,
       365 short facts, 57 KB of prose, 2,000 links). The worker's heap is
-      limited to 768 MiB (`resourceLimits`, `SHINAN_CATALOG_WORKER_HEAP_MB`);
-      one out of memory is stopped like one out of time. A workspace's
+      limited to 768 MiB (`resourceLimits`, `SHINAN_CATALOG_WORKER_HEAP_MB`,
+      at least 640 MiB); one out of memory is stopped like one out of time. A workspace's
       catalog is limited to 5,000 documents, 25 MiB of text and an estimate
       of 320 MiB (catalog §8.2), until validation is incremental
       ([#116](https://github.com/guneet-xyz/shinan/issues/116)). Measured on
       Daedalus under a load of 4 to 5 on 2 cores, a one-field change at
       those limits took 2 to 4.3 s and its heap peaked at 109 to 413 MiB,
-      the most for 1,620 documents of 100 facts.
+      the most for 1,620 documents of 100 facts; the worst shapes at the
+      limit (100 facts in one check group, or each in its own) also
+      applied in a worker with a 640 MiB heap.
     - **A catalog that no longer fits** (only if the estimate were wrong)
       makes proposals there fail with `catalog-too-large`; the `web` log
       and the workspace's security log say so, and the operator raises the

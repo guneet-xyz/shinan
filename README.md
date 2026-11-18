@@ -99,7 +99,7 @@ instead be read from a file: set `NAME_FILE` to its path rather than `NAME`
 | `SIGN_IN_SESSION_IDLE_MINUTES`  | `60`                                                 | A sign-in session ends after this long without activity                                                 |
 | `SIGN_IN_SESSION_MAX_HOURS`     | `24`                                                 | A sign-in session ends after this long in any case                                                      |
 | `SHINAN_CATALOG_WORKERS`        | `1`                                                  | Catalog worker threads in the `web` process ([operator guide](docs/operator-guide.md#catalog-workers))  |
-| `SHINAN_CATALOG_WORKER_HEAP_MB` | `768`                                                | Each catalog worker's heap limit in MiB, at least 512                                                   |
+| `SHINAN_CATALOG_WORKER_HEAP_MB` | `768`                                                | Each catalog worker's heap limit in MiB, at least 640                                                   |
 
 In development the worker sends email to Mailpit; open http://localhost:8025
 to read it. Email is queued as a job in the same transaction as the change
