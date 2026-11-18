@@ -781,6 +781,36 @@ sit behind NAT, firewalls or tailnets. The agent-facing parts of
   carries a machine-readable field saying who wrote it (member, agent, outside
   actor, Shinan) and whether it may be treated as an instruction. Field names
   and skill wording are owned by [agent integrations](agent-integrations.md).
+- **As built (M2-6, [#87](https://github.com/guneet-xyz/shinan/issues/87)),
+  proposed:** `/mcp` uses the official TypeScript SDK's v2 packages
+  (`@modelcontextprotocol/server` 2.4), whose `createMcpHandler` serves the
+  2026-07-28 revision and, statelessly, the 2025 `initialize` handshake from
+  one per-request server. Each request passes, in order: the per-address
+  request limit (as `/api/agent`), the 64 KB body limit (M2-12 raises it for
+  writes), the `Origin` check (a request carrying any `Origin` but the
+  installation's own is refused with 403), and `requireAgent`; the SDK then
+  checks the 2026-07-28 headers against the body (400 when they disagree).
+  Before the SDK, Shinan refuses a JSON array of messages (400: neither
+  revision allows batches, and a batch would multiply the request limits,
+  which count HTTP requests), an `MCP-Protocol-Version` other than the two
+  it serves (400; an `initialize` asking for an older revision is offered
+  2025-11-25), and `subscriptions/listen` (an in-band "method not found":
+  Shinan sends no change notifications, so a listening stream would only
+  hold a connection and memory open; proposed until a tool needs
+  notifications, which would then come with a per-agent cap and a maximum
+  lifetime). 2026-07-28 answers are single JSON bodies
+  (`responseMode: "json"`); 2025-11-25 answers are one Server-Sent Events
+  message (`event: message`), which the SDK's stateless legacy serving
+  always uses; both with `Cache-Control: no-store`. The agent's token is
+  not handed to the SDK: the handler gets the authenticated agent, and core
+  checks it again on every operation. A rejected promise nothing handles
+  is logged by name, code and stack frames, and the process keeps serving;
+  an uncaught exception is logged the same way and ends the process, for
+  the container to restart.
+  Checked with OpenCode v2.3.0 on Daedalus against a local server: with the
+  default `protocol` it connects over 2025-11-25, and with
+  `"protocol": "auto"` over 2026-07-28 (`server/discover`); both call the
+  tools, and OpenCode carries on when `subscriptions/listen` is refused.
 - **Session IDs are hints, never credentials.** OpenCode sends its session ID in
   `_meta["ai.opencode/sessionID"]` and documents that it must not be used for
   authentication. Matching calls to agent sessions follows the owner's answer

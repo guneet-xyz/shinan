@@ -1178,7 +1178,12 @@ kinds (**proposed**):
   summary, so no request is in two entries, and `totalRequests` those since
   the token was made. Agent and token entries are `agent.created`, `agent.renamed`,
   `agent.disabled`, `agent.enabled`, `agent-token.issued`,
-  `agent-token.revoked` and `agent-token.failed`.
+  `agent-token.revoked` and `agent-token.failed`. **Proposed (M2-6):** an agent's read of a
+  workspace-wide catalog list (`catalog_lists` over MCP) is one
+  `catalog.bulk-read` entry per call, with the list, the page offset, the
+  number of items and the catalog revision; so is each page after the first
+  of a listing of every entity (`search_catalog` with no words, list
+  `entities`).
 - **Decided (owner, O-47, N-8, N-13, [#25](https://github.com/guneet-xyz/shinan/issues/25)):**
   the security log is kept forever, and no security-log entry can ever be
   purged, by anyone: neither installation-level entries nor a workspace's
