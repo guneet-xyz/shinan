@@ -250,6 +250,18 @@ function PurgeText(props: { onPurged: () => void }) {
             </dd>
             <dt>Timeline</dt>
             <dd>{plural(preview.events, "event")}</dd>
+            {preview.acrossLines.revisionTexts > 0 && (
+              <>
+                <dt>Across lines</dt>
+                <dd>
+                  Found across a line break in{" "}
+                  {plural(preview.acrossLines.revisionTexts, "stored text")}
+                  {preview.acrossLines.latestDocuments.length > 0 &&
+                    ` (current pages: ${preview.acrossLines.latestDocuments.join(", ")})`}
+                  : check that those places hold what you mean
+                </dd>
+              </>
+            )}
           </Facts>
           {preview.structure.length > 0 && (
             <div className="flex flex-col gap-1">

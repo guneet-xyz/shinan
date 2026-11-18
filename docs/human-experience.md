@@ -1204,7 +1204,8 @@ model providers), that a secret must be rotated where it was issued, and
 that security-log entries are never purged. The owner types the text and
 chooses **Find it**; spaces and line breaks need not match. Shinan shows
 where it is (revision texts and documents, the current pages it will store
-again, proposals and the waiting ones it will reject, timeline events),
+again, proposals and the waiting ones it will reject, comments, timeline
+events, and where it was found across a line break, to check),
 copies in other forms (URL- or percent-encoded, HTML entities, escapes),
 each with **Find this form**, and pages whose structure the purge changes
 (the text in an ID or alias, or across frontmatter lines). Purging takes a

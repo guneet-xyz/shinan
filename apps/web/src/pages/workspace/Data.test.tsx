@@ -24,6 +24,7 @@ const preview: CatalogPurgePreview = {
   events: 1,
   comments: 0,
   writtenDifferently: [],
+  acrossLines: { revisionTexts: 1, latestDocuments: ["machine/daedalus"] },
   alsoWrittenAs: [],
   structure: [{ id: "machine/daedalus", where: "alias" }],
 }
@@ -81,6 +82,9 @@ describe("the data screen", () => {
     expect(screen.getByText(/1 waiting proposal will be rejected/)).toBeTruthy()
     expect(
       screen.getByText("machine/daedalus: the text is in an alias"),
+    ).toBeTruthy()
+    expect(
+      screen.getByText(/Found across a line break in 1 stored text/),
     ).toBeTruthy()
 
     const button = screen.getByRole("button", { name: "Purge everywhere" })

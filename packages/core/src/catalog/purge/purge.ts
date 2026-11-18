@@ -30,6 +30,7 @@ import { latestTexts } from "../index/store.js"
 import { catalogWorkers } from "../proposals/pool.js"
 import { hashOf } from "../proposals/proposals.js"
 import { appendCatalogRevision } from "../revisions.js"
+import { PurgeMatcher, spaces } from "./matcher.js"
 
 /**
  * Catalog purge (catalog §9; architecture §4.4): a workspace owner removes
@@ -66,7 +67,8 @@ export const purgeLimits = {
  *   (validation's findings, approval reasons, touched catalog IDs, the
  *   rejection reason). The request hash is computed again.
  * - `events`: the summary and data.
- * - `catalog_proposal_comments`: the text, and the idempotency key cleared.
+ * - `catalog_proposal_comments`: the text, and the idempotency key, cleared
+ *   when either holds the text.
  * - The agent index: rebuilt from the purged text, then checked, except
  *   the columns naming who wrote what (an actor's written form is not
  *   catalog content), those derived from other columns, and the word
@@ -125,6 +127,12 @@ export interface CatalogPurgePreview {
    */
   writtenDifferently: string[]
   /**
+   * Where it is found only across a line break (wrapped text, or a long
+   * word split by an editor), to look at before purging: the stored texts,
+   * and the current pages among them.
+   */
+  acrossLines: { revisionTexts: number; latestDocuments: string[] }
+  /**
    * Places that hold it in an encoded form the purge does not reach, such
    * as in a link: purge each form too (`text` is the form to purge).
    */
@@ -166,80 +174,20 @@ export interface CatalogPurge {
   newProblems?: { id: string; problems: string[] }[]
 }
 
-/** Whitespace, the same characters in JavaScript and in PostgreSQL. */
-const spaces =
-  " \t\n\r\f\v\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff"
-/** Whitespace within a line. */
-const inline = " \t\f\v\u00a0\u1680\u2000-\u200a\u202f\u205f\u3000\ufeff"
-/** A line break, with the whitespace around it, as wrapping puts inside a word. */
-const lineBreak = `(?:[${inline}]*(?:\r\n|\n|\r)[${inline}]*)?`
-
 /**
- * A purge text as it is matched (catalog §9): exactly, except for
- * whitespace. Any run of whitespace in it matches any run of whitespace,
- * and a line break may stand between any two of its other characters, so
- * text wrapped across lines (Markdown paragraphs, YAML folding), indented,
- * with other line endings, or split inside a word is found too.
+ * A condition that holds for every value of `column` that holds the text
+ * (`PurgeMatcher`), and is quick to test: the value has the text's first
+ * 64 characters other than whitespace, with any whitespace between them.
+ * For a JSON column, its text form, where whitespace may also be written
+ * as JSON's escapes.
  */
-export class PurgeMatcher {
-  /** The text's words, split at whitespace. */
-  readonly words: string[]
-  private readonly source: string
-
-  constructor(readonly text: string) {
-    this.words = text.split(new RegExp(`[${spaces}]+`)).filter((w) => w !== "")
-    this.source = this.words
-      .map((word) =>
-        [...word]
-          .map((c) => c.replace(/[!-/:-@[-`{-~]/g, "\\$&"))
-          .join(lineBreak),
-      )
-      .join(`[${spaces}]+`)
-  }
-
-  /** Whether `value` holds the text. */
-  test(value: string): boolean {
-    return new RegExp(this.source).test(value)
-  }
-
-  /** Each place `value` holds the text: where it starts and what it covers. */
-  find(value: string): { index: number; text: string }[] {
-    return [...value.matchAll(new RegExp(this.source, "g"))].map((m) => ({
-      index: m.index,
-      text: m[0],
-    }))
-  }
-
-  /**
-   * `value` with every occurrence replaced by the marker, again until none
-   * is left: a replacement next to other text could complete a new one.
-   */
-  replace(value: string, marker = purgeMarker): string {
-    let result = value
-    for (let pass = 0; this.test(result); pass++) {
-      if (pass === 10) throw new Error("Purging a text did not finish")
-      result = result.replace(new RegExp(this.source, "g"), marker)
-    }
-    return result
-  }
-
-  /**
-   * A condition that holds for every value of `column` that holds the
-   * text, and is quick to test: the value has the text's first 64
-   * characters other than whitespace, with any whitespace between them.
-   * For a JSON column, its text form, where whitespace may also be written
-   * as JSON's escapes.
-   */
-  mayHold(column: SQL, json = false): SQL {
-    const gap = json
-      ? `(?:[${spaces}]|\\\\[nrtf]|\\\\u000[bB])*`
-      : `[${spaces}]*`
-    const pattern = [...this.words.join("")]
-      .slice(0, 64)
-      .map((c) => (json ? inJson(c) : c).replace(/[!-/:-@[-`{-~]/g, "\\$&"))
-      .join(gap)
-    return sql`${column} ~ ${pattern}`
-  }
+function mayHold(match: PurgeMatcher, column: SQL, json = false): SQL {
+  const gap = json ? `(?:[${spaces}]|\\\\[nrtf]|\\\\u000[bB])*` : `[${spaces}]*`
+  const pattern = [...match.words.join("")]
+    .slice(0, 64)
+    .map((c) => (json ? inJson(c) : c).replace(/[!-/:-@[-`{-~]/g, "\\$&"))
+    .join(gap)
+  return sql`${column} ~ ${pattern}`
 }
 
 /**
@@ -268,7 +216,8 @@ export async function previewCatalogPurge(
         ...latest.map((l) => l.documentId),
         ...found.index,
       ])
-      const name = (id: string) => match.replace(names.get(id) ?? id)
+      const name = (id: string) =>
+        match.replace(names.get(id) ?? id, purgeMarker)
       const documents = new Set(found.revisionTexts.map((r) => r.documentId))
       return {
         revisionTexts: found.revisionTexts.length,
@@ -283,6 +232,13 @@ export async function previewCatalogPurge(
           .filter((id) => !documents.has(id))
           .map(name)
           .sort(),
+        acrossLines: {
+          revisionTexts: found.acrossLines.length,
+          latestDocuments: latest
+            .filter((l) => match.matches(l.text).some((m) => m.acrossLines))
+            .map((l) => name(l.documentId))
+            .sort(),
+        },
         alsoWrittenAs: await encodedForms(tx, workspace, match.text),
         structure: latest.flatMap((l) =>
           structureAt(l.text, match).map((where) => ({
@@ -364,8 +320,16 @@ export async function purgeCatalogText(
         .returning()
       const purge = row!
 
-      // The latest texts as they were, to tell which the purge breaks.
       const before = await latestHolding(tx, workspace, match)
+      // How they read before, to tell which the purge breaks.
+      const problemsBefore = new Map(
+        [
+          ...(await indexProblems(
+            tx,
+            before.map((b) => b.documentId),
+          )),
+        ].map(([id, row]) => [id, row.problems]),
+      )
       const texts = await purgeRevisionTexts(tx, workspace, match)
       const proposals = await purgeProposals(tx, workspace, match, {
         number: purge.number,
@@ -458,7 +422,7 @@ export async function purgeCatalogText(
       })
       return {
         ...purgeOf(stored!, revision),
-        newProblems: await newProblems(tx, workspace, before),
+        newProblems: await newProblems(tx, latest, problemsBefore),
       }
     },
   )
@@ -593,7 +557,7 @@ async function writtenDifferently(
 ): Promise<RuleViolationError> {
   const names = await catalogIds(tx, documentIds)
   const shown = documentIds
-    .map((id) => match.replace(names.get(id) ?? id))
+    .map((id) => match.replace(names.get(id) ?? id, purgeMarker))
     .sort()
   const listed =
     shown.length > 20
@@ -672,14 +636,34 @@ async function find(
   match: PurgeMatcher,
 ): Promise<{
   revisionTexts: { documentId: string; revision: number }[]
+  /** Of those, the ones where it crosses a line break. */
+  acrossLines: { documentId: string; revision: number }[]
   proposals: { id: string; state: ProposalRow["state"] }[]
   events: number[]
   comments: string[]
   /** Documents whose index rows hold it. */
   index: string[]
 }> {
-  const revisionTexts = (await revisionCandidates(tx, workspaceId, match))
-    .filter((row) => match.test(row.text))
+  const holding = (await revisionCandidates(tx, workspaceId, match)).flatMap(
+    ({ documentId, revision, text }) => {
+      const found = match.matches(text)
+      return found.length === 0
+        ? []
+        : [
+            {
+              documentId,
+              revision,
+              acrossLines: found.some((m) => m.acrossLines),
+            },
+          ]
+    },
+  )
+  const revisionTexts = holding.map(({ documentId, revision }) => ({
+    documentId,
+    revision,
+  }))
+  const acrossLines = holding
+    .filter((h) => h.acrossLines)
     .map(({ documentId, revision }) => ({ documentId, revision }))
 
   const proposals = (await proposalCandidates(tx, workspaceId, match, false))
@@ -711,16 +695,23 @@ async function find(
       sql`, `,
     )})`
     const rows = await tx.execute<{ document_id: string; row: unknown }>(
-      sql`select document_id, ${row} as row from ${table} where workspace_id = ${workspaceId} and ${match.mayHold(sql`${row}::text`, true)}`,
+      sql`select document_id, ${row} as row from ${table} where workspace_id = ${workspaceId} and ${mayHold(match, sql`${row}::text`, true)}`,
     )
     for (const found of rows.rows)
       if (holdsJson(found.row, match)) index.add(found.document_id)
   }
   const comments = (await commentCandidates(tx, workspaceId, match))
-    .filter((row) => match.test(row.text))
+    .filter((row) => commentHolds(row, match))
     .map((row) => row.id)
 
-  return { revisionTexts, proposals, events, comments, index: [...index] }
+  return {
+    revisionTexts,
+    acrossLines,
+    proposals,
+    events,
+    comments,
+    index: [...index],
+  }
 }
 
 /** Revision texts that might hold the text, to check one by one. */
@@ -733,7 +724,7 @@ function revisionCandidates(
   return tx
     .select({ documentId: r.documentId, revision: r.revision, text: r.text })
     .from(r)
-    .where(and(eq(r.workspaceId, workspaceId), match.mayHold(sql`${r.text}`)))
+    .where(and(eq(r.workspaceId, workspaceId), mayHold(match, sql`${r.text}`)))
 }
 
 /**
@@ -753,7 +744,7 @@ async function proposalCandidates(
     .where(
       and(
         eq(t.workspaceId, workspaceId),
-        match.mayHold(sql`to_jsonb(${t})::text`, true),
+        mayHold(match, sql`to_jsonb(${t})::text`, true),
       ),
     )
   return lock ? query.for("update") : query
@@ -771,7 +762,7 @@ function eventCandidates(
     .where(
       and(
         eq(e.workspaceId, workspaceId),
-        sql`((${match.mayHold(sql`${e.summary}`)}) or (${match.mayHold(sql`${e.data}::text`, true)}))`,
+        sql`((${mayHold(match, sql`${e.summary}`)}) or (${mayHold(match, sql`${e.data}::text`, true)}))`,
       ),
     )
 }
@@ -785,7 +776,7 @@ async function purgeRevisionTexts(
   const r = schema.catalogRevisionDocuments
   const changed = (await revisionCandidates(tx, workspaceId, match))
     .filter((row) => match.test(row.text))
-    .map((row) => ({ ...row, text: match.replace(row.text) }))
+    .map((row) => ({ ...row, text: match.replace(row.text, purgeMarker) }))
   // A few hundred at a time, each batch in one statement.
   for (let i = 0; i < changed.length; i += 200)
     await tx.execute(
@@ -815,7 +806,7 @@ async function latestHolding(
       r,
       and(eq(r.documentId, d.id), eq(r.revision, d.currentRevision)),
     )
-    .where(and(eq(d.workspaceId, workspaceId), match.mayHold(sql`${r.text}`)))
+    .where(and(eq(d.workspaceId, workspaceId), mayHold(match, sql`${r.text}`)))
   return rows
     .filter((row) => match.test(row.text))
     .sort((a, b) => (a.documentId < b.documentId ? -1 : 1))
@@ -850,23 +841,13 @@ function structureAt(
 /** The latest texts the purge left reading with problems they did not have. */
 async function newProblems(
   tx: Transaction,
-  workspaceId: string,
-  before: readonly { documentId: string; text: string }[],
+  documentIds: readonly string[],
+  before: ReadonlyMap<string, { code: string }[]>,
 ): Promise<{ id: string; problems: string[] }[]> {
-  if (before.length === 0) return []
-  const after = new Map(
-    (
-      await latestTexts(
-        tx,
-        workspaceId,
-        before.map((b) => b.documentId),
-      )
-    ).map((t) => [t.documentId, t.text]),
-  )
+  if (documentIds.length === 0) return []
   const result: { id: string; problems: string[] }[] = []
-  for (const { documentId, text } of before) {
-    const was = parseCatalogDocument(text).problems.map((p) => p.code)
-    const now = parseCatalogDocument(after.get(documentId) ?? "")
+  for (const [documentId, now] of await indexProblems(tx, documentIds)) {
+    const was = (before.get(documentId) ?? []).map((p) => p.code)
     const added = now.problems.filter((p) => {
       const i = was.indexOf(p.code)
       if (i < 0) return true
@@ -875,11 +856,34 @@ async function newProblems(
     })
     if (added.length > 0)
       result.push({
-        id: now.id ?? documentId,
+        id: now.catalogId ?? documentId,
         problems: added.map((p) => p.message),
       })
   }
-  return result
+  return result.sort((a, b) => (a.id < b.id ? -1 : 1))
+}
+
+/** The problems the index found reading each document's latest text. */
+async function indexProblems(
+  tx: Transaction,
+  documentIds: readonly string[],
+): Promise<
+  Map<
+    string,
+    { catalogId: string | null; problems: { code: string; message: string }[] }
+  >
+> {
+  if (documentIds.length === 0) return new Map()
+  const t = schema.catalogIndexDocuments
+  const rows = await tx
+    .select({
+      documentId: t.documentId,
+      catalogId: t.catalogId,
+      problems: t.problems,
+    })
+    .from(t)
+    .where(inArray(t.documentId, [...documentIds]))
+  return new Map(rows.map((r) => [r.documentId, r]))
 }
 
 /**
@@ -987,7 +991,7 @@ async function purgeProposals(
 ): Promise<{ id: string; number: number; rejected: boolean }[]> {
   const purged: { id: string; number: number; rejected: boolean }[] = []
   const cut = excerpt(match.text)
-  const plain = (s: string) => match.replace(s)
+  const plain = (s: string) => match.replace(s, purgeMarker)
   // An excerpt of six characters, of a text of 18 or more.
   const findings = (s: string) =>
     cut.length > 6 ? plain(s).split(cut).join(purgeMarker) : plain(s)
@@ -1042,9 +1046,30 @@ function commentCandidates(
 ) {
   const c = schema.catalogProposalComments
   return tx
-    .select({ id: c.id, proposalId: c.proposalId, text: c.text })
+    .select({
+      id: c.id,
+      proposalId: c.proposalId,
+      text: c.text,
+      idempotencyKey: c.idempotencyKey,
+    })
     .from(c)
-    .where(and(eq(c.workspaceId, workspaceId), match.mayHold(sql`${c.text}`)))
+    .where(
+      and(
+        eq(c.workspaceId, workspaceId),
+        sql`(${mayHold(match, sql`${c.text}`)} or ${mayHold(match, sql`coalesce(${c.idempotencyKey}, '')`)})`,
+      ),
+    )
+}
+
+/** Whether a comment holds the text, in its text or its idempotency key. */
+function commentHolds(
+  row: { text: string; idempotencyKey: string | null },
+  match: PurgeMatcher,
+): boolean {
+  return (
+    match.test(row.text) ||
+    (row.idempotencyKey !== null && match.test(row.idempotencyKey))
+  )
 }
 
 /**
@@ -1059,10 +1084,10 @@ async function purgeComments(
   const purged: { id: string; proposalId: string }[] = []
   const c = schema.catalogProposalComments
   for (const row of await commentCandidates(tx, workspaceId, match)) {
-    if (!match.test(row.text)) continue
+    if (!commentHolds(row, match)) continue
     await tx
       .update(c)
-      .set({ text: match.replace(row.text), idempotencyKey: null })
+      .set({ text: match.replace(row.text, purgeMarker), idempotencyKey: null })
       .where(eq(c.id, row.id))
     purged.push({ id: row.id, proposalId: row.proposalId })
   }
@@ -1076,7 +1101,7 @@ async function purgeEvents(
   match: PurgeMatcher,
 ): Promise<number[]> {
   const purged: number[] = []
-  const plain = (s: string) => match.replace(s)
+  const plain = (s: string) => match.replace(s, purgeMarker)
   for (const row of await eventCandidates(tx, workspaceId, match)) {
     if (!holdsJson({ summary: row.summary, data: row.data }, match)) continue
     await tx

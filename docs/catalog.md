@@ -1867,17 +1867,22 @@ approval and history mean nothing.
       occurrence is replaced by `(purged)` in every revision of every
       document, in catalog proposals (their explanation, operations, related
       task, validation findings, approval reasons, touched IDs and rejection
-      reason), in comments on proposals, and in timeline events. Reason: a leaked secret or a person's
+      reason), in comments on proposals (their text, and their idempotency
+      key, cleared), and in timeline events. Reason: a leaked secret or a person's
       details are a text, wherever they ended up; replacing only those bytes
       keeps every document readable and every record in its shape, and it
       keeps section credits (only the purged words change). The marker is
       plain words in brackets, so YAML still reads it as text.
     - **Whitespace does not have to match.** Any run of whitespace in the
-      text matches any run of whitespace, and a line break may stand between
-      any two of its other characters. Reason: an address or a name in a
-      Markdown paragraph is wrapped across lines, indented, or written with
-      other line endings, and a long secret can be split by a line break;
-      the purge must find them as the owner knows them.
+      text matches any run of whitespace, and inside a long word (20
+      characters or more without a space, as keys and tokens are) a line
+      break may stand between any two characters. The preview counts
+      separately the places found across a line break, so the owner looks
+      at them. Reason: an address or a name in a Markdown paragraph is
+      wrapped across lines, indented, or written with other line endings,
+      and a long secret can be split by an editor; the purge must find them
+      as the owner knows them, without a short word matching the ends of
+      two unrelated words on two lines.
     - **The latest text.** When a document's latest text held it, the purge
       stores the cleaned text as a new catalog revision, credited to the
       workspace owner and marked as the purge's (it has no proposal and

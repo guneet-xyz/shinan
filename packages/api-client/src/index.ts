@@ -326,6 +326,8 @@ export interface CatalogPurgePreview {
   comments: number
   /** Catalog IDs of documents whose index holds it while their text writes it differently. */
   writtenDifferently: string[]
+  /** Stored texts (and current pages) where a match crosses a line break. */
+  acrossLines: { revisionTexts: number; latestDocuments: string[] }
   /** Copies in encoded forms the purge does not reach; `text` is the form to purge. */
   alsoWrittenAs: {
     form: "url" | "percent" | "html" | "escaped"

@@ -276,6 +276,7 @@ describe("purging catalog text", { timeout: 60_000 }, () => {
       events: 1,
       comments: 1,
       writtenDifferently: [],
+      acrossLines: { revisionTexts: 0, latestDocuments: [] },
       alsoWrittenAs: [],
       structure: [],
     })
@@ -586,6 +587,7 @@ describe("purging catalog text", { timeout: 60_000 }, () => {
       revisionTexts: 1,
       latestDocuments: ["machine/daedalus"],
       proposals: 1,
+      acrossLines: { revisionTexts: 1, latestDocuments: ["machine/daedalus"] },
     })
     await purgeCatalogText(asOwner, workspaceId, {
       text: address,
@@ -606,6 +608,70 @@ describe("purging catalog text", { timeout: 60_000 }, () => {
       { isolationLevel: "repeatable read" },
     )
     expect(compared.differences).toEqual([])
+  })
+
+  it("purges a comment's idempotency key that holds the text", async () => {
+    const { waiting } = await plant()
+    await commentOnCatalogProposal(asOwnersAgent, workspaceId, {
+      proposalId: waiting.id,
+      text: "Looks fine to me.",
+      idempotencyKey: `review-${secret}`,
+    })
+    expect(
+      await previewCatalogPurge(asOwner, workspaceId, { text: secret }),
+    ).toMatchObject({ comments: 2 })
+    const purge = await purgeCatalogText(asOwner, workspaceId, {
+      text: secret,
+      reason: "Leaked.",
+    })
+    expect(purge.counts.comments).toBe(2)
+    expect(await tablesHolding(secret)).toEqual([])
+    const comments = await db
+      .select({
+        text: schema.catalogProposalComments.text,
+        key: schema.catalogProposalComments.idempotencyKey,
+      })
+      .from(schema.catalogProposalComments)
+      .where(eq(schema.catalogProposalComments.proposalId, waiting.id))
+    expect(comments).toContainEqual({ text: "Looks fine to me.", key: null })
+  })
+
+  it("purges a whole key block, as long as the text may be, in little time", async () => {
+    let body = ""
+    for (let i = 0; body.length < 6000; i++)
+      body += randomBytes(48).toString("base64")
+    const lines = ["-----BEGIN PRIVATE KEY-----"]
+    for (let i = 0; i < 6000; i += 64) lines.push(body.slice(i, i + 64))
+    lines.push("-----END PRIVATE KEY-----")
+    const pem = lines.join("\n").slice(0, 6147)
+    await storeCatalogRevision(
+      db,
+      workspaceId,
+      {
+        kind: "person",
+        personId: owner.id,
+        agentId: null,
+        agentSessionId: null,
+        label: owner.handle,
+        confidence: "recorded",
+      },
+      [
+        {
+          // Indented as a Markdown code block, with Windows line endings.
+          text: `---\nid: machine/keyed\ntype: machine\ntitle: Keyed\nsummary: Holds a key.\nowner: ${person}\n---\n\n# Keyed\n\n    ${pem.replaceAll("\n", "\r\n    ")}\n`,
+        },
+      ],
+    )
+    const started = performance.now()
+    expect(
+      await previewCatalogPurge(asOwner, workspaceId, { text: pem }),
+    ).toMatchObject({ revisionTexts: 1, latestDocuments: ["machine/keyed"] })
+    await purgeCatalogText(asOwner, workspaceId, {
+      text: pem,
+      reason: "A private key in a page.",
+    })
+    expect(performance.now() - started).toBeLessThan(10_000)
+    expect(await tablesHolding(lines[3]!)).toEqual([])
   })
 
   it("shows copies in encoded forms, and warns where purging changes a document's structure", async () => {

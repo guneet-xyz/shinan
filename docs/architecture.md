@@ -437,10 +437,17 @@ How:
   transaction that rewrote history leaves its record. The security log's
   triggers are untouched (D-049).
 - **Matching:** whitespace-insensitive ([catalog §9](catalog.md#9-history-and-purge)).
-  Candidates are found in SQL by the text with all whitespace taken out
-  (and JSON's escapes of whitespace, in JSON columns), a superset; each is
-  then matched and rewritten in the application, by one pattern used for
-  the preview, the purge and its check afterwards.
+  Candidates are found in SQL by a regular expression on the text's first
+  64 characters other than whitespace, with any whitespace (or JSON's
+  escapes of it) between them, a superset. Each is then matched and
+  rewritten in the application by one matcher (`PurgeMatcher`), used for
+  the preview, the purge and its check afterwards, in time linear in the
+  value and the text: the value's characters other than whitespace are
+  searched with the Knuth-Morris-Pratt algorithm, and each place found is
+  checked against the whitespace around it with running counts. So the
+  full 10,000-character text (a key block) and repetitive values take
+  milliseconds. As a backstop, matching for one preview or purge stops
+  after 15 seconds in all (`purge-too-slow`).
 - **Derived data:** each document with purged text has its index rows
   derived again from its purged history, as a rebuild does (section credits
   and word provenance replayed); the purge revision is not indexed first.
