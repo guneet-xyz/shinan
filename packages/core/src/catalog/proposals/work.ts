@@ -1,15 +1,20 @@
 import {
   applyOperations,
+  prepareCatalogValidation,
+  updateCatalogValidation,
   utf8Length,
-  validateChange,
+  validateChangeIncrementally,
 } from "../document/index.js"
 import type {
   Catalog,
   CatalogDocument,
   CatalogOperation,
+  CatalogValidation,
   DocumentChange,
   OperationProblem,
   Problem,
+  SecretScans,
+  ValidationContext,
 } from "../document/index.js"
 import { classifyChange, touchedIds } from "./classify.js"
 import type { ApprovalClass } from "./classify.js"
@@ -88,11 +93,36 @@ export type Prepared =
  * §8.1 to §8.3). Pure: it runs in the catalog worker, off the main thread
  * (security checklist 10.8). The parsed latest revision is passed in, so
  * the catalog is not read again for each proposal.
+ *
+ * `base`, the validation of the latest revision or of any other, saves
+ * validating the documents the change cannot affect (catalog §8.3,
+ * "Cost"); the result is the same without it.
  */
 export function prepareChange(
   stored: readonly StoredDocument[],
   input: PrepareInput,
+  base?: CatalogValidation,
 ): Prepared {
+  return prepareChangeIncrementally(stored, input, { base }).prepared
+}
+
+/**
+ * `prepareChange`, also giving the validations it made, for the catalog
+ * worker to keep: `before`, of the latest revision, whenever the change
+ * was validated; `after`, of the catalog the change would make, when it is
+ * ready to store. `after` becomes the latest revision's validation only
+ * once the change is stored. `secretScans` keeps secret scans between
+ * proposals (`SecretScans`).
+ */
+export function prepareChangeIncrementally(
+  stored: readonly StoredDocument[],
+  input: PrepareInput,
+  kept: { base?: CatalogValidation; secretScans?: SecretScans } = {},
+): {
+  prepared: Prepared
+  before?: CatalogValidation
+  after?: CatalogValidation
+} {
   const documentIds = new Map<CatalogDocument, string>()
   for (const { documentId, document } of stored)
     documentIds.set(document, documentId)
@@ -111,18 +141,20 @@ export function prepareChange(
         : undefined)
     if (acceptedBy === undefined)
       return {
-        outcome: "problems",
-        problems: [
-          {
-            operation: accepting,
-            kind: "invalid",
-            code: "needs-approval",
-            message: input.approver.preview
-              ? "Accepting a discrepancy names the approving person's entity, and no person entity has a `member` fact holding a member's handle"
-              : `Accepting a discrepancy names the approving person's entity, and no person entity has a \`member\` fact holding ${input.approver.handle}`,
-            documentId: null,
-          },
-        ],
+        prepared: {
+          outcome: "problems",
+          problems: [
+            {
+              operation: accepting,
+              kind: "invalid",
+              code: "needs-approval",
+              message: input.approver.preview
+                ? "Accepting a discrepancy names the approving person's entity, and no person entity has a `member` fact holding a member's handle"
+                : `Accepting a discrepancy names the approving person's entity, and no person entity has a \`member\` fact holding ${input.approver.handle}`,
+              documentId: null,
+            },
+          ],
+        },
       }
   }
   const result = applyOperations(
@@ -130,22 +162,34 @@ export function prepareChange(
     input.operations,
     acceptedBy === undefined ? { by: input.by } : { by: input.by, acceptedBy },
   )
-  if (!result.applied) return { outcome: "problems", problems: result.problems }
-  if (result.changes.length === 0) return { outcome: "unchanged" }
+  if (!result.applied)
+    return { prepared: { outcome: "problems", problems: result.problems } }
+  if (result.changes.length === 0) return { prepared: { outcome: "unchanged" } }
 
-  const validation = validateChange(
+  const context = validationContext(input, kept.secretScans)
+  const base = kept.base
+  // The latest revision's own validation, so it can be kept whatever the
+  // outcome; from it, the change's validation reuses it as it is.
+  const before = base
+    ? updateCatalogValidation(base, result.before, context)
+    : prepareCatalogValidation(result.before, context)
+  const { result: validation, after } = validateChangeIncrementally(
     {
       before: result.before,
       after: result.after,
       changed: result.changes.map((c) => c.after),
       texts: [{ label: "The explanation", text: input.explanation }],
     },
-    { now: input.now, memberHandles: new Set(input.memberHandles) },
+    context,
+    before,
   )
   if (validation.blocked)
     return {
-      outcome: "blocked",
-      problems: validation.problems.filter((p) => p.severity === "blocking"),
+      prepared: {
+        outcome: "blocked",
+        problems: validation.problems.filter((p) => p.severity === "blocking"),
+      },
+      before,
     }
   const warnings = validation.problems
   const classification = classifyChange(
@@ -154,7 +198,7 @@ export function prepareChange(
     result.changes,
     warnings,
   )
-  return {
+  const prepared: Prepared = {
     outcome: "ready",
     documents: result.changes.map((change) => ({
       documentId: change.before
@@ -171,31 +215,49 @@ export function prepareChange(
       memberHandles: memberHandlesOf(result.after, entityId),
     })),
     touches: touchedIds(result.changes),
-    size: sizeOf(stored, result.changes),
+    size: sizeOf(stored, result.changes, before, after),
+  }
+  return { prepared, before, after }
+}
+
+/** The validation context of a proposal. */
+export function validationContext(
+  input: Pick<PrepareInput, "now" | "memberHandles">,
+  secretScans?: SecretScans,
+): ValidationContext {
+  return {
+    now: input.now,
+    memberHandles: new Set(input.memberHandles),
+    ...(secretScans ? { secretScans } : {}),
   }
 }
 
+/**
+ * The catalog's size before and after: each document with what its
+ * validation keeps (`estimatedBytes`), from the validations of both.
+ */
 function sizeOf(
   stored: readonly StoredDocument[],
   changes: readonly DocumentChange[],
+  before: CatalogValidation,
+  after: CatalogValidation,
 ): CatalogSize {
   let bytesBefore = 0
   let estimatedBefore = 0
   for (const { document } of stored) {
     bytesBefore += utf8Length(document.text)
-    estimatedBefore += estimatedBytes(document)
+    estimatedBefore += estimatedBytes(document, before.counts(document))
   }
   let bytes = bytesBefore
-  let estimated = estimatedBefore
+  let estimated = 0
   let added = 0
   for (const change of changes) {
-    if (change.before) {
-      bytes -= utf8Length(change.before.text)
-      estimated -= estimatedBytes(change.before)
-    } else added++
+    if (change.before) bytes -= utf8Length(change.before.text)
+    else added++
     bytes += utf8Length(change.after.text)
-    estimated += estimatedBytes(change.after)
   }
+  for (const document of after.documents)
+    estimated += estimatedBytes(document, after.counts(document))
   return {
     bytesBefore,
     bytes,

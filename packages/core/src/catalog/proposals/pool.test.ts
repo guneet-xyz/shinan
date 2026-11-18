@@ -117,6 +117,20 @@ describe("the catalog workers", { timeout: 120_000 }, () => {
     ])
   })
 
+  it("forget a workspace's catalog when told, as purge needs", async () => {
+    const { workers, loaded, load } = setUp()
+    await workers.prepare("w1", documents, load, input)
+    await workers.run("w1", async (prepare) => {
+      await workers.forget("w1")
+      await prepare(documents, load, input)
+    })
+    await workers.forget("w2")
+    expect(loaded).toEqual([
+      ["a@1", "b@1"],
+      ["a@1", "b@1"],
+    ])
+  })
+
   it("parse stored text in batches of bytes", async () => {
     const { workers, loaded, load } = setUp({ loadBatchBytes: 1 })
     await workers.prepare("w1", documents, load, input)

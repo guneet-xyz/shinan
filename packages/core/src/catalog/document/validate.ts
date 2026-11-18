@@ -45,6 +45,12 @@ export interface ValidationContext {
    * (catalog §2.3).
    */
   memberHandles?: ReadonlySet<string>
+  /**
+   * Secret scans kept between validations, so a document whose text was
+   * scanned before is not scanned again (`SecretScans`). The result is the
+   * same without them.
+   */
+  secretScans?: SecretScans
 }
 
 export interface ValidationResult {
@@ -383,7 +389,7 @@ function tooLarge(documentId: string | null, where = ""): Problem {
 /** One document's validation, kept so a later revision need not repeat it. */
 interface DocumentValidation {
   problems: Problem[]
-  secrets: FoundSecret[]
+  secrets: readonly FoundSecret[]
   /**
    * The names its validation looked up: IDs and aliases it references, and
    * `schema/<type>` for the types it checked exist.
@@ -400,17 +406,27 @@ interface DocumentValidation {
  *
  * It holds each document's problems and the secrets found in it, and an
  * index of which documents reference each ID, alias and type. Each
- * revision gets its own: a validation is never changed once made.
+ * revision gets its own: a validation is never changed once made, and the
+ * `Problem` objects in it are shared with every result made from it, so
+ * nothing may change those either. It keeps the catalog's documents and
+ * type registry, but not its resolved entities, so keeping it costs little
+ * beyond the parsed documents (catalog worker, `estimatedBytes`).
  */
 export class CatalogValidation {
   #byText?: Map<string, Problem[][]>
   #firstById?: Map<string, Problem[]>
   #types?: Map<string, string>
+  /** The documents validated, in the catalog's order. */
+  readonly documents: readonly CatalogDocument[]
+  /** @internal The catalog's type schema documents. */
+  readonly schemas: readonly CatalogDocument[]
+  /** @internal */
+  readonly registry: TypeRegistry
 
   /** @internal Use `prepareCatalogValidation` and `updateCatalogValidation`. */
   constructor(
     /** The catalog validated, or one with the very same documents. */
-    readonly catalog: Catalog,
+    catalog: Catalog,
     /** @internal By document, in the catalog's order. */
     readonly entries: ReadonlyMap<CatalogDocument, DocumentValidation>,
     /** @internal The documents that reference each name. */
@@ -419,7 +435,49 @@ export class CatalogValidation {
     readonly now: number,
     /** @internal `memberHandles`, as one string; null when not given. */
     readonly members: string | null,
-  ) {}
+  ) {
+    this.documents = catalog.documents
+    this.schemas = catalog.schemas
+    this.registry = catalog.registry
+  }
+
+  /**
+   * What the validation keeps for one document, for the catalog worker's
+   * memory estimate: its problems, the secrets found in it and the names
+   * it references. Zeros for a document it does not hold.
+   */
+  counts(document: CatalogDocument): {
+    problems: number
+    secrets: number
+    references: number
+  } {
+    const entry = this.entries.get(document)
+    return {
+      problems: entry?.problems.length ?? 0,
+      secrets: entry?.secrets.length ?? 0,
+      references: entry?.references.length ?? 0,
+    }
+  }
+
+  /**
+   * Whether this is the validation of exactly these documents, in any
+   * order, with the context's member handles, at its time or before: then
+   * validating them again for the context only re-checks fact checks that
+   * were in the future.
+   */
+  covers(
+    documents: readonly CatalogDocument[],
+    context: ValidationContext,
+  ): boolean {
+    if (
+      this.members !== membersKey(context) ||
+      millis(context.now) < this.now ||
+      documents.length !== this.documents.length
+    )
+      return false
+    const held = new Set(this.documents)
+    return documents.every((d) => held.has(d))
+  }
 
   /** @internal Every problem, by document in order. */
   *problems(): Iterable<Problem> {
@@ -457,7 +515,7 @@ export class CatalogValidation {
 
   /** @internal Each type schema, written out to compare. */
   get types(): ReadonlyMap<string, string> {
-    this.#types ??= typeTexts(this.catalog.registry)
+    this.#types ??= typeTexts(this.registry)
     return this.#types
   }
 }
@@ -508,12 +566,8 @@ export function updateCatalogValidation(
   if (membersKey(context) !== base.members || now < base.now)
     return prepareCatalogValidation(catalog, context)
   const documents = catalog.documents
-  if (now === base.now && sameList(documents, base.catalog.documents))
-    return base
+  if (now === base.now && sameList(documents, base.documents)) return base
   const present = new Set(documents)
-  // The same document twice: rare enough to validate in full.
-  if (present.size !== documents.length)
-    return prepareCatalogValidation(catalog, context)
 
   const v = new Validator(catalog, context)
   const dirty = new Set<CatalogDocument>()
@@ -537,7 +591,7 @@ export function updateCatalogValidation(
   for (const list of v.names.values())
     if (list.length > 1) for (const document of list) touch(document)
 
-  if (!sameList(catalog.schemas, base.catalog.schemas)) {
+  if (!sameList(catalog.schemas, base.schemas)) {
     const was = base.types
     const is = typeTexts(catalog.registry)
     const types = new Set<string>()
@@ -702,7 +756,6 @@ class Validator {
   document(document: CatalogDocument): DocumentValidation {
     this.references = new Set()
     const problems: Problem[] = [...document.problems]
-    const secrets: FoundSecret[] = []
     const add = (
       code: ProblemCode,
       message: string,
@@ -722,17 +775,17 @@ class Validator {
     this.uniqueNames(document, add)
     check.owner(document.owner, "owner")
     check.body()
-    for (const finding of secretsIn(document)) {
-      secrets.push({ ...finding, documentId: document.id })
-      problems.push(secretProblem(finding, document.id))
-    }
+    const scan = this.context.secretScans
+      ? this.context.secretScans.of(document)
+      : scanOf(document)
+    problems.push(...scan.problems)
 
     if (document.kind === "entity") this.entity(document, check, add, problems)
     else if (document.kind === "schema") this.schema(document, problems)
     else this.startHere(document, add)
     return {
       problems,
-      secrets,
+      secrets: scan.secrets,
       references: [...this.references],
       future: problems.some((p) => p.code === "checked-in-future"),
     }
@@ -1103,6 +1156,77 @@ class Checks {
       return
     }
     this.reference(to, fact.key, fact.range, relation.targets)
+  }
+}
+
+/** What the secret check finds in one document's text. */
+interface SecretScan {
+  secrets: readonly FoundSecret[]
+  /** A `secret` or `secret-suspected` problem for each. */
+  problems: readonly Problem[]
+}
+
+function scanOf(document: CatalogDocument): SecretScan {
+  const secrets = secretsIn(document).map((finding) => ({
+    ...finding,
+    documentId: document.id,
+  }))
+  return {
+    secrets,
+    problems: secrets.map((finding) => secretProblem(finding, document.id)),
+  }
+}
+
+/**
+ * Secret scans by the SHA-256 of the document's text (#116), which they
+ * depend on alone: a document validated again, as a referrer or an entity
+ * of a changed type, or parsed again from the same text, is not scanned
+ * again. Scanning is most of validating long prose.
+ *
+ * The catalog worker keeps one for its workspace and keeps it bounded with
+ * `keepOnly`, to the texts of the validations it keeps; those share the
+ * kept findings and problems, so they cost nothing beyond what the
+ * validation's estimate counts (`CatalogValidation.counts`). A hash, not
+ * the text, is the key: V8 hashes strings over 16,383 characters by their
+ * length alone.
+ */
+export class SecretScans {
+  readonly #scans = new Map<string, SecretScan>()
+  readonly #hashes = new WeakMap<CatalogDocument, string>()
+  /** Texts scanned, for tests. */
+  scanned = 0
+
+  /** The scan of the document's text, made once per text. */
+  of(document: CatalogDocument): SecretScan {
+    const hash = this.#hash(document)
+    let scan = this.#scans.get(hash)
+    if (!scan) {
+      scan = scanOf(document)
+      this.#scans.set(hash, scan)
+      this.scanned++
+    }
+    return scan
+  }
+
+  /** Forgets the scans of every text but those of these documents. */
+  keepOnly(documents: Iterable<CatalogDocument>): void {
+    const keep = new Set<string>()
+    for (const document of documents) keep.add(this.#hash(document))
+    for (const hash of [...this.#scans.keys()])
+      if (!keep.has(hash)) this.#scans.delete(hash)
+  }
+
+  get size(): number {
+    return this.#scans.size
+  }
+
+  #hash(document: CatalogDocument): string {
+    let hash = this.#hashes.get(document)
+    if (hash === undefined) {
+      hash = createHash("sha256").update(document.text).digest("base64url")
+      this.#hashes.set(document, hash)
+    }
+    return hash
   }
 }
 

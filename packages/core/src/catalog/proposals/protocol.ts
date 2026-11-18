@@ -12,6 +12,13 @@ export interface LoadedText {
 export type WorkerRequest =
   /** Parse and keep these stored texts. */
   | { id: number; type: "load"; texts: LoadedText[] }
+  /** Validate the latest revision of these documents, which the worker has parsed. */
+  | {
+      id: number
+      type: "validate"
+      documents: { documentId: string; revision: number }[]
+      input: Pick<PrepareInput, "now" | "memberHandles">
+    }
   /** Apply a proposal to these documents, which the worker has parsed. */
   | {
       id: number
@@ -22,6 +29,7 @@ export type WorkerRequest =
 
 export type WorkerResponse = (
   | { outcome: "loaded" }
+  | { outcome: "validated" }
   | { outcome: "done"; result: Prepared }
   /** Documents the worker does not have parsed. */
   | { outcome: "missing"; missing: string[] }

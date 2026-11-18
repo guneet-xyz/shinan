@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest"
 
-import { parseCatalogDocument } from "../document/index.js"
+import {
+  parseCatalogDocument,
+  prepareCatalogValidation,
+  readCatalog,
+} from "../document/index.js"
 import { estimatedBytes } from "./estimate.js"
 
 function machine(facts: string): string {
@@ -24,5 +28,21 @@ describe("the catalog worker's memory estimate", () => {
     expect(estimatedBytes(own) - estimatedBytes(one)).toBeGreaterThanOrEqual(
       99 * 2048,
     )
+  })
+
+  it("counts what the document's validation keeps, such as suspected secrets", () => {
+    let body = ""
+    for (let k = 0; k < 100; k++) body += `pwd=Q${k}x7k\n`
+    const document = parseCatalogDocument(
+      `---\nid: machine/m\ntype: machine\ntitle: M\nsummary: M.\nowner: person/guneet\n---\n\n# M\n\n${body}`,
+    )
+    const counts = prepareCatalogValidation(readCatalog([document]), {
+      now: Date.now(),
+    }).counts(document)
+    expect(counts.secrets).toBe(100)
+    expect(counts.problems).toBeGreaterThanOrEqual(100)
+    expect(
+      estimatedBytes(document, counts) - estimatedBytes(document),
+    ).toBeGreaterThanOrEqual(100 * (256 + 384))
   })
 })

@@ -153,6 +153,7 @@ export { findSecrets, maxCheckedLength } from "./secrets.js"
 export type { SecretFinding } from "./secrets.js"
 export {
   prepareCatalogValidation,
+  SecretScans,
   updateCatalogValidation,
   validateCatalog,
   validateChange,

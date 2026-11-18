@@ -106,21 +106,24 @@ export type NotApplied =
   | { outcome: "unchanged" }
 
 /**
- * The most a workspace's catalog may hold (**proposed**, M2-4), until
- * validation is incremental (#116): 5,000 documents, 25 MiB of text, and
- * 320 MiB as the catalog worker estimates its memory (`estimatedBytes`),
- * which bounds documents full of facts. A proposal that would take the
- * catalog past any of them, and grow it, is refused; one that shrinks it
- * always applies. Reason: each workspace's catalog is kept parsed in a
- * catalog worker with bounded memory (`CatalogWorkerOptions`), every
- * proposal validates the whole catalog, and an agent's new entities apply
- * on their own (§8.2). At these limits a one-field change took 2 to 4.3 s
- * on Daedalus under load, against a 20 s limit, and peaked at 413 MiB of
- * the worker's 1 GiB heap.
+ * The most a workspace's catalog may hold (**proposed**, M2-4; raised with
+ * incremental validation, #116): 20,000 documents, 50 MiB of text, and
+ * 320 MiB as the catalog worker estimates its memory with its validation
+ * (`estimatedBytes`), which bounds documents full of facts, links, problems
+ * or suspected secrets. A proposal that would take the catalog past any of
+ * them, and grow it, is refused; one that shrinks it always applies.
+ * Reason: each workspace's catalog is kept parsed and validated in a
+ * catalog worker with bounded memory (`CatalogWorkerOptions`), and an
+ * agent's new entities apply on their own (§8.2). At these limits, on
+ * Daedalus under a load of 6 to 10 on 2 cores, a one-field change took
+ * 0.1 to 2 s against a 20 s limit (most of it applying the operations,
+ * which reads the catalog's entities twice), extending the type of every
+ * document 0.1 to 1.3 s, and every shape measured ran within a 384 MiB
+ * heap.
  */
 export const catalogLimits = {
-  documents: 5000,
-  bytes: 25 * 1024 * 1024,
+  documents: 20_000,
+  bytes: 50 * 1024 * 1024,
   estimatedBytes: 320 * 1024 * 1024,
 } as const
 

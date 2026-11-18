@@ -4,9 +4,14 @@ import * as fixtures from "../../../test/catalog-index-fixtures.js"
 import {
   expectationOf,
   parseCatalogDocument,
+  prepareCatalogValidation,
   readCatalog,
 } from "../document/index.js"
-import type { CatalogOperation, CheckInput } from "../document/index.js"
+import type {
+  CatalogDocument,
+  CatalogOperation,
+  CheckInput,
+} from "../document/index.js"
 import { isGated } from "./classify.js"
 import { estimatedBytes } from "./estimate.js"
 import { prepareChange } from "./work.js"
@@ -48,13 +53,14 @@ const stored = documents.map((text, i) => ({
   document: parseCatalogDocument(text),
 }))
 const catalog = readCatalog(stored.map((s) => s.document))
+const now = Date.now()
 
 function prepare(...operations: CatalogOperation[]) {
   return prepareChange(stored, {
     operations,
     by: "guneet via opencode-daedalus",
     explanation: "A test change",
-    now: Date.now(),
+    now,
     memberHandles: ["guneet"],
     approver: { handle: "guneet", preview: false },
   })
@@ -118,10 +124,20 @@ describe("preparing a proposal in the catalog worker", () => {
     expect(result.touches).toEqual(["machine/daedalus", "machine/kojiro"])
     const bytes = (text: string) => Buffer.byteLength(text, "utf8")
     const before = stored.reduce((n, d) => n + bytes(d.document.text), 0)
-    const estimatedBefore = stored.reduce(
-      (n, d) => n + estimatedBytes(d.document),
-      0,
-    )
+    // Each document with what its validation keeps.
+    const estimate = (documents: readonly CatalogDocument[]) => {
+      const v = prepareCatalogValidation(readCatalog(documents), {
+        now,
+        memberHandles: new Set(["guneet"]),
+      })
+      return documents.reduce((n, d) => n + estimatedBytes(d, v.counts(d)), 0)
+    }
+    const after = [
+      ...stored.map((s) =>
+        s === daedalus ? result.documents[0]!.parsed : s.document,
+      ),
+      result.documents[1]!.parsed,
+    ]
     expect(result.size).toEqual({
       bytesBefore: before,
       bytes:
@@ -131,13 +147,12 @@ describe("preparing a proposal in the catalog worker", () => {
         bytes(result.documents[1]!.text),
       documentsBefore: stored.length,
       documents: stored.length + 1,
-      estimatedBefore: estimatedBefore,
-      estimated:
-        estimatedBefore -
-        estimatedBytes(daedalus.document) +
-        estimatedBytes(result.documents[0]!.parsed) +
-        estimatedBytes(result.documents[1]!.parsed),
+      estimatedBefore: estimate(stored.map((s) => s.document)),
+      estimated: estimate(after),
     })
+    expect(result.size.estimatedBefore).toBeGreaterThan(
+      stored.reduce((n, d) => n + estimatedBytes(d.document), 0),
+    )
   })
 
   it("reports conflicts and invalid operations without validating", () => {
