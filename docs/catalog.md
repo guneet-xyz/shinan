@@ -114,6 +114,57 @@ lines, then a Markdown body.
   tools already use; the limited subset keeps documents easy to read and
   parse the same way everywhere. Nested values are allowed because facts carry
   state and provenance.
+- **Proposed (M2-1, [#82](https://github.com/guneet-xyz/shinan/issues/82)):**
+  how the subset is read. YAML 1.2's core schema, so `no`, `on` and dates stay
+  text. Refused: anchors and aliases, tags, directives, `---` or `...` inside
+  the frontmatter, duplicate keys, keys that are not plain text, and infinite
+  or not-a-number values. Shinan reads dates itself: a date (`2026-11-14`) or a
+  date and time with a UTC offset (`2026-11-14T09:30Z`); a time without an
+  offset is refused, because "not in the future" and freshness could not be
+  decided for it. A plain number is accepted only when it reads back exactly
+  as written: `128`, `-5` and `0.5` are numbers, while `1.10`, `0x10`, `0o17`,
+  `+12`, `1e3` and integers too large to hold exactly are refused with a
+  request to quote them (a version is written `"1.10"`). Every field not
+  listed for its kind of document is refused, so a misplaced fact is never
+  silently ignored, and so is a relation attribute named like a JavaScript
+  object member (`__proto__`, `constructor`). Reason: every reader (the
+  index, the export, a person) then agrees on what the text says.
+- **Proposed (M2-1):** limits on what Shinan reads, checked before anything
+  else. A document is at most 64 KiB of UTF-8 (65,536 bytes); the largest
+  `workspace` repository document is about 19 KB. In the body:
+  - a line may start with at most 32 nested quote or list markers;
+  - at most 1,000 quotes or list items may be opened inside others;
+  - at most 1,000 separate quotes or lists may be started;
+  - at most 1,000 lines may continue a quote or list paragraph without its
+    markers (lazy continuation lines);
+  - at most 500 lines may consist of only `=` or `-` (setext heading
+    underlines);
+  - at most 1,000 link destinations may be opened with `](` and not closed.
+
+  **When unsure, count.** The limits are checked by a quick scan that does
+  not parse Markdown exactly; wherever a line could be one of the costly
+  shapes, it counts as one. A line ends at `\n`, `\r\n` or a lone `\r`; a
+  marker counts whether a space, a tab or the end of the line follows it; a
+  line that could start with a marker but continues with text (`-x`, `1.5`)
+  counts as a block start, and inside a quote or list as a lazy line; every
+  unmarked line continuing a quote paragraph is lazy, at any indentation, and
+  so is one in a list item indented less than the item's content, and one that keeps fewer markers than the line that opened its paragraph (`> > a` then `> b`); underlines
+  count inside quotes and lists; markers inside code count too. Reason: an
+  exact scan would be a second Markdown parser with its own gaps, while
+  over-counting costs nothing for real documents, which stay below every
+  limit (at most 452 blocks and 220 lazy lines, counted this way, across the
+  `workspace` repository and Shinan's own documents).
+
+  Emphasis, inline HTML and hard line breaks are not parsed in the body
+  model, which uses only headings and links. Longer or more complex
+  documents are refused (`too-large`, `body-invalid`). Reason: the Markdown
+  parser's time grows with the square of these shapes on hostile input (a
+  64 KB body of nested lists took over a minute), and every proposal, MCP
+  write and index rebuild reads documents. The scan cannot be proven
+  complete, so proposal and MCP text is also read off the main event loop
+  with a time limit
+  ([security checklist 10.8](security-checklist.md#10-features-not-built-yet);
+  M2-4, M2-6).
 
 ### 2.2 Export: the exit path
 
@@ -207,6 +258,12 @@ are not facts about the world, so they carry no fact state.
   the `workspace` repository's checker catches missing link targets, which has
   kept its entries consistent. The same links also work as relative paths in
   an [export](#22-export-the-exit-path).
+- **Proposed (M2-1):** a body link, image or link definition is a reference
+  when its destination has no scheme (such as `https:`) and does not start
+  with `/`, `.`, `#` or `?`; a `#section` part is ignored, so
+  `[cautions](machine/musashi#cautions)` refers to `machine/musashi`. Reason:
+  such a link can only mean an entity inside the wiki, so it must resolve
+  like any other reference; other relative links would be broken there.
 - Links to owning sources are ordinary URLs. Where the source is versioned,
   prefer a link pinned to a revision (a commit) in fact checks.
   **Proposed.** Reason: "the file said X at revision Y" stays true; "the file
@@ -352,7 +409,9 @@ plus body section conventions and what belongs elsewhere.
 The built-in schemas below are **proposed**, drawn from the `workspace`
 repository's templates, which have worked for its 18 projects, 4 machines,
 10 services, 3 runbooks and 3 decisions (counted at `86bba32`). In the lists,
-"(many)" marks multi-valued keys; other keys are single-valued.
+"(many)" marks multi-valued keys; other keys are single-valued, except
+relations, which are multi-valued unless marked otherwise
+([4.2](#42-fact-identity-cardinality-and-current-facts)).
 
 All types share one rule: each entity says **what belongs elsewhere** and links
 to it. Reason: P3.
@@ -367,9 +426,11 @@ the thing on the git host ([git hosts](git-hosts.md)); the project describes it.
   host connection), `docs.readme`, `docs.agent_instructions`,
   `docs.deployment`, `issue_tracker`, `release.latest`.
 - **Relations** (all many): `checkout-on` a machine, identified by machine and
-  `path`; `provides` a service; `depends-on` a service; `configures` a machine
-  or service (for infrastructure repositories); `secrets-in` a secrets manager
-  ([7.2](#72-where-secrets-live)).
+  `path`; `provides` a service; `depends-on` a service; `secrets-in` a secrets
+  manager ([7.2](#72-where-secrets-live)). An infrastructure repository
+  `configures` machines and services through the inverse of their
+  `configured-by` (M2-1: relations are written on one side,
+  [section 5](#5-relations)).
 - **Body:** role in one or two sentences; cautions; cross-project context.
 - **Belongs elsewhere:** setup, architecture, tests and deployment commands
   (the project's repository); deployment facts (the `service` it provides);
@@ -405,7 +466,8 @@ secrets manager.
 - **Facts:** `endpoint` (many), `environment`, `deployment.version`,
   `deployment.built_from`.
 - **Relations:** `runs-on` a machine (many), or `provided-by` an outside
-  provider described in the body; `configured-by` a project; `depends-on`
+  provider described in the body (M2-1: `provided-by` is a plain key naming
+  the provider, not a relation); `configured-by` a project; `depends-on`
   other services (many); `secrets-in` a secrets manager (many). The project it
   comes from is the inverse of the project's `provides`.
 - **Body:** role and authority; dependencies and operational context;
@@ -441,7 +503,10 @@ A real, cross-project procedure, such as rebuilding a machine.
 A lasting decision with its reasoning, for example how releases are versioned.
 
 - **Fields beyond the common ones:** `decision_state`: `proposed`, `accepted`,
-  `rejected` or `superseded`; `decided_on` (date); `decided_by`.
+  `rejected` or `superseded`; `decided_on` (date); `decided_by`. **Proposed
+  (M2-1):** `decision_state` is required on decisions; `decided_by` is a
+  reference to a `person` entity, or `unknown`; these fields are refused on
+  other types.
 - **Relations:** `supersedes` another decision; `applies-to` entities (many);
   `from-task` the task where it was made ([tasks](tasks.md)).
 - **Body:** context; decision; alternatives and reasons; consequences;
@@ -462,9 +527,14 @@ catalog".
 - **Facts:** `enforcement`: `shinan` (Shinan enforces it), `git-host` (for
   example branch protection), or `convention` (people and agents follow it);
   for `shinan` and `git-host`, an `observed` fact that the enforcement is
-  actually in place.
+  actually in place. **Proposed (M2-1):** both are the one key `enforcement`:
+  the `intended` fact says how the rule is meant to be enforced and an
+  `observed` fact what was seen, so a difference shows as a
+  [discrepancy](#47-discrepancies).
 - **Relations:** `applies-to` entity types, specific entities or the whole
-  workspace (many); `see-also` runbooks (many).
+  workspace (many); `see-also` runbooks (many). **Proposed (M2-1):** a type is
+  written as its schema document's ID (`applies-to: schema/machine`), the
+  whole workspace as `workspace`; the same holds for runbooks and decisions.
 - **Body:** the rule; why; what it covers and does not; exceptions.
 - **Reason:** the `workspace` repository's policies (maintenance, access and
   safety, collaboration) are what agents most need, and they currently live
@@ -545,7 +615,16 @@ Rules (all **proposed**):
   Reason: these are exactly the properties the rest of this document needs;
   anything more is configuration nobody will read.
 - **Custom type names** are lowercase kebab-case, may not reuse a built-in
-  type name, and `schema` is reserved.
+  type name, and `schema` is reserved. **Proposed (M2-1):** `workspace` and
+  `task` are reserved too, because `applies-to: workspace` and `from-task`
+  give them their own meaning.
+- **Proposed (M2-1), details of the key options:** `recheck` is a whole
+  number of days (`30d`); a relation is multi-valued unless `many: false`
+  (as in [4.2](#42-fact-identity-cardinality-and-current-facts)); a relation
+  attribute cannot be named like a fact's long-form field (`value`, `to`,
+  `via`, `note`, `task`, `remove`, `accepted`); `required` names keys of the
+  type. An extension of a built-in type may add keys, `required` keys and
+  `sections`; a retired extension adds nothing.
 - **Built-in types can be extended, not changed.** A workspace may add keys to
   a built-in type with its own `schema/<built-in>` document, for example a
   `machine.ups` key. It cannot remove built-in keys or change their options.
@@ -597,15 +676,69 @@ Relations are multi-valued unless the schema says otherwise.
 
 **Identity: which written facts are "the same fact".**
 
-| Kind of key       | A fact is identified by                                                                            |
-| ----------------- | -------------------------------------------------------------------------------------------------- |
-| Single-valued key | key + fact state + `via` (if given)                                                                |
-| Multi-valued key  | key + value                                                                                        |
-| Relation          | relation + target + the attributes the schema names as identifying (for `checkout-on`, the `path`) |
+| Kind of key                                                           | A fact is identified by                                                                                                              |
+| --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Single-valued key, or single-valued relation (**proposed**, M2-1)     | key + fact state + `via` (if given)                                                                                                  |
+| Multi-valued key                                                      | key + fact state (**proposed**, M2-1) + value                                                                                        |
+| Multi-valued relation                                                 | relation + fact state (**proposed**, M2-1) + target + the attributes the schema names as identifying (for `checkout-on`, the `path`) |
+| `unknown` fact of a multi-valued key or relation (**proposed**, M2-1) | key + fact state (and the target, for a relation that names one)                                                                     |
 
 `via` is an optional short label for the means of observation, such as
 `filesystem` or `instance-metadata`. It is only needed when two different
 observations of one single-valued key are kept on purpose.
+
+Reasons for the parts marked M2-1
+([#82](https://github.com/guneet-xyz/shinan/issues/82)):
+
+- **The fact state is part of every identity.** Otherwise an `intended` and
+  an `observed` value of a multi-valued key, or a `planned` removal and the
+  checkout it plans to remove ([4.4](#44-fact-states)), would be one fact and
+  could not both be written.
+- **A single-valued relation** (such as `on-machine`) is identified like a
+  single-valued key. A new target then replaces the old one, and two
+  different targets seen by different means are a discrepancy, as for any
+  single-valued key.
+
+**A change of state** (**proposed**, M2-1). Because the state is part of the
+identity, writing a fact in a new state does not by itself replace the fact
+in the old one. A change of state (a `planned` fact becoming `intended` or
+`observed`, an `unknown` fact becoming known) is one operation that names the
+identity it supersedes, removes that fact and sets the new one. Reason:
+replace-or-add stays a simple rule on identities, while plans and unknowns
+do not linger beside the facts that settled them.
+
+**Known values and `unknown` facts** (**proposed**, M2-1; owner's direction
+on [#95](https://github.com/guneet-xyz/shinan/pull/95)). Writing a known
+(`intended` or `observed`) value removes, in the same operation, an `unknown`
+fact it settles:
+
+- for a single-valued key or relation, the `unknown` fact of the same key;
+- for a multi-valued relation, an `unknown` fact that names the same target.
+
+An `unknown` fact of a multi-valued key, or of a multi-valued relation with
+no target, means "there may be more", so writing one known value does not
+settle it; it stays until it is removed explicitly. Nothing is ever removed
+by omission. Reason: one known endpoint does not mean every endpoint is
+known.
+
+**The fact identity key** (**proposed**, M2-1): every fact gets one line of
+text naming its identity, derived when the document is read and never
+written in it. Operations, proposals, the agent index, MCP tools and the web
+editor name a fact by it. It is the key, the state, then `name=value` parts,
+joined by `|`:
+
+| Kind of key                   | Identity key                                                                       |
+| ----------------------------- | ---------------------------------------------------------------------------------- |
+| Single-valued key or relation | `disk.data.size\|observed`; with `via`, `disk.data.size\|observed\|via=filesystem` |
+| Multi-valued key              | `endpoint\|intended\|value=https://shinan.guneet.dev`                              |
+| Multi-valued relation         | `checkout-on\|observed\|to=machine/musashi\|path=/root/dockyard`                   |
+
+Relation attributes follow the order of the schema's `identified_by`. Values
+are written as text (`128`, `true`); `%`, `|` and line breaks inside a part
+are written `%25`, `%7C`, `%0A` and `%0D`. Reason: agents and the editor can
+name the fact an operation replaces or removes without rebuilding these
+rules, and the key changes exactly when the identity does (for example when a
+schema makes a key single-valued).
 
 **Current facts.** The current facts are exactly the facts in the latest
 applied revision. Earlier values live in [history](#9-history-and-purge).
@@ -658,6 +791,15 @@ facts:
 - A fact appears in exactly one group. A recheck moves it to the new group.
   Groups left empty are dropped from the current document and remain in
   history.
+- **Proposed (M2-1):** details of the long form. A relation's long form names
+  its target with `to`; any other field is a relation attribute (such as
+  `path` or `item`) and holds one value. A key that is not a relation has only
+  `value`, `via`, `note`, `task`, `remove` and `accepted`. `remove: true` is
+  only for `planned` facts. `task` holds a task ID (`T-12`) or the ID of an
+  accepted `decision` entity. `planned` facts are in a group with no fact
+  check, since they have none ([4.4](#44-fact-states)). A multi-valued key may
+  hold one value without a list (`provides: service/container-registry`); a
+  single-valued key never holds a list.
 
 **Proposed.** Reason: one line per fact in the common case (see the Musashi
 trial in [2.6](#26-example)), and facts checked together sit together.
@@ -688,8 +830,15 @@ Rules:
 - A `planned` fact never turns into another state by itself. When the owning
   source declares the change, a new `intended` fact replaces it; when the
   change is seen in the world, a new `observed` fact records it. Both come
-  with fact checks. **Proposed.** Reason: the `workspace` repository's rule
-  that "planned changes are proposals until implemented and verified".
+  with fact checks, and the operation names the `planned` fact it replaces
+  ([4.2](#42-fact-identity-cardinality-and-current-facts), a change of
+  state). **Proposed.** Reason: the `workspace` repository's rule that
+  "planned changes are proposals until implemented and verified".
+- An `unknown` fact becomes known the same way, by an operation that names
+  it; a known value settles an `unknown` fact automatically only for a
+  single-valued key, or a relation naming the same target
+  ([4.2](#42-fact-identity-cardinality-and-current-facts)). **Proposed
+  (M2-1).**
 - A merged change that is not yet applied is `intended`; its absence in the
   world shows as a [discrepancy](#47-discrepancies) with the `observed` fact.
   **Proposed** (glossary test). Reason: drift between source and reality is
@@ -704,13 +853,13 @@ Rules:
 A **fact check** records one act of checking. Several facts can share one
 check when they were checked together.
 
-| Field     | Required | Meaning                                                                                                                                                                                                                                  |
-| --------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `checked` | yes      | When the check actually happened: a date, or date and time. Not when the page was edited or the proposal applied. `null` only for [imported facts](#131-provenance-of-imported-facts) whose origin is known but that were never checked. |
-| `by`      | yes      | The actor who checked: a person, or an agent session acting for a person, written as the [identity](identity.md) document defines; Shinan for automatic fact checks. `unknown` is allowed only for imported checks.                      |
-| `scope`   | yes      | What exactly was checked, in one line.                                                                                                                                                                                                   |
-| `source`  | yes      | Where the evidence is: a URL (pinned where possible), a repository revision, or a short description of the observation. No raw logs or sensitive output.                                                                                 |
-| `limits`  | no       | What was deliberately or necessarily **not** checked, in one line.                                                                                                                                                                       |
+| Field     | Required | Meaning                                                                                                                                                                                                                                                                                                                        |
+| --------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `checked` | yes      | When the check actually happened: a date, or date and time with a UTC offset ([2.1](#21-one-document-per-entity-and-what-source-of-truth-means)). Not when the page was edited or the proposal applied. `null` only for [imported facts](#131-provenance-of-imported-facts) whose origin is known but that were never checked. |
+| `by`      | yes      | The actor who checked: a person, or an agent session acting for a person, written as the [identity](identity.md) document defines; Shinan for automatic fact checks. `unknown` is allowed only for imported checks.                                                                                                            |
+| `scope`   | yes      | What exactly was checked, in one line.                                                                                                                                                                                                                                                                                         |
+| `source`  | yes      | Where the evidence is: a URL (pinned where possible), a repository revision, or a short description of the observation. No raw logs or sensitive output.                                                                                                                                                                       |
+| `limits`  | no       | What was deliberately or necessarily **not** checked, in one line.                                                                                                                                                                                                                                                             |
 
 - **Decided** that each fact records source and last-checked time (D-007).
 - **Proposed:** the fact check record and these fields. Reason: they are the
@@ -749,8 +898,55 @@ verdict: an old fact is not wrong, it is less certain.
   [agent integrations](agent-integrations.md); the catalog supplies the
   checked time and interval.
 - How freshness looks: [human experience](human-experience.md).
-- **Open:** the actual interval values for built-in keys; they are set while
-  writing the built-in type schemas.
+- **Proposed (M2-1, [#82](https://github.com/guneet-xyz/shinan/issues/82)):**
+  how age is counted. A fact checked on a date counts from the start of that
+  day in UTC; it is due once the interval has passed since then. Facts with
+  no fact check (an `unknown` list) and `checked: null` are **not checked**.
+
+**Recheck intervals for built-in keys** (**proposed**, M2-1; this settles
+open question 2). Days; "none" means the age is shown but the fact is never
+marked due. Reason for each band: 7 days for values that change with use
+(free and used space); 14 to 30 days for things that change with routine work
+(deployed version, release, endpoints, checkouts, addresses, where a service
+runs); 90 days for configuration that changes on purpose but rarely (platform
+size and OS, access method, networks, dependencies, where secrets live); 180
+to 365 days for identity and ownership pointers (repositories, documentation
+links, role, provider); none for facts that do not drift (architecture) or
+record an event or a decision rather than a state.
+
+| Type     | Key                                                                                               | Recheck |
+| -------- | ------------------------------------------------------------------------------------------------- | ------- |
+| project  | `repository` (many), `docs.readme`, `docs.agent_instructions`, `docs.deployment`, `issue_tracker` | 180     |
+| project  | `release.latest`, `checkout-on`                                                                   | 30      |
+| project  | `provides`, `depends-on`, `secrets-in`                                                            | 90      |
+| machine  | `role`, `environment`, `hostname`, `configured-by`                                                | 180     |
+| machine  | `provider`                                                                                        | 365     |
+| machine  | `platform.os`, `platform.vm_size`, `access.method`, `access.host_key`, `on-network`, `secrets-in` | 90      |
+| machine  | `platform.arch`                                                                                   | none    |
+| machine  | `access.address`, `disk.root.size`, `disk.data.size`                                              | 30      |
+| machine  | `disk.root.used`, `disk.root.free`, `disk.data.used`, `disk.data.free`                            | 7       |
+| service  | `endpoint` (many), `deployment.built_from`, `runs-on`                                             | 30      |
+| service  | `deployment.version`                                                                              | 14      |
+| service  | `environment`, `configured-by`                                                                    | 180     |
+| service  | `provided-by`                                                                                     | 365     |
+| service  | `depends-on`, `secrets-in`                                                                        | 90      |
+| runbook  | `last_successful_run`, `applies-to`                                                               | none    |
+| runbook  | `changes_deployment`                                                                              | 365     |
+| decision | `supersedes`, `applies-to`, `from-task`                                                           | none    |
+| policy   | `enforcement`                                                                                     | 90      |
+| policy   | `applies-to`, `see-also`                                                                          | none    |
+| person   | `member`                                                                                          | none    |
+| agent    | `agent_record`                                                                                    | none    |
+| agent    | `on-machine`                                                                                      | 180     |
+
+The machine's storage keys are `disk.root.*` and `disk.data.*` with `size`,
+`used` and `free`; other storage keys are added with a schema extension.
+Required keys (listed as not yet recorded when missing, [4.8](#48-unknowns)):
+project `repository`; machine `role`, `environment`, `access.method`; service
+`endpoint`, `environment`; runbook `last_successful_run`,
+`changes_deployment`, `applies-to`; policy `enforcement`, `applies-to`; agent
+`agent_record`, `on-machine`. Reason: these are what an agent needs before
+relying on the entity at all.
 
 ### 4.7 Discrepancies
 
@@ -777,6 +973,17 @@ Rules (**proposed**; reason: P5 and the `workspace` repository's practice):
   an observation shown to be wrong, with a note in the proposal; or recording
   that the difference is accepted, with a `note` and an owner. An accepted
   discrepancy stays visible but is not flagged as needing attention.
+  **Proposed (M2-1):** acceptance is written on the facts: each fact of the
+  discrepancy names the person who accepted it with
+  `accepted: person/<handle>` and says why in its `note`. A discrepancy is
+  accepted when all its facts carry `accepted`. A recheck that leaves every
+  value unchanged keeps `accepted` on the rechecked fact, so the acceptance
+  stays. When a value changes, or a fact joins or leaves the discrepancy, the
+  operation removes `accepted` from all its facts and the discrepancy needs
+  accepting again. Reason: it keeps the acceptance in the text with the
+  evidence; a routine recheck of an accepted difference (such as Musashi's
+  lagging metadata) does not come back for approval every time, while new
+  evidence is looked at again.
 - A `planned` fact that differs from current facts is a plan, not a
   discrepancy.
 - **Open:** whether to flag gaps between the `intended` and `observed` values
@@ -800,6 +1007,12 @@ Two lists are generated, and kept apart (**proposed**):
 Missing required keys are not validation errors, so entities can be created
 from partial knowledge. **Proposed.** Reason: the `workspace` templates say to
 record `unknown` rather than invent information.
+
+A known unknown leaves the list when a known value settles it (a
+single-valued key, or a relation naming the same target) or when it is
+removed explicitly; an `unknown` fact of a multi-valued key stays until it is
+removed explicitly ([4.2](#42-fact-identity-cardinality-and-current-facts),
+known values and `unknown` facts). **Proposed (M2-1).**
 
 ## 5. Relations
 
@@ -1195,9 +1408,35 @@ same catalog pages and changed only with catalog approval. Details
   agents.
 
 - It links and does not copy: each step is a reference to an entity (usually a
-  policy or runbook) or a generated list. Validation warns when a step points
+  policy or runbook) or a generated list, or, during the trial, a URL (see the
+  shape below). Validation warns when a step points
   to a retired entity or to one with discrepancies. Reason: P3; onboarding
   pages are where copies go stale fastest.
+- **Proposed (M2-1, [#82](https://github.com/guneet-xyz/shinan/issues/82)):**
+  the document's shape. Its ID is `start-here`; its fields are `title`
+  (required), `summary`, `owner`, `imported_from`, and the two paths `people`
+  and `agents` (both required, possibly empty). Each step is a map with
+  exactly one target and a `note`, the sentence shown with it:
+
+  ```yaml
+  people:
+    - to: project/shinan
+      note: What this workspace is for and how its work is tracked.
+    - list: discrepancies
+      note: Facts that disagree and need someone to look.
+  agents:
+    - url: https://git.guneet.dev/guneet/workspace/src/branch/main/docs/access-and-safety.md
+      note: The access and safety policy; follow it before touching any machine.
+  ```
+
+  `to` is an entity reference; `list` one of `discrepancies`,
+  `due-for-recheck`, `known-unknowns`, `recent-changes` or
+  `waiting-for-approval` ([section 10](#10-the-wiki)); `url` an `http` or
+  `https` address. Reason for `url`: during the trial, policies stay in the
+  `workspace` repository ([M2 build plan §4](build-plan-m2.md#4-starting-the-catalog-part-of-the-trial)),
+  so the agents' path must be able to point at them. The body is free
+  Markdown for the wiki page.
+
 - Generic rules that every Shinan agent follows in every workspace (how to use
   the MCP tools, how to report presence) are not in this document; they ship
   with the skill ([agent integrations](agent-integrations.md)). The agents'
@@ -1505,7 +1744,9 @@ What this document still needs from other documents:
 
 1. Body embeds of fact values (`{{fact:...}}`): worth the loss of raw
    readability? ([2.5](#25-body))
-2. Recheck interval values for built-in keys. ([4.6](#46-freshness))
+2. _Settled:_ recheck interval values for built-in keys are proposed in
+   [4.6](#46-freshness) (M2-1, [#82](https://github.com/guneet-xyz/shinan/issues/82)).
+   The number is kept so references to the later questions stay valid.
 3. Flagging gaps between intended and observed values of multi-valued keys.
    ([4.7](#47-discrepancies))
 4. Whether Shinan enforces any `policy` beyond its own settings.
