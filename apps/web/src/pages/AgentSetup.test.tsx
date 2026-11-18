@@ -41,12 +41,12 @@ describe("setting up OpenCode", () => {
       },
       skills: [`${origin}/skills/`],
     })
-    // The token is written from the terminal into a file only its user
-    // can read, never given on a command line.
+    // The token is read without echo and written by a shell builtin into a
+    // file only its user can read, never given on a command line.
     expect(
       screen.getByText(/umask 077/, { selector: "code" }).textContent,
     ).toBe(
-      "(umask 077; mkdir -p ~/.config/shinan && cat > ~/.config/shinan/token)",
+      "(umask 077; mkdir -p ~/.config/shinan && chmod 700 ~/.config/shinan && IFS= read -rs t && : > ~/.config/shinan/token && chmod 600 ~/.config/shinan/token && printf '%s\\n' \"$t\" > ~/.config/shinan/token)",
     )
     expect(screen.getByText("opencode mcp list")).toBeTruthy()
   })

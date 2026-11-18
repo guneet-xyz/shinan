@@ -390,7 +390,10 @@ a second PR, so M2-2 and M2-3 can start earlier.
   never sent, only where they live; trust labels, in the wording of
   [agent integrations](agent-integrations.md#trust-labels); falling back to
   the `workspace` repository if Shinan is down. Task, presence and nudge
-  conventions are added in M3 and M4.
+  conventions are added in M3 and M4. **As built** (owner, M2-Q12): the
+  fallback is worded generically, the project's own instructions and the
+  owning sources, without naming the `workspace` repository; the trial
+  note in that repository names it ([3.13](#313-m2-13-trial-start-kit)).
 - **Served** as an HTTP skill catalog at `/skills/` with `index.json`, whose
   `version` changes when the files change ([OpenCode skills](https://opencode.ai/docs/skills),
   checked 2026-11-17). OpenCode's HTTP catalogs send no credentials, so the
@@ -589,7 +592,8 @@ People type secrets; agents never handle them. Agents prepare every step.
 Decided by the owner on 2026-11-17 ("Approve and start",
 [issue #79](https://github.com/guneet-xyz/shinan/issues/79)). The labels
 M2-Q1 to M2-Q5 name the questions this plan asked; M2-Q6 came up during
-M2-3 (2026-11-18).
+M2-3 (2026-11-18), and M2-Q12 during M2-9 (2026-11-18; M2-Q7 to M2-Q11
+are taken by answers recorded in other open changes).
 
 ### 7.1 Answers
 
@@ -620,6 +624,15 @@ M2-3 (2026-11-18).
    change. Recorded in [agent integrations, trust labels](agent-integrations.md#trust-labels);
    M2-6 shows `written_by` as `author`/`author_kind`. No decision record
    changes.
+7. **M2-Q12, the skill's fallback when Shinan is down** (owner,
+   2026-11-18, [#90](https://github.com/guneet-xyz/shinan/issues/90)): keep
+   it generic: carry on with the project's own instructions and the owning
+   sources, say so, and record the catalog updates owed. The skill does not
+   name the `workspace` repository, because it is public and the same for
+   every installation; the trial note in that repository covers the trial
+   ([3.13](#313-m2-13-trial-start-kit)). Recorded in
+   [agent integrations, the skill](agent-integrations.md#the-skill). No
+   decision record changes.
 
 ### 7.2 Defaults for open questions in the documents
 

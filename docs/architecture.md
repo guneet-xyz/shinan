@@ -1028,7 +1028,9 @@ As built in M1-6 (details and tests in the [checklist](security-checklist.md)):
   `application/json` or `text/markdown` in UTF-8, with
   `Cache-Control: public, max-age=300` (OpenCode and any cache may keep a
   copy for five minutes; the skill changes only with a release), a strong
-  `ETag` honoured by `If-None-Match` (304), `X-Robots-Tag: noindex`, and the
+  `ETag` honoured by `If-None-Match` (304 for `*` or a listed tag, compared
+  weakly as RFC 9110 §13.1.2 says, so a tag a compressing proxy weakened
+  still matches), `X-Robots-Tag: noindex`, and the
   security headers above; no cookie is read or set. Not rate limited, like
   `/api/status`: the answers are a few kilobytes from memory. The catalog
   format and version are in

@@ -201,6 +201,17 @@ describe("the skill at /skills/, without sign-in", () => {
       headers: { "if-none-match": '"other"' },
     })
     expect(changed.status).toBe(200)
+    // Weak comparison: a tag a proxy weakened still matches, and so does *.
+    for (const header of [`W/${etag}`, `"x", W/${etag}`, "*"]) {
+      const weak = await app.request("/skills/shinan/SKILL.md", {
+        headers: { "if-none-match": header },
+      })
+      expect(weak.status, header).toBe(304)
+    }
+    const otherWeak = await app.request("/skills/shinan/SKILL.md", {
+      headers: { "if-none-match": 'W/"other"' },
+    })
+    expect(otherWeak.status).toBe(200)
   })
 
   it("serves nothing else: no listing, no other path, no other method", async () => {

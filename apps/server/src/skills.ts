@@ -35,13 +35,21 @@ export function createSkills(catalog: SkillCatalog) {
       // A search engine has no use for these files.
       "x-robots-tag": "noindex",
     }
-    const match = c.req.header("if-none-match")
-    if (
-      match !== undefined &&
-      match.split(",").some((tag) => tag.trim() === file.etag)
-    )
+    if (notModified(c.req.header("if-none-match"), file.etag))
       return c.body(null, 304, headers)
     return c.body(file.body, 200, headers)
   })
   return skills
+}
+
+/**
+ * Whether `If-None-Match` matches the file's tag (RFC 9110 §13.1.2): `*`,
+ * or any listed tag by weak comparison, so a tag a proxy weakened
+ * (`W/"…"`, as when it compresses on the fly) still matches.
+ */
+export function notModified(header: string | undefined, etag: string): boolean {
+  if (header === undefined) return false
+  if (header.trim() === "*") return true
+  const opaque = (tag: string) => tag.trim().replace(/^W\//, "")
+  return header.split(",").some((tag) => opaque(tag) === opaque(etag))
 }

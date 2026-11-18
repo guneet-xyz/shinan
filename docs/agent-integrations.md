@@ -610,12 +610,14 @@ as built:**
   ([catalog §7.3](catalog.md#73-a-check-for-secret-looking-values)) and no
   address but `*.example` ones, so no workspace data or installation
   address is ever in the skill.
-- **If Shinan is down,** the skill tells the agent to carry on with its
-  project's own instructions and the owning sources, say so, and record the
-  catalog updates it owes. It does not name the `workspace` repository:
-  the skill is public and serves every installation, so which fallback a
-  project has belongs to that project's instructions. For the trial, the
-  `workspace` repository's note says it ([trial start kit](build-plan-m2.md#313-m2-13-trial-start-kit)).
+- **Decided (owner, 2026-11-18, M2-Q12 in the
+  [build plan](build-plan-m2.md#71-answers)): if Shinan is down,** the
+  skill tells the agent to carry on with its project's own instructions and
+  the owning sources, say so, and record the catalog updates it owes. It
+  does not name the `workspace` repository. Reason: the skill is public and
+  serves every installation, so which fallback a project has belongs to that
+  project's instructions. For the trial, the `workspace` repository's note
+  says it ([trial start kit](build-plan-m2.md#313-m2-13-trial-start-kit)).
 - **The write tools** are described from M2-4's proposal API and M2-6's
   planned tool names, marked **to be confirmed** in the skill itself, with
   the instruction to follow each tool's own description where they differ;
@@ -630,11 +632,22 @@ once (in a new tab, so the token stays on screen). It fills in the
 installation's own address and gives four steps:
 
 1. Make a token by hand in Your agents (read-only if the agent only reads).
-2. Store it on the machine from a terminal, never the coding tool's chat:
-   `(umask 077; mkdir -p ~/.config/shinan && cat > ~/.config/shinan/token)`,
-   then paste, Enter, Ctrl-D. Reason: the file is readable only by its user,
-   and the token is never on a command line or in shell history
-   ([requirement 3](#authentication-requirements)).
+2. Store it on the machine from a terminal in bash or zsh, never the coding
+   tool's chat, then paste the token and press Enter:
+
+   ```sh
+   (umask 077; mkdir -p ~/.config/shinan && chmod 700 ~/.config/shinan && IFS= read -rs t && : > ~/.config/shinan/token && chmod 600 ~/.config/shinan/token && printf '%s\n' "$t" > ~/.config/shinan/token)
+   ```
+
+   Reason ([requirement 3](#authentication-requirements)): `read -s` shows
+   nothing, so the token is not on screen, in scrollback or terminal logs;
+   it is never on a command line or in shell history, and `printf` is a
+   shell builtin, so it is never in the process list either. The folder is
+   700 and the file 600 even if they existed before (`cat >` or a plain
+   redirect would keep an older file's mode), and the file is emptied and
+   locked down before the token goes in. A shell without `read -s`, such as
+   `dash`, stops at `read` and writes nothing.
+
 3. Add to `opencode.jsonc` in a folder above the projects that should use
    Shinan, or to `~/.config/opencode/opencode.jsonc` for every folder:
 

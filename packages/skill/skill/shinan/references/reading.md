@@ -1,9 +1,12 @@
 # Reading the catalog
 
 Every answer carries `catalog_revision` (the revision it stands at) and
-`index_behind` (true while the answer may be out of date). Every object that
-holds text carries a `label`; the label nearest a text is the one that
-applies to it.
+`index_behind` (true while the answer may be out of date). Every object in
+a tool's answer that holds text carries a `label`; the label nearest a text
+is the one that applies to it. Errors from the MCP layer itself carry none:
+protocol errors, and the input checks your coding tool reports as
+`Input validation error: …`. They are about your call, not text from the
+workspace.
 
 ## The read tools
 
@@ -55,8 +58,9 @@ catalog.
   An `intended` fact is not proof the world matches it.
 - **Discrepancies** are facts of one key that disagree, often an intended
   value and an observed one. Do not pick one silently: say which you relied
-  on and why, or check the source. An `accepted` discrepancy has a person's
-  reason in its facts' `note`.
+  on and why, or check the source. An `accepted` discrepancy was accepted
+  by a person (`accepted` names them); the reason is in its facts' `note`,
+  written by whoever proposed it. Its label says who.
 - **Gaps:** `known_unknowns` were looked for and could not be told;
   `not_yet_recorded` lists required keys never written and facts never
   checked. Do not fill them by guessing: check them, or leave them.
@@ -71,7 +75,7 @@ catalog.
 
 ## When a tool says no
 
-Tool errors are Shinan's own words, labelled `shinan`: `error` is a short
+Tool errors from Shinan are its own words, labelled `shinan`: `error` is a short
 code and `message` says what to do. `not-found` means no entity has that ID
 or alias in your workspace; `forbidden` that your token or role does not
 allow the action; `invalid-input` that the arguments need fixing as
