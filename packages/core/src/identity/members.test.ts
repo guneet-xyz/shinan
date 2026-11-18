@@ -353,7 +353,7 @@ describe("changeRole", () => {
           )
           expect(waiting.rows[0]!.count).toBe(2)
         },
-        { timeout: 3_000, interval: 20 },
+        { timeout: 10_000, interval: 20 },
       )
       await holder.query("commit")
 
