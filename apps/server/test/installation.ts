@@ -33,7 +33,7 @@ export async function startInstallation(
     {},
     process.env.DATABASE_URL ?? inject("databaseUrl"),
   )
-  const { db, pool } = createDatabase(database.url)
+  const { db, pool } = createDatabase(database.url, { refuseNested: true })
   await migrateJobQueue(database.url)
   const jobs = await connectJobQueue(database.url)
   await setUpInstallation({ db, actor: shinan }, { name: "Test Shinan" })

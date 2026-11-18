@@ -60,6 +60,50 @@ function hasHiddenCharacters(value: string): boolean {
   return false
 }
 
+/**
+ * Whether PostgreSQL can store the text: no NUL character, which neither
+ * `text` nor `jsonb` holds, and no unpaired surrogate, which is not
+ * Unicode (UTF-8 has no form for it, and `jsonb` refuses its escape).
+ * Text that fails this is refused as invalid input, never sent to the
+ * database, where it would fail as an unexpected error.
+ */
+export function isStorableText(value: string): boolean {
+  return !value.includes("\0") && value.isWellFormed()
+}
+
+/**
+ * Refuses outside input holding text PostgreSQL cannot store
+ * (`isStorableText`): every string in it, at any depth, and every object
+ * key. `what` names the input in the message.
+ */
+export function checkStorable(value: unknown, what: string): void {
+  const path = findUnstorable(value, what)
+  if (path !== null)
+    throw new InvalidInputError(
+      "text-characters",
+      `${path} holds a character Shinan cannot store: a NUL character or an unpaired surrogate`,
+    )
+}
+
+function findUnstorable(value: unknown, path: string): string | null {
+  if (typeof value === "string") return isStorableText(value) ? null : path
+  if (Array.isArray(value)) {
+    for (const [i, item] of value.entries()) {
+      const found = findUnstorable(item, `${path}[${i}]`)
+      if (found !== null) return found
+    }
+    return null
+  }
+  if (typeof value === "object" && value !== null) {
+    for (const [key, item] of Object.entries(value)) {
+      if (!isStorableText(key)) return `${path} (a property name)`
+      const found = findUnstorable(item, `${path}.${key}`)
+      if (found !== null) return found
+    }
+  }
+  return null
+}
+
 /** The longest name or title accepted, such as a workspace's name. */
 export const nameLengthLimit = 100
 
@@ -73,7 +117,7 @@ export function checkName(value: string, what: string): string {
   if (trimmed === "") {
     throw new InvalidInputError("name-blank", `${what} must not be blank`)
   }
-  if (hasHiddenCharacters(trimmed)) {
+  if (hasHiddenCharacters(trimmed) || !trimmed.isWellFormed()) {
     throw new InvalidInputError(
       "name-characters",
       `${what} must not contain control or text-direction characters`,

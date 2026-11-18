@@ -66,7 +66,9 @@ new catalog revision.
   `text` (at most 4,000 characters) and an `idempotency_key`: for example
   your findings when your person asks you to review one. It informs the
   reviewer; only people approve. `get_catalog_proposal` shows the
-  comments, each labelled by who wrote it.
+  comments, each labelled by who wrote it, 20 at a time, oldest first,
+  with `comment_count`; pass `comments_next_cursor` back as
+  `comments_cursor` for more.
 
 Every answer has an `outcome` and, once stored, the `proposal` with its
 `id`, `number` and `state`; a proposal that did not apply has `problems`

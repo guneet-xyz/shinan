@@ -1,6 +1,6 @@
-import { afterAll, beforeEach, describe, expect, it } from "vitest"
+import { afterAll, beforeEach, describe, expect, inject, it } from "vitest"
 
-import { and, asc, eq, schema, sql } from "@shinan/db"
+import { and, asc, createDatabase, eq, schema, sql } from "@shinan/db"
 
 import {
   asAgent,
@@ -242,9 +242,9 @@ describe("comments on catalog proposals", () => {
       text: "Checked: nothing still runs on Musashi.",
     })
     expect(
-      (await listCatalogProposalComments(asOwner, workspaceId, waiting.id)).map(
-        (c) => [c.author.kind, c.text],
-      ),
+      (
+        await listCatalogProposalComments(asOwner, workspaceId, waiting.id)
+      ).items.map((c) => [c.author.kind, c.text]),
     ).toEqual([
       ["agent", "Checked: nothing still runs on Musashi."],
       ["person", "Thanks."],
@@ -287,7 +287,7 @@ describe("comments on catalog proposals", () => {
     // Reading comments needs only catalog:read.
     await expect(
       listCatalogProposalComments(reader, workspaceId, waiting.id),
-    ).resolves.toEqual([])
+    ).resolves.toEqual({ items: [], nextCursor: null, total: 0 })
   })
 })
 
@@ -820,7 +820,8 @@ describe("review fixes", () => {
       }),
     ).rejects.toMatchObject({ rule: "idempotency-key-reused" })
     expect(
-      await listCatalogProposalComments(asOwner, workspaceId, waiting.id),
+      (await listCatalogProposalComments(asOwner, workspaceId, waiting.id))
+        .items,
     ).toHaveLength(1)
 
     const actor = agent.actor as { agentId: string }
@@ -868,6 +869,172 @@ describe("review fixes", () => {
         ),
       )
     expect(await status(own.id)).toBe("member-left")
+  })
+})
+
+describe("comments at scale (second review)", () => {
+  it("serves more comments at once than the pool has connections", async () => {
+    // A database without the nesting check, as in production, with the
+    // default pool of 10 connections: before the fix, 10 agents commenting
+    // at once each held a transaction and waited for a second connection.
+    const loose = createDatabase(inject("databaseUrl"))
+    try {
+      const waiting = stored(await propose(agent, [retire]))
+      const agents = await Promise.all(
+        Array.from({ length: 16 }, () => asAgent(db, owner, workspaceId)),
+      )
+      let timer: NodeJS.Timeout | undefined
+      const hung = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          reject(new Error("The comments did not finish: the pool is stuck"))
+        }, 30_000)
+      })
+      try {
+        const comments = await Promise.race([
+          Promise.all(
+            agents.map((each, i) =>
+              commentOnCatalogProposal({ ...each, db: loose.db }, workspaceId, {
+                proposalId: waiting.id,
+                text: `Finding ${i}.`,
+                idempotencyKey: `finding-${i}`,
+              }),
+            ),
+          ),
+          hung,
+        ])
+        expect(comments).toHaveLength(16)
+      } finally {
+        clearTimeout(timer)
+      }
+      expect(
+        (await listCatalogProposalComments(asOwner, workspaceId, waiting.id))
+          .total,
+      ).toBe(16)
+    } finally {
+      await loose.pool.end()
+    }
+  }, 60_000)
+
+  it("gives comments a page at a time, oldest first", async () => {
+    const waiting = stored(await propose(agent, [retire]))
+    for (let i = 1; i <= 5; i++)
+      await commentOnCatalogProposal(asOwner, workspaceId, {
+        proposalId: waiting.id,
+        text: `Comment ${i}.`,
+      })
+    const first = await listCatalogProposalComments(
+      asOwner,
+      workspaceId,
+      waiting.id,
+      { limit: 2 },
+    )
+    expect(first.items.map((c) => c.text)).toEqual(["Comment 1.", "Comment 2."])
+    expect(first.total).toBe(5)
+    const second = await listCatalogProposalComments(
+      asOwner,
+      workspaceId,
+      waiting.id,
+      { limit: 2, cursor: first.nextCursor! },
+    )
+    expect(second.items.map((c) => c.text)).toEqual([
+      "Comment 3.",
+      "Comment 4.",
+    ])
+    const last = await listCatalogProposalComments(
+      asOwner,
+      workspaceId,
+      waiting.id,
+      { limit: 2, cursor: second.nextCursor! },
+    )
+    expect(last).toMatchObject({ nextCursor: null, total: 5 })
+    expect(last.items.map((c) => c.text)).toEqual(["Comment 5."])
+    // 50 by default; a cursor must be a comment of this proposal.
+    expect(
+      (await listCatalogProposalComments(asOwner, workspaceId, waiting.id))
+        .items,
+    ).toHaveLength(5)
+    const other = stored(await propose(agent, [rename("Musashi", "Musashi I")]))
+    for (const input of [
+      { cursor: first.items[0]!.id.replace(/./, "f") },
+      { cursor: "nope" },
+      { limit: 0 },
+    ])
+      await expect(
+        listCatalogProposalComments(asOwner, workspaceId, other.id, input),
+      ).rejects.toMatchObject({ rule: input.limit === 0 ? "limit" : "cursor" })
+  })
+})
+
+describe("text PostgreSQL cannot store (NUL, unpaired surrogates)", () => {
+  const nul = "before\u0000after"
+  const lone = "before\ud800after"
+
+  it("refuses it in a proposal's explanation and operations, as invalid input", async () => {
+    for (const bad of [nul, lone]) {
+      await expect(
+        proposeCatalogChange(agent, workspaceId, {
+          explanation: bad,
+          operations: [rename("Musashi", "Musashi I")],
+        }),
+      ).rejects.toMatchObject({ rule: "text-characters" })
+      await expect(
+        propose(agent, [rename("Musashi", bad)]),
+      ).rejects.toMatchObject({ rule: "text-characters" })
+      await expect(
+        propose(agent, [
+          {
+            op: "edit-body",
+            document: "machine/musashi",
+            text: `# Musashi\n\n${bad}\n`,
+            expect: { text: "# Musashi\n\nThe shared production host.\n" },
+          },
+        ]),
+      ).rejects.toBeInstanceOf(InvalidInputError)
+      await expect(
+        proposeCatalogChange(agent, workspaceId, {
+          explanation: "A change.",
+          operations: [rename("Musashi", "Musashi I")],
+          idempotencyKey: bad,
+        }),
+      ).rejects.toMatchObject({ rule: "text-characters" })
+    }
+  })
+
+  it("refuses it in comments, rejection reasons and reverts", async () => {
+    const waiting = stored(await propose(agent, [retire]))
+    const renamed = stored(
+      await propose(agent, [rename("Musashi", "Musashi I")]),
+    )
+    for (const bad of [nul, lone]) {
+      await expect(
+        commentOnCatalogProposal(agent, workspaceId, {
+          proposalId: waiting.id,
+          text: bad,
+        }),
+      ).rejects.toMatchObject({ rule: "text-characters" })
+      await expect(
+        commentOnCatalogProposal(agent, workspaceId, {
+          proposalId: waiting.id,
+          text: "Fine.",
+          idempotencyKey: bad,
+        }),
+      ).rejects.toMatchObject({ rule: "text-characters" })
+      await expect(
+        rejectCatalogProposals(asOwner, workspaceId, {
+          proposalIds: [waiting.id],
+          reason: bad,
+        }),
+      ).rejects.toMatchObject({ rule: "text-characters" })
+      await expect(
+        revertCatalogProposal(asOwner, workspaceId, {
+          proposalId: renamed.id,
+          explanation: bad,
+        }),
+      ).rejects.toMatchObject({ rule: "text-characters" })
+    }
+    expect(
+      (await getCatalogProposal(asOwner, workspaceId, waiting.id)).state,
+    ).toBe("pending")
   })
 })
 

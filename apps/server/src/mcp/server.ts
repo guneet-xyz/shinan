@@ -10,6 +10,7 @@ import {
   agentCatalogList,
   agentCatalogLists,
   agentCommentOnCatalogProposal,
+  agentCommentPage,
   agentGetCatalogProposal,
   agentGetEntity,
   agentProposeCatalogChange,
@@ -507,12 +508,19 @@ function buildServer(options: McpOptions, call: CallContext): McpServer {
     "get_catalog_proposal",
     {
       title: "Get a catalog proposal",
-      description:
-        "One catalog proposal by ID: its state (pending, applied, rejected or withdrawn), operations, approval classes and the reasons it waits, validation warnings, the revision it applied as, a rejection's reason, and its comments, each labelled by who wrote it.",
-      inputSchema: z.object({ id: proposalId }),
+      description: `One catalog proposal by ID: its state (pending, applied, rejected or withdrawn), operations, approval classes and the reasons it waits, validation warnings, the revision it applied as, a rejection's reason, and its comments, each labelled by who wrote it: ${agentCommentPage} at a time, oldest first, with comment_count; for more, pass comments_next_cursor as comments_cursor.`,
+      inputSchema: z.object({
+        id: proposalId,
+        comments_cursor: z.string().min(1).max(100).optional(),
+      }),
       annotations: readOnly,
     },
-    (input) => answer(() => agentGetCatalogProposal(ctx, input.id)),
+    (input) =>
+      answer(() =>
+        agentGetCatalogProposal(ctx, input.id, {
+          ...defined({ commentsCursor: input.comments_cursor }),
+        }),
+      ),
   )
 
   server.registerTool(

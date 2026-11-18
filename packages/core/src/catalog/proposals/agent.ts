@@ -95,8 +95,12 @@ export interface AgentProposalAnswer {
     CatalogProposal["state"] | "conflict" | "invalid" | "blocked" | "unchanged"
   proposal?: AgentProposalJson
   problems?: AgentProblemJson[]
-  /** With `get_catalog_proposal`: its comments, oldest first. */
+  /** With `get_catalog_proposal`: a page of its comments, oldest first. */
   comments?: AgentCommentJson[]
+  /** How many comments the proposal has in all. */
+  comment_count?: number
+  /** Pass as `comments_cursor` for the next page; null on the last. */
+  comments_next_cursor?: string | null
   label: TrustLabel
 }
 
@@ -179,10 +183,18 @@ export async function agentRecordFactCheck(
   })
 }
 
-/** The `get_catalog_proposal` tool: one proposal of the agent's workspace. */
+/** How many comments `get_catalog_proposal` gives at a time. */
+export const agentCommentPage = 20
+
+/**
+ * The `get_catalog_proposal` tool: one proposal of the agent's workspace,
+ * with its comments a page at a time, oldest first: `agentCommentPage`
+ * from the start, or after `commentsCursor`.
+ */
 export async function agentGetCatalogProposal(
   ctx: Context,
   proposalId: string,
+  options: { commentsCursor?: string } = {},
 ): Promise<AgentProposalAnswer> {
   const agent = agentOf(ctx)
   const proposal = await getCatalogProposal(ctx, agent.workspaceId, proposalId)
@@ -192,9 +204,20 @@ export async function agentGetCatalogProposal(
     { outcome: proposal.state, proposal },
     [],
   )
-  answer.comments = (
-    await listCatalogProposalComments(ctx, agent.workspaceId, proposal.id)
-  ).map(commentJson)
+  const comments = await listCatalogProposalComments(
+    ctx,
+    agent.workspaceId,
+    proposal.id,
+    {
+      limit: agentCommentPage,
+      ...(options.commentsCursor === undefined
+        ? {}
+        : { cursor: options.commentsCursor }),
+    },
+  )
+  answer.comments = comments.items.map(commentJson)
+  answer.comment_count = comments.total
+  answer.comments_next_cursor = comments.nextCursor
   return answer
 }
 

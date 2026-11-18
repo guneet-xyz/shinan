@@ -29,6 +29,7 @@ export type {
 } from "./proposals.js"
 export {
   agentCommentOnCatalogProposal,
+  agentCommentPage,
   agentGetCatalogProposal,
   agentProposeCatalogChange,
   agentRecordFactCheck,
@@ -45,6 +46,7 @@ export {
   approveCatalogProposals,
   bulkApprovalLimit,
   commentLimit,
+  commentPage,
   commentOnCatalogProposal,
   getCatalogSettings,
   listCatalogProposalComments,
@@ -58,6 +60,7 @@ export type {
   BulkRejectionResult,
   BulkSelection,
   CatalogProposalComment,
+  CatalogProposalCommentsInput,
   CatalogSettings,
   RecentCatalogChange,
   RecentCatalogChangesInput,

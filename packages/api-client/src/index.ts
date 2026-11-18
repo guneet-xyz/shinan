@@ -721,10 +721,23 @@ export function createApiClient(options: ApiClientOptions = {}) {
         `${catalog(workspaceId)}/proposals/bulk-reject`,
         { ...selection, reason },
       ),
-    catalogProposalComments: (workspaceId: string, proposalId: string) =>
-      request<{ items: CatalogProposalComment[] }>(
+    catalogProposalComments: (
+      workspaceId: string,
+      proposalId: string,
+      options: { cursor?: string; limit?: number } = {},
+    ) =>
+      request<{
+        items: CatalogProposalComment[]
+        nextCursor: string | null
+        total: number
+      }>(
         "GET",
-        `${catalog(workspaceId)}/proposals/${encodeURIComponent(proposalId)}/comments`,
+        `${catalog(workspaceId)}/proposals/${encodeURIComponent(proposalId)}/comments${search(
+          {
+            cursor: options.cursor,
+            limit: options.limit?.toString(),
+          },
+        )}`,
       ),
     commentOnCatalogProposal: (
       workspaceId: string,

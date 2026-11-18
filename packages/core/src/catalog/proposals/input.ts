@@ -1,4 +1,5 @@
 import { InvalidInputError } from "../../errors.js"
+import { checkStorable } from "../../validation.js"
 import {
   maxFacts,
   maxOperations,
@@ -55,6 +56,7 @@ export function checkProposalInput(input: unknown): ProposalInput {
       Object.getPrototypeOf(input) !== null)
   )
     throw invalid("proposal-shape", "The proposal is an object")
+  checkStorable(input, "The proposal")
   const proposal = input as Record<string, unknown>
   for (const key of Object.keys(proposal))
     if (

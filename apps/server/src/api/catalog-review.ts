@@ -64,15 +64,21 @@ export function catalogReviewRoutes(
     )
   })
 
-  app.get(`${base}/proposals/:proposalId/comments`, async (c) =>
-    c.json({
-      items: await listCatalogProposalComments(
+  app.get(`${base}/proposals/:proposalId/comments`, async (c) => {
+    const cursor = c.req.query("cursor")
+    const limit = integerQuery(c, "limit")
+    return c.json(
+      await listCatalogProposalComments(
         ctx(c),
         workspaceId(c),
         c.req.param("proposalId"),
+        {
+          ...(cursor === undefined ? {} : { cursor }),
+          ...(limit === undefined ? {} : { limit }),
+        },
       ),
-    }),
-  )
+    )
+  })
 
   app.post(`${base}/proposals/:proposalId/comments`, async (c) => {
     const body = await readBody(c)

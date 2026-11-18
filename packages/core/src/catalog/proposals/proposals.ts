@@ -29,7 +29,7 @@ import { appendEvent } from "../../events.js"
 import type { EventCredit, WriteScope } from "../../events.js"
 import { rateLimits, takeRateLimit } from "../../rate-limits.js"
 import { recordSecurityEntry } from "../../security-log.js"
-import { isId } from "../../validation.js"
+import { checkStorable, isId } from "../../validation.js"
 import type {
   CatalogOperation,
   OperationProblem,
@@ -470,6 +470,7 @@ export async function rejectCatalogProposal(
         "reason-too-long",
         `The reason is longer than ${rejectionReasonLimit} characters`,
       )
+    checkStorable(reason, "The reason")
     const row = await pendingProposal(scope, input.proposalId)
     const [updated] = await scope.tx
       .update(schema.catalogProposals)

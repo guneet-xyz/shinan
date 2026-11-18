@@ -12,6 +12,7 @@ import {
   schema,
   sql,
 } from "@shinan/db"
+import type { SQL } from "@shinan/db"
 
 import { shinan } from "../../actor.js"
 import { inWorkspace, snapshotRead } from "../../authorize.js"
@@ -25,7 +26,7 @@ import {
 import { appendEvent } from "../../events.js"
 import { rateLimits, takeRateLimit } from "../../rate-limits.js"
 import { recordSecurityEntry } from "../../security-log.js"
-import { isId } from "../../validation.js"
+import { checkStorable, isId } from "../../validation.js"
 import { maxOperations, taskIdPattern } from "../document/index.js"
 import type {
   CatalogOperation,
@@ -78,57 +79,50 @@ export const commentLimit = 4000
  * `catalog:propose`, such as one asked to review it (catalog §8.6). A
  * comment informs the reviewer; it never approves. Comments are not
  * edited; purge (M2-10) can remove one.
+ *
+ * Three steps, so no transaction is held while another connection is
+ * needed: a read finds the proposal and a retry's stored comment; then an
+ * agent's rate limit is counted, outside any transaction, as proposals do;
+ * then the comment is stored.
  */
 export async function commentOnCatalogProposal(
   ctx: Context,
   workspaceId: string,
   input: { proposalId: string; text: string; idempotencyKey?: string | null },
 ): Promise<CatalogProposalComment> {
-  return inWorkspace(ctx, workspaceId, "catalog.comment", async (scope) => {
-    const text = typeof input.text === "string" ? input.text.trim() : ""
-    if (text === "")
-      throw new InvalidInputError("comment-blank", "Write the comment")
-    if (text.length > commentLimit)
-      throw new InvalidInputError(
-        "comment-too-long",
-        `A comment is at most ${commentLimit} characters`,
+  const text = typeof input.text === "string" ? input.text.trim() : ""
+  if (text === "")
+    throw new InvalidInputError("comment-blank", "Write the comment")
+  if (text.length > commentLimit)
+    throw new InvalidInputError(
+      "comment-too-long",
+      `A comment is at most ${commentLimit} characters`,
+    )
+  checkStorable(text, "The comment")
+  const key = checkKey(input.idempotencyKey)
+  const retried = await inWorkspace(
+    ctx,
+    workspaceId,
+    "catalog.comment",
+    async (scope) => {
+      const proposal = await findProposal(
+        scope.tx,
+        scope.workspaceId,
+        input.proposalId,
       )
-    const key = checkKey(input.idempotencyKey)
+      return storedComment(scope, key, proposal.id, text)
+    },
+    snapshotRead,
+  )
+  if (retried) return retried
+  if (ctx.actor.kind === "agent")
+    await throttle(ctx, "catalog-comment", ctx.actor.agentId)
+  return inWorkspace(ctx, workspaceId, "catalog.comment", async (scope) => {
     const proposal = await findProposal(
       scope.tx,
       scope.workspaceId,
       input.proposalId,
     )
-    const t = schema.catalogProposalComments
-    const stored = async () => {
-      if (key === null) return null
-      const [existing] = await scope.tx
-        .select()
-        .from(t)
-        .where(
-          and(
-            eq(t.workspaceId, scope.workspaceId),
-            eq(t.idempotencyKey, key),
-            scope.actor.agentId
-              ? eq(t.actorAgentId, scope.actor.agentId)
-              : and(
-                  eq(t.actorPersonId, scope.actor.personId!),
-                  isNull(t.actorAgentId),
-                ),
-          ),
-        )
-      if (!existing) return null
-      if (existing.proposalId !== proposal.id || existing.text !== text)
-        throw new InvalidInputError(
-          "idempotency-key-reused",
-          "You used this idempotency key for a different comment",
-        )
-      return commentOf(existing)
-    }
-    const retried = await stored()
-    if (retried) return retried
-    if (ctx.actor.kind === "agent")
-      await throttle(ctx, "catalog-comment", ctx.actor.agentId)
     const [row] = await scope.tx
       .insert(schema.catalogProposalComments)
       .values({
@@ -146,7 +140,7 @@ export async function commentOnCatalogProposal(
       .onConflictDoNothing()
       .returning()
     // The same key from a retry running at the same time.
-    if (!row) return (await stored())!
+    if (!row) return (await storedComment(scope, key, proposal.id, text))!
     await appendEvent(scope, {
       kind: "catalog.proposal-commented",
       subjects: [{ type: "catalog-proposal", id: proposal.id }],
@@ -162,38 +156,127 @@ export async function commentOnCatalogProposal(
   })
 }
 
-/** A catalog proposal's comments, oldest first. */
+/**
+ * The comment this author already stored with this idempotency key, if
+ * any; refused when the key was used for a different comment.
+ */
+async function storedComment(
+  scope: Pick<ProposalScope, "tx" | "workspaceId" | "actor">,
+  key: string | null,
+  proposalId: string,
+  text: string,
+): Promise<CatalogProposalComment | null> {
+  if (key === null) return null
+  const t = schema.catalogProposalComments
+  const [existing] = await scope.tx
+    .select()
+    .from(t)
+    .where(
+      and(
+        eq(t.workspaceId, scope.workspaceId),
+        eq(t.idempotencyKey, key),
+        scope.actor.agentId
+          ? eq(t.actorAgentId, scope.actor.agentId)
+          : and(
+              eq(t.actorPersonId, scope.actor.personId!),
+              isNull(t.actorAgentId),
+            ),
+      ),
+    )
+  if (!existing) return null
+  if (existing.proposalId !== proposalId || existing.text !== text)
+    throw new InvalidInputError(
+      "idempotency-key-reused",
+      "You used this idempotency key for a different comment",
+    )
+  return commentOf(existing)
+}
+
+export interface CatalogProposalCommentsInput {
+  /** Comments after this one: the last `id` of the previous page. */
+  cursor?: string
+  /** At most this many: 50 by default, 1 to 200. */
+  limit?: number
+}
+
+/**
+ * A catalog proposal's comments, oldest first, a page at a time, so a
+ * proposal with many comments is never read whole.
+ */
 export async function listCatalogProposalComments(
   ctx: Context,
   workspaceId: string,
   proposalId: string,
-): Promise<CatalogProposalComment[]> {
+  input: CatalogProposalCommentsInput = {},
+): Promise<{
+  items: CatalogProposalComment[]
+  nextCursor: string | null
+  total: number
+}> {
   return inWorkspace(
     ctx,
     workspaceId,
     "catalog.read",
     async (scope) => {
+      if (
+        input.cursor !== undefined &&
+        (typeof input.cursor !== "string" || !isId(input.cursor))
+      )
+        throw new InvalidInputError("cursor", "cursor is a comment ID")
+      if (
+        input.limit !== undefined &&
+        (!Number.isInteger(input.limit) || input.limit < 1)
+      )
+        throw new InvalidInputError("limit", "limit is a positive number")
+      const limit = Math.min(input.limit ?? commentPage, 200)
       const proposal = await findProposal(
         scope.tx,
         scope.workspaceId,
         proposalId,
       )
       const t = schema.catalogProposalComments
+      const mine = and(
+        eq(t.workspaceId, scope.workspaceId),
+        eq(t.proposalId, proposal.id),
+      )
+      let after: SQL | undefined
+      if (input.cursor !== undefined) {
+        const cursor = input.cursor.toLowerCase()
+        const [from] = await scope.tx
+          .select({ id: t.id })
+          .from(t)
+          .where(and(mine, eq(t.id, cursor)))
+        if (!from)
+          throw new InvalidInputError(
+            "cursor",
+            "cursor is a comment ID of this proposal",
+          )
+        // Compared in the database: timestamps there are finer than a Date.
+        after = sql`(${t.createdAt}, ${t.id}) > (select c.created_at, c.id from catalog_proposal_comments c where c.id = ${cursor})`
+      }
       const rows = await scope.tx
         .select()
         .from(t)
-        .where(
-          and(
-            eq(t.workspaceId, scope.workspaceId),
-            eq(t.proposalId, proposal.id),
-          ),
-        )
+        .where(and(mine, after))
         .orderBy(asc(t.createdAt), asc(t.id))
-      return rows.map(commentOf)
+        .limit(limit + 1)
+      const [{ total } = { total: 0 }] = await scope.tx
+        .select({ total: sql<number>`count(*)::int` })
+        .from(t)
+        .where(mine)
+      const page = rows.slice(0, limit)
+      return {
+        items: page.map(commentOf),
+        nextCursor: rows.length > limit ? page[page.length - 1]!.id : null,
+        total,
+      }
     },
     snapshotRead,
   )
 }
+
+/** How many comments a page holds by default. */
+export const commentPage = 50
 
 /** Counts an agent's request against one of its rate limits (`rateLimits`). */
 async function throttle(
@@ -804,6 +887,7 @@ function checkExplanation(explanation: unknown): string {
       "explanation-too-long",
       `The explanation is longer than ${proposalLimits.explanation} characters`,
     )
+  checkStorable(explanation, "The explanation")
   return explanation
 }
 
@@ -818,6 +902,7 @@ function checkKey(key: unknown): string | null {
       "idempotency-key",
       `idempotencyKey is text of 1 to ${proposalLimits.idempotencyKey} characters`,
     )
+  checkStorable(key, "idempotencyKey")
   return key
 }
 

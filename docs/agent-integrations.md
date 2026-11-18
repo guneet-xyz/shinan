@@ -545,7 +545,8 @@ Reason: together they cover the level 1 actions in the plan.
     proposal; repeating it is harmless) and `comment_on_catalog_proposal`
     (text up to 4,000 characters and an idempotency key; M2-4b,
     [#86](https://github.com/guneet-xyz/shinan/issues/86)), whose comments
-    `get_catalog_proposal` shows, each labelled by who wrote it.
+    `get_catalog_proposal` shows, each labelled by who wrote it, 20 at a
+    time with a cursor for more.
 
   Every tool takes and returns the field names of the
   [agent index format](catalog.md#124-the-index-format); the operations

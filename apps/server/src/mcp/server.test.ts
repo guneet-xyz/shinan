@@ -1307,6 +1307,23 @@ facts:
   it("holds a gated change for approval, then lets its author withdraw it", async () => {
     const client = await connect({ token: writeToken })
     try {
+      // Text PostgreSQL cannot store is invalid input, not an error.
+      expect(
+        await callTool(client, "propose_catalog_change", {
+          explanation: "Build 1\u0000 was switched off.",
+          operations: [
+            {
+              op: "retire",
+              document: "machine/build-1",
+              expect: { status: "active" },
+            },
+          ],
+          idempotency_key: "nul",
+        }),
+      ).toMatchObject({
+        isError: true,
+        structuredContent: { error: "invalid-input", rule: "text-characters" },
+      })
       const retire = await callTool(client, "propose_catalog_change", {
         explanation: "Build 1 was switched off.",
         operations: [
@@ -1356,6 +1373,10 @@ facts:
             label: { author_kind: "agent", author: agentLabel },
           },
         ],
+      })
+      expect(read.structuredContent).toMatchObject({
+        comment_count: 1,
+        comments_next_cursor: null,
       })
       expect(read.structuredContent.comments).toHaveLength(1)
       expectLabelsEverywhere(read.structuredContent)

@@ -1516,6 +1516,10 @@ how proposals are applied and classed (`packages/core`, `catalog/proposals`).
 - **Retries.** A proposal may carry an idempotency key, kept per author;
   the same key with the same content (in any key order) returns the stored
   proposal, with other content it is refused.
+- **Text that cannot be stored.** A proposal, comment, rejection reason or
+  revert whose text holds a NUL character or an unpaired surrogate,
+  anywhere, is refused as invalid input (`text-characters`): PostgreSQL
+  stores neither.
 - **Withdrawal** is for the author: a person withdraws their own proposals
   and their agents', an agent only its own. A reviewer rejects instead,
   with a reason for the author.
@@ -1769,7 +1773,10 @@ what each operation expects.
   summary does not repeat its text, since an agent's comment is outside
   text (agent integrations, trust labels); MCP's
   `comment_on_catalog_proposal` adds one, and `get_catalog_proposal` shows
-  them, each labelled by who wrote it.
+  them, each labelled by who wrote it. Comments are read a page at a time,
+  oldest first, with how many there are in all: 50 a page by default (at
+  most 200), 20 in `get_catalog_proposal`, so a proposal with many
+  comments is never read whole.
 
 ### 8.7 No edits outside Shinan
 

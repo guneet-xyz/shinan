@@ -129,6 +129,36 @@ describe("catalog review over the API", () => {
       ws(`/proposals/${renamed.id}/comments`),
     )
     expect(listed.body.items.map((c) => c.text)).toEqual(["Looks right."])
+    // A page at a time.
+    await call("POST", ws(`/proposals/${renamed.id}/comments`), {
+      text: "And again.",
+    })
+    const page = await call<{
+      items: Api.CatalogProposalComment[]
+      nextCursor: string | null
+      total: number
+    }>("GET", ws(`/proposals/${renamed.id}/comments?limit=1`))
+    expect(page.body).toMatchObject({
+      items: [{ text: "Looks right." }],
+      nextCursor: listed.body.items[0]!.id,
+      total: 2,
+    })
+    expect(
+      (
+        await call(
+          "GET",
+          ws(
+            `/proposals/${renamed.id}/comments?cursor=${page.body.nextCursor}`,
+          ),
+        )
+      ).body,
+    ).toMatchObject({ items: [{ text: "And again." }], nextCursor: null })
+    // Text PostgreSQL cannot store is invalid input, not an error.
+    expect(
+      await call("POST", ws(`/proposals/${renamed.id}/comments`), {
+        text: "Nul\u0000here",
+      }),
+    ).toMatchObject({ status: 422, body: { rule: "text-characters" } })
     expect(
       (
         await call(
