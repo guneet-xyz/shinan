@@ -1,4 +1,4 @@
-import { and, eq, gt, gte, lt, schema, sql } from "@shinan/db"
+import { lt, schema, sql } from "@shinan/db"
 
 import { atInstallation } from "./authorize.js"
 import type { Context } from "./context.js"
@@ -58,8 +58,9 @@ export const rateLimits = {
   },
   /**
    * Failed agent token use per network address (identity §10): unknown,
-   * revoked or otherwise refused tokens. Once reached, every token from the
-   * address is refused until the window ends, valid or not.
+   * revoked or otherwise refused tokens. Only failures count, and only
+   * failures are refused: a working token from the same address still goes
+   * through, so nobody sharing an address can lock it out.
    */
   "agent-token-failure": {
     max: 10,
@@ -144,42 +145,6 @@ export interface RateLimitOptions {
    * agent token's ID. Never a secret: it is stored and may be logged.
    */
   key?: string
-}
-
-/**
- * Whether a limit is already used up for the request's network address (or
- * `key`): its window holds `max` requests, so the next one would be
- * refused. This request is not counted. For limits that count only
- * failures, which are known only after the request has been checked.
- */
-export async function rateLimitReached(
-  ctx: Context,
-  name: RateLimitName,
-  options: RateLimitOptions = {},
-): Promise<RateLimitOutcome> {
-  const limit: RateLimit = rateLimits[name]
-  const key = options.key ?? addressKey(ctx)
-  return atInstallation(ctx, "rate-limit", async (scope) => {
-    const t = schema.rateLimits
-    const [row] = await scope.tx
-      .select({
-        retryAfterSeconds: sql<number>`greatest(1, ceil(extract(epoch from ${t.windowStart} + make_interval(secs => ${limit.windowSeconds}) - now())))::int`,
-      })
-      .from(t)
-      .where(
-        and(
-          eq(t.key, `${name}:${key}`),
-          gte(t.count, limit.max),
-          gt(
-            t.windowStart,
-            sql`now() - make_interval(secs => ${limit.windowSeconds})`,
-          ),
-        ),
-      )
-    return row
-      ? { allowed: false, retryAfterSeconds: row.retryAfterSeconds }
-      : { allowed: true }
-  })
 }
 
 function addressKey(ctx: Context): string {

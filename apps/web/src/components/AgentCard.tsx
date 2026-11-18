@@ -43,9 +43,9 @@ export function AgentCard(props: {
   const api = useApi()
   const action = useAction()
   const [renaming, setRenaming] = useState(false)
-  const [confirming, setConfirming] = useState<"revoke" | "disable" | null>(
-    null,
-  )
+  const [confirming, setConfirming] = useState<
+    "replace" | "revoke" | "disable" | null
+  >(null)
   const own = control === "own"
 
   const run = (change: () => Promise<unknown>) =>
@@ -63,7 +63,10 @@ export function AgentCard(props: {
         )
         props.onIssued?.(issued)
       },
-      () => props.reload(),
+      () => {
+        setConfirming(null)
+        props.reload()
+      },
     )
 
   return (
@@ -144,34 +147,50 @@ export function AgentCard(props: {
       ) : confirming ? (
         <Confirm>
           <p className="font-medium">
-            {confirming === "revoke"
-              ? `Revoke the token of ${agent.name}?`
-              : `Disable ${agent.name}?`}
+            {confirming === "replace"
+              ? `Replace the token of ${agent.name}?`
+              : confirming === "revoke"
+                ? `Revoke the token of ${agent.name}?`
+                : `Disable ${agent.name}?`}
           </p>
           <ul className="ml-5 list-disc space-y-1">
-            <li>Its token stops working on its next request.</li>
+            <li>Its current token stops working on its next request.</li>
+            {confirming === "replace" && (
+              <li>
+                The new token is shown once; put it on the machine in place of
+                the old one.
+              </li>
+            )}
             {confirming === "disable" && (
               <li>No new token can be made for it until it is enabled.</li>
             )}
-            <li>
-              Its access to GitHub or Forgejo on that machine is not affected:
-              that is its member's own sign-in there.
-            </li>
+            {confirming !== "replace" && (
+              <li>
+                Its access to GitHub or Forgejo on that machine is not affected:
+                that is its member's own sign-in there.
+              </li>
+            )}
           </ul>
           <Actions>
             <Button
               type="button"
-              variant="destructive"
+              variant={confirming === "replace" ? "default" : "destructive"}
               disabled={action.pending}
               onClick={() =>
-                run(() =>
-                  confirming === "revoke"
-                    ? api.revokeAgentToken(agent.workspaceId, agent.id)
-                    : api.disableAgent(agent.workspaceId, agent.id),
-                )
+                confirming === "replace"
+                  ? newToken(token?.access ?? "full")
+                  : run(() =>
+                      confirming === "revoke"
+                        ? api.revokeAgentToken(agent.workspaceId, agent.id)
+                        : api.disableAgent(agent.workspaceId, agent.id),
+                    )
               }
             >
-              {confirming === "revoke" ? "Revoke token" : "Disable agent"}
+              {confirming === "replace"
+                ? "Replace token"
+                : confirming === "revoke"
+                  ? "Revoke token"
+                  : "Disable agent"}
             </Button>
             <Button
               type="button"
@@ -194,9 +213,11 @@ export function AgentCard(props: {
                 variant="outline"
                 size="sm"
                 disabled={action.pending}
-                onClick={() => newToken(token?.access ?? "full")}
+                onClick={() =>
+                  token ? setConfirming("replace") : newToken("full")
+                }
               >
-                {token ? "Replace token" : "New token"}
+                {token ? "Replace token…" : "New token"}
               </Button>
             )}
             {own && (

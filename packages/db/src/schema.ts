@@ -338,6 +338,12 @@ export const members = pgTable(
     // Lets other tables reference a member together with its workspace, so
     // the database refuses references that cross workspaces.
     unique("members_workspace_id_id").on(t.workspaceId, t.id),
+    // Lets agents reference a member together with its person too.
+    unique("members_workspace_id_id_person_id").on(
+      t.workspaceId,
+      t.id,
+      t.personId,
+    ),
     foreignKey({
       name: "members_invited_by_same_workspace",
       columns: [t.workspaceId, t.invitedByMemberId],
@@ -461,10 +467,11 @@ export const agents = pgTable(
     disabledAt: timestamp("disabled_at", { withTimezone: true }),
   },
   (t) => [
+    // The membership is in the agent's workspace and is its person's.
     foreignKey({
-      name: "agents_member_same_workspace",
-      columns: [t.workspaceId, t.memberId],
-      foreignColumns: [members.workspaceId, members.id],
+      name: "agents_member_same_workspace_and_person",
+      columns: [t.workspaceId, t.memberId, t.personId],
+      foreignColumns: [members.workspaceId, members.id, members.personId],
     }),
     // Lets tokens reference an agent together with its workspace.
     unique("agents_workspace_id_id").on(t.workspaceId, t.id),

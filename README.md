@@ -181,8 +181,7 @@ how each is tested. In short:
   (no inline scripts or styles; `apps/server/src/security.ts`).
 - Agent endpoints (`/api/agent`, and `/mcp` from M2-6) take an agent token
   only as `Authorization: Bearer`, never in the address and never with a
-  cookie; requests with a token and no cookie skip the same-origin check
-  above. Make a token by hand under Your account, Your agents, then check
+  cookie. They are the only routes outside the same-origin check above. Make a token by hand under Your account, Your agents, then check
   it with `curl -H "Authorization: Bearer $(cat token-file)"
 http://localhost:5173/api/agent`. Only its SHA-256 hash is stored, and it
   is bound to `SHINAN_URL`.

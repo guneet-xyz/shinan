@@ -12,7 +12,7 @@ import {
 } from "../errors.js"
 import { appendEvent } from "../events.js"
 import type { WriteScope } from "../events.js"
-import { rateLimitReached, takeRateLimit } from "../rate-limits.js"
+import { takeRateLimit } from "../rate-limits.js"
 import { networkAddress, recordSecurityEntry } from "../security-log.js"
 import { agentTokenPattern, hashToken, newAgentToken } from "../tokens.js"
 import { checkName, isId } from "../validation.js"
@@ -264,6 +264,15 @@ export async function createAgentToken(
       )
       .for("update")
     if (!row) throw new NotFoundError()
+    // Both parts may hold hyphens, so another pair can make the same
+    // handle, such as `gemini-cli` on `daedalus` and `gemini` on
+    // `cli-daedalus`. Only the same tool and machine is the same agent.
+    if (row.codingTool !== codingTool || row.machine !== machine) {
+      throw new RuleViolationError(
+        "handle-taken",
+        `You already have an agent with the handle ${handle} (${row.codingTool} on ${row.machine}). Name the machine differently.`,
+      )
+    }
     if (agentCreated) {
       await recordAgentChange(scope, row, {
         kind: "agent.created",
@@ -443,8 +452,9 @@ export type AgentAuthentication =
   /**
    * The token does not work. Callers answer every such request the same
    * way, whatever the reason (identity §10). With `retryAfterSeconds`, the
-   * request was refused by a rate limit instead: the address made too many
-   * failed attempts, or the token too many requests.
+   * request was refused by a rate limit instead: a failing token from an
+   * address with too many failed attempts, or a working token that made
+   * too many requests.
    */
   | { authenticated: false; retryAfterSeconds?: number }
 
@@ -455,40 +465,33 @@ type TokenFailure =
   | "revoked"
   | "agent-disabled"
   | "membership-ended"
+  | "not-allowlisted"
   | "other-installation"
 
 /**
  * Checks an agent token from a request's `Authorization` header (identity
- * §7.4, §7.5), on every request: it must be one this installation issued,
- * not revoked, of an enabled agent whose membership is current. Then counts
- * the request against the token's rate limit and records its use.
+ * §7.4, §7.5), on every request: it must be one this installation issued
+ * (so the installation's address must be known), not revoked, of an enabled
+ * agent whose membership is current and whose person is still on the email
+ * allowlist. A working token is then counted against its own rate limit,
+ * and only a request that limit lets through counts as a use.
  *
- * Failed attempts are counted per network address and, while under the
- * limit, each is recorded in the security log; once the limit is reached,
- * every token from the address is refused until the window ends (§10).
- * The token itself is never stored or logged, only its hash looked up.
+ * A working token is never refused because of other requests from its
+ * network address (§10). Failed attempts are counted per address: while
+ * under the limit each is recorded in the security log; over it, failures
+ * get a 429 and only the first is recorded. The token itself is never
+ * stored or logged, only its hash looked up.
  */
 export async function authenticateAgent(
   ctx: Context,
   input: { token: string },
 ): Promise<AgentAuthentication> {
-  if (!(await rateLimitReached(ctx, "agent-token-failure")).allowed) {
-    // Counted too, so the first refusal in the window is recorded.
-    const refused = await takeRateLimit(ctx, "agent-token-failure")
-    if (!refused.allowed) {
-      return {
-        authenticated: false,
-        retryAfterSeconds: refused.retryAfterSeconds,
-      }
-    }
-  }
-
   const checked = await atInstallation(
     ctx,
     "agent-token.authenticate",
     async (scope) => {
       if (!isWellFormed(input.token)) {
-        return { failure: "malformed" as TokenFailure, row: undefined }
+        return { failure: "malformed" as const, row: undefined }
       }
       const [row] = await scope.tx
         .select({
@@ -505,6 +508,7 @@ export async function authenticateAgent(
           memberId: schema.members.id,
           role: schema.members.role,
           memberRemovedAt: schema.members.removedAt,
+          allowlisted: sql<boolean>`exists (select 1 from email_allowlist a where a.email = people.email) or exists (select 1 from installation_operators o where o.email = people.email)`,
         })
         .from(schema.agentTokens)
         .innerJoin(
@@ -517,19 +521,46 @@ export async function authenticateAgent(
         )
         .innerJoin(schema.people, eq(schema.people.id, schema.agents.personId))
         .where(eq(schema.agentTokens.tokenHash, hashToken(input.token)))
-      if (!row) return { failure: "unknown" as TokenFailure, row }
+      if (!row) return { failure: "unknown" as const, row }
       const failure: TokenFailure | null = row.revokedAt
         ? "revoked"
         : !row.enabled
           ? "agent-disabled"
           : row.memberRemovedAt
             ? "membership-ended"
-            : scope.installationUrl &&
-                originOf(scope.installationUrl) !== row.installationUrl
-              ? "other-installation"
-              : null
-      if (failure) return { failure, row }
+            : !row.allowlisted
+              ? "not-allowlisted"
+              : // Fail closed: without the installation's address, no token
+                // can be shown to be this installation's.
+                !scope.installationUrl ||
+                  originOf(scope.installationUrl) !== row.installationUrl
+                ? "other-installation"
+                : null
+      return { failure, row }
+    },
+  )
 
+  const { failure, row } = checked
+  if (failure === null) {
+    const limited = await takeRateLimit(ctx, "agent-token", {
+      key: row.tokenId,
+    })
+    if (!limited.allowed) {
+      return {
+        authenticated: false,
+        retryAfterSeconds: limited.retryAfterSeconds,
+      }
+    }
+    const actor: AgentActor = {
+      kind: "agent",
+      agentId: row.agentId,
+      tokenId: row.tokenId,
+      agentHandle: row.handle,
+      personId: row.personId,
+      workspaceId: row.workspaceId,
+      scopes: row.scopes as Scope[],
+    }
+    await atInstallation(ctx, "agent-token.authenticate", async (scope) => {
       const [used] = await scope.tx
         .update(schema.agentTokens)
         .set({
@@ -540,53 +571,30 @@ export async function authenticateAgent(
         })
         .where(eq(schema.agentTokens.id, row.tokenId))
         .returning({ requestCount: schema.agentTokens.requestCount })
-      const actor: AgentActor = {
-        kind: "agent",
-        agentId: row.agentId,
-        tokenId: row.tokenId,
-        agentHandle: row.handle,
-        personId: row.personId,
+      if (used?.requestCount !== 1) return
+      await recordSecurityEntry(scope.tx, {
         workspaceId: row.workspaceId,
-        scopes: row.scopes as Scope[],
-      }
-      if (used?.requestCount === 1) {
-        await recordSecurityEntry(scope.tx, {
-          workspaceId: row.workspaceId,
-          action: "agent-token.first-used",
-          outcome: "succeeded",
-          actor: {
-            kind: "agent",
-            personId: row.personId,
-            agentId: row.agentId,
-            agentSessionId: null,
-            label: writtenActor(actor, row.personHandle),
-            confidence: "recorded",
-            member: { id: row.memberId, role: row.role },
-            operator: false,
-          },
-          request: scope.request,
-          details: {
-            agentId: row.agentId,
-            handle: row.handle,
-            tokenId: row.tokenId,
-          },
-        })
-      }
-      return { failure: null, actor }
-    },
-  )
-
-  if (checked.failure === null) {
-    const limited = await takeRateLimit(ctx, "agent-token", {
-      key: checked.actor.tokenId,
+        action: "agent-token.first-used",
+        outcome: "succeeded",
+        actor: {
+          kind: "agent",
+          personId: row.personId,
+          agentId: row.agentId,
+          agentSessionId: null,
+          label: writtenActor(actor, row.personHandle),
+          confidence: "recorded",
+          member: { id: row.memberId, role: row.role },
+          operator: false,
+        },
+        request: scope.request,
+        details: {
+          agentId: row.agentId,
+          handle: row.handle,
+          tokenId: row.tokenId,
+        },
+      })
     })
-    if (!limited.allowed) {
-      return {
-        authenticated: false,
-        retryAfterSeconds: limited.retryAfterSeconds,
-      }
-    }
-    return { authenticated: true, actor: checked.actor }
+    return { authenticated: true, actor }
   }
 
   const counted = await takeRateLimit(ctx, "agent-token-failure")
@@ -596,7 +604,6 @@ export async function authenticateAgent(
       retryAfterSeconds: counted.retryAfterSeconds,
     }
   }
-  const { failure, row } = checked
   await atInstallation(ctx, "agent-token.authenticate", (scope) =>
     recordSecurityEntry(scope.tx, {
       // A known token's failures belong to its workspace, where its owners
@@ -654,7 +661,6 @@ export async function summarizeAgentTokenUse(ctx: Context): Promise<number> {
           agentId: token.agentId,
           handle,
           tokenId: token.id,
-          requests: token.requestCount - token.summarizedCount,
           ...usageOf(token),
         },
       })
@@ -907,12 +913,29 @@ async function revokeTokens(
   reason: TokenRevocationReason,
 ): Promise<TokenRow[]> {
   const t = schema.agentTokens
+  // Read first, locked, so the entry can say how many requests came since
+  // the last hourly summary; the update then marks them summarised, so the
+  // next summary does not count them again.
   const revoked = await scope.tx
-    .update(t)
-    .set({ revokedAt: sql`now()`, revokedReason: reason })
+    .select()
+    .from(t)
     .where(and(isNull(t.revokedAt), condition))
-    .returning()
+    .orderBy(asc(t.id))
+    .for("update")
   if (revoked.length === 0) return revoked
+  await scope.tx
+    .update(t)
+    .set({
+      revokedAt: sql`now()`,
+      revokedReason: reason,
+      summarizedCount: sql`${t.requestCount}`,
+    })
+    .where(
+      inArray(
+        t.id,
+        revoked.map((token) => token.id),
+      ),
+    )
   const agents = await scope.tx
     .select({
       id: schema.agents.id,
@@ -940,7 +963,6 @@ async function revokeTokens(
         handle: agent.handle,
         tokenId: token.id,
         reason,
-        requests: token.requestCount,
         ...usageOf(token),
       },
     })
@@ -971,8 +993,15 @@ async function recordAgentChange(
   })
 }
 
+/**
+ * A token's use for the security log: `requests` since the last summary
+ * (hourly, or the revocation), so no request is counted in two entries, and
+ * `totalRequests` since it was made.
+ */
 function usageOf(token: TokenRow) {
   return {
+    requests: token.requestCount - token.summarizedCount,
+    totalRequests: token.requestCount,
     firstUsedAt: token.firstUsedAt?.toISOString() ?? null,
     lastUsedAt: token.lastUsedAt?.toISOString() ?? null,
     lastNetworkAddress: token.lastNetworkAddress,

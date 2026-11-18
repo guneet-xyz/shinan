@@ -78,6 +78,13 @@ All files go in one directory, next to `compose.yml`.
    The [README's settings table](../README.md#developing-locally) lists every
    variable Shinan reads.
 
+   **Changing `SHINAN_URL` later stops every agent token.** Each token
+   records the address it was made for and works only there
+   ([identity §7.4](identity.md#74-handling)), so after a change every
+   member must make a new token for each of their agents (Your account,
+   Your agents) and put it on the machine. Shinan also refuses every token
+   if `SHINAN_URL` is not set.
+
 3. **Secrets** are files in `secrets/`, one value per file. Compose mounts each
    only into the containers that need it. Keep the directory private: the
    files themselves must be readable by the containers' users, so protect

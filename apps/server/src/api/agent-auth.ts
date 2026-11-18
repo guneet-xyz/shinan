@@ -29,8 +29,9 @@ export interface AgentAuthOptions {
  *   logs, and the MCP specification forbids tokens in query strings).
  * - Agent endpoints take no sign-in cookie: a request with a cookie is
  *   refused, so a browser visiting another site cannot use a person's
- *   sign-in here, and token-only requests skip the same-origin check
- *   (`sameOriginOnly`).
+ *   sign-in here. That is why they, and only they, are routed ahead of the
+ *   same-origin check (`sameOriginOnly`); mount this on every agent
+ *   endpoint the same way.
  * - Every refused token gets the same answer, whatever the reason (identity
  *   §10); the reason is only in the security log. Rate limits answer 429.
  * - The token is never logged: nothing here writes it anywhere.
@@ -84,7 +85,7 @@ export function requireAgent(
 }
 
 /** The token of an `Authorization: Bearer <token>` header, or null. */
-export function bearerToken(header: string | undefined): string | null {
+function bearerToken(header: string | undefined): string | null {
   const match = header === undefined ? null : /^Bearer +(\S+) *$/i.exec(header)
   return match ? match[1]! : null
 }

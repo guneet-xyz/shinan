@@ -136,7 +136,7 @@ describe("your agents", () => {
       within(card).getByRole("button", { name: "Revoke token…" }),
     )
     expect(card.textContent).toContain(
-      "Its token stops working on its next request.",
+      "Its current token stops working on its next request.",
     )
     expect(card.textContent).toContain("is not affected")
     await userEvent.click(
@@ -207,6 +207,13 @@ describe("your agents", () => {
     renderApp("/account/agents", api)
 
     const card = await agentCard("OpenCode on Daedalus")
+    await userEvent.click(
+      within(card).getByRole("button", { name: "Replace token…" }),
+    )
+    expect(card.textContent).toContain(
+      "Its current token stops working on its next request.",
+    )
+    expect(api.issueAgentToken).not.toHaveBeenCalled()
     await userEvent.click(
       within(card).getByRole("button", { name: "Replace token" }),
     )

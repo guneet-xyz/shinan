@@ -41,10 +41,12 @@ CREATE TABLE "agents" (
 	CONSTRAINT "agents_disabled_at_when_disabled" CHECK ("agents"."enabled" = ("agents"."disabled_at" is null))
 );
 --> statement-breakpoint
+-- Moved by hand ahead of the foreign key that needs it.
+ALTER TABLE "members" ADD CONSTRAINT "members_workspace_id_id_person_id" UNIQUE("workspace_id","id","person_id");--> statement-breakpoint
 ALTER TABLE "agent_tokens" ADD CONSTRAINT "agent_tokens_agent_same_workspace" FOREIGN KEY ("workspace_id","agent_id") REFERENCES "public"."agents"("workspace_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "agents" ADD CONSTRAINT "agents_workspace_id_workspaces_id_fk" FOREIGN KEY ("workspace_id") REFERENCES "public"."workspaces"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "agents" ADD CONSTRAINT "agents_person_id_people_id_fk" FOREIGN KEY ("person_id") REFERENCES "public"."people"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "agents" ADD CONSTRAINT "agents_member_same_workspace" FOREIGN KEY ("workspace_id","member_id") REFERENCES "public"."members"("workspace_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "agents" ADD CONSTRAINT "agents_member_same_workspace_and_person" FOREIGN KEY ("workspace_id","member_id","person_id") REFERENCES "public"."members"("workspace_id","id","person_id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 CREATE UNIQUE INDEX "agent_tokens_one_active" ON "agent_tokens" USING btree ("agent_id") WHERE "agent_tokens"."revoked_at" is null;--> statement-breakpoint
 CREATE INDEX "agent_tokens_workspace_id" ON "agent_tokens" USING btree ("workspace_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "agents_member_handle" ON "agents" USING btree ("member_id","handle");--> statement-breakpoint

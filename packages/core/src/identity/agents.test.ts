@@ -122,6 +122,10 @@ async function logEntries(action: string, agentId: string) {
 beforeEach(async () => {
   owner = await newPerson(db, "owner")
   contributor = await newPerson(db, "contributor")
+  // Tokens work only for people on the allowlist (identity §3.2).
+  await db
+    .insert(schema.emailAllowlist)
+    .values([{ email: owner.email }, { email: contributor.email }])
   const created = await createWorkspace(asPerson(db, owner), { name: "Team" })
   workspaceId = created.workspace.id
   const member = await addMember(asPerson(db, owner), {
@@ -297,6 +301,28 @@ describe("createAgentToken", () => {
     })
   })
 
+  it("refuses another tool and machine that make the same handle", async () => {
+    const first = await makeToken(contributor, {
+      codingTool: "gemini-cli",
+      machine: "daedalus",
+    })
+    await expect(
+      makeToken(contributor, {
+        codingTool: "gemini",
+        machine: "cli-daedalus",
+        access: "read-only",
+      }),
+    ).rejects.toMatchObject({ rule: "handle-taken" })
+    // The existing agent keeps its full token.
+    expect(await works(first.token)).toBe(true)
+    const [agent] = await listAgents(as(contributor), workspaceId)
+    expect(agent).toMatchObject({
+      codingTool: "gemini-cli",
+      machine: "daedalus",
+      token: { id: first.agent.token!.id, access: "full" },
+    })
+  })
+
   it("keeps agents of different members apart, even with the same handle", async () => {
     const ours = await makeToken(contributor)
     const theirs = await makeToken(owner)
@@ -395,11 +421,13 @@ describe("authenticateAgent", () => {
     })
     expect(throttled).toMatchObject({ authenticated: false })
     expect(throttled).toHaveProperty("retryAfterSeconds")
-    // Every token from the address waits now, even a good one.
+    // A working token from the same address is never held up by others'
+    // failures: anyone sharing the address could otherwise lock it out.
     const good = await authenticateAgent(request(address), { token })
-    expect(good).toMatchObject({ authenticated: false })
-    expect(good).toHaveProperty("retryAfterSeconds")
-    expect(await works(token)).toBe(true)
+    expect(good).toMatchObject({ authenticated: true })
+    // Failing tokens from it still wait, and are no longer recorded.
+    const again = await authenticateAgent(request(address), { token: "x" })
+    expect(again).toHaveProperty("retryAfterSeconds")
     const recorded = await db
       .select()
       .from(schema.securityLog)
@@ -422,6 +450,29 @@ describe("authenticateAgent", () => {
     const limited = await authenticateAgent(request(), { token })
     expect(limited).toMatchObject({ authenticated: false })
     expect(limited).toHaveProperty("retryAfterSeconds")
+    // A refused request is not a use.
+    const [listed] = await listAgents(as(contributor), workspaceId)
+    expect(listed!.token).toMatchObject({ requestCount: 0, lastUsedAt: null })
+  })
+
+  it("refuses tokens of a person no longer on the allowlist", async () => {
+    // Removed behind Shinan's back, as by an older release after a
+    // rollback: the token itself was never revoked.
+    const { token, agent } = await makeToken(contributor)
+    await db
+      .delete(schema.emailAllowlist)
+      .where(eq(schema.emailAllowlist.email, contributor.email))
+    expect(await works(token)).toBe(false)
+    const [failed] = await logEntries("agent-token.failed", agent.id)
+    expect(failed!.details).toMatchObject({ reason: "not-allowlisted" })
+  })
+
+  it("refuses every token when the installation's address is not known", async () => {
+    const { token } = await makeToken(contributor)
+    const unknown = { ...request(), installationUrl: undefined }
+    expect(await authenticateAgent(unknown, { token })).toEqual({
+      authenticated: false,
+    })
   })
 
   it("refuses a token another installation issued", async () => {
@@ -756,8 +807,21 @@ describe("summarizeAgentTokenUse", () => {
     await agentFor(token)
     await summarizeAgentTokenUse(asShinan(db))
     await summarizeAgentTokenUse(asShinan(db))
+    await agentFor(token)
+    await agentFor(token)
+    await revokeAgentToken(as(contributor), { workspaceId, agentId: agent.id })
+    await summarizeAgentTokenUse(asShinan(db))
+    // The two uses after the last summary are in the revocation entry, and
+    // in no later summary.
+    const [revoked] = await logEntries("agent-token.revoked", agent.id)
+    expect(revoked!.details).toMatchObject({ requests: 2, totalRequests: 5 })
     const summaries = await logEntries("agent-token.used", agent.id)
-    expect(summaries.map((s) => s.details.requests)).toEqual([2, 1])
+    expect(
+      summaries.map((s) => [s.details.requests, s.details.totalRequests]),
+    ).toEqual([
+      [2, 2],
+      [1, 3],
+    ])
     expect(summaries[0]).toMatchObject({
       workspaceId,
       actorKind: "shinan",

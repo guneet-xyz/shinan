@@ -1299,12 +1299,12 @@ as built until browser approval arrives (M4):**
   "Never used" on its own line, "Unused for 30 days" as a warning mark, the
   workspace, coding tool, machine, when the token was made and how many
   requests it has made.
-- Row actions: **Replace token** (a new token with the same access, shown
+- Row actions: **Replace token…** (a new token with the same access, shown
   once; the old one stops working), **Rename**, **Revoke token…** and
-  **Disable…**, each of the last two with a short confirmation that says the
-  token stops on its next request and that the agent's git host access on
-  that machine is not affected ([Identity](identity.md) section 7.5);
-  **Enable** for a disabled agent.
+  **Disable…**. Replace, Revoke and Disable each ask first, saying the
+  current token stops on its next request; Revoke and Disable also say that
+  the agent's git host access on that machine is not affected
+  ([Identity](identity.md) section 7.5). **Enable** for a disabled agent.
 - **Create a token by hand** asks for the workspace (when there is more than
   one), the coding tool (OpenCode, Claude Code, Codex, Gemini CLI, or another
   by name), the machine, an optional name ("OpenCode on Daedalus" is

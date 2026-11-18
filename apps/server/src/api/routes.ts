@@ -133,18 +133,58 @@ export function createApi({
       c.res.headers.set("cache-control", "no-store")
     }
   })
-  api.use("*", sameOriginOnly(installationUrl))
   // The minimal public health check (identity §10): a constant answer,
   // ahead of the rate limits, so it reads and writes nothing and says
   // nothing about the database.
   api.get("/status", (c) => c.json({ status: "ok" } satisfies Api.Status))
+
+  // Every API request body is small (forms of a few fields); a larger one is
+  // refused before it is read in full.
+  const limitBody = bodyLimit({
+    maxSize: requestBodyLimit,
+    onError: (c) =>
+      errorResponse(c, 413, {
+        error: "payload-too-large",
+        message: "The request is too large",
+      }),
+  })
+  const allMethods = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"]
+
+  // Agent endpoints (identity §7.4): an agent token in the Authorization
+  // header, never a sign-in cookie. They come before the same-origin check
+  // and answer every path under them, so only they skip it: a request with
+  // a cookie is refused here instead, so a browser's sign-in can never
+  // reach them. `GET /api/agent` tells an agent, and the person setting it
+  // up, whether its token works and what it allows.
+  const agentApi = new Hono<AgentEnv>()
+  agentApi.onError(onError)
+  if (rateLimit) {
+    agentApi.use("*", rateLimited(db, "api", requestInfo, allMethods))
+  }
+  agentApi.use("*", limitBody)
+  agentApi.use("*", requireAgent({ db, installationUrl, requestInfo }))
+  agentApi.get("/", async (c) => {
+    const connected = await getConnectedAgent({
+      db,
+      actor: c.var.agent,
+      origin: "shinan_action",
+      request: requestInfo(c),
+    })
+    return c.json(connected satisfies Api.ConnectedAgent)
+  })
+  agentApi.all("*", (c) =>
+    errorResponse(c, 404, { error: "not-found", message: "Not found" }),
+  )
+  api.route("/agent", agentApi)
+
+  api.use("*", sameOriginOnly(installationUrl))
   if (rateLimit) {
     const limit = (
       path: string,
       name: Parameters<typeof rateLimited>[1],
       methods?: readonly string[],
     ) => api.use(path, rateLimited(db, name, requestInfo, methods))
-    limit("*", "api", ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"])
+    limit("*", "api", allMethods)
     limit("/auth/sign-in/magic-link", "sign-in-link")
     limit("/setup", "sign-in-link")
     limit("/sign-in/link", "sign-in-link-open")
@@ -155,19 +195,7 @@ export function createApi({
     limit("/invitations/accept", "invitation-token")
     limit("/invitations/decline", "invitation-token")
   }
-  // Every API request body is small (forms of a few fields); a larger one is
-  // refused before it is read in full.
-  api.use(
-    "*",
-    bodyLimit({
-      maxSize: requestBodyLimit,
-      onError: (c) =>
-        errorResponse(c, 413, {
-          error: "payload-too-large",
-          message: "The request is too large",
-        }),
-    }),
-  )
+  api.use("*", limitBody)
 
   // Public: the sign-in and invitation pages show the installation's name
   // before sign-in (identity §5.2).
@@ -235,23 +263,6 @@ export function createApi({
     }
     return c.json({ login: pending.login } satisfies Api.PendingGitHubSignIn)
   })
-
-  // Agent endpoints (identity §7.4): an agent token in the Authorization
-  // header, never a sign-in cookie. `GET /api/agent` tells an agent, and
-  // the person setting it up, whether its token works and what it allows.
-  const agentApi = new Hono<AgentEnv>()
-  agentApi.onError(onError)
-  agentApi.use("*", requireAgent({ db, installationUrl, requestInfo }))
-  agentApi.get("/", async (c) => {
-    const connected = await getConnectedAgent({
-      db,
-      actor: c.var.agent,
-      origin: "shinan_action",
-      request: requestInfo(c),
-    })
-    return c.json(connected satisfies Api.ConnectedAgent)
-  })
-  api.route("/agent", agentApi)
 
   const signedIn = new Hono<SignedInEnv>()
   signedIn.onError(onError)

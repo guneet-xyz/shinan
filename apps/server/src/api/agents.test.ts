@@ -50,6 +50,9 @@ function freshAddress(): string {
 beforeEach(async () => {
   owner = await insertPerson(db, "owner")
   contributor = await insertPerson(db, "contributor")
+  await db
+    .insert(schema.emailAllowlist)
+    .values([{ email: owner.email }, { email: contributor.email }])
   const created = await createWorkspace(
     { db, actor: { kind: "person", personId: owner.id } },
     { name: "Team" },
@@ -376,7 +379,7 @@ describe("GET /api/agent", () => {
     }
   })
 
-  it("lets token-only requests skip the same-origin check, but not with a cookie", async () => {
+  it("skips the same-origin check only at agent endpoints", async () => {
     const { token } = await makeToken(contributor)
     // No Origin or Sec-Fetch-Site, as an agent's own client sends.
     const tokenOnly = await call("/agent", {
@@ -384,12 +387,21 @@ describe("GET /api/agent", () => {
       headers: asAgent(token),
     })
     expect(tokenOnly.status).toBe(404)
-    const withCookie = await call("/agent", {
+    // With a cookie, the agent endpoint refuses it outright.
+    const withCookie = await call("/agent/anything", {
       method: "POST",
       headers: { ...asAgent(token), cookie: "anything=1" },
     })
-    expect(withCookie.status).toBe(403)
-    expect(await withCookie.json()).toMatchObject({ reason: "cross-site" })
+    expect(withCookie.status).toBe(401)
+    // Everywhere else a token changes nothing: the check still applies.
+    for (const path of ["/workspaces", "/setup", "/sign-in/link"]) {
+      const elsewhere = await call(path, {
+        headers: asAgent(token),
+        body: { name: "x" },
+      })
+      expect(elsewhere.status, path).toBe(403)
+      expect(await elsewhere.json()).toMatchObject({ reason: "cross-site" })
+    }
   })
 
   it("throttles failed token use per network address", async () => {
@@ -405,17 +417,19 @@ describe("GET /api/agent", () => {
       expect(response.status).toBe(401)
     }
     const throttled = await call("/agent", {
-      headers: asAgent(token),
+      headers: asAgent("wrong"),
       from,
       app: limitedApi,
     })
     expect(throttled.status).toBe(429)
     expect(Number(throttled.headers.get("retry-after"))).toBeGreaterThan(0)
-    const elsewhere = await call("/agent", {
+    // A working token from the same address is not held up.
+    const sameAddress = await call("/agent", {
       headers: asAgent(token),
+      from,
       app: limitedApi,
     })
-    expect(elsewhere.status).toBe(200)
+    expect(sameAddress.status).toBe(200)
   })
 })
 

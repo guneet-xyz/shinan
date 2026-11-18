@@ -5,12 +5,7 @@ import { and, eq, schema, sql } from "@shinan/db"
 import { testDatabase } from "../test/helpers.js"
 import { shinan } from "./actor.js"
 import type { Context } from "./context.js"
-import {
-  pruneRateLimits,
-  rateLimitReached,
-  rateLimits,
-  takeRateLimit,
-} from "./rate-limits.js"
+import { pruneRateLimits, rateLimits, takeRateLimit } from "./rate-limits.js"
 import type { RateLimitName } from "./rate-limits.js"
 
 const { db, pool } = testDatabase()
@@ -225,30 +220,5 @@ describe("pruneRateLimits", () => {
     const keys = (await db.select().from(schema.rateLimits)).map((r) => r.key)
     expect(keys).not.toContain(`api:${old}`)
     expect(keys).toContain(`api:${current}`)
-  })
-})
-
-describe("rateLimitReached", () => {
-  it("says whether a limit is used up without counting", async () => {
-    const address = freshAddress()
-    const { max } = rateLimits["agent-token-failure"]
-    for (let n = 0; n < 3 * max; n++) {
-      expect(
-        (await rateLimitReached(from(address), "agent-token-failure")).allowed,
-      ).toBe(true)
-    }
-    for (let n = 0; n < max - 1; n++) {
-      await takeRateLimit(from(address), "agent-token-failure")
-    }
-    expect(
-      (await rateLimitReached(from(address), "agent-token-failure")).allowed,
-    ).toBe(true)
-    await takeRateLimit(from(address), "agent-token-failure")
-    const reached = await rateLimitReached(from(address), "agent-token-failure")
-    expect(reached).toMatchObject({ allowed: false })
-    expect(
-      (await rateLimitReached(from(freshAddress()), "agent-token-failure"))
-        .allowed,
-    ).toBe(true)
   })
 })

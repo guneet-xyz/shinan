@@ -770,9 +770,10 @@ no forced re-approval.
   tokens are kept, with when and why they were revoked and their use summary,
   so the agent page and the security log can still explain them.
 - **Proposed (M2-5):** each token records its first and last use, the network
-  address of the last request, and how many requests it has made. "Unused
-  for 30 days" counts from the last use, or from when the token was made if
-  it was never used.
+  address of the last request, and how many requests it has made. Only
+  requests the token's rate limit lets through count as uses. "Unused for 30
+  days" counts from the last use, or from when the token was made if it was
+  never used.
 
 ### 7.4 Handling
 
@@ -801,16 +802,22 @@ no forced re-approval.
   installation's address, and other installations reject it. Which endpoints
   exist is for the [architecture](architecture.md) document. **Proposed
   (M2-5):** the address recorded is the origin of `SHINAN_URL` when the token
-  was made, and a token is refused whenever it differs from the current one.
-  So a copy of the database restored under another address accepts none of
-  its tokens, and an operator who changes the installation's address must
-  have every agent's token made again; the [operator guide](operator-guide.md)
-  says so.
+  was made, and a token is refused whenever it differs from the current one,
+  or when the installation's address is not set at all. So a copy of the
+  database restored under another address accepts none of its tokens, and an
+  operator who changes the installation's address must have every agent's
+  token made again; the [operator guide](operator-guide.md) says so.
 - **Proposed (M2-5):** an agent endpoint refuses a request that carries a
   sign-in cookie as well as a token, and a request whose address carries a
   token (a parameter such as `access_token`, or Shinan's prefix anywhere in
-  it). Token-only requests are exempt from the web app's same-origin check,
-  because they carry no credential a forged browser request could use.
+  it). Agent endpoints, and only they, are outside the web app's same-origin
+  check: they take no cookie, so a forged browser request has no credential
+  to use there. A token sent to any other route changes nothing.
+- **Proposed (M2-5):** on every use Shinan also checks that the agent's
+  person is still on the email allowlist ([3.2](#32-who-can-have-an-account)),
+  as it checks the agent's membership. Reason: removal from the allowlist
+  revokes tokens at that moment, and the check covers a token that escaped
+  it, for example one made by a request that raced the removal.
 - Shinan's own token prefixes are refused in catalog proposals from the first
   version, as the [catalog](catalog.md) requires. Refusing them in other text
   (comments, progress updates) and revoking the exposed token automatically
@@ -995,7 +1002,11 @@ written forms:
   digits and single hyphens, at most 32 characters; what a person types is
   lowered, and spaces, dots and underscores become hyphens ("MacBook Air"
   becomes `macbook-air`). The handle is unique among the agents of one
-  membership ([6.1](#61-what-one-agent-is)). An agent also has a **name** for
+  membership ([6.1](#61-what-one-agent-is)). Because both parts may hold
+  hyphens, two pairs can make one handle (`gemini-cli` on `daedalus` and
+  `gemini` on `cli-daedalus`); Shinan refuses the second and asks for another
+  machine name, rather than treating it as the first agent. An agent also
+  has a **name** for
   people, such as "OpenCode on Daedalus", which its member can rename;
   renaming never changes the handle or any record.
 - The written form names the agent, not the agent session. The exact agent
@@ -1107,11 +1118,16 @@ restriction stays possible later.
 - **Throttling** of sign-in and invitation emails (per address and per network
   address, so Shinan cannot be used to flood a mailbox) and of failed token
   use. Failures are recorded. **Proposed (M2-5):** after 10 failed agent token
-  attempts in a minute from one network address, every token attempt from
-  that address is refused (429) until the minute ends, valid tokens included;
-  each failure up to the limit is recorded with its reason, and then only the
-  first refusal. Each token is also limited to 600 requests a minute from
-  anywhere. Every refused token gets the same answer (401 `invalid-token`).
+  attempts in a minute from one network address, further failing attempts
+  from that address are refused (429) until the minute ends. Each failure up
+  to the limit is recorded with its reason, and then only the first refusal.
+  A working token is always looked up first and is never refused because of
+  other requests from its address: guessing a token is infeasible, so the
+  limit only keeps the log and the load bounded, and a shared address (a
+  machine, a home network, or every visitor if the trusted proxy is set
+  wrong) must not let one client stop the others' agents. Each token is
+  limited to 600 requests a minute from anywhere. Every refused token gets
+  the same answer (401 `invalid-token`).
 - **Uniform answers** that do not reveal whether an email address is
   allowlisted or whether a person, workspace, task or repository exists.
   Reason: probing for names leaks information.
@@ -1158,7 +1174,9 @@ kinds (**proposed**):
   every hour, each token used since the last summary gets one
   `agent-token.used` entry with the number of requests, first and last use
   and the last network address; and its revocation entry carries the same
-  summary. Agent and token entries are `agent.created`, `agent.renamed`,
+  summary. In both, `requests` counts the requests since the previous
+  summary, so no request is in two entries, and `totalRequests` those since
+  the token was made. Agent and token entries are `agent.created`, `agent.renamed`,
   `agent.disabled`, `agent.enabled`, `agent-token.issued`,
   `agent-token.revoked` and `agent-token.failed`.
 - **Decided (owner, O-47, N-8, N-13, [#25](https://github.com/guneet-xyz/shinan/issues/25)):**

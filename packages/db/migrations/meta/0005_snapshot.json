@@ -1,5 +1,5 @@
 {
-  "id": "3428eda0-e98c-4cef-be33-80ef665520ae",
+  "id": "e11bd9fc-1d9c-48b8-a54e-c03900047844",
   "prevId": "6fecfe42-9a64-4c62-8404-b92dbb815d53",
   "version": "7",
   "dialect": "postgresql",
@@ -338,17 +338,19 @@
           "onDelete": "no action",
           "onUpdate": "no action"
         },
-        "agents_member_same_workspace": {
-          "name": "agents_member_same_workspace",
+        "agents_member_same_workspace_and_person": {
+          "name": "agents_member_same_workspace_and_person",
           "tableFrom": "agents",
           "tableTo": "members",
           "columnsFrom": [
             "workspace_id",
-            "member_id"
+            "member_id",
+            "person_id"
           ],
           "columnsTo": [
             "workspace_id",
-            "id"
+            "id",
+            "person_id"
           ],
           "onDelete": "no action",
           "onUpdate": "no action"
@@ -1282,6 +1284,15 @@
           "columns": [
             "workspace_id",
             "id"
+          ]
+        },
+        "members_workspace_id_id_person_id": {
+          "name": "members_workspace_id_id_person_id",
+          "nullsNotDistinct": false,
+          "columns": [
+            "workspace_id",
+            "id",
+            "person_id"
           ]
         }
       },
