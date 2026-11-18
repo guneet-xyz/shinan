@@ -139,9 +139,7 @@ describe("createAgentToken", () => {
       machine: "MacBook Air",
       name: "OpenCode on the MacBook",
     })
-    expect(issued.token).toMatch(
-      new RegExp(`^${agentTokenPrefix}[A-Za-z0-9_-]{43}$`),
-    )
+    expect(issued.token).toMatch(/^shinan_agent_[A-Za-z0-9]{43}$/)
     expect(issued.agentCreated).toBe(true)
     expect(issued.replacedToken).toBe(false)
     expect(issued.agent).toMatchObject({
@@ -351,6 +349,9 @@ describe("authenticateAgent", () => {
     for (const bad of [
       token,
       `${agentTokenPrefix}${"A".repeat(43)}`,
+      // The old URL-safe alphabet, or one character too many.
+      `${agentTokenPrefix}${"-".repeat(43)}`,
+      `${agentTokenPrefix}${"A".repeat(44)}`,
       "not-a-token",
       "",
     ]) {
@@ -371,6 +372,8 @@ describe("authenticateAgent", () => {
     expect(failures.map((f) => [f.workspaceId, f.details.reason])).toEqual([
       [workspaceId, "revoked"],
       [null, "unknown"],
+      [null, "malformed"],
+      [null, "malformed"],
       [null, "malformed"],
       [null, "malformed"],
     ])

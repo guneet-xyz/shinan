@@ -14,7 +14,7 @@ import { appendEvent } from "../events.js"
 import type { WriteScope } from "../events.js"
 import { rateLimitReached, takeRateLimit } from "../rate-limits.js"
 import { networkAddress, recordSecurityEntry } from "../security-log.js"
-import { agentTokenPrefix, hashToken, newToken } from "../tokens.js"
+import { agentTokenPattern, hashToken, newAgentToken } from "../tokens.js"
 import { checkName, isId } from "../validation.js"
 import { sendSecurityAlert } from "./sign-in.js"
 
@@ -809,7 +809,7 @@ async function issueToken(
     eq(schema.agentTokens.agentId, agent.id),
     "replaced",
   )
-  const token = `${agentTokenPrefix}${newToken()}`
+  const token = newAgentToken()
   const scopes = [...tokenScopes[access]]
   const [issued] = await scope.tx
     .insert(schema.agentTokens)
@@ -1043,12 +1043,9 @@ function checkMachineEntity(value: string | null | undefined): string | null {
   return id
 }
 
-/** A token Shinan could have issued: the prefix and 43 URL-safe characters. */
+/** A token Shinan could have issued (identity §7.4), and nothing more. */
 function isWellFormed(token: string): boolean {
-  return (
-    token.startsWith(agentTokenPrefix) &&
-    /^[A-Za-z0-9_-]{43}$/.test(token.slice(agentTokenPrefix.length))
-  )
+  return new RegExp(`^${agentTokenPattern.source}$`).test(token)
 }
 
 function originOf(url: string): string {
