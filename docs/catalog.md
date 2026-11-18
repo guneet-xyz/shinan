@@ -1457,17 +1457,22 @@ how proposals are applied and classed (`packages/core`, `catalog/proposals`).
   operations again to the latest revision, as the author: if they now
   conflict or are blocked, the proposal stays waiting and the approver is
   told why.
-- **Accepting a discrepancy** (`accept-discrepancy`, [4.7](#47-discrepancies))
-  names the approving person's `person` entity: the one whose `member`
-  fact holds their handle. A person's own edit names their own; an
-  agent's proposal waits (doubtful), and approval names the approver, or
-  is refused if they have no such entity. Until then, the author's person
-  (or another member's) stands in, so the rest of the proposal is checked
-  when it is made. Reason: accepting a discrepancy is a person's
-  judgement; an agent or another member cannot give it in their name.
+- **Accepting a discrepancy** (`accept-discrepancy`, [4.7](#47-discrepancies)).
+  `applyOperations`' `acceptedBy` is set only from a real person's
+  approval: the approving person's `person` entity, the one whose `member`
+  fact holds their handle. A person's own edit is their approval, so it
+  names their own entity and applies at once. An agent's proposal with
+  `accept-discrepancy` is **held for approval, not rejected**: it is
+  stored as pending in the doubtful class, and the person who approves it
+  is the one named. If the approver has no such entity, approval answers
+  `needs-approval` and the proposal keeps waiting. To check the rest of an
+  agent's proposal when it is made, the author's person (or another
+  member's) stands in; that trial text is never stored or applied.
+  Reason: accepting a discrepancy is a person's judgement; an agent or
+  another member cannot give it in their name.
 - **Limits.** The operation and fact limits of [8.1](#81-catalog-proposals),
   an explanation of 4,000 characters and 256 KiB of JSON per proposal; the
-  catalog worker stops a proposal after 10 seconds. `applyOperations`
+  catalog worker stops a proposal after 20 seconds (the slowest proposal within the limits, a 100-fact recheck of a 54 KB document, took about 8 s on a busy development host). `applyOperations`
   checks each operation's shape.
 - **Retries.** A proposal may carry an idempotency key; the same key with
   the same content returns the stored proposal, with other content it is

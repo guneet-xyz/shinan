@@ -568,7 +568,7 @@ indexing (**Proposed**).
     expectations decide conflicts (catalog §8.5).
   - **The catalog worker.** Parsing, applying (`applyOperations`),
     validation and approval classes run in one worker thread per process,
-    one proposal at a time, with a 10-second limit after which the thread is
+    one proposal at a time, with a 20-second limit after which the thread is
     stopped and started again (security checklist 10.8). The worker keeps
     parsed documents by document and revision (up to 10,000), so a proposal
     sends it only the texts it has not parsed yet. Its results come back as

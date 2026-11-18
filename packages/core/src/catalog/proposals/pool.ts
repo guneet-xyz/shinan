@@ -18,8 +18,13 @@ export interface CatalogWorkerOptions {
   cacheSize?: number
 }
 
-/** **Proposed (M2-4):** 10 seconds; a proposal on the trial's catalog takes milliseconds. */
-export const defaultTimeLimitMs = 10_000
+/**
+ * **Proposed (M2-4):** 20 seconds. A proposal on the trial's catalog takes
+ * milliseconds; the slowest one within the limits (a 100-fact recheck of a
+ * 54 KB document) took about 8 s on a busy Daedalus, so this leaves room
+ * while still stopping a runaway proposal.
+ */
+export const defaultTimeLimitMs = 20_000
 
 /** The stored documents a proposal applies to: their IDs and revisions. */
 export interface LatestDocument {
