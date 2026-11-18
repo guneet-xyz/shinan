@@ -902,11 +902,18 @@ sit behind NAT, firewalls or tailnets. The agent-facing parts of
   (`@modelcontextprotocol/server` 2.4), whose `createMcpHandler` serves the
   2026-07-28 revision and, statelessly, the 2025 `initialize` handshake from
   one per-request server. Each request passes, in order: the per-address
-  request limit (as `/api/agent`), a 512 KB body limit (larger than the
-  API's 64 KB, because one catalog proposal may hold 256 KiB of JSON; M2-12
-  reviews it), the `Origin` check (a request carrying any `Origin` but the
-  installation's own is refused with 403), and `requireAgent`; the SDK then
-  checks the 2026-07-28 headers against the body (400 when they disagree).
+  request limit (as `/api/agent`), at most 16 requests in flight per
+  address, a 512 KB body limit (larger than the API's 64 KB, because one
+  catalog proposal may hold 256 KiB of JSON), the `Origin` check (a request
+  carrying any `Origin` but the installation's own is refused with 403),
+  `requireAgent`, and at most 8 requests in flight per token; over either
+  in-flight cap the answer is 429 before the body is read, and Node gives a
+  client 30 seconds to send a whole request (**proposed**, M2-12: slow
+  senders otherwise held about 0.63 MiB of memory per stalled body for up
+  to 300 seconds). The SDK then checks the 2026-07-28 headers against the
+  body (400 when they disagree). Answers to the 2025 handshake's requests
+  are short event streams (`text/event-stream`) that close after the
+  result; `responseMode: "json"` shapes only 2026-07-28 exchanges.
   Before the SDK, Shinan refuses a JSON array of messages (400: neither
   revision allows batches, and a batch would multiply the request limits,
   which count HTTP requests), an `MCP-Protocol-Version` other than the two
