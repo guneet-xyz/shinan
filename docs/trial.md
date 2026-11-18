@@ -24,8 +24,7 @@ before the trial starts.
 5. [Seeding the trial entities](#5-seeding-the-trial-entities)
 6. [During the trial](#6-during-the-trial)
 7. [How the trial ends and is judged](#7-how-the-trial-ends-and-is-judged)
-8. [Open questions](#8-open-questions)
-9. [Appendix: draft of the `workspace` trial note](#appendix-draft-of-the-workspace-trial-note)
+8. [Appendix: draft of the `workspace` trial note](#appendix-draft-of-the-workspace-trial-note)
 
 ## 1. What the trial is
 
@@ -43,7 +42,8 @@ from the readiness criteria ([roadmap §5](roadmap.md#5-readiness-criteria)).
   trial's length (R1) counts from M4.
 - **Entries are a map, not a source.** Agents fill the trial catalog by
   checking facts where they are owned, using `workspace` repository entries
-  only to find those places (O-71, [section 5](#5-seeding-the-trial-entities)).
+  only to find those places, and copy nothing (O-71 as amended by the owner
+  on 2026-11-18, [section 5](#5-seeding-the-trial-entities)).
 - **Both are kept in step.** When a trial entity's facts change, the agent
   doing the work updates the `workspace` repository as today and also makes a
   catalog proposal in Shinan (decided, owner, O-72). A weekly comparison
@@ -105,7 +105,7 @@ deployment request in `infra/musashi` is ready.
    ([catalog §8.2](catalog.md#82-when-catalog-approval-is-needed)), so it
    applies when the owner approves it. It comes first because every entity
    names it as `owner`, and references must resolve.
-5. **Agents: seed the 13 trial entities** ([section 5](#5-seeding-the-trial-entities)).
+5. **Agents: seed the 17 trial entities** ([section 5](#5-seeding-the-trial-entities)).
    These apply on their own (new entities and observed facts are not gated).
 6. **Owner approves: the start-here document.** An agent proposes it after
    seeding (see below); the owner approves it. It has two paths
@@ -117,13 +117,14 @@ deployment request in `infra/musashi` is ready.
      ([appendix](#appendix-draft-of-the-workspace-trial-note)); then how to
      find context for a task in Shinan, and the lists of discrepancies and
      known unknowns.
-   - **For people:** the three projects, the three machines, the services the
-     projects depend on, and the owner, as entity steps.
+   - **For people:** the three projects and their deployments, the three
+     machines, the services the projects depend on, and the owner, as entity
+     steps.
 
-   **Proposed:** the start-here document is written after seeding, not
-   before it as the build plan's step 3 lists it. Reason: its steps point to
-   the trial entities, which must exist for validation to pass; writing it
-   once, after seeding, needs one approval instead of two.
+   Decided (owner, M2-Q8, [build plan §7.3](build-plan-m2.md#73-answers-on-the-trial-start-kit)):
+   the start-here document is written after seeding, with one approval.
+   Reason: its steps point to the trial entities, which must exist for
+   validation to pass.
 
 7. **Owner: check** the start-here path and a few entities in the wiki, as part
    of the M2 milestone review.
@@ -285,39 +286,50 @@ condition ([roadmap §4.6](roadmap.md#46-running-the-trial), RM-10).
 
 ### 5.1 The entities
 
-Decided (owner, O-71, [roadmap §4.3](roadmap.md#43-the-catalog-during-the-trial)).
-The map entry is the `workspace` repository file an agent reads to find the
-owning sources.
+Decided (owner, O-71, widened by M2-Q6 on 2026-11-18,
+[roadmap §4.3](roadmap.md#43-the-catalog-during-the-trial),
+[build plan §7.3](build-plan-m2.md#73-answers-on-the-trial-start-kit)): 17
+entities. The map entry is the `workspace` repository file an agent reads to
+find the owning sources. The four deployment services have no entry of their
+own there; their map is the deployment part of the project entry, which links
+the owning stack documentation in `infra/musashi` (and `infra/anzen` for mon's
+agents).
 
-| Entity                       | Map entry in the `workspace` repository  | Seeding session |
-| ---------------------------- | ---------------------------------------- | --------------- |
-| `machine/musashi`            | `catalog/machines/musashi.md`            | 1. Machines     |
-| `machine/anzen`              | `catalog/machines/anzen.md`              | 1. Machines     |
-| `machine/daedalus`           | `catalog/machines/daedalus.md`           | 1. Machines     |
-| `service/ingress`            | `catalog/services/ingress.md`            | 2. Services     |
-| `service/container-registry` | `catalog/services/container-registry.md` | 2. Services     |
-| `service/cloudflare-dns`     | `catalog/services/cloudflare-dns.md`     | 2. Services     |
-| `service/obscuro`            | `catalog/services/obscuro.md`            | 2. Services     |
-| `service/email`              | `catalog/services/email.md`              | 2. Services     |
-| `service/forgejo`            | `catalog/services/forgejo.md`            | 2. Services     |
-| `service/monitoring`         | `catalog/services/monitoring.md`         | 2. Services     |
-| `project/shinan`             | `catalog/projects/shinan.md`             | 3. Projects     |
-| `project/mon`                | `catalog/projects/mon.md`                | 3. Projects     |
-| `project/easyshell`          | `catalog/projects/easyshell.md`          | 3. Projects     |
+| Entity                       | Map entry in the `workspace` repository                                 | Seeding session |
+| ---------------------------- | ----------------------------------------------------------------------- | --------------- |
+| `machine/musashi`            | `catalog/machines/musashi.md`                                           | 1. Machines     |
+| `machine/anzen`              | `catalog/machines/anzen.md`                                             | 1. Machines     |
+| `machine/daedalus`           | `catalog/machines/daedalus.md`                                          | 1. Machines     |
+| `service/ingress`            | `catalog/services/ingress.md`                                           | 2. Services     |
+| `service/container-registry` | `catalog/services/container-registry.md`                                | 2. Services     |
+| `service/cloudflare-dns`     | `catalog/services/cloudflare-dns.md`                                    | 2. Services     |
+| `service/obscuro`            | `catalog/services/obscuro.md`                                           | 2. Services     |
+| `service/email`              | `catalog/services/email.md`                                             | 2. Services     |
+| `service/forgejo`            | `catalog/services/forgejo.md`                                           | 2. Services     |
+| `service/monitoring`         | `catalog/services/monitoring.md`                                        | 2. Services     |
+| `service/shinan`             | `catalog/projects/shinan.md`, "Deployment"                              | 3. Deployments  |
+| `service/mon-private`        | `catalog/projects/mon.md`, private board                                | 3. Deployments  |
+| `service/mon-public`         | `catalog/projects/mon.md`, public board                                 | 3. Deployments  |
+| `service/easyshell`          | `catalog/projects/easyshell.md`, "Deployment and cross-project context" | 3. Deployments  |
+| `project/shinan`             | `catalog/projects/shinan.md`                                            | 4. Projects     |
+| `project/mon`                | `catalog/projects/mon.md`                                               | 4. Projects     |
+| `project/easyshell`          | `catalog/projects/easyshell.md`                                         | 4. Projects     |
 
 Every entity has `owner: person/guneet` and keeps the entry's status
 (`active`). The old IDs (`musashi`, `shinan` and so on) are not added as
-aliases, because these are not imports.
+aliases, because these are not imports. Deployment facts (version, endpoint,
+where it runs) go only on the deployment services; each project `provides`
+its deployment services (O-16, [catalog, service](catalog.md#service)).
 
 ### 5.2 Sessions and order
 
-**Proposed:** three agent sessions, one per group, run in the order of the
+**Proposed:** four agent sessions, one per group, run in the order of the
 table, each started from `/mnt/projects/shinan` (so it has Shinan) with the
 issue for its group. Reason: relations point from projects to services and
-machines, and from services to machines, and their targets must exist first
-([catalog §8.3](catalog.md#83-validation)); a group per session keeps each
-session's context small (build plan, risks: seeding cost). Each session reads
-the skill before starting.
+machines, and from services to machines and other services, and their targets
+must exist first ([catalog §8.3](catalog.md#83-validation)); a group per
+session keeps each session's context small (build plan, risks: seeding cost).
+Each session reads the skill before starting.
 
 ### 5.3 How each fact is recorded
 
@@ -337,9 +349,12 @@ as a procedure, for each entity:
    ([catalog §4.5](catalog.md#45-fact-checks)).
 3. **Pointers** (repository URLs, issue trackers, documentation links, IDs)
    are checked by opening them, which makes them ordinary `observed` facts.
-   This is the normal case: every pointer in the trial entries is a link the
-   agent can open. For the case where a pointer cannot be opened, see
-   [open question 2](#8-open-questions).
+   Nothing is copied from the entry; a pointer the agent cannot open is
+   `unknown` (decided, owner, M2-Q7). Reason: every trial pointer is a link an
+   agent can normally open, so checking costs little and gives real check
+   times. Validation is unchanged: `checked: null` and `by: unknown` are only
+   for imports ([catalog §8.3](catalog.md#83-validation)), which trial
+   entities are not.
 4. **What cannot be checked within existing access is `unknown`**
    ([catalog §4.8](catalog.md#48-unknowns)), with a short note of why.
    Seeding never widens access (P6): no new SSH connections, no scanning, no
@@ -350,11 +365,11 @@ as a procedure, for each entity:
    ([catalog §7.2](catalog.md#72-where-secrets-live)). Tailnet addresses and
    SSH host-key fingerprints are not secrets and may be facts.
 6. **Relations only between trial entities.** Relations to entities outside
-   the 13 (for example `configured-by project/musashi`, or `on-network
+   the 17 (for example `configured-by project/musashi`, or `on-network
 service/tailscale`) are not written, because their targets do not exist.
    The body says it in prose with a link to the owning repository, and the
    session lists them in its report. Adding more entities needs the owner
-   (O-71 fixed the list).
+   (O-71 and M2-Q6 fixed the list).
 7. **Dated history stays in the body**; current-state claims become facts
    ([catalog §2.5](catalog.md#25-body)).
 8. **No `imported_from`:** trial entities are not imports.
@@ -389,8 +404,8 @@ in M3, O-75). It reads only, except for the proposals and findings it files.
    `origin/main`; note its revision. Take the previous comparison's
    `workspace` revision and Shinan catalog revision from the last comparison
    comment (below).
-2. List the commits since the previous revision that touch the 13 map entries
-   (`git log <previous>..origin/main -- <the 13 paths>`), with their merge
+2. List the commits since the previous revision that touch the map entries
+   of [5.1](#51-the-entities) (`git log <previous>..origin/main -- <their paths>`), with their merge
    dates.
 3. For each, find the matching catalog proposal in Shinan (the catalog
    changes since the previous catalog revision). Count it as **matched in
@@ -407,8 +422,10 @@ in M3, O-75). It reads only, except for the proposals and findings it files.
    may be a `workspace` repository pull request. Agents keep acting on the
    `workspace` repository's version meanwhile.
 6. Note the facts due for recheck and the known unknowns in Shinan's lists.
-7. Post the result as a comment on the trial's tracking issue (a GitHub issue
-   in `guneet-xyz/shinan` labelled `trial`, opened at trial start): both
+7. Post the result as a comment on the trial's tracking issue: one
+   long-lived GitHub issue in `guneet-xyz/shinan` labelled `trial`, opened at
+   trial start, with a comment per week so the history stays in one place
+   (proposed). The comment gives both
    revisions, the counts from step 3, the disagreements found and the
    findings filed. No secret values and no token in it.
 
@@ -468,38 +485,6 @@ The [roadmap](roadmap.md) owns this; in short:
 - **Or a pause** (6.5), or extending the trial with a reserve project if it is
   too small (R1).
 
-## 8. Open questions
-
-1. **Deployments of the trial projects (open, owner).** Deployment facts
-   (version, endpoint, where it runs) live only on `service` entities
-   (decided, owner, O-16, [catalog §3](catalog.md#service)), but the 13 trial
-   entities include no service for Shinan's own deployment, the two mon boards
-   or easyshell.sh. Without them, the trial catalog can only point to each
-   project's deployment documentation (`docs.deployment`), and R12's "where
-   and how a trial project is deployed" cannot be answered from Shinan alone.
-   **Proposed:** add `service/shinan`, `service/mon-private`,
-   `service/mon-public` and `service/easyshell` to the trial catalog, seeded
-   in session 2. Reason: they are the facts the trial projects change most
-   often (each rollout), so they are also the best test of R6 and R7. This
-   widens O-71's list, so it needs the owner.
-2. **Copied pointers and validation (to be confirmed).** The build plan lets a
-   pointer be copied from the entry with the entry's date and `by: unknown`,
-   or with `checked: null` ([M2 §4, step 4](build-plan-m2.md#4-starting-the-catalog-part-of-the-trial),
-   [catalog §13.1](catalog.md#131-provenance-of-imported-facts)). Validation,
-   as proposed in M2-1 ([#99](https://github.com/guneet-xyz/shinan/pull/99)),
-   allows `checked: null` and `by: unknown` only in documents with
-   `imported_from`, which trial entities do not have
-   ([catalog §8.3](catalog.md#83-validation)). So
-   copying would be refused. **Proposed:** agents check every pointer at its
-   source (5.3, step 3) and record a pointer they cannot open as `unknown`.
-   Reason: every trial pointer is a link the agent can open, so this costs
-   little and gives real check times; it needs no change to validation or to
-   the catalog document. If copying is wanted, validation must allow it for
-   trial documents, which the owner decides.
-3. **The `trial` tracking issue** for the weekly comparison (6.2): proposed as
-   one long-lived issue with a comment per week, rather than an issue per
-   week, so the history stays in one place.
-
 ## Appendix: draft of the `workspace` trial note
 
 Text only; not yet proposed. At step 8 an agent opens a Forgejo issue in
@@ -541,7 +526,9 @@ For work on a trial project:
   [Obscuro](../catalog/services/obscuro.md),
   [email](../catalog/services/email.md),
   [Forgejo](../catalog/services/forgejo.md) and
-  [monitoring](../catalog/services/monitoring.md).
+  [monitoring](../catalog/services/monitoring.md), plus the deployments of the
+  three trial projects (Shinan, mon's private and public boards, easyshell),
+  which are described in their project entries here.
 - **When the two disagree,** act on this repository's version, and record the
   disagreement as the trial guide says.
 - **If Shinan is down,** carry on with this repository alone and file a
@@ -580,7 +567,7 @@ updated by that day's deployment record as usual.
 ## <date> (Shinan trial: catalog part)
 
 - Add the [Shinan trial note](docs/collaboration.md#shinan-trial-catalog-part):
-  for Shinan, mon and easyshell, agents use Shinan, keep the 13 trial entities
+  for Shinan, mon and easyshell, agents use Shinan, keep the 17 trial entities
   in step with catalog proposals, and fall back to this repository if Shinan is
   down. Record the machine-level OpenCode files in the
   [Daedalus entry](catalog/machines/daedalus.md). See
