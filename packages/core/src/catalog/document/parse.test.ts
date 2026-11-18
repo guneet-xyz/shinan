@@ -813,6 +813,20 @@ describe("names that are object members", () => {
     },
   )
 
+  it.each(["checked", "by", "scope", "source", "limits"])(
+    "refuses %s, a fact check's field, as a relation attribute",
+    (name) => {
+      const d = entity(
+        withFrontmatter(
+          `${header}facts:\n${check}    observed:\n      secrets-in: { to: service/o, item: a, ${name}: guneet }\n`,
+        ),
+      )
+      expect(d.problems.map((p) => p.code)).toEqual(["fact-invalid"])
+      expect(d.problems[0]?.message).toContain(`"${name}"`)
+      expect(d.problems[0]?.message).toContain("fact check")
+    },
+  )
+
   it("keeps attributes in a map with no prototype", () => {
     const d = entity(
       withFrontmatter(

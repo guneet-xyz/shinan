@@ -1,8 +1,10 @@
-import { isAttributeName, reservedTypeNames } from "./ids.js"
+import { attributeNameProblem, factOptions, reservedTypeNames } from "./ids.js"
 import type { EntityStatus, SchemaDocument } from "./model.js"
 import { recheckPattern } from "./parse.js"
 import { blocking } from "./problems.js"
 import type { Problem } from "./problems.js"
+
+export { factOptions }
 
 /**
  * A relation target meaning any entity, an entity type (written
@@ -260,20 +262,6 @@ const builtIns: Record<string, BuiltInType> = {
 /** The names of the eight built-in entity types. */
 export const builtInTypes: readonly string[] = Object.keys(builtIns)
 
-/**
- * Long-form fields with their own meaning, which a relation attribute (such
- * as `path`) cannot be named.
- */
-export const factOptions: ReadonlySet<string> = new Set([
-  "value",
-  "to",
-  "via",
-  "note",
-  "task",
-  "remove",
-  "accepted",
-])
-
 function builtInSchema(type: string, definition: BuiltInType): TypeSchema {
   const keys = new Map<string, KeySchema>()
   for (const [key, k] of Object.entries(definition.keys)) {
@@ -366,7 +354,7 @@ export function buildTypeRegistry(
           }
         : null
       for (const attribute of relation?.identifiedBy ?? []) {
-        if (!isAttributeName(attribute) || factOptions.has(attribute))
+        if (attributeNameProblem(attribute) !== null)
           problem(
             `"${attribute}" cannot name a relation attribute`,
             definition.range,

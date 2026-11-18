@@ -2282,6 +2282,36 @@ b
     ).toMatchObject([{ kind: "invalid" }])
   })
 
+  it("refuses a relation attribute named like a fact check's field", () => {
+    for (const name of ["by", "checked", "scope", "source", "limits"]) {
+      const problems = refused(
+        [dockyard],
+        [
+          {
+            op: "set-fact",
+            document: "project/dockyard",
+            fact: {
+              key: "checkout-on",
+              state: "observed",
+              to: "machine/takezo",
+              attributes: { path: "/srv/dockyard", [name]: "guneet" },
+            },
+            check,
+            expect: {
+              identity:
+                "checkout-on|observed|to=machine/takezo|path=/srv/dockyard",
+              absent: true,
+            },
+          },
+        ],
+      )
+      expect(problems).toMatchObject([
+        { kind: "invalid", code: "operation-invalid" },
+      ])
+      expect(problems[0]?.message).toContain("fact check")
+    }
+  })
+
   it("refuses JavaScript object member names as fact keys and schema keys", () => {
     for (const key of ["constructor", "hasOwnProperty", "prototype"]) {
       expect(

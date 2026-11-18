@@ -22,7 +22,7 @@ import {
 import type { CheckFields, FactToWrite } from "./fact-edits.js"
 import { factIdentityKey, parseFactIdentityKey } from "./identity.js"
 import {
-  isAttributeName,
+  attributeNameProblem,
   isEntityId,
   isFactKey,
   parseEntityId,
@@ -59,7 +59,7 @@ import type {
 } from "./operations.js"
 import { maxDocumentBytes, parseCatalogDocument } from "./parse.js"
 import type { Problem } from "./problems.js"
-import { buildTypeRegistry, factOptions, keySchema } from "./schemas.js"
+import { buildTypeRegistry, keySchema } from "./schemas.js"
 import type { KeySchema, TypeRegistry } from "./schemas.js"
 import { utf8Length } from "./source.js"
 import {
@@ -862,8 +862,8 @@ function checkFact(fact: FactInput, key: KeySchema) {
       `The fact "${fact.key}" has no value; record it as unknown instead`,
     )
   for (const [name, v] of Object.entries(fact.attributes ?? {})) {
-    if (!isAttributeName(name) || factOptions.has(name))
-      throw invalid(`"${name}" cannot name a relation attribute`)
+    const problem = attributeNameProblem(name)
+    if (problem !== null) throw invalid(problem)
     if (v === "") throw invalid(`The attribute "${name}" holds one value`)
   }
   if (fact.remove && fact.state !== "planned")

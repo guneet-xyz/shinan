@@ -1,3 +1,5 @@
+import { checkFields } from "./model.js"
+
 /**
  * Names and IDs in catalog documents (catalog §2.4, §3.9, §4.1).
  */
@@ -34,6 +36,42 @@ export function isFactKey(name: string): boolean {
  */
 export function isAttributeName(name: string): boolean {
   return isFactKey(name)
+}
+
+/**
+ * Long-form fields with their own meaning, which a relation attribute (such
+ * as `path`) cannot be named.
+ */
+export const factOptions: ReadonlySet<string> = new Set([
+  "value",
+  "to",
+  "via",
+  "note",
+  "task",
+  "remove",
+  "accepted",
+])
+
+/**
+ * Names a relation attribute cannot have: the long-form fields
+ * (`factOptions`) and a fact check's fields (`checkFields`), so that
+ * `{ to: …, by: guneet, checked: 2020-01-01 }` never reads as who checked
+ * the fact, or when (catalog §4.3).
+ */
+export const reservedAttributeNames: ReadonlySet<string> = new Set([
+  ...factOptions,
+  ...checkFields,
+])
+
+/** Why `name` cannot name a relation attribute, or null when it can. */
+export function attributeNameProblem(name: string): string | null {
+  if (!isAttributeName(name))
+    return `"${name}" cannot name an attribute: lowercase words joined by ".", "-" or "_"`
+  if (factOptions.has(name))
+    return `"${name}" cannot name an attribute: it is a field of a fact's long form`
+  if (reservedAttributeNames.has(name))
+    return `"${name}" cannot name an attribute: it is a field of a fact check, which says who checked the facts in its group, and when`
+  return null
 }
 
 /**
