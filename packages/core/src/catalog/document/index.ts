@@ -150,5 +150,16 @@ export type {
 } from "./yaml.js"
 export { findSecrets, maxCheckedLength } from "./secrets.js"
 export type { SecretFinding } from "./secrets.js"
-export { validateCatalog, validateChange } from "./validate.js"
-export type { Change, ValidationContext, ValidationResult } from "./validate.js"
+export {
+  prepareCatalogValidation,
+  updateCatalogValidation,
+  validateCatalog,
+  validateChange,
+  validateChangeIncrementally,
+} from "./validate.js"
+export type {
+  CatalogValidation,
+  Change,
+  ValidationContext,
+  ValidationResult,
+} from "./validate.js"
