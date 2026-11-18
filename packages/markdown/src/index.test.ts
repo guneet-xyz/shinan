@@ -94,9 +94,18 @@ describe("time on hostile input (#102)", () => {
   ])(
     "reads %s in time that grows about linearly",
     (_, make) => {
-      const quarter = Math.max(best(make(16 * 1024)), 2)
-      const full = best(make(64 * 1024))
-      expect(full / quarter).toBeLessThan(8)
+      // Times of a few milliseconds are noise, so the quarter size counts
+      // as at least 20 ms; a quadratic regression takes seconds at 64 KiB.
+      // Measured again (up to three times) before failing, since other
+      // tests run alongside.
+      let ratio = Infinity
+      let full = Infinity
+      for (let i = 0; i < 3 && ratio >= 8; i++) {
+        const quarter = Math.max(best(make(16 * 1024)), 20)
+        full = best(make(64 * 1024))
+        ratio = Math.min(ratio, full / quarter)
+      }
+      expect(ratio).toBeLessThan(8)
       expect(full).toBeLessThan(30_000)
     },
     120_000,

@@ -601,11 +601,18 @@ describe("hostile input", () => {
       const d = parseCatalogDocument(front + full)
       expect(d.problems).toEqual([])
       expect(d.body.sections.map((s) => s.text).join("")).toBe(d.body.text)
-      const quarter = Math.max(best(make(Math.floor(room / 4))), 5)
+      // A few milliseconds are noise, so the quarter size counts as at least
+      // 20 ms; a quadratic regression takes seconds at full size. Measured
+      // again (up to three times) before failing, since other tests run
+      // alongside.
+      let ratio = Infinity
       let fastest = Infinity
-      for (let i = 0; i < 3 && fastest / quarter >= 8; i++)
-        fastest = Math.min(fastest, best(full, 1))
-      expect(fastest / quarter).toBeLessThan(8)
+      for (let i = 0; i < 3 && ratio >= 8; i++) {
+        const quarter = Math.max(best(make(Math.floor(room / 4))), 20)
+        fastest = Math.min(fastest, best(full))
+        ratio = Math.min(ratio, fastest / quarter)
+      }
+      expect(ratio).toBeLessThan(8)
       expect(fastest).toBeLessThan(30_000)
     },
     120_000,
