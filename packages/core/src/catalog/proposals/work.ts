@@ -25,6 +25,13 @@ export interface PrepareInput {
   now: number
   /** The handles of the workspace's current members (catalog §2.3). */
   memberHandles: readonly string[]
+  /**
+   * The person approving the proposal, by handle: an `accept-discrepancy`
+   * names their `person` entity (catalog §4.7). With `preview`, nobody has
+   * approved yet: the author's person, or another member's, stands in, so
+   * the rest of the proposal is checked before it waits for approval.
+   */
+  approver?: { handle: string; preview: boolean }
 }
 
 /** One document the change writes, ready for `appendCatalogRevision`. */
@@ -69,10 +76,39 @@ export function prepareChange(
   const documentIds = new Map<CatalogDocument, string>()
   for (const { documentId, document } of stored)
     documentIds.set(document, documentId)
+  const accepting = input.operations.findIndex(
+    (o) =>
+      typeof o === "object" &&
+      o !== null &&
+      (o as { op?: unknown }).op === "accept-discrepancy",
+  )
+  let acceptedBy: string | undefined
+  if (accepting >= 0 && input.approver) {
+    acceptedBy =
+      personEntityOf(stored, [input.approver.handle]) ??
+      (input.approver.preview
+        ? personEntityOf(stored, input.memberHandles)
+        : undefined)
+    if (acceptedBy === undefined)
+      return {
+        outcome: "problems",
+        problems: [
+          {
+            operation: accepting,
+            kind: "invalid",
+            code: "needs-approval",
+            message: input.approver.preview
+              ? "Accepting a discrepancy names the approving person's entity, and no person entity has a `member` fact holding a member's handle"
+              : `Accepting a discrepancy names the approving person's entity, and no person entity has a \`member\` fact holding ${input.approver.handle}`,
+            documentId: null,
+          },
+        ],
+      }
+  }
   const result = applyOperations(
     stored.map((s) => s.document),
     input.operations,
-    { by: input.by },
+    acceptedBy === undefined ? { by: input.by } : { by: input.by, acceptedBy },
   )
   if (!result.applied) return { outcome: "problems", problems: result.problems }
   if (result.changes.length === 0) return { outcome: "unchanged" }
@@ -126,6 +162,32 @@ function documentIdOf(
   if (id === undefined)
     throw new Error("A changed document is not one of the stored documents")
   return id
+}
+
+/**
+ * The first `person` entity, in document order, whose current `member` fact
+ * holds one of the handles, read from the stored text (catalog §2.3).
+ */
+function personEntityOf(
+  stored: readonly StoredDocument[],
+  handles: readonly string[],
+): string | undefined {
+  for (const handle of handles)
+    for (const { document } of stored)
+      if (
+        document.kind === "entity" &&
+        document.type === "person" &&
+        document.status !== "retired" &&
+        document.id !== null &&
+        document.facts.some(
+          (f) =>
+            f.key === "member" &&
+            (f.state === "observed" || f.state === "intended") &&
+            f.value === handle,
+        )
+      )
+        return document.id
+  return undefined
 }
 
 /**

@@ -120,13 +120,9 @@ export function classifyChange(
       resolveEntity(entity, after.registry).facts,
     )
     for (const kind of factClasses.classes) classes.add(kind)
-    for (const person of factClasses.accepts) {
-      accepts.push(person)
-      gate(
-        "doubtful",
-        `Accepts a discrepancy on ${name} in the name of ${person}`,
-      )
-    }
+    accepts.push(...factClasses.accepts)
+    if (factClasses.accepts.length > 0)
+      gate("doubtful", `Accepts a discrepancy on ${name}`)
   }
   for (const problem of warnings)
     gate(

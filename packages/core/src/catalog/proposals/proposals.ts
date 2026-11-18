@@ -130,16 +130,22 @@ export async function proposeCatalogChange(
     }
 
     const basedOnRevision = await latestRevision(scope.tx, scope.workspaceId)
+    // A person who may approve applies their own gated edit at once; for
+    // anyone else, their person stands in for the approver until one approves.
+    const mayApprove =
+      scope.actor.kind === "person" && mayAlso(scope, "catalog.approve")
     const prepared = await prepare(scope, proposal.operations, {
       by: scope.actor.label,
       explanation: proposal.explanation,
+      approver: {
+        handle: await personHandle(scope),
+        preview: !mayApprove,
+      },
     })
     if (prepared.outcome !== "ready") return refusal(prepared)
 
     const gated = isGated(prepared.classes)
-    const appliesNow =
-      !gated ||
-      (scope.actor.kind === "person" && mayAlso(scope, "catalog.approve"))
+    const appliesNow = mayApprove || (!gated && prepared.accepts.length === 0)
     if (appliesNow) checkAccepts(prepared, scope.actor.label)
 
     const [{ next }] = (await scope.tx
@@ -215,6 +221,7 @@ export async function approveCatalogProposal(
       {
         by: author.label,
         explanation: row.explanation,
+        approver: { handle: scope.actor.label, preview: false },
       },
     )
     if (prepared.outcome !== "ready") return refusal(prepared)
@@ -393,7 +400,11 @@ type ProposalScope = WriteScope & {
 async function prepare(
   scope: ProposalScope,
   operations: readonly CatalogOperation[],
-  input: { by: string; explanation: string },
+  input: {
+    by: string
+    explanation: string
+    approver: { handle: string; preview: boolean }
+  },
 ): Promise<Prepared> {
   const d = schema.catalogDocuments
   const documents: LatestDocument[] = await scope.tx
@@ -418,8 +429,18 @@ async function prepare(
       explanation: input.explanation,
       now: Date.now(),
       memberHandles,
+      approver: input.approver,
     },
   )
+}
+
+/** The handle of the person the scope's actor is or acts for. */
+async function personHandle(scope: ProposalScope): Promise<string> {
+  const [row] = await scope.tx
+    .select({ handle: schema.people.handle })
+    .from(schema.people)
+    .where(eq(schema.people.id, scope.actor.personId!))
+  return row!.handle
 }
 
 /**
@@ -494,6 +515,7 @@ async function apply(
  * An `accepted` field names the `person` entity accepting a discrepancy
  * (catalog §4.7), so it is written only when that person's approval
  * applies the change: the entity's `member` fact holds their handle.
+ * `accept-discrepancy` writes it from the approver; this checks the result.
  */
 function checkAccepts(
   prepared: Extract<Prepared, { outcome: "ready" }>,

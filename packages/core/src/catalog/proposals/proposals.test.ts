@@ -9,11 +9,7 @@ import {
   testDatabase,
 } from "../../../test/helpers.js"
 import type { Context } from "../../context.js"
-import {
-  ForbiddenError,
-  InvalidInputError,
-  RuleViolationError,
-} from "../../errors.js"
+import { ForbiddenError, InvalidInputError } from "../../errors.js"
 import { addMember } from "../../identity/members.js"
 import type { Person } from "../../identity/people.js"
 import { createWorkspace } from "../../identity/workspaces.js"
@@ -419,12 +415,26 @@ describe("making catalog proposals", () => {
 
   it("checks the input's shape after permission", async () => {
     await seed()
+    const recheckRole = recheck("role", "Production host") as {
+      check: CheckInput
+    }
+    expect(
+      await proposeCatalogChange(asOwnersAgent, workspaceId, {
+        explanation: "x",
+        operations: [
+          { ...recheckRole, check: { ...recheckRole.check, by: "someone" } },
+        ],
+      }),
+    ).toMatchObject({
+      outcome: "invalid",
+      problems: [{ operation: 0, code: "operation-invalid" }],
+    })
     await expect(
       proposeCatalogChange(asOwnersAgent, workspaceId, {
         explanation: "x",
-        operations: [{ ...recheck("role", "x"), by: "someone" }],
+        operations: {},
       }),
-    ).rejects.toThrow("is written by Shinan")
+    ).rejects.toBeInstanceOf(InvalidInputError)
     const reader = await asAgent(db, owner, workspaceId, ["catalog:read"])
     await expect(
       proposeCatalogChange(reader, workspaceId, { nonsense: true }),
@@ -513,54 +523,45 @@ describe("approval, rejection and withdrawal", () => {
       },
     ])
     expect(discrepancy.outcome).toBe("applied")
-    const accept = stored(
-      await propose(asOwnersAgent, [
+    const accept: CatalogOperation = {
+      op: "accept-discrepancy",
+      document: "machine/musashi",
+      key: "hostname",
+      note: "DNS still has the old name",
+      expect: [
+        fact("hostname", "musashi"),
         {
-          op: "set-fact",
-          document: "machine/musashi",
-          fact: {
-            key: "hostname",
-            state: "observed",
-            value: "musashi-old",
-            via: "dns",
-            accepted: person,
-          },
-          check: { ...check, source: "dig" },
-          expect: {
-            identity: "hostname|observed|via=dns",
-            value: "musashi-old",
-            check: { checked: today },
-          },
+          ...fact("hostname", "musashi-old"),
+          identity: "hostname|observed|via=dns",
+          via: "dns",
         },
-      ]),
+      ],
+    }
+    const waiting = stored(await propose(asOwnersAgent, [accept]))
+    expect(waiting.state).toBe("pending")
+    expect(waiting.approvalClasses).toContain("doubtful")
+    expect(waiting.approvalReasons).toContain(
+      "Accepts a discrepancy on machine/musashi",
     )
-    expect(accept.state).toBe("pending")
-    expect(accept.approvalClasses).toContain("doubtful")
 
+    // The contributor has no person entity to name.
     await expect(
-      approveCatalogProposal(asContributor, workspaceId, accept.id),
-    ).rejects.toMatchObject({ rule: "accepted-not-approver" })
+      approveCatalogProposal(asContributor, workspaceId, waiting.id),
+    ).resolves.toMatchObject({
+      outcome: "invalid",
+      problems: [{ code: "needs-approval" }],
+    })
     await expect(
-      approveCatalogProposal(asOwner, workspaceId, accept.id),
+      approveCatalogProposal(asOwner, workspaceId, waiting.id),
     ).resolves.toMatchObject({ outcome: "applied" })
-
-    // A person's own edit may not accept in another person's name.
-    await expect(
-      propose(asContributor, [
-        {
-          op: "set-fact",
-          document: "machine/musashi",
-          fact: {
-            key: "hostname",
-            state: "observed",
-            value: "musashi",
-            accepted: person,
-          },
-          check,
-          expect: fact("hostname", "musashi"),
-        },
-      ]),
-    ).rejects.toBeInstanceOf(RuleViolationError)
+    const musashi = await getCatalogEntity(asOwner, workspaceId, {
+      id: "machine/musashi",
+    })
+    expect(
+      musashi.entity.facts
+        .filter((f) => f.key === "hostname")
+        .map((f) => f.accepted),
+    ).toEqual([person, person])
   })
 
   it("leaves a proposal waiting when it conflicts by the time it is approved", async () => {

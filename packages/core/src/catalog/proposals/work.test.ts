@@ -55,6 +55,7 @@ function prepare(...operations: CatalogOperation[]) {
     explanation: "A test change",
     now: Date.now(),
     memberHandles: ["guneet"],
+    approver: { handle: "guneet", preview: false },
   })
 }
 
@@ -155,6 +156,54 @@ describe("preparing a proposal in the catalog worker", () => {
     expect(
       prepare(field("machine/daedalus", "title", "Daedalus", "Daedalus")),
     ).toEqual({ outcome: "unchanged" })
+  })
+})
+
+const accept: CatalogOperation = {
+  op: "accept-discrepancy",
+  document: "machine/musashi",
+  key: "disk.data.size",
+  note: "Metadata lags after a resize",
+  expect: [
+    present("machine/musashi", "disk.data.size", "filesystem"),
+    present("machine/musashi", "disk.data.size", "instance-metadata"),
+  ],
+}
+
+describe("accepting a discrepancy (catalog §4.7)", () => {
+  const withApprover = (approver?: { handle: string; preview: boolean }) =>
+    prepareChange(stored, {
+      operations: [accept],
+      by: "guneet via opencode-daedalus",
+      explanation: "Accept it.",
+      now: Date.now(),
+      memberHandles: ["guneet"],
+      ...(approver ? { approver } : {}),
+    })
+
+  it("names the approving person's entity, found by its member fact", () => {
+    const result = withApprover({ handle: "guneet", preview: false })
+    if (result.outcome !== "ready") throw new Error(result.outcome)
+    const musashi = result.documents[0]!.text
+    expect(musashi).toContain("accepted: person/guneet")
+  })
+
+  it("needs an approver with a person entity", () => {
+    expect(withApprover()).toMatchObject({
+      outcome: "problems",
+      problems: [{ code: "needs-approval" }],
+    })
+    expect(withApprover({ handle: "kojiro", preview: false })).toMatchObject({
+      outcome: "problems",
+      problems: [{ operation: 0, code: "needs-approval" }],
+    })
+  })
+
+  it("lets a member's person stand in before anyone approves", () => {
+    expect(withApprover({ handle: "kojiro", preview: true })).toMatchObject({
+      outcome: "ready",
+      accepts: [{ entityId: "person/guneet" }],
+    })
   })
 })
 
@@ -331,20 +380,11 @@ describe("approval classes (catalog §8.2)", () => {
   })
 
   it("doubtful: accepting a discrepancy, and any validation warning", () => {
-    const accepted = ready({
-      op: "set-fact",
-      document: "machine/musashi",
-      fact: {
-        key: "disk.data.size",
-        state: "observed",
-        value: "128 GiB",
-        via: "filesystem",
-        accepted: "person/guneet",
-      },
-      check,
-      expect: present("machine/musashi", "disk.data.size", "filesystem"),
-    })
-    expect(accepted.classes).toEqual(["recheck", "doubtful"])
+    const accepted = ready(accept)
+    expect(accepted.classes).toContain("doubtful")
+    expect(accepted.reasons).toEqual([
+      "Accepts a discrepancy on machine/musashi",
+    ])
     expect(accepted.accepts).toEqual([
       { entityId: "person/guneet", memberHandles: ["guneet"] },
     ])

@@ -1457,17 +1457,18 @@ how proposals are applied and classed (`packages/core`, `catalog/proposals`).
   operations again to the latest revision, as the author: if they now
   conflict or are blocked, the proposal stays waiting and the approver is
   told why.
-- **`accepted` is written only by the approval of the person it names**
-  ([4.7](#47-discrepancies)): the named `person` entity's `member` fact
-  must hold the approver's handle, or for a person's own edit their own.
-  Reason: accepting a discrepancy is a person's judgement; an agent or
-  another member cannot give it in their name.
-- **Limits.** At most 50 operations per proposal, 50 facts per
-  `recheck-facts` or `create-entity`, 100 items in any list, an
-  explanation of 4,000 characters and 256 KiB of JSON per proposal; the
-  catalog worker stops a proposal after 10 seconds. A proposal's shape
-  (types, required and unknown properties, `by`) is checked before it
-  reaches `applyOperations`.
+- **Accepting a discrepancy** (`accept-discrepancy`, [4.7](#47-discrepancies))
+  names the approving person's `person` entity: the one whose `member`
+  fact holds their handle. A person's own edit names their own; an
+  agent's proposal waits (doubtful), and approval names the approver, or
+  is refused if they have no such entity. Until then, the author's person
+  (or another member's) stands in, so the rest of the proposal is checked
+  when it is made. Reason: accepting a discrepancy is a person's
+  judgement; an agent or another member cannot give it in their name.
+- **Limits.** The operation and fact limits of [8.1](#81-catalog-proposals),
+  an explanation of 4,000 characters and 256 KiB of JSON per proposal; the
+  catalog worker stops a proposal after 10 seconds. `applyOperations`
+  checks each operation's shape.
 - **Retries.** A proposal may carry an idempotency key; the same key with
   the same content returns the stored proposal, with other content it is
   refused.
