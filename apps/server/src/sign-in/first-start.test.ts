@@ -180,4 +180,23 @@ describe("first start", () => {
     await person.requestLink("new.person@example.com")
     expect(await emailsTo(db, "new.person@example.com")).toBe(1)
   })
+
+  it("lets only operators see the agent index's health", async () => {
+    const op = browser()
+    await op.signIn(db, operator)
+    const response = await op.request("/api/installation/catalog-index")
+    expect(response.status).toBe(200)
+    const health = (await response.json()) as Api.CatalogIndexHealth
+    expect(health.parserVersion).toBe(1)
+    expect(Array.isArray(health.workspaces)).toBe(true)
+
+    await op.request("/api/installation/allowlist", {
+      body: { email: "reader@example.com" },
+    })
+    const person = browser()
+    await person.signIn(db, "reader@example.com")
+    expect(
+      (await person.request("/api/installation/catalog-index")).status,
+    ).toBe(403)
+  })
 })

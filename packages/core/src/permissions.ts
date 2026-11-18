@@ -185,6 +185,43 @@ export const rules = deepFreeze({
     reauthentication: false,
   },
   /**
+   * Read the catalog through the agent index: entities, type schemas,
+   * search, the workspace lists and the start-here path. Everyone in the
+   * workspace sees the whole catalog (catalog §7.1); agents need
+   * `catalog:read` (identity §7.2).
+   */
+  "catalog.read": {
+    level: "workspace",
+    access: "read",
+    roles: ["owner", "contributor"],
+    agents: ["catalog:read"],
+    reauthentication: false,
+  },
+  /**
+   * Keep the agent index in step with the stored text: rebuild it, run the
+   * daily round-trip check, and ask for rebuilds after the parser changed
+   * (architecture §5.2, §5.3, §7). The worker and the operator's server
+   * command do this as Shinan.
+   */
+  "catalog-index.maintain": {
+    level: "installation",
+    access: "write",
+    people: false,
+    shinan: true,
+  },
+  /**
+   * Installation operators see the agent index's health: which workspaces'
+   * indexes are behind or failed the round-trip check (architecture §5.2,
+   * rule 5, §13). It shows workspace IDs and counts, never catalog content.
+   */
+  "catalog-index.read-health": {
+    level: "installation",
+    access: "read",
+    people: false,
+    operators: true,
+    shinan: true,
+  },
+  /**
    * Add a member. Joining needs an invitation (D-034); invitations (M1-4)
    * call this when one is accepted.
    */

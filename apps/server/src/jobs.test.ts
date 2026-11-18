@@ -9,7 +9,11 @@ import {
   vi,
 } from "vitest"
 
-import { emailQueue, getInstallation } from "@shinan/core"
+import {
+  catalogIndexRebuildQueue,
+  emailQueue,
+  getInstallation,
+} from "@shinan/core"
 import { createDatabase, eq, schema, sql } from "@shinan/db"
 import { connectTestDatabase, createTestDatabase } from "@shinan/db/testing"
 import type { EmailSender, SendResult } from "@shinan/email"
@@ -131,6 +135,65 @@ describe("worker", () => {
     expect(rateLimits?.cron).toBe("20 * * * *")
     const tokenUse = await worker.boss.getSchedule(queues.agentTokenUse)
     expect(tokenUse?.cron).toBe("25 * * * *")
+    const indexCheck = await worker.boss.getSchedule(queues.catalogIndexCheck)
+    expect(indexCheck?.cron).toBe("40 3 * * *")
+  })
+
+  it("runs the agent index's round-trip check", async () => {
+    vi.spyOn(console, "info").mockImplementation(() => {})
+    worker = await startWorker({
+      databaseUrl,
+      db,
+      emailSender,
+      pollingIntervalSeconds: 0.5,
+    })
+    const id = await worker.boss.send(queues.catalogIndexCheck)
+
+    await vi.waitFor(
+      async () => {
+        const [job] = await worker!.boss.findJobs(queues.catalogIndexCheck, {
+          id: id!,
+        })
+        expect(job?.state).toBe("completed")
+        expect(job?.output).toEqual({
+          matched: expect.any(Number) as number,
+          differs: expect.any(Number) as number,
+          behind: expect.any(Number) as number,
+        })
+      },
+      { timeout: 10_000, interval: 200 },
+    )
+  })
+
+  it("rebuilds a workspace's agent index", async () => {
+    vi.spyOn(console, "info").mockImplementation(() => {})
+    const [workspace] = await db
+      .insert(schema.workspaces)
+      .values({ name: "Indexed" })
+      .returning()
+    worker = await startWorker({
+      databaseUrl,
+      db,
+      emailSender,
+      pollingIntervalSeconds: 0.5,
+    })
+    const id = await worker.boss.send(
+      catalogIndexRebuildQueue.name,
+      { workspaceId: workspace!.id },
+      { singletonKey: workspace!.id },
+    )
+
+    await vi.waitFor(
+      async () => {
+        const [job] = await worker!.boss.findJobs(
+          catalogIndexRebuildQueue.name,
+          { id: id! },
+        )
+        expect(job?.state).toBe("completed")
+        expect(job?.output).toEqual({ revision: 0, documents: 0 })
+      },
+      { timeout: 10_000, interval: 200 },
+    )
   })
 
   it("summarises agent token use", async () => {

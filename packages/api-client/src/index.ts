@@ -74,6 +74,29 @@ export interface Redirect {
   url: string
 }
 
+/**
+ * The agent index's health, for installation operators (architecture §5.2,
+ * rule 5): per workspace, its index revision, whether it is behind, and the
+ * last round-trip check. IDs and counts only, never catalog content.
+ */
+export interface CatalogIndexHealth {
+  /** The parser version of this release. */
+  parserVersion: number
+  workspaces: {
+    workspaceId: string
+    revision: number
+    latestRevision: number
+    parserVersion: number
+    behind: boolean
+    rebuildRequestedAt: string | null
+    rebuiltAt: string | null
+    checkedAt: string | null
+    checkedRevision: number | null
+    /** Documents whose stored index differed from their text at the last check. */
+    checkDifferences: number | null
+  }[]
+}
+
 /** An address on the installation's email allowlist (identity §3.2). */
 export interface AllowlistEntry {
   email: string
@@ -446,6 +469,8 @@ export function createApiClient(options: ApiClientOptions = {}) {
       request<void>("POST", "/api/installation/allowlist", { email }),
     removeFromAllowlist: (email: string) =>
       request<void>("POST", "/api/installation/allowlist/remove", { email }),
+    catalogIndexHealth: () =>
+      request<CatalogIndexHealth>("GET", "/api/installation/catalog-index"),
 
     createWorkspace: (name: string) =>
       request<Workspace>("POST", "/api/workspaces", { name }),

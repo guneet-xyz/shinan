@@ -65,6 +65,41 @@ describe("runCommand", () => {
     }
   })
 
+  it("checks the agent index commands' arguments", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {})
+    for (const args of [
+      ["catalog-index"],
+      ["catalog-index", "rebuild"],
+      ["catalog-index", "unknown"],
+    ]) {
+      await expect(runCommand(args, {}), args.join(" ")).resolves.toBe(1)
+    }
+  })
+
+  it("rebuilds and checks an agent index on an operator's command", async () => {
+    const { db, pool } = connectTestDatabase()
+    try {
+      const [workspace] = await db
+        .insert(schema.workspaces)
+        .values({ name: "Indexed" })
+        .returning()
+      const info = vi.spyOn(console, "info").mockImplementation(() => {})
+      const env = { DATABASE_URL: inject("databaseUrl") }
+      await expect(
+        runCommand(["catalog-index", "rebuild", workspace!.id], env),
+      ).resolves.toBe(0)
+      expect(info).toHaveBeenCalledWith(
+        `Rebuilt the agent index of workspace ${workspace!.id} at revision 0 (0 documents)`,
+      )
+      vi.spyOn(console, "error").mockImplementation(() => {})
+      await expect(
+        runCommand(["catalog-index", "rebuild", crypto.randomUUID()], env),
+      ).resolves.toBe(1)
+    } finally {
+      await pool.end()
+    }
+  })
+
   it("requires DATABASE_URL to run the worker", async () => {
     await expect(runCommand(["worker"], {})).rejects.toThrow(/DATABASE_URL/)
   })

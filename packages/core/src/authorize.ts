@@ -37,6 +37,7 @@ export async function inWorkspace<A extends WorkspaceAction, T>(
   workspaceId: string,
   action: A,
   work: (scope: WorkspaceScope<A>) => Promise<T>,
+  transaction?: TransactionConfig,
 ): Promise<T> {
   if (!isId(workspaceId)) throw new NotFoundError()
   const id = workspaceId.toLowerCase()
@@ -65,8 +66,21 @@ export async function inWorkspace<A extends WorkspaceAction, T>(
         action,
         workspaceId: id,
       } as WorkspaceScope<A>)
-    }),
+    }, transaction),
   )
+}
+
+/** How an operation's transaction runs, such as a read-only snapshot. */
+export type TransactionConfig = Parameters<Context["db"]["transaction"]>[1]
+
+/**
+ * For reads that must agree with themselves: one snapshot for every
+ * statement, so an answer's catalog revision and its rows come from the
+ * same moment.
+ */
+export const snapshotRead: TransactionConfig = {
+  isolationLevel: "repeatable read",
+  accessMode: "read only",
 }
 
 /** Like `inWorkspace`, for actions outside any workspace. */

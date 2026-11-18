@@ -1,0 +1,149 @@
+import { and, eq, inArray, schema, sql } from "@shinan/db"
+import type { Transaction } from "@shinan/db"
+
+import type { ResolvedActor } from "../actor.js"
+import { parserVersion } from "./document/index.js"
+import type { CatalogDocument } from "./document/index.js"
+import { indexRevision, lockIndexState } from "./index/indexer.js"
+
+/** Who a revision is credited to: the columns events use (architecture §5.3). */
+export type RevisionActor = Pick<
+  ResolvedActor,
+  "kind" | "personId" | "agentId" | "agentSessionId" | "label" | "confidence"
+>
+
+export interface RevisionDocument {
+  /** The document's stable ID; leave out for a new document. */
+  documentId?: string
+  /** The document's full new text (architecture §5.2, rule 1). */
+  text: string
+  /** The text already parsed, if the caller has it, so it is not read again. */
+  parsed?: CatalogDocument
+}
+
+export interface AppliedRevision {
+  revision: number
+  /** The stable IDs of the documents, in the order given. */
+  documentIds: string[]
+}
+
+/**
+ * Stores a new catalog revision, the full text of each document it
+ * changes, and indexes them, all in the caller's transaction (architecture
+ * §5.2, rule 4). The caller (applying a catalog proposal, M2-4) has already
+ * produced the text by text edits (rule 2), validated it and checked its
+ * conflicts; this only stores and indexes. Revisions of one workspace are
+ * numbered one at a time under the index lock.
+ */
+export async function appendCatalogRevision(
+  tx: Transaction,
+  workspaceId: string,
+  actor: RevisionActor,
+  documents: readonly RevisionDocument[],
+): Promise<AppliedRevision> {
+  if (documents.length === 0)
+    throw new Error("A catalog revision changes at least one document")
+  const given = documents.flatMap((d) => (d.documentId ? [d.documentId] : []))
+  if (new Set(given).size !== given.length)
+    throw new Error("A catalog revision changes each document once")
+
+  const state = await lockIndexState(tx, workspaceId)
+  // A process still running an older parser than the one that last built
+  // the index (during a rolling deployment) would add rows of its older
+  // version: answers say the index is behind until the next rebuild.
+  if (state.parserVersion > parserVersion && state.rebuildRequestedAt === null)
+    await tx
+      .update(schema.catalogIndexState)
+      .set({ rebuildRequestedAt: sql`now()` })
+      .where(eq(schema.catalogIndexState.workspaceId, workspaceId))
+  const [next] = await tx
+    .select({
+      number: sql<number>`coalesce(max(${schema.catalogRevisions.number}), 0)::int + 1`,
+    })
+    .from(schema.catalogRevisions)
+    .where(eq(schema.catalogRevisions.workspaceId, workspaceId))
+  const revision = next!.number
+  await tx.insert(schema.catalogRevisions).values({
+    workspaceId,
+    number: revision,
+    actorKind: actor.kind,
+    actorPersonId: actor.personId,
+    actorAgentId: actor.agentId,
+    actorAgentSessionId: actor.agentSessionId,
+    actorLabel: actor.label,
+    confidence: actor.confidence,
+  })
+
+  if (given.length > 0) {
+    const updated = await tx
+      .update(schema.catalogDocuments)
+      .set({ currentRevision: revision })
+      .where(
+        and(
+          eq(schema.catalogDocuments.workspaceId, workspaceId),
+          inArray(schema.catalogDocuments.id, given),
+        ),
+      )
+      .returning({ id: schema.catalogDocuments.id })
+    if (updated.length !== given.length)
+      throw new Error(
+        "A catalog revision can only change documents of its workspace",
+      )
+  }
+  const documentIds: string[] = []
+  for (const document of documents) {
+    if (document.documentId) {
+      documentIds.push(document.documentId)
+      continue
+    }
+    const [created] = await tx
+      .insert(schema.catalogDocuments)
+      .values({ workspaceId, currentRevision: revision })
+      .returning({ id: schema.catalogDocuments.id })
+    documentIds.push(created!.id)
+  }
+  await tx.insert(schema.catalogRevisionDocuments).values(
+    documents.map((d, i) => ({
+      workspaceId,
+      revision,
+      documentId: documentIds[i]!,
+      text: d.text,
+    })),
+  )
+
+  await indexRevision(
+    tx,
+    workspaceId,
+    { revision, authorKind: actor.kind, author: actor.label },
+    documents.map((d, i) => ({
+      documentId: documentIds[i]!,
+      text: d.text,
+      ...(d.parsed ? { parsed: d.parsed } : {}),
+    })),
+  )
+  return { revision, documentIds }
+}
+
+/**
+ * The stable ID of the document with this catalog ID or alias, from the
+ * index, for operations that change an existing document (M2-4).
+ */
+export async function findCatalogDocument(
+  tx: Transaction,
+  workspaceId: string,
+  catalogId: string,
+): Promise<string | null> {
+  const t = schema.catalogIndexDocuments
+  const [row] = await tx
+    .select({ documentId: t.documentId })
+    .from(t)
+    .where(
+      and(
+        eq(t.workspaceId, workspaceId),
+        sql`(${t.catalogId} = ${catalogId} or ${t.aliases} @> array[${catalogId}]::text[])`,
+      ),
+    )
+    .orderBy(sql`${t.catalogId} = ${catalogId} desc`, t.documentId)
+    .limit(1)
+  return row?.documentId ?? null
+}

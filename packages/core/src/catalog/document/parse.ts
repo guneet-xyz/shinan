@@ -183,13 +183,13 @@ function read(text: string): CatalogDocument {
   return readEntity(reader, fields, common, map !== null)
 }
 
-interface Split {
+export interface Split {
   frontmatter: Range | null
   bodyStart: number
 }
 
 /** Finds the frontmatter between a first line `---` and the next line `---`. */
-function splitFrontmatter(text: string): Split {
+export function splitFrontmatter(text: string): Split {
   const open = /^---\r?\n/.exec(text)
   if (!open) return { frontmatter: null, bodyStart: 0 }
   const start = open[0].length

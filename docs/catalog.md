@@ -1586,7 +1586,7 @@ and known unknowns.
 - **Format:** **proposed** structured JSON per entity, following the same
   field names as the documents. Reason: every coding tool and MCP client
   handles JSON; matching names mean agents learn one vocabulary. The exact
-  schema is written with the first version.
+  schema is in [12.4](#124-the-index-format) (M2-3).
 - **Queries the index must support** (names and shapes owned by
   [agent integrations](agent-integrations.md)), **proposed**: get an entity by
   ID or alias; list by type and status; get a type schema; text search across
@@ -1604,6 +1604,94 @@ checks with Shinan as the actor and go through the same catalog proposals.
 catalog fresher without agent effort. The roadmap proposes them for phase 2a;
 which facts is owned with [git hosts](git-hosts.md). Shinan never connects to
 machines to check facts (P6).
+
+### 12.4 The index format
+
+**Proposed (M2-3, [#85](https://github.com/guneet-xyz/shinan/issues/85));
+this settles open question 7.** The JSON the index answers with. MCP tools
+(M2-6) and the wiki's REST routes (M2-7) return these shapes; tool names and
+parameters stay with [agent integrations](agent-integrations.md). Field names
+are the documents' own (`replaced_by`, `checked`, `via`, `to`); fields the
+index adds use the same lower-case, underscore style. Times are ISO 8601.
+Reason: one vocabulary for documents and answers (12.2), and a shape an agent
+can read without a schema at hand.
+
+**Every answer** carries:
+
+| Field              | Meaning                                                                                                                 |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------- |
+| `catalog_revision` | The catalog revision the index stands at. Revisions are numbered from 1 in each workspace, one per applied proposal.    |
+| `index_behind`     | `true` while the index is behind the latest applied revision, was built by an older parser, or is being rebuilt (12.2). |
+
+**An entity** (`entity`):
+
+| Field                                               | Meaning                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`, `type`, `title`, `summary`, `status`, `owner` | The entity fields ([2.3](#23-entity-fields)). These six are also the **entity summary** used wherever another entity is named in an answer.                                                                                                                                                                                                                                                                                                                                                                                            |
+| `replaced_by`, `aliases`, `imported_from`           | As written; `aliases` is a list, possibly empty.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `decision_state`, `decided_on`, `decided_by`        | On `decision` entities only.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `revision`                                          | The catalog revision that last changed this document.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `facts`                                             | Every current fact in document order: `identity` (the fact identity key, [4.2](#42-fact-identity-cardinality-and-current-facts)), `key`, `state`; the long-form fields `value`, `to`, `via`, `note`, `task`, `remove`, `accepted` and a relation's `attributes` **only when written**; `many`, `relation` and `in_schema` from the type schema; `check` (`checked`, `by`, `scope`, `source`, `limits`, or `null` for facts with no fact check); and `freshness`.                                                                       |
+| `freshness` (on each fact)                          | Computed when read ([4.6](#46-freshness)): `status` (`none` for `planned`, `not-checked`, `fresh` or `due`), `age_days`, `recheck_days` from the type schema, and `due_at`.                                                                                                                                                                                                                                                                                                                                                            |
+| `relations.outgoing`                                | Relations written on the entity: `key`, `to` as written, `state`, `identity`, `attributes`, and `entity` (the target's summary, through its ID or an alias; `null` for `schema/<type>`, `workspace`, a task ID, or a target that does not resolve).                                                                                                                                                                                                                                                                                    |
+| `relations.incoming`                                | Relations written on other entities that name this one by ID or alias, generated ([section 5](#5-relations)): `key`, `inverse` (the name shown here, such as `checkouts`), `from` (a summary), `state`, `identity`, `attributes`. Other entities' `owner` and `replaced_by` appear here too, as `owns` and `replaces`, with no state or identity.                                                                                                                                                                                      |
+| `discrepancies`                                     | `key`, `values` (as text), `accepted`, and `facts`: the identity keys of its facts, which are in `facts` ([4.7](#47-discrepancies)).                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `known_unknowns`                                    | Identity keys of `unknown` facts ([4.8](#48-unknowns)).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `not_yet_recorded`                                  | `missing_keys` (required keys not mentioned) and `not_checked` (identity keys of facts with `checked: null`), kept apart from known unknowns.                                                                                                                                                                                                                                                                                                                                                                                          |
+| `applies`                                           | `policies` and `runbooks` that apply through `applies-to`, each with the entity's summary, `through` (`entity`, `type` for `schema/<type>`, or `workspace`), `state` and `identity`. Retired ones are left out: they no longer apply.                                                                                                                                                                                                                                                                                                  |
+| `body`                                              | The body split by heading ([2.5](#25-body)): `heading` (`null` for the text before the first heading), `level`, `anchor`, `text` (the section's exact Markdown), and two credits from Shinan's records of who made each revision, never from the text: `changed_in`, `changed_by`, `changed_by_kind`, the catalog revision that last changed any of the section's bytes and that revision's author; and `written_by`, `written_by_kind`, the least-trusted author whose words may remain in it (below). Trust labels use `written_by`. |
+| `problems`                                          | What kept the text from being read as section 2 describes (`code`, `message`); normally empty, since validation blocks such text, but a later parser may read old text differently.                                                                                                                                                                                                                                                                                                                                                    |
+
+Pending catalog proposals touching the entity (12.1) join as
+`pending_proposals` with catalog proposals (M2-4).
+
+**Lists** carry `items` and `next_offset` (the offset of the next page, or
+`null`), 50 items by default and at most 500:
+
+| Answer                      | Items                                                                                                                                                                                                                                                                                       |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Entities by type and status | Entity summaries, by ID.                                                                                                                                                                                                                                                                    |
+| `discrepancies`             | The entity's summary, the discrepancy's fields, and `fact_details`: its facts in full, with both sides' evidence. Accepted ones are included and marked.                                                                                                                                    |
+| `due-for-recheck`           | `entity` and `fact`, most overdue first.                                                                                                                                                                                                                                                    |
+| `known-unknowns`            | `entity` and `fact`.                                                                                                                                                                                                                                                                        |
+| `not-yet-recorded`          | `entity`, `missing_keys` and `not_checked` (facts in full).                                                                                                                                                                                                                                 |
+| Search                      | `entity`, `rank`, and `sections`: up to three matching body sections, best first. No `next_offset`; at most 100 results.                                                                                                                                                                    |
+| Changes since a revision    | `revision`, `at`, `changed_by`, `changed_by_kind` and `documents` (each changed document's current `id` and `kind`), oldest first; `next_since` instead of `next_offset`.                                                                                                                   |
+| Type schemas                | `type`, `built_in`, `extended`, `document` (`schema/<type>`, or `null`), `status`, `keys` (each with `many`, `relation` as `targets`, `identified_by` and `inverse`, `recheck_days` and `built_in`), `required` and `sections`. One type adds its document's `title`, `summary` and `body`. |
+
+**Other answers:** neighbours give the entity's summary with `outgoing` and
+`incoming` as above; policies and runbooks for an entity give `policies` and
+`runbooks` as in `applies`; the start-here path gives `start_here` (`null`
+until the document exists) with `path` (`agents` or `people`), `title`,
+`summary`, `revision` and `steps` as written ([section 11](#11-start-here)),
+each `to` step with the `entity` it names.
+
+Choices the format implies, all **proposed**:
+
+- **Retired entities** are left out of search, entity lists and the
+  workspace lists unless asked for, as for search in
+  [section 9](#9-history-and-purge). Reason: a retired machine's old facts
+  should not ask for rechecks; its page and history stay readable by ID.
+- **Search** takes words as a web search does (`"exact phrase"`, `or`,
+  `-word`), matched with PostgreSQL's English stemming and also word for word,
+  so IDs and values such as `instance-metadata` are found. An entity matches
+  as a whole (its fields, facts and body), so `-word` leaves it out wherever
+  the word appears. Titles weigh most, then summaries, then facts and IDs,
+  then the body; its best matching section can lift its rank. Reason:
+  [architecture §4.1](architecture.md#41-postgresql-holds-everything);
+  agents search by names and values as often as by prose.
+- **Section credits** come from history, not text. A section whose text is
+  unchanged keeps its credits, even when its anchor changes (deleting one of
+  two `## Notes` sections renames the other from `notes-1` to `notes`).
+  Otherwise the revision that changed it is credited as `changed_by`, and
+  `written_by` is the least trusted of that revision's author and the
+  `written_by` of every earlier section it shares a line of text with
+  (headings without their `#`), in the order outside, unknown, agent, Shinan,
+  person. Reason: trust labels ([agent integrations](agent-integrations.md#trust-labels))
+  need the writer of each section from Shinan's records; a person who fixes
+  a typo in, renames, moves or splits an agent's section must not make the
+  agent's words look like the person's, so when unsure the credit errs
+  towards the less-trusted author.
 
 ## 13. Mapping from the `workspace` repository's catalog
 
@@ -1826,7 +1914,8 @@ What this document still needs from other documents:
 13. [History](#9-history-and-purge): revisions, reverts, retired entities, and
     purge warnings about copies outside Shinan.
 14. [Wiki requirements](#10-the-wiki), [start-here](#11-start-here) details and
-    the [agent index](#12-the-agent-index) content and rules.
+    the [agent index](#12-the-agent-index) content, rules and
+    [format](#124-the-index-format).
 15. [Import provenance details](#131-provenance-of-imported-facts), the
     [mapping](#132-what-maps-where) from the `workspace` repository, and the
     [reverse conversion for a rollback](#133-mapping-back-for-a-rollback).
@@ -1845,8 +1934,8 @@ What this document still needs from other documents:
 5. External link checking: whether, how often, and from where.
    ([8.3](#83-validation))
 6. More than one start-here path for larger workspaces. ([11](#11-start-here))
-7. Exact agent index JSON schema, written with the first version.
-   ([12.2](#122-rules))
+7. _Settled:_ the agent index's JSON format is proposed in
+   [12.4](#124-the-index-format) (M2-3, [#85](https://github.com/guneet-xyz/shinan/issues/85)).
 
 ## Decisions needed from the owner
 

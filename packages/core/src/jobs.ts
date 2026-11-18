@@ -24,7 +24,7 @@ export async function addJob(
   target: { tx: Transaction; jobs: JobQueue | undefined },
   queue: QueueDefinition,
   data: object,
-  options: { id?: string } = {},
+  options: { id?: string; singletonKey?: string } = {},
 ): Promise<void> {
   if (!target.jobs) {
     throw new Error(`The job queue is needed to add a "${queue.name}" job`)

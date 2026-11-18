@@ -4,6 +4,7 @@ import {
   bigint,
   boolean,
   check,
+  customType,
   foreignKey,
   index,
   inet,
@@ -783,3 +784,398 @@ export const rateLimits = pgTable("rate_limits", {
   windowStart: timestamp("window_start", { withTimezone: true }).notNull(),
   count: integer("count").notNull(),
 })
+
+/**
+ * Catalog storage (catalog §2.1, §9; architecture §5.2, §5.3). The stored
+ * Markdown text of each revision is the catalog's source of truth; nothing
+ * else is authoritative. M2-3 adds the text and the revision numbers the
+ * agent index is built from; catalog proposals and approval (M2-4) add
+ * their own records about each revision.
+ */
+
+/**
+ * A catalog revision: one applied change to a workspace's catalog, numbered
+ * from 1 within the workspace. Every answer from the agent index names the
+ * revision it was built from (catalog §12.2). Its author is credited the
+ * way events are. Never edited (catalog §9); a database trigger refuses
+ * updates and deletes, which purge (M2-10) will narrow.
+ */
+export const catalogRevisions = pgTable(
+  "catalog_revisions",
+  {
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id),
+    number: integer("number").notNull(),
+    createdAt: createdAt(),
+    ...actorColumns(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.number] }),
+    foreignKey({
+      name: "catalog_revisions_actor_person_id_fk",
+      columns: [t.actorPersonId],
+      foreignColumns: [people.id],
+    }),
+    foreignKey({
+      name: "catalog_revisions_actor_agent_id_fk",
+      columns: [t.actorAgentId],
+      foreignColumns: [agents.id],
+    }),
+    actorCheck("catalog_revisions_actor_known", t),
+    check("catalog_revisions_number_positive", sql`${t.number} > 0`),
+  ],
+)
+
+/**
+ * One catalog document: an entity, a type schema document or the start-here
+ * document. Its catalog ID (such as `machine/musashi`) lives in its text and
+ * can change (catalog §2.4), so the document has its own stable ID, which
+ * every revision of its text and its index rows refer to.
+ */
+export const catalogDocuments = pgTable(
+  "catalog_documents",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id),
+    /** The catalog revision that holds its latest text. */
+    currentRevision: integer("current_revision").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    foreignKey({
+      name: "catalog_documents_current_revision_fk",
+      columns: [t.workspaceId, t.currentRevision],
+      foreignColumns: [catalogRevisions.workspaceId, catalogRevisions.number],
+    }),
+    // Lets revisions and index rows reference a document with its workspace.
+    unique("catalog_documents_workspace_id_id").on(t.workspaceId, t.id),
+  ],
+)
+
+/**
+ * The full Markdown text of each document a revision changed (architecture
+ * §5.3). The latest text of a document is the one at its
+ * `current_revision`. Never edited, like revisions.
+ */
+export const catalogRevisionDocuments = pgTable(
+  "catalog_revision_documents",
+  {
+    workspaceId: uuid("workspace_id").notNull(),
+    revision: integer("revision").notNull(),
+    documentId: uuid("document_id").notNull(),
+    text: text("text").notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.documentId, t.revision] }),
+    foreignKey({
+      name: "catalog_revision_documents_revision_fk",
+      columns: [t.workspaceId, t.revision],
+      foreignColumns: [catalogRevisions.workspaceId, catalogRevisions.number],
+    }),
+    foreignKey({
+      name: "catalog_revision_documents_document_fk",
+      columns: [t.workspaceId, t.documentId],
+      foreignColumns: [catalogDocuments.workspaceId, catalogDocuments.id],
+    }),
+    index("catalog_revision_documents_workspace_id_revision").on(
+      t.workspaceId,
+      t.revision,
+    ),
+  ],
+)
+
+/**
+ * The agent index (catalog §12; architecture §5.2, §5.3): rows derived from
+ * the stored text by the indexer alone, and rebuilt from the text when lost
+ * or when the parser changes. Every row records the parser version that
+ * produced it.
+ */
+
+const tsvector = customType<{ data: string }>({
+  dataType: () => "tsvector",
+})
+
+const parserVersionColumn = () => integer("parser_version").notNull()
+
+/** Where a workspace's index stands, and the last round-trip check. */
+export const catalogIndexState = pgTable("catalog_index_state", {
+  workspaceId: uuid("workspace_id")
+    .primaryKey()
+    .references(() => workspaces.id),
+  /** The latest catalog revision the index has been built up to. */
+  revision: integer("revision").notNull().default(0),
+  /** The parser version of the last full build. */
+  parserVersion: parserVersionColumn(),
+  /** Set while a rebuild is asked for or running: answers say the index is behind. */
+  rebuildRequestedAt: timestamp("rebuild_requested_at", {
+    withTimezone: true,
+  }),
+  rebuiltAt: timestamp("rebuilt_at", { withTimezone: true }),
+  /** The last round-trip check (architecture §5.2, rule 5). */
+  checkedAt: timestamp("checked_at", { withTimezone: true }),
+  checkedRevision: integer("checked_revision"),
+  /** How many documents' stored rows differed from their text; 0 when they all matched. */
+  checkDifferences: integer("check_differences"),
+  /** Which documents differed and in which tables: IDs only, never text. */
+  checkDetails: jsonb("check_details").$type<IndexCheckDifference[]>(),
+})
+
+/** One document whose stored index rows differ from what its text gives. */
+export interface IndexCheckDifference {
+  documentId: string
+  tables: string[]
+}
+
+/** One catalog document in the index, with its entity fields. */
+export const catalogIndexDocuments = pgTable(
+  "catalog_index_documents",
+  {
+    documentId: uuid("document_id").primaryKey(),
+    workspaceId: uuid("workspace_id").notNull(),
+    /** The catalog revision whose text these rows were built from. */
+    revision: integer("revision").notNull(),
+    parserVersion: parserVersionColumn(),
+    /** `entity`, `schema` or `start-here` (catalog §2, §3.9, §11). */
+    kind: text("kind").notNull(),
+    /** The catalog ID, such as `machine/musashi`; null if the text has none. */
+    catalogId: text("catalog_id"),
+    type: text("type"),
+    title: text("title"),
+    summary: text("summary"),
+    status: text("status"),
+    owner: text("owner"),
+    replacedBy: text("replaced_by"),
+    aliases: text("aliases").array().notNull(),
+    importedFrom: text("imported_from"),
+    decisionState: text("decision_state"),
+    decidedOn: text("decided_on"),
+    decidedBy: text("decided_by"),
+    /** Required keys of the type schema the entity does not mention (catalog §4.8). */
+    missingKeys: text("missing_keys").array().notNull(),
+    /** What kept the text from being read as catalog §2 describes. */
+    problems: jsonb("problems")
+      .$type<{ code: string; message: string }[]>()
+      .notNull(),
+    /** A type schema document's resolved schema, or the start-here paths. */
+    data: jsonb("data").$type<Record<string, unknown>>(),
+    /** IDs split into words, aliases, and facts' keys, values and notes, for search. */
+    searchText: text("search_text").notNull(),
+    /** The whole body, so a search matches (and a `-word` excludes) the entity as a whole. */
+    body: text("body").notNull(),
+    /** Title, summary, search text and body, with English stemming. */
+    search: tsvector("search")
+      .notNull()
+      .generatedAlwaysAs(
+        sql`setweight(to_tsvector('english', coalesce(title, '')), 'A') || setweight(to_tsvector('english', coalesce(summary, '')), 'B') || setweight(to_tsvector('english', search_text), 'C') || setweight(to_tsvector('english', body), 'D')`,
+      ),
+    /** The same fields word for word, so IDs and values such as `instance-metadata` match as written. */
+    searchSimple: tsvector("search_simple")
+      .notNull()
+      .generatedAlwaysAs(
+        sql`setweight(to_tsvector('simple', coalesce(title, '')), 'A') || setweight(to_tsvector('simple', coalesce(summary, '')), 'B') || setweight(to_tsvector('simple', search_text), 'C') || setweight(to_tsvector('simple', body), 'D')`,
+      ),
+  },
+  (t) => [
+    foreignKey({
+      name: "catalog_index_documents_document_fk",
+      columns: [t.workspaceId, t.documentId],
+      foreignColumns: [catalogDocuments.workspaceId, catalogDocuments.id],
+    }),
+    index("catalog_index_documents_catalog_id").on(t.workspaceId, t.catalogId),
+    index("catalog_index_documents_type_status").on(
+      t.workspaceId,
+      t.kind,
+      t.type,
+      t.status,
+    ),
+    index("catalog_index_documents_aliases").using("gin", t.aliases),
+    index("catalog_index_documents_search").using("gin", t.search),
+    index("catalog_index_documents_search_simple").using("gin", t.searchSimple),
+  ],
+)
+
+/** One fact of an entity, with its fact check and type schema (catalog §4). */
+export const catalogIndexFacts = pgTable(
+  "catalog_index_facts",
+  {
+    documentId: uuid("document_id").notNull(),
+    /** Its place in the document, from 0. */
+    position: integer("position").notNull(),
+    workspaceId: uuid("workspace_id").notNull(),
+    parserVersion: parserVersionColumn(),
+    entityId: text("entity_id").notNull(),
+    identity: text("identity").notNull(),
+    key: text("key").notNull(),
+    state: text("state").notNull(),
+    form: text("form").notNull(),
+    /**
+     * The value as a one-item list, so a written `null` (`[null]`) differs
+     * from no value (SQL null, as on relations and `unknown` facts).
+     */
+    value: jsonb("value").$type<[string | number | boolean | null]>(),
+    to: text("to"),
+    via: text("via"),
+    note: text("note"),
+    task: text("task"),
+    remove: boolean("remove").notNull(),
+    accepted: text("accepted"),
+    attributes: jsonb("attributes")
+      .$type<Record<string, string | number | boolean | null>>()
+      .notNull(),
+    /** The `index` of its group in the `facts` list. */
+    groupIndex: integer("group_index").notNull(),
+    many: boolean("many").notNull(),
+    relation: boolean("relation").notNull(),
+    inSchema: boolean("in_schema").notNull(),
+    recheckDays: integer("recheck_days"),
+    /** Whether its group is a fact check. */
+    hasCheck: boolean("has_check").notNull(),
+    /** As written: a date, or a date and time; null for `checked: null`. */
+    checked: text("checked"),
+    checkedAt: timestamp("checked_at", { withTimezone: true }),
+    by: text("by"),
+    scope: text("scope"),
+    source: text("source"),
+    limits: text("limits"),
+    /** When it becomes due for recheck; freshness itself is computed when read (catalog §12.2). */
+    dueAt: timestamp("due_at", { withTimezone: true }),
+  },
+  (t) => [
+    primaryKey({ columns: [t.documentId, t.position] }),
+    foreignKey({
+      name: "catalog_index_facts_document_fk",
+      columns: [t.documentId],
+      foreignColumns: [catalogIndexDocuments.documentId],
+    }).onDelete("cascade"),
+    index("catalog_index_facts_entity").on(t.workspaceId, t.entityId),
+    index("catalog_index_facts_due_at")
+      .on(t.workspaceId, t.dueAt)
+      .where(sql`${t.dueAt} is not null`),
+    index("catalog_index_facts_unknown")
+      .on(t.workspaceId)
+      .where(sql`${t.state} = 'unknown'`),
+  ],
+)
+
+/**
+ * Relations (catalog §5), one row per written relation, read in both
+ * directions: written on the source, generated (the inverse) on the target.
+ * The `owner` and `replaced_by` entity fields are here too, as `field`
+ * rows, so the target shows "owns" and "replaces".
+ */
+export const catalogIndexRelations = pgTable(
+  "catalog_index_relations",
+  {
+    documentId: uuid("document_id").notNull(),
+    position: integer("position").notNull(),
+    workspaceId: uuid("workspace_id").notNull(),
+    parserVersion: parserVersionColumn(),
+    fromId: text("from_id").notNull(),
+    fromType: text("from_type"),
+    key: text("key").notNull(),
+    /** The target as written: an entity ID or alias, `schema/<type>`, `workspace` or a task ID. */
+    toId: text("to_id").notNull(),
+    /** Null on `field` rows. */
+    state: text("state"),
+    identity: text("identity"),
+    attributes: jsonb("attributes")
+      .$type<Record<string, string | number | boolean | null>>()
+      .notNull(),
+    /** The name shown on the target, such as `checkouts`. */
+    inverse: text("inverse"),
+    field: boolean("field").notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.documentId, t.position] }),
+    foreignKey({
+      name: "catalog_index_relations_document_fk",
+      columns: [t.documentId],
+      foreignColumns: [catalogIndexDocuments.documentId],
+    }).onDelete("cascade"),
+    index("catalog_index_relations_from").on(t.workspaceId, t.fromId),
+    index("catalog_index_relations_to").on(t.workspaceId, t.toId),
+  ],
+)
+
+/** Discrepancies (catalog §4.7), one row per single-valued key that has one. */
+export const catalogIndexDiscrepancies = pgTable(
+  "catalog_index_discrepancies",
+  {
+    documentId: uuid("document_id").notNull(),
+    key: text("key").notNull(),
+    workspaceId: uuid("workspace_id").notNull(),
+    parserVersion: parserVersionColumn(),
+    entityId: text("entity_id").notNull(),
+    values: jsonb("values").$type<string[]>().notNull(),
+    /** The identity keys of the facts in it. */
+    identities: text("identities").array().notNull(),
+    accepted: boolean("accepted").notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.documentId, t.key] }),
+    foreignKey({
+      name: "catalog_index_discrepancies_document_fk",
+      columns: [t.documentId],
+      foreignColumns: [catalogIndexDocuments.documentId],
+    }).onDelete("cascade"),
+    index("catalog_index_discrepancies_workspace_id").on(t.workspaceId),
+  ],
+)
+
+/**
+ * Body sections (catalog §2.5, §12.1), split by heading, each with the
+ * catalog revision that last changed it and that revision's author, from
+ * which trust labels are set (agent integrations, trust labels).
+ */
+export const catalogIndexSections = pgTable(
+  "catalog_index_sections",
+  {
+    documentId: uuid("document_id").notNull(),
+    position: integer("position").notNull(),
+    workspaceId: uuid("workspace_id").notNull(),
+    parserVersion: parserVersionColumn(),
+    catalogId: text("catalog_id"),
+    heading: text("heading"),
+    level: integer("level").notNull(),
+    anchor: text("anchor"),
+    text: text("text").notNull(),
+    /** Its range in the document's text. */
+    start: integer("start").notNull(),
+    end: integer("end").notNull(),
+    changedRevision: integer("changed_revision").notNull(),
+    authorKind: actorKindEnum("author_kind").notNull(),
+    /** The author's written form (identity §8.7). */
+    author: text("author").notNull(),
+    /**
+     * The least-trusted author who wrote any of the section since it first
+     * appeared, for trust labels: a person editing an agent's section does
+     * not make it the person's.
+     */
+    leastTrustedKind: actorKindEnum("least_trusted_kind").notNull(),
+    leastTrusted: text("least_trusted").notNull(),
+    search: tsvector("search")
+      .notNull()
+      .generatedAlwaysAs(
+        sql`setweight(to_tsvector('english', coalesce(heading, '')), 'A') || setweight(to_tsvector('english', text), 'B')`,
+      ),
+    searchSimple: tsvector("search_simple")
+      .notNull()
+      .generatedAlwaysAs(
+        sql`setweight(to_tsvector('simple', coalesce(heading, '')), 'A') || setweight(to_tsvector('simple', text), 'B')`,
+      ),
+  },
+  (t) => [
+    primaryKey({ columns: [t.documentId, t.position] }),
+    foreignKey({
+      name: "catalog_index_sections_document_fk",
+      columns: [t.documentId],
+      foreignColumns: [catalogIndexDocuments.documentId],
+    }).onDelete("cascade"),
+    index("catalog_index_sections_workspace_id").on(t.workspaceId),
+    index("catalog_index_sections_search").using("gin", t.search),
+    index("catalog_index_sections_search_simple").using("gin", t.searchSimple),
+  ],
+)

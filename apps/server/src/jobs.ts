@@ -2,6 +2,8 @@ import { PgBoss } from "pg-boss"
 import type { ConstructorOptions } from "pg-boss"
 
 import {
+  catalogIndexRebuildQueue,
+  checkCatalogIndexes,
   deliverEmail,
   emailQueue,
   EmailRetryError,
@@ -10,10 +12,16 @@ import {
   pruneEmailDeliveries,
   pruneRateLimits,
   pruneSignInRecords,
+  rebuildCatalogIndex,
+  requestCatalogIndexRebuilds,
   shinan,
   summarizeAgentTokenUse,
 } from "@shinan/core"
-import type { EmailJob } from "@shinan/core"
+import type {
+  CatalogIndexRebuildJob,
+  EmailJob,
+  WorkspaceIndexCheck,
+} from "@shinan/core"
 import { createLimitedLog, errorSummary } from "@shinan/db"
 import type { Database } from "@shinan/db"
 import type { EmailSender } from "@shinan/email"
@@ -45,6 +53,12 @@ export const queues = {
    * security log (identity §11).
    */
   agentTokenUse: "agent-token-use",
+  /**
+   * Daily: the agent index's round-trip check, text → parse → index
+   * compared with the stored index (architecture §5.2, rule 5), and rebuilds
+   * for workspaces whose index is behind.
+   */
+  catalogIndexCheck: "catalog-index-check",
 } as const
 
 /**
@@ -66,7 +80,11 @@ export async function migrateJobQueue(databaseUrl: string): Promise<void> {
   try {
     for (const queue of jobQueues) {
       await boss.createQueue(queue.name, queue.options)
-      await boss.updateQueue(queue.name, queue.options)
+      // A queue's policy is fixed when it is created.
+      const changeable = Object.fromEntries(
+        Object.entries(queue.options).filter(([key]) => key !== "policy"),
+      )
+      await boss.updateQueue(queue.name, changeable)
     }
   } finally {
     await boss.stop({ graceful: false })
@@ -169,6 +187,31 @@ export async function startWorker(options: WorkerOptions): Promise<Worker> {
     ),
   )
 
+  await boss.createQueue(queues.catalogIndexCheck)
+  await boss.schedule(queues.catalogIndexCheck, "40 3 * * *")
+  await boss.work(queues.catalogIndexCheck, polling, () =>
+    safely(queues.catalogIndexCheck, () => checkIndexes(options.db, boss)),
+  )
+
+  await boss.work(catalogIndexRebuildQueue.name, polling, async ([job]) => {
+    const { workspaceId } = job!.data as CatalogIndexRebuildJob
+    const rebuilt = await safely(catalogIndexRebuildQueue.name, () =>
+      rebuildCatalogIndex({ db: options.db, actor: shinan }, { workspaceId }),
+    )
+    console.info(
+      `Catalog index of workspace ${workspaceId} rebuilt at revision ${rebuilt.revision} (${rebuilt.documents} documents)`,
+    )
+    return rebuilt
+  })
+
+  // After a release that changed the parser, every index built by the
+  // previous one is rebuilt; answers say it is behind until then. Rebuilds
+  // asked for before a restart and never finished are asked for again.
+  // A failure is logged; the daily check asks again.
+  await safely("catalog-index-rebuilds", () =>
+    requestCatalogIndexRebuilds({ db: options.db, actor: shinan, jobs: boss }),
+  ).catch(() => {})
+
   await boss.work(
     emailQueue.name,
     { ...polling, includeMetadata: true },
@@ -184,6 +227,38 @@ export async function startWorker(options: WorkerOptions): Promise<Worker> {
     boss,
     stop: () => boss.stop({ graceful: true, timeout: 30_000 }),
   }
+}
+
+/**
+ * Runs the round-trip check and logs its outcome by workspace and document
+ * IDs only, never catalog text (architecture §13). Installation operators
+ * see the same outcome as installation health.
+ */
+async function checkIndexes(db: Database, boss: PgBoss) {
+  const results = await checkCatalogIndexes({ db, actor: shinan, jobs: boss })
+  for (const result of results) {
+    if (result.outcome !== "differs") continue
+    console.error(
+      `Catalog index check: workspace ${result.workspaceId} at revision ${result.revision}: ${result.differenceCount} documents differ from their text (${describeDifferences(result)}); rebuild it with \`shinan catalog-index rebuild ${result.workspaceId}\``,
+    )
+  }
+  const count = (outcome: WorkspaceIndexCheck["outcome"]) =>
+    results.filter((r) => r.outcome === outcome).length
+  console.info(
+    `Catalog index check: ${results.length} workspaces, ${count("matched")} matched, ${count("differs")} differ, ${count("behind")} behind (rebuild asked for)`,
+  )
+  return {
+    matched: count("matched"),
+    differs: count("differs"),
+    behind: count("behind"),
+  }
+}
+
+function describeDifferences(result: WorkspaceIndexCheck): string {
+  return result.differences
+    .slice(0, 5)
+    .map((d) => `${d.documentId}: ${d.tables.join(", ")}`)
+    .join("; ")
 }
 
 /** Reads the installation through core, proving the worker reaches it. */

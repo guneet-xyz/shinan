@@ -479,6 +479,60 @@ indexing (**Proposed**).
 - **Serving the agent index.** Every answer names the catalog revision it came
   from (catalog document), so agents and plugins can cache and ask "what changed
   since revision N". **Proposed.**
+- **As built (M2-3, [#85](https://github.com/guneet-xyz/shinan/issues/85)),
+  proposed:**
+  - **Storage.** Each document has a stable ID of its own, because its
+    catalog ID lives in its text and can change (catalog §2.4). A catalog
+    revision is numbered from 1 in each workspace and credited like an event;
+    the full text of each document it changed is stored with it, and a
+    document's latest text is the one at its current revision. The database
+    refuses updates and deletes of revisions and their text, as for events;
+    purge (M2-10) narrows that. M2-3 adds these tables because the index is
+    built from them; catalog proposals and approval (M2-4) add their own
+    records and call one function, inside the apply transaction, that stores
+    a revision and indexes it.
+  - **The index lock.** Applying a revision and rebuilding take the
+    workspace's index-state row lock, so revisions are numbered one at a
+    time and a rebuild never overwrites a revision applied while it runs; that
+    revision waits and is indexed on top.
+  - **Applying a revision re-reads only what it touches:** the changed
+    documents (already parsed, if the caller has them), the type schema
+    documents (kept between revisions while their text is unchanged, by a
+    hash of the text, so a rolled-back revision or a purge cannot bring back
+    a stale schema), and, when a type schema document changes, the entities
+    of the types it describes or described and every other type schema
+    document. Measured on Daedalus:
+    about 20 ms per one-document revision for catalogs of 1,000 to 5,000
+    entities.
+  - **Section credits.** Each body section records the revision that last
+    changed it and that revision's author, and the least-trusted author
+    whose words may remain in it, for trust labels (catalog §12.4). Applying
+    a revision compares the new sections with the stored ones; a rebuild
+    replays each document's history, reading only revisions whose body
+    changed. The round-trip check confirms both give the same credits.
+  - **Answers are read from one snapshot** (repeatable read, read only), so
+    an answer's catalog revision and its rows agree.
+  - **Rolling deployments.** A process still running an older parser after
+    a newer worker has rebuilt the index would add rows of the older
+    version. Applying a revision with an older parser than the index's
+    therefore marks the index behind, so answers say so until the next
+    rebuild. The reference Compose setup replaces `web` and `worker`
+    together, so this only matters for setups that run several versions at
+    once.
+  - **Rebuilds** delete a workspace's index rows and derive them again from
+    the stored text in one transaction, so readers see the old rows, marked
+    behind, until it commits: a few seconds per thousand entities (3 to 6 s
+    for 2,000 and 16 s for 5,000 on Daedalus, with other work running). The
+    worker asks for one on start for every workspace whose index another
+    parser version built (or whose rebuild never finished), and an
+    installation operator can run one with `shinan catalog-index rebuild`.
+  - **The daily round-trip check** (rule 5) derives each workspace's index
+    from its text in one snapshot and compares it, row by row, with the
+    stored index. The result (documents that differ and in which tables, by
+    ID only) is logged and kept as installation health, which operators read
+    at `/api/installation/catalog-index`; workspaces whose index is behind
+    get a rebuild instead. The text → parse → apply no operations → text half
+    of rule 5 joins the job when operations as text edits (M2-2) land.
 - **Fact checks.** A recheck that changes only the last-checked time is still a
   text edit and a new revision, and also an event. **Proposed.** Reason: no fact
   data may live outside the text.
@@ -618,22 +672,22 @@ slow, and a click or an MCP call should not fail because of them.
   operator, with a manual "retry".
 - Scheduled jobs run once across all worker copies.
 
-| Job                                                                                     | Trigger                                                            | Owner of the rules                                                                                        |
-| --------------------------------------------------------------------------------------- | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------- |
-| Process webhook delivery                                                                | Webhook stored                                                     | [Git hosts](git-hosts.md)                                                                                 |
-| Reconciliation layers                                                                   | Schedule, startup gap, on demand                                   | [Git hosts](git-hosts.md)                                                                                 |
-| Recalculate task status, including subtasks at any depth (owner, O-21, N-1)             | New event on linked work, a subtask or an agent session            | [Tasks](tasks.md)                                                                                         |
-| Create a task from an outside issue                                                     | Normalized issue event                                             | [Tasks](tasks.md)                                                                                         |
-| Write back to GitHub (never Forgejo, N-4)                                               | Task or work link change                                           | [Git hosts](git-hosts.md)                                                                                 |
-| Presence timeouts (`unresponsive`, `offline`, release after silence; owner, O-32)       | Every minute                                                       | [Agent integrations](agent-integrations.md)                                                               |
-| Offer and withdraw nudge deliveries, including git host actions a person asks for (N-3) | A nudge is created or withdrawn                                    | [Tasks](tasks.md), [agent integrations](agent-integrations.md)                                            |
-| Build a workspace export; run an import                                                 | A workspace owner asks                                             | This document ([5.5](#55-export-and-import))                                                              |
-| Rebuild or verify the agent index (round-trip test)                                     | Release, daily                                                     | This document ([5.2](#52-the-invariant))                                                                  |
-| Send email (magic links, invitations, security alerts)                                  | Sign-in, invitation, or a security event identity names            | This document ([section 9](#9-email-and-notifications)); content by [identity](identity.md)               |
-| Build notifications (phase 2)                                                           | A new event that human experience's rules turn into a notification | This document ([9.3](#93-notifications-phase-2)); what is sent by [human experience](human-experience.md) |
-| Send daily notification summaries (phase 2)                                             | Daily, per person, at their chosen hour                            | This document ([9.3](#93-notifications-phase-2))                                                          |
-| Automatic fact checks by Shinan, if adopted                                             | Schedule                                                           | [Catalog](catalog.md), [git hosts](git-hosts.md)                                                          |
-| Prune raw webhooks, old job records and old notification records                        | Daily                                                              | This document ([4.2](#42-kinds-of-data))                                                                  |
+| Job                                                                                     | Trigger                                                                  | Owner of the rules                                                                                        |
+| --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------- |
+| Process webhook delivery                                                                | Webhook stored                                                           | [Git hosts](git-hosts.md)                                                                                 |
+| Reconciliation layers                                                                   | Schedule, startup gap, on demand                                         | [Git hosts](git-hosts.md)                                                                                 |
+| Recalculate task status, including subtasks at any depth (owner, O-21, N-1)             | New event on linked work, a subtask or an agent session                  | [Tasks](tasks.md)                                                                                         |
+| Create a task from an outside issue                                                     | Normalized issue event                                                   | [Tasks](tasks.md)                                                                                         |
+| Write back to GitHub (never Forgejo, N-4)                                               | Task or work link change                                                 | [Git hosts](git-hosts.md)                                                                                 |
+| Presence timeouts (`unresponsive`, `offline`, release after silence; owner, O-32)       | Every minute                                                             | [Agent integrations](agent-integrations.md)                                                               |
+| Offer and withdraw nudge deliveries, including git host actions a person asks for (N-3) | A nudge is created or withdrawn                                          | [Tasks](tasks.md), [agent integrations](agent-integrations.md)                                            |
+| Build a workspace export; run an import                                                 | A workspace owner asks                                                   | This document ([5.5](#55-export-and-import))                                                              |
+| Rebuild or verify the agent index (round-trip test)                                     | Release (worker start, by parser version), on demand, daily at 03:40 UTC | This document ([5.2](#52-the-invariant), [5.3](#53-how-sync-works))                                       |
+| Send email (magic links, invitations, security alerts)                                  | Sign-in, invitation, or a security event identity names                  | This document ([section 9](#9-email-and-notifications)); content by [identity](identity.md)               |
+| Build notifications (phase 2)                                                           | A new event that human experience's rules turn into a notification       | This document ([9.3](#93-notifications-phase-2)); what is sent by [human experience](human-experience.md) |
+| Send daily notification summaries (phase 2)                                             | Daily, per person, at their chosen hour                                  | This document ([9.3](#93-notifications-phase-2))                                                          |
+| Automatic fact checks by Shinan, if adopted                                             | Schedule                                                                 | [Catalog](catalog.md), [git hosts](git-hosts.md)                                                          |
+| Prune raw webhooks, old job records and old notification records                        | Daily                                                                    | This document ([4.2](#42-kinds-of-data))                                                                  |
 
 ## 8. How agents, the MCP server and plugins reach Shinan
 
@@ -1199,7 +1253,10 @@ licensing (D-013); this section makes sure nothing blocks it. All **proposed**:
   failures and database size.
 - **In-app status:** connection health and the time of the last export for
   workspace owners;
-  email failures and dead-lettered jobs for the installation operator.
+  email failures and dead-lettered jobs for the installation operator. As
+  built (M2-3): the agent index's health for operators, per workspace by ID
+  (revision, whether behind, last round-trip check), at
+  `/api/installation/catalog-index`; no screen yet.
 - **External uptime:** a website tile for `shinan.guneet.dev` on the private mon
   board.
 - **Alerting: Open.** The fleet has no alerting yet.

@@ -101,11 +101,11 @@ documents own the rules; this one only checks them.
 
 ## 6. Data isolation and audit
 
-| #   | Item                                                                                    | How it is checked                                 | Result |
-| --- | --------------------------------------------------------------------------------------- | ------------------------------------------------- | ------ |
-| 6.1 | Every workspace read and write goes through core's check and is scoped to one workspace | `isolation.test.ts`, `permissions.test.ts` (core) | Pass   |
-| 6.2 | The security log is append-only; the database refuses updates and deletes               | `schema.test.ts` (db), "refuses updates"          | Pass   |
-| 6.3 | Sign-ins, failures, allowlist changes, account and membership changes are recorded      | Core identity tests and `sign-in.test.ts`         | Pass   |
+| #   | Item                                                                                    | How it is checked                                                                                                                                                                                                  | Result |
+| --- | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------ |
+| 6.1 | Every workspace read and write goes through core's check and is scoped to one workspace | `isolation.test.ts`, `permissions.test.ts` (core); the agent index's queries: `catalog/index/indexer.test.ts`, "keeps workspaces apart" and "lets agents with catalog:read read, and nobody outside the workspace" | Pass   |
+| 6.2 | The security log is append-only; the database refuses updates and deletes               | `schema.test.ts` (db), "refuses updates"                                                                                                                                                                           | Pass   |
+| 6.3 | Sign-ins, failures, allowlist changes, account and membership changes are recorded      | Core identity tests and `sign-in.test.ts`                                                                                                                                                                          | Pass   |
 
 ## 7. Health checks and exposure
 
