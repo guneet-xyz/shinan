@@ -256,7 +256,8 @@ different from an [agent session](domain-model.md#agent-session).
   level. The operator can change them. Reason: the data is sensitive, and
   signing in again is quick.
 - **Re-authentication** asks the person to sign in again, with an email magic link or
-  GitHub, even inside a sign-in session, before a sensitive action, unless they
+  GitHub (offered only where the installation has GitHub sign-in, as on the
+  sign-in page), even inside a sign-in session, before a sensitive action, unless they
   did so in the last few minutes. **Proposed (M1-4):** the last 10 minutes,
   counted from the start of the sign-in session; signing in again starts a
   new one and ends the old. Reason: long enough for a few sensitive actions

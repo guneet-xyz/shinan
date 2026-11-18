@@ -1,4 +1,4 @@
-import { screen, waitFor } from "@testing-library/react"
+import { screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { describe, expect, it, vi } from "vitest"
 
@@ -123,6 +123,42 @@ describe("sign-in methods, sessions and invitations", () => {
     await userEvent.keyboard("{Escape}")
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
     await waitFor(() => expect(document.activeElement).toBe(add))
+  })
+
+  it.each([
+    [true, "offers GitHub"],
+    [false, "does not offer GitHub"],
+  ])("asks to sign in again: with GitHub sign-in %s, %s", async (github) => {
+    const api = fakeApi({
+      addGitHub: () => Promise.reject(reauthenticationRequired()),
+      installation: () =>
+        Promise.resolve({ name: "Shinan", signInMethods: { github } }),
+    })
+    renderApp("/account", api)
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Add GitHub" }),
+    )
+    const dialog = await screen.findByRole("dialog", {
+      name: "Sign in again to continue",
+    })
+    await within(dialog).findByRole("button", {
+      name: "Email me a sign-in link",
+    })
+    await waitFor(() => expect(api.installation).toHaveBeenCalled())
+    if (github)
+      expect(
+        await within(dialog).findByRole("button", {
+          name: "Sign in with GitHub",
+        }),
+      ).toBeTruthy()
+    else {
+      // Let the installation's answer arrive before checking it is absent.
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      expect(
+        within(dialog).queryByRole("button", { name: "Sign in with GitHub" }),
+      ).toBeNull()
+    }
   })
 
   it("lists sign-in sessions and ends them", async () => {
