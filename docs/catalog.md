@@ -1429,6 +1429,59 @@ have meant 4 to 5 approvals a day; gated approval meant close to none.
   [human experience](human-experience.md).
 - Settings and who may approve are owned by [identity](identity.md).
 
+**Proposed (M2-4, [#86](https://github.com/guneet-xyz/shinan/issues/86)):**
+how proposals are applied and classed (`packages/core`, `catalog/proposals`).
+
+- **Outcomes.** A proposal applies at once as a new catalog revision, or
+  is stored as `pending` when it is in a gated class. One that conflicts
+  ([8.5](#85-conflicts)), has an operation that cannot apply as written,
+  is blocked by validation ([8.3](#83-validation)) or changes nothing is not
+  stored: its author is told why, with every problem and the operation's
+  position, and sends a corrected one. Reason: a proposal nobody can apply
+  is not worth a reviewer's time.
+- **Classes come from the Markdown, not the operations:** each written
+  document is compared before and after. Type schema documents and the
+  start-here document are **rules**, and so are `policy` entities and a
+  `decision` whose state or decision fields change while it is, or
+  becomes, `accepted`, `rejected` or `superseded`. Any change to a `person`
+  or `agent` entity is **people and agents**. A change of status, ID,
+  aliases, `replaced_by` or owner is **lifecycle**. Title, summary, body
+  and a new entity are **body and bookkeeping**. Facts are compared by
+  identity: when only a fact's check changes, it is a **recheck**;
+  otherwise the class of its fact state. A new `accepted`, and every
+  validation warning, makes it **doubtful**, with the warning as the
+  reason. Each gated finding has a reason the reviewer sees.
+- **Who applies it.** A person's own gated edit applies at once (any
+  member may approve). An agent's gated proposal waits for a person's
+  approval, including its own person's (O-46). Approval applies the
+  operations again to the latest revision, as the author: if they now
+  conflict or are blocked, the proposal stays waiting and the approver is
+  told why.
+- **`accepted` is written only by the approval of the person it names**
+  ([4.7](#47-discrepancies)): the named `person` entity's `member` fact
+  must hold the approver's handle, or for a person's own edit their own.
+  Reason: accepting a discrepancy is a person's judgement; an agent or
+  another member cannot give it in their name.
+- **Limits.** At most 50 operations per proposal, 50 facts per
+  `recheck-facts` or `create-entity`, 100 items in any list, an
+  explanation of 4,000 characters and 256 KiB of JSON per proposal; the
+  catalog worker stops a proposal after 10 seconds. A proposal's shape
+  (types, required and unknown properties, `by`) is checked before it
+  reaches `applyOperations`.
+- **Retries.** A proposal may carry an idempotency key; the same key with
+  the same content returns the stored proposal, with other content it is
+  refused.
+- **Withdrawal** is for the author: a person withdraws their own proposals
+  and their agents', an agent only its own. A reviewer rejects instead,
+  with a reason for the author.
+- **Records.** Each applied proposal is one `catalog.changed` event
+  credited to its author, with the approver in its data ([9](#9-history-and-purge));
+  waiting, rejected and withdrawn proposals have their own events. Event
+  summaries name catalog IDs, never a proposal's explanation or text,
+  which validation may have held as secret-looking. Catalog approvals
+  (including a person applying their own gated edit) and rejections are
+  recorded in the security log.
+
 ### 8.3 Validation
 
 Every proposal is validated, on the Markdown it would produce, before it

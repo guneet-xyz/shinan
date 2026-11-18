@@ -203,3 +203,4 @@ export type {
   TypeIndexAnswer,
   TypeIndexItemJson,
 } from "./catalog/wiki.js"
+export * from "./catalog/proposals/index.js"

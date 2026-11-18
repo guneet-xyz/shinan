@@ -552,6 +552,27 @@ indexing (**Proposed**).
     at `/api/installation/catalog-index`; workspaces whose index is behind
     get a rebuild instead. The text → parse → apply no operations → text half
     of rule 5 joins the job when operations as text edits (M2-2) land.
+- **As built (M2-4, [#86](https://github.com/guneet-xyz/shinan/issues/86)),
+  proposed:**
+  - **Proposals and revisions.** A catalog proposal is stored with its
+    operations, author, explanation, approval classes and state. A
+    revision records the proposal it applied, the revision that proposal
+    was made against and, when it needed catalog approval, the approving
+    person. These revision columns are nullable: revisions are never
+    edited, so they could not be filled in for revisions stored before them.
+  - **One apply path, one lock order.** Making a proposal and approving one
+    both take the workspace's index lock first, then the proposal row, then
+    read the latest revision, apply, validate and store the revision in the
+    same transaction. Two proposals on one workspace therefore apply one
+    after the other, each against the revision the other left; per-operation
+    expectations decide conflicts (catalog §8.5).
+  - **The catalog worker.** Parsing, applying (`applyOperations`),
+    validation and approval classes run in one worker thread per process,
+    one proposal at a time, with a 10-second limit after which the thread is
+    stopped and started again (security checklist 10.8). The worker keeps
+    parsed documents by document and revision (up to 10,000), so a proposal
+    sends it only the texts it has not parsed yet. Its results come back as
+    the new texts, already parsed, which the indexer reuses.
 - **Fact checks.** A recheck that changes only the last-checked time is still a
   text edit and a new revision, and also an event. **Proposed.** Reason: no fact
   data may live outside the text.
