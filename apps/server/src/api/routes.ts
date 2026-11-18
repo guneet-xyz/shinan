@@ -1,5 +1,5 @@
 import { Hono } from "hono"
-import type { Context as HonoContext } from "hono"
+import type { Context as HonoContext, MiddlewareHandler } from "hono"
 import { bodyLimit } from "hono/body-limit"
 
 import type * as Api from "@shinan/api-client"
@@ -74,6 +74,11 @@ import { rateLimited, sameOriginOnly } from "../security.js"
 import { isSafeReturnPath } from "../sign-in/paths.js"
 import { requireAgent } from "./agent-auth.js"
 import type { AgentEnv } from "./agent-auth.js"
+import {
+  catalogRepairRoutes,
+  isRepairPath,
+  repairBodyLimit,
+} from "./catalog-repair.js"
 import { catalogReviewRoutes } from "./catalog-review.js"
 import { catalogRoutes } from "./catalog.js"
 import { BadRequestError, errorHandler, errorResponse } from "./errors.js"
@@ -213,7 +218,18 @@ export function createApi({
     limit("/invitations/decline", "invitation-token")
     limit("/account/email-change/confirm", "sign-in-link-open")
   }
-  api.use("*", limitBody)
+  // A repair carries a whole catalog document (catalog §8.3).
+  const limitRepairBody = bodyLimit({
+    maxSize: repairBodyLimit,
+    onError: (c) =>
+      errorResponse(c, 413, {
+        error: "payload-too-large",
+        message: "The request is too large",
+      }),
+  })
+  const limitRequestBody: MiddlewareHandler = (c, next) =>
+    isRepairPath(c.req.path) ? limitRepairBody(c, next) : limitBody(c, next)
+  api.use("*", limitRequestBody)
 
   // Public: the sign-in and invitation pages show the installation's name
   // before sign-in (identity §5.2).
@@ -645,6 +661,7 @@ export function createApi({
 
   catalogRoutes(signedIn, ctx)
   catalogReviewRoutes(signedIn, ctx)
+  catalogRepairRoutes(signedIn, ctx)
 
   api.route("/", signedIn)
   api.all("*", (c) =>

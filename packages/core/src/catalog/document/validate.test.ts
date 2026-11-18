@@ -766,6 +766,57 @@ describe("which problems a change is charged with", () => {
     expect(validateCatalog(after, context).blocked).toBe(true)
   })
 
+  it("charges a repair only with problems the document did not have (catalog §8.3)", () => {
+    const unreadable = (title: string, extra = "") =>
+      entity("machine/daedalus", {
+        fields: `${extra}`,
+        facts: `${check()}    observed:\n      contact: { to: person/guneet, by: someone }\n`,
+        body: `# ${title}\n`,
+      })
+    const before = readCatalog(
+      Object.values({ ...base, "machine/daedalus": unreadable("Daedalus") }),
+    )
+    const run = (text: string, repair: boolean) => {
+      const after = readCatalog(
+        Object.values({ ...base, "machine/daedalus": text }),
+      )
+      const changed = after.documents.filter((d) => d.text === text)
+      return validateChange({ before, after, changed, repair }, context)
+    }
+    const edited = unreadable("Daedalus, edited")
+    // An ordinary change is charged with every blocking problem.
+    expect(run(edited, false).problems.map((p) => p.code)).toEqual([
+      "fact-invalid",
+    ])
+    // A repair may leave it, but not add one, and never a secret.
+    expect(run(edited, true).problems).toEqual([])
+    expect(
+      run(
+        unreadable("Daedalus", "replaced_by: machine/nowhere\n"),
+        true,
+      ).problems.map((p) => p.code),
+    ).toEqual(["reference-unresolved"])
+    // A secret is charged even when the document already held it.
+    const token = `${agentTokenPrefix}${"a".repeat(40)}`
+    const leaky = readCatalog(
+      Object.values({
+        ...base,
+        "machine/daedalus": unreadable(`Daedalus ${token}`),
+      }),
+    )
+    const text = unreadable(`Daedalus, edited ${token}`)
+    const after = readCatalog(
+      Object.values({ ...base, "machine/daedalus": text }),
+    )
+    const changed = after.documents.filter((d) => d.text === text)
+    expect(
+      validateChange(
+        { before: leaky, after, changed, repair: true },
+        context,
+      ).problems.map((p) => p.code),
+    ).toEqual(["secret"])
+  })
+
   it("blames a schema change only for problems a schema can cause", () => {
     const added = domainSchema.replace("keys:\n", "keys:\n  dnssec: {}\n")
     const result = change({

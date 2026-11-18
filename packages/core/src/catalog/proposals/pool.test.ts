@@ -151,16 +151,20 @@ describe("the catalog workers", { timeout: 120_000 }, () => {
       turn("w1", "a1"),
       turn("w1", "a2"),
       turn("w2", "b1"),
+      turn("w3", "c1"),
       turn("w1", "a3"),
       turn("w2", "b2"),
     ])
-    // Turns never overlap; w2's first turn comes right after w1's first,
-    // not after all of w1's.
+    // Turns never overlap; w2's and w3's first turns come right after w1's
+    // first, in the order they asked (the worker is shared first come,
+    // first served), not after all of w1's.
     expect(order).toEqual([
       "a1 start",
       "a1 end",
       "b1 start",
       "b1 end",
+      "c1 start",
+      "c1 end",
       "a2 start",
       "a2 end",
       "b2 start",

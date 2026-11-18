@@ -43,6 +43,11 @@ export interface PrepareInput {
    * the rest of the proposal is checked before it waits for approval.
    */
   approver?: { handle: string; preview: boolean }
+  /**
+   * A workspace owner's repair (catalog §8.3): validation charges the
+   * documents it writes only with problems they did not already have.
+   */
+  repair?: boolean
 }
 
 /** One document the change writes, ready for `appendCatalogRevision`. */
@@ -179,6 +184,7 @@ export function prepareChangeIncrementally(
       after: result.after,
       changed: result.changes.map((c) => c.after),
       texts: [{ label: "The explanation", text: input.explanation }],
+      ...(input.repair ? { repair: true } : {}),
     },
     context,
     before,

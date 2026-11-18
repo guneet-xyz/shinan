@@ -188,6 +188,17 @@ export async function proposeCatalogChange(
   })
 }
 
+/** How `submitProposal` treats a proposal. */
+export interface SubmitOptions {
+  /**
+   * A workspace owner's repair of a document that reads with problems
+   * (catalog §8.3): checked as `catalog.repair` (owners, people only, a
+   * recent sign-in), validated for new problems only, and recorded as the
+   * owner's approval in the security log whatever its classes.
+   */
+  repair?: boolean
+}
+
 /** A proposal to submit, as `submitProposal` takes it. */
 export interface Submission {
   /**
@@ -219,11 +230,13 @@ export async function submitProposal(
   ctx: Context,
   workspaceId: string,
   prepare: (scope: ProposalScope) => Promise<Submission>,
+  options: SubmitOptions = {},
 ): Promise<ProposalOutcome> {
+  const action = options.repair ? "catalog.repair" : "catalog.propose"
   const plan = await inWorkspace(
     ctx,
     workspaceId,
-    "catalog.propose",
+    action,
     async (scope) => {
       const submission = await prepare(scope)
       const requestHash = hashOf(submission.request)
@@ -257,12 +270,12 @@ export async function submitProposal(
   return inTurn(
     ctx,
     workspaceId,
-    "catalog.propose",
+    action,
     plan.actor,
     async (base, prepare): Promise<Stored<ProposalOutcome>> => {
       const operations = base.operations!
       if (!Array.isArray(operations)) return { done: operations }
-      const prepared = await work(ctx, workspaceId, "catalog.propose", {
+      const prepared = await work(ctx, workspaceId, action, {
         prepare,
         base,
         input: {
@@ -270,6 +283,7 @@ export async function submitProposal(
           by: plan.actor.label,
           explanation: proposal.explanation,
           approver: plan.approver,
+          ...(options.repair ? { repair: true } : {}),
         },
       })
       if (prepared.outcome !== "ready") return { done: refusal(prepared) }
@@ -278,7 +292,7 @@ export async function submitProposal(
       return inWorkspace(
         ctx,
         workspaceId,
-        "catalog.propose",
+        action,
         async (scope): Promise<Stored<ProposalOutcome>> => {
           // The index lock comes first on every path that applies, so two
           // applies never wait on each other's proposal rows.
@@ -356,8 +370,10 @@ export async function submitProposal(
             }
           }
           const applied = await apply(scope, row!, prepared, {
-            approvedBy: gated ? scope.actor : null,
+            // A repair is always the owner's own approval (catalog §8.3).
+            approvedBy: gated || options.repair ? scope.actor : null,
             reasons: reasonsFor(prepared, strict),
+            ...(options.repair ? { repair: true } : {}),
           })
           return {
             done: { outcome: "applied", proposal: proposalOf(applied) },
@@ -610,7 +626,7 @@ export async function listCatalogProposals(
 }
 
 export type ProposalScope = WriteScope & {
-  action: "catalog.propose" | "catalog.approve"
+  action: "catalog.propose" | "catalog.approve" | "catalog.repair"
 }
 
 /** The latest revision a proposal is worked out against. */
@@ -950,6 +966,8 @@ async function apply(
     approvedBy: ProposalScope["actor"] | null
     /** Why it needed catalog approval, if it did. */
     reasons: string[]
+    /** A workspace owner's repair (catalog §8.3), named in the security log. */
+    repair?: boolean
   },
 ): Promise<ProposalRow> {
   const approver = options.approvedBy
@@ -1005,7 +1023,11 @@ async function apply(
       subjectPersonId:
         row.actorPersonId === approver.personId ? null : row.actorPersonId,
       request: scope.request,
-      details: { ...securityDetails(updated!), revision },
+      details: {
+        ...securityDetails(updated!),
+        revision,
+        ...(options.repair ? { repair: true } : {}),
+      },
     })
   return updated!
 }

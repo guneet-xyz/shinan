@@ -117,7 +117,7 @@ export function checkProposalInput(input: unknown): ProposalInput {
   )
     throw invalid(
       "restore-document",
-      "Only a revert puts back a document's earlier text; revert the proposal instead",
+      "Only a revert, or a workspace owner's repair, replaces a document's whole text; revert the proposal, or ask a workspace owner to repair the document",
     )
   if (utf8Length(JSON.stringify(input)) > proposalLimits.bytes)
     throw invalid(

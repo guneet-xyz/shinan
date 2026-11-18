@@ -458,6 +458,22 @@ describe("type registry (catalog §3, §3.9)", () => {
     ).toEqual(["schema-invalid"])
   })
 
+  it.each([
+    ["note", "a field of a fact's long form"],
+    ["checked", "a field of a fact check"],
+    ["Bad Name", "lowercase words"],
+  ])("says why %s cannot identify a relation", (name, reason) => {
+    const [problem] = buildTypeRegistry([
+      schemaDoc(
+        "schema/domain",
+        `  a: { relation: [service], identified_by: ["${name}"] }\n`,
+        "",
+      ),
+    ]).problems
+    expect(problem?.message).toContain(`identified_by of "a"`)
+    expect(problem?.message).toContain(reason)
+  })
+
   it("lets custom types point at each other, and makes relations multi-valued by default", () => {
     const registry = buildTypeRegistry([
       schemaDoc("schema/domain", "  zone: { relation: [zone] }\n"),

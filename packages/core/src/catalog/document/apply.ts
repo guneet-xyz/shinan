@@ -605,7 +605,7 @@ class Working {
     this.commit(entry, editor.finish(document, ["id", "aliases"]))
   }
 
-  /** Puts back a document's earlier text whole (a revert). */
+  /** Replaces a document's whole text: a revert, or an owner's repair. */
   private restore(operation: RestoreDocument) {
     const entry = this.find(operation.document)
     const current = createHash("sha256")
@@ -614,7 +614,7 @@ class Working {
     if (current !== operation.expect.sha256)
       throw conflict(
         "changed",
-        `"${operation.document}" has changed since the change being reverted; revert it by hand`,
+        `"${operation.document}" has changed since the text being put back was read`,
       )
     if (utf8Length(operation.text) > maxDocumentBytes)
       throw invalid(
@@ -624,7 +624,7 @@ class Working {
     const document = parseCatalogDocument(operation.text)
     if (document.kind !== entry.document.kind)
       throw invalid(
-        `The earlier text of "${operation.document}" is ${kindName[document.kind]}, not ${kindName[entry.document.kind]}`,
+        `The new text of "${operation.document}" is ${kindName[document.kind]}, not ${kindName[entry.document.kind]}`,
       )
     for (const name of [
       document.id,

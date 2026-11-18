@@ -281,6 +281,19 @@ export const rules = deepFreeze({
     reauthentication: false,
   },
   /**
+   * Repair a catalog document that reads with problems by replacing its
+   * whole text (catalog §8.3): workspace owners only, with
+   * re-authentication, never agents. It goes through the proposal path and
+   * is recorded as the owner's approval.
+   */
+  "catalog.repair": {
+    level: "workspace",
+    access: "write",
+    roles: ["owner"],
+    agents: "people",
+    reauthentication: true,
+  },
+  /**
    * Keep the agent index in step with the stored text: rebuild it, run the
    * daily round-trip check, and ask for rebuilds after the parser changed
    * (architecture §5.2, §5.3, §7). The worker and the operator's server

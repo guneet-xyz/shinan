@@ -19,6 +19,7 @@ import { Section } from "../../components/page"
 import { ErrorMessage, Loading } from "../../components/status"
 import { formatDate, formatTime } from "../../format"
 import { NotFound } from "../NotFound"
+import { useWorkspace } from "../workspace/context"
 import { EntityPageContext, useEntityPage } from "./context"
 import { diffLines } from "./diff"
 import { EntityLink, FactRow, linkClass, MaybeLink } from "./facts"
@@ -26,6 +27,7 @@ import {
   entityPath,
   freshnessSummary,
   isWebAddress,
+  repairPath,
   summaryParts,
   valueText,
   wikiPath,
@@ -118,6 +120,7 @@ export function EntityPage() {
  */
 export function EntityHeader(props: { actions?: ReactNode }) {
   const { workspaceId, entity } = useEntityPage()
+  const owner = useWorkspace().workspace.role === "owner"
   const movedFrom = (useLocation().state as { movedFrom?: string } | null)
     ?.movedFrom
   return (
@@ -227,6 +230,19 @@ export function EntityHeader(props: { actions?: ReactNode }) {
               <li key={i}>{p.message}</li>
             ))}
           </ul>
+          {owner ? (
+            <p>
+              <Link
+                to={repairPath(workspaceId, entity.id)}
+                className={linkClass}
+              >
+                Repair this page
+              </Link>{" "}
+              by correcting its text.
+            </p>
+          ) : (
+            <p>A workspace owner can repair it by correcting its text.</p>
+          )}
         </PageNotice>
       )}
     </header>

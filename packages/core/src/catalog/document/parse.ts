@@ -4,6 +4,7 @@ import { parseCatalogTime } from "./dates.js"
 import type { CatalogTime } from "./dates.js"
 import {
   attributeNameProblem,
+  factOptions,
   isEntityId,
   isFactKey,
   parseEntityId,
@@ -442,16 +443,6 @@ function readCheck(reader: Reader, group: YamlMap): FactCheck | null {
   }
 }
 
-const longFormOptions = new Set([
-  "value",
-  "to",
-  "via",
-  "note",
-  "task",
-  "remove",
-  "accepted",
-])
-
 function readFact(
   reader: Reader,
   entry: YamlEntry,
@@ -557,7 +548,7 @@ function readLongForm(
   // No prototype, so an attribute named like an Object member is just data.
   const attributes = Object.create(null) as Record<string, ScalarValue>
   for (const e of node.entries) {
-    if (longFormOptions.has(e.key)) continue
+    if (factOptions.has(e.key)) continue
     const problem = attributeNameProblem(e.key)
     if (problem !== null) fail(problem, e.keyRange)
     else if (e.value.kind !== "scalar" || e.value.value === null)

@@ -70,6 +70,13 @@ export interface Change {
   changed: readonly CatalogDocument[]
   /** Other text the change carries, such as the proposal's explanation, checked for secrets. */
   texts?: readonly { label: string; text: string }[]
+  /**
+   * A workspace owner's repair of a document that reads with problems
+   * (catalog §8.3): the documents it writes are charged only with problems
+   * they did not already have, so a repair may leave some of them and fix
+   * the rest. A secret-looking value is charged all the same.
+   */
+  repair?: boolean
 }
 
 /**
@@ -212,11 +219,21 @@ function assemble(
     if (changed.has(document)) {
       const earlier = earlierOf.written(document)
       problems.push(
-        ...found.filter((p) => p.severity === "blocking"),
-        ...subtract(
-          found.filter((p) => p.severity === "warning"),
-          earlier.filter((p) => p.severity === "warning"),
-        ),
+        ...(change.repair
+          ? [
+              ...found.filter((p) => p.code === "secret"),
+              ...subtract(
+                found.filter((p) => p.code !== "secret"),
+                earlier,
+              ),
+            ]
+          : [
+              ...found.filter((p) => p.severity === "blocking"),
+              ...subtract(
+                found.filter((p) => p.severity === "warning"),
+                earlier.filter((p) => p.severity === "warning"),
+              ),
+            ]),
       )
       continue
     }
