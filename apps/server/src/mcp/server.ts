@@ -9,6 +9,8 @@ import {
   agentAnswerText,
   agentCatalogList,
   agentCatalogLists,
+  agentCommentOnCatalogProposal,
+  agentCommentPage,
   agentGetCatalogProposal,
   agentGetEntity,
   agentProposeCatalogChange,
@@ -17,6 +19,7 @@ import {
   agentWithdrawCatalogProposal,
   agentWorkspaceContext,
   BusyError,
+  commentLimit,
   CoreError,
   entityStatuses,
   ForbiddenError,
@@ -505,12 +508,41 @@ function buildServer(options: McpOptions, call: CallContext): McpServer {
     "get_catalog_proposal",
     {
       title: "Get a catalog proposal",
-      description:
-        "One catalog proposal by ID: its state (pending, applied, rejected or withdrawn), operations, approval classes and the reasons it waits, validation warnings, the revision it applied as, and a rejection's reason.",
-      inputSchema: z.object({ id: proposalId }),
+      description: `One catalog proposal by ID: its state (pending, applied, rejected or withdrawn), operations, approval classes and the reasons it waits, validation warnings, the revision it applied as, a rejection's reason, and its comments, each labelled by who wrote it: ${agentCommentPage} at a time, oldest first, with comment_count; for more, pass comments_next_cursor as comments_cursor.`,
+      inputSchema: z.object({
+        id: proposalId,
+        comments_cursor: z.string().min(1).max(100).optional(),
+      }),
       annotations: readOnly,
     },
-    (input) => answer(() => agentGetCatalogProposal(ctx, input.id)),
+    (input) =>
+      answer(() =>
+        agentGetCatalogProposal(ctx, input.id, {
+          ...defined({ commentsCursor: input.comments_cursor }),
+        }),
+      ),
+  )
+
+  server.registerTool(
+    "comment_on_catalog_proposal",
+    {
+      title: "Comment on a catalog proposal",
+      description: `Add a comment to a catalog proposal, by its id: for example your findings when asked to review it. A comment informs the person who reviews it; only people approve. At most ${commentLimit} characters. Send an idempotency_key so a retry is stored once. Needs a full token.`,
+      inputSchema: z.object({
+        id: proposalId,
+        text: z.string().min(1).max(commentLimit),
+        idempotency_key: z.string().min(1).max(200).optional(),
+      }),
+      annotations: write,
+    },
+    (input) =>
+      answer(() =>
+        agentCommentOnCatalogProposal(ctx, {
+          proposalId: input.id,
+          text: input.text,
+          ...defined({ idempotencyKey: input.idempotency_key }),
+        }),
+      ),
   )
 
   server.registerTool(

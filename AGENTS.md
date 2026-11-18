@@ -28,6 +28,11 @@ phase**. Read these before doing anything else:
   make, propose it in the PR; anything that changes a decision record goes to the
   owner before merge.
 - Permissions and rules live in `packages/core`, never only in HTTP handlers.
+- Inside a transaction, use its `tx` for every query. Anything that needs
+  its own connection, such as `takeRateLimit` or another `inWorkspace`, runs
+  before the transaction opens or after it ends: otherwise as many requests
+  as the pool has connections hang the process. Tests use a database that
+  refuses this (`refuseNestedConnections` in `packages/db`).
 - Every PR has tests. Keep CI green: run `pnpm format:write`, `pnpm lint`,
   `pnpm typecheck` and `pnpm test` before pushing (the
   [README](README.md#developing-locally) explains the setup).

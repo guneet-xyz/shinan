@@ -71,6 +71,13 @@
       "when": 1795017109399,
       "tag": "0009_catalog_proposals",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1795025727689,
+      "tag": "0010_catalog_review",
+      "breakpoints": true
     }
   ]
 }

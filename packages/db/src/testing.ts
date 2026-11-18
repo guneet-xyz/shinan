@@ -74,7 +74,7 @@ export async function createTestDatabase(
  * `test/global-setup.ts`. Call `pool.end()` when the tests are done.
  */
 export function connectTestDatabase() {
-  return createDatabase(inject("databaseUrl"))
+  return createDatabase(inject("databaseUrl"), { refuseNested: true })
 }
 
 function redact(url: string): string {

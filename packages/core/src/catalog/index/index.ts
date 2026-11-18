@@ -13,6 +13,7 @@ export type {
   FreshnessJson,
   IncomingRelationJson,
   OutgoingRelationJson,
+  PendingProposalJson,
   ProblemJson,
   ResolvedStepJson,
   SectionJson,

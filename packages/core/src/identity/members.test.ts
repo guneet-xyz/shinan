@@ -65,6 +65,8 @@ describe("createWorkspace", () => {
       "Line\nbreak",
       "Bell\u0007",
       "A\u2066b",
+      "Nul\u0000",
+      "Lone\ud800surrogate",
     ]) {
       await expect(
         createWorkspace(asPerson(db, owner), { name }),

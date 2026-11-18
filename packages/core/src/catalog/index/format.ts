@@ -200,6 +200,25 @@ export interface EntityJson extends EntitySummaryJson {
   body: SectionJson[]
   /** What kept the text from being read as catalog §2 describes; normally empty. */
   problems: ProblemJson[]
+  /**
+   * Catalog proposals waiting for approval that change this entity
+   * (catalog §8.6, §12.4), oldest first, so agents do not duplicate them.
+   * No free text: a proposal's explanation and operations are on the
+   * proposal itself.
+   */
+  pending_proposals: PendingProposalJson[]
+}
+
+/** A catalog proposal waiting for approval, on an entity it changes. */
+export interface PendingProposalJson {
+  proposal_id: string
+  number: number
+  /** The author's written form (identity §8.7). */
+  author: string
+  author_kind: "person" | "agent"
+  created_at: string
+  approval_classes: string[]
+  related_task: string | null
 }
 
 /** One key of a type schema (catalog §3, §3.9). */

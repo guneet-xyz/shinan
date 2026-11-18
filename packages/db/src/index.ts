@@ -5,6 +5,7 @@ import { migrate } from "drizzle-orm/node-postgres/migrator"
 import pg from "pg"
 
 import { createLimitedLog, databaseErrorCode } from "./log.js"
+import { refuseNestedConnections } from "./nesting.js"
 import * as schema from "./schema.js"
 
 export { schema }
@@ -22,6 +23,7 @@ export {
   isNotNull,
   isNull,
   lt,
+  lte,
   ne,
   or,
   sql,
@@ -55,7 +57,18 @@ export const migrationsFolder = fileURLToPath(
   new URL("../migrations", import.meta.url),
 )
 
-export function createDatabase(databaseUrl: string) {
+export { NestedConnectionError } from "./nesting.js"
+
+export function createDatabase(
+  databaseUrl: string,
+  options: {
+    /**
+     * Refuse queries on `db` while the same work holds one of its
+     * transactions (`refuseNestedConnections`); tests turn it on.
+     */
+    refuseNested?: boolean
+  } = {},
+) {
   const pool = new pg.Pool({ connectionString: databaseUrl })
   // A connection can fail at any time, idle or in use, for example when
   // PostgreSQL restarts. Its client then emits "error", which Node.js turns
@@ -76,7 +89,7 @@ export function createDatabase(databaseUrl: string) {
   // has already logged it.
   pool.on("error", () => {})
   const db = drizzle({ client: pool, schema })
-  return { db, pool }
+  return { db: options.refuseNested ? refuseNestedConnections(db) : db, pool }
 }
 
 export interface DatabaseReadiness {

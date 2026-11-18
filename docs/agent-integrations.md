@@ -542,9 +542,11 @@ Reason: together they cover the level 1 actions in the plan.
     task, idempotency key), `record_fact_check` (one entity, the facts as
     they are, the fact check; a proposal with one `recheck-facts`
     operation) and `withdraw_catalog_proposal` (the agent's own waiting
-    proposal; repeating it is harmless). `comment_on_catalog_proposal`
-    comes with proposal comments (M2-4b,
-    [#86](https://github.com/guneet-xyz/shinan/issues/86)).
+    proposal; repeating it is harmless) and `comment_on_catalog_proposal`
+    (text up to 4,000 characters and an idempotency key; M2-4b,
+    [#86](https://github.com/guneet-xyz/shinan/issues/86)), whose comments
+    `get_catalog_proposal` shows, each labelled by who wrote it, 20 at a
+    time with a cursor for more.
 
   Every tool takes and returns the field names of the
   [agent index format](catalog.md#124-the-index-format); the operations

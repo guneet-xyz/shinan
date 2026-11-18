@@ -21,6 +21,7 @@ import type {
   FactJson,
   IncomingRelationJson,
   OutgoingRelationJson,
+  PendingProposalJson,
   ResolvedStepJson,
   SectionJson,
   StepJson,
@@ -295,6 +296,7 @@ async function entityJson(
     applies: await appliesTo(tx, workspaceId, row),
     body: sectionRows.map(sectionJson),
     problems: row.problems,
+    pending_proposals: await pendingProposals(tx, workspaceId, row),
   }
   if (row.type === "decision") {
     json.decision_state = row.decisionState
@@ -302,6 +304,47 @@ async function entityJson(
     json.decided_by = row.decidedBy
   }
   return json
+}
+
+/** Waiting proposals whose changes touch the entity by its ID or an alias. */
+async function pendingProposals(
+  tx: Transaction,
+  workspaceId: string,
+  row: DocumentRecord,
+): Promise<PendingProposalJson[]> {
+  const p = schema.catalogProposals
+  const names = namesOf(row)
+  const rows = await tx
+    .select({
+      id: p.id,
+      number: p.number,
+      author: p.actorLabel,
+      authorKind: p.actorKind,
+      createdAt: p.createdAt,
+      classes: p.approvalClasses,
+      relatedTask: p.relatedTask,
+    })
+    .from(p)
+    .where(
+      and(
+        eq(p.workspaceId, workspaceId),
+        eq(p.state, "pending"),
+        sql`${p.touches} && ${sql`array[${sql.join(
+          names.map((n) => sql`${n}`),
+          sql`, `,
+        )}]::text[]`}`,
+      ),
+    )
+    .orderBy(asc(p.number))
+  return rows.map((r) => ({
+    proposal_id: r.id,
+    number: r.number,
+    author: r.author,
+    author_kind: r.authorKind === "agent" ? "agent" : "person",
+    created_at: r.createdAt.toISOString(),
+    approval_classes: r.classes,
+    related_task: r.relatedTask,
+  }))
 }
 
 /** The IDs a relation may name this entity by: its ID and its aliases. */

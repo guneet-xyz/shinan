@@ -1,4 +1,5 @@
 import { InvalidInputError } from "../../errors.js"
+import { checkStorable } from "../../validation.js"
 import {
   maxFacts,
   maxOperations,
@@ -55,6 +56,7 @@ export function checkProposalInput(input: unknown): ProposalInput {
       Object.getPrototypeOf(input) !== null)
   )
     throw invalid("proposal-shape", "The proposal is an object")
+  checkStorable(input, "The proposal")
   const proposal = input as Record<string, unknown>
   for (const key of Object.keys(proposal))
     if (
@@ -104,6 +106,18 @@ export function checkProposalInput(input: unknown): ProposalInput {
     throw invalid(
       "too-many",
       `A proposal holds at most ${proposalLimits.operations} operations; split it`,
+    )
+  if (
+    operations.some(
+      (o) =>
+        typeof o === "object" &&
+        o !== null &&
+        (o as { op?: unknown }).op === "restore-document",
+    )
+  )
+    throw invalid(
+      "restore-document",
+      "Only a revert puts back a document's earlier text; revert the proposal instead",
     )
   if (utf8Length(JSON.stringify(input)) > proposalLimits.bytes)
     throw invalid(

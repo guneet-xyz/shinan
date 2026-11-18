@@ -1311,6 +1311,7 @@ expects ([8.5](#85-conflicts)).
 | `set-schema-key`      | Adds, changes or removes one key of a type schema document.                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `create-start-here`   | The start-here document.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | `set-start-here-path` | Replaces the `people` or the `agents` path.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `restore-document`    | Puts back a document's earlier text whole, expecting it to be exactly as the reverted proposal left it (by the SHA-256 of its text). Only a revert makes it (M2-4, below); agents and the API cannot send it.                                                                                                                                                                                                                                                                                                                 |
 
 Lifecycle changes beyond `retire` have no operation: `set-field` never sets
 `retired`, never changes the status of a retired document, and never writes
@@ -1461,7 +1462,11 @@ how proposals are applied and classed (`packages/core`, `catalog/proposals`).
   identity: when only a fact's check changes, it is a **recheck**;
   otherwise the class of its fact state. A new `accepted`, and every
   validation warning, makes it **doubtful**, with the warning as the
-  reason. Each gated finding has a reason the reviewer sees.
+  reason. Each gated finding has a reason the reviewer sees. **Fail
+  closed (M2-4b):** a document counts as a recheck only when nothing but
+  its fact checks changed; any other change these rules do not sort is at
+  least body and bookkeeping, so it never hides behind a recheck beside
+  it, and a proposal takes every class of every document it changes.
 - **Who applies it.** A person's own gated edit applies at once (any
   member may approve). An agent's gated proposal waits for a person's
   approval. **Owner (2026-11-18, M2-Q8):** as D-024 and O-46 say, a person
@@ -1519,6 +1524,10 @@ how proposals are applied and classed (`packages/core`, `catalog/proposals`).
 - **Retries.** A proposal may carry an idempotency key, kept per author;
   the same key with the same content (in any key order) returns the stored
   proposal, with other content it is refused.
+- **Text that cannot be stored.** A proposal, comment, rejection reason or
+  revert whose text holds a NUL character or an unpaired surrogate,
+  anywhere, is refused as invalid input (`text-characters`): PostgreSQL
+  stores neither.
 - **Withdrawal** is for the author: a person withdraws their own proposals
   and their agents', an agent only its own. A reviewer rejects instead,
   with a reason for the author.
@@ -1529,9 +1538,58 @@ how proposals are applied and classed (`packages/core`, `catalog/proposals`).
   which validation may have held as secret-looking. Catalog approvals
   (including a person applying their own gated edit) and rejections are
   recorded in the security log.
-- **Left for M2-4b:** a waiting proposal from an agent that has since been
-  disabled, or whose member has left, can still be approved; whether it
-  should be withdrawn instead.
+- **A waiting proposal from an agent that has since been disabled**, or
+  whose member has left, can still be approved or rejected. Reason:
+  approval is a person's judgement of the change itself, which the review
+  screen shows with its author.
+
+**Proposed (M2-4b, [#86](https://github.com/guneet-xyz/shinan/issues/86)):**
+the strict setting, bulk approval, recent changes and revert.
+
+- **The strict setting** is a workspace setting, off by default, that
+  workspace owners change after signing in again, recorded as an event and
+  in the security log. While it is on, every proposal that is more than a
+  recheck waits for catalog approval, with the reason "The workspace's
+  strict setting is on". A person's own edit still applies at once, as
+  their own approval (the rule above): strict holds agents' changes for a
+  person, and a person's edit already has one. Turning it off leaves
+  waiting proposals waiting; bulk approval clears them.
+- **Bulk approval** takes exactly what the person was shown: a list of
+  proposals, or one related task's waiting proposals up to the highest
+  proposal number they saw (`seenUpTo`), so one added later is left for its
+  own review. Oldest first, at most 50 at a time. Each is approved as on
+  its own, in its own turn: checked again against the latest revision,
+  applied and recorded separately. One that cannot apply (a conflict, the
+  own-agent rule, already decided) is reported with why, and the others
+  go on. When Shinan is busy, the results so far come back and the rest
+  are "not attempted", with when to send them again. **Bulk rejection**
+  takes the same selection and one reason, for example for the waiting
+  proposals of an agent that was disabled. Proposals that are read say
+  whether their author is still current, a disabled agent or a member who
+  left, so the reviewer can look harder.
+- **The recent-changes feed** lists applied proposals, one per revision,
+  newest first: by default those that applied without approval, which no
+  person has reviewed. Each says whether it can still be reverted (every
+  document it changed is still as it left it) and which proposal reverted
+  it, if one did.
+- **A revert is a new proposal**, made by one action and taking the same
+  path as any other: its turn, validation, approval classes (from the
+  Markdown, so reverting a body edit is bookkeeping and reverting a new
+  entity is lifecycle), the strict setting and the author's rate limit. A
+  retry with the same idempotency key is the same revert (the proposal it
+  reverts and the explanation), and gets the stored proposal back. It is
+  worked out in its turn, from the stored text read there, again on every
+  attempt, never from a copy read earlier. It
+  restores each document the reverted proposal changed to its text just
+  before that revision (`restore-document`), expecting the document to be
+  exactly as the proposal left it; if anything changed it since, the
+  revert conflicts and is not stored, and the change is reverted by hand. A
+  document the proposal created is retired instead, since documents are
+  never deleted; a proposal that created the start-here document cannot be
+  reverted. The earlier text is read from the stored revisions, so what
+  purge (M2-10) removes from them is never restored; M2-10 also purges a
+  revert proposal's stored operations, which hold that text. Reason: one
+  path for every change, and history stays whole (§9).
 
 ### 8.3 Validation
 
@@ -1712,6 +1770,21 @@ what each operation expects.
   **Proposed.** Reason: agent review is cheap and is how documents in this
   repository are reviewed today; a comment informs the person without letting
   an agent approve.
+- **Proposed (M2-4b, [#86](https://github.com/guneet-xyz/shinan/issues/86)):**
+  how. Waiting proposals appear on each entity they touch, in the agent
+  index's `pending_proposals` ([12.4](#124-the-index-format)). Comments
+  are kept with the proposal, in any state, up to 4,000 characters each,
+  from members and from agents whose token has `catalog:propose`; they
+  are not edited, and purge (M2-10) can remove one. A comment may carry an
+  idempotency key, kept per author, so a retry is stored once; an agent
+  sends at most 60 comments in 10 minutes. Each comment is an event whose
+  summary does not repeat its text, since an agent's comment is outside
+  text (agent integrations, trust labels); MCP's
+  `comment_on_catalog_proposal` adds one, and `get_catalog_proposal` shows
+  them, each labelled by who wrote it. Comments are read a page at a time,
+  oldest first, with how many there are in all: 50 a page by default (at
+  most 200), 20 in `get_catalog_proposal`, so a proposal with many
+  comments is never read whole.
 
 ### 8.7 No edits outside Shinan
 
@@ -1945,8 +2018,11 @@ can read without a schema at hand.
 | `body`                                              | The body split by heading ([2.5](#25-body)): `heading` (`null` for the text before the first heading), `level`, `anchor`, `text` (the section's exact Markdown), and two credits from Shinan's records of who made each revision, never from the text: `changed_in`, `changed_by`, `changed_by_kind`, the catalog revision that last changed any of the section's bytes (blank lines at its end aside) and that revision's author; and `written_by`, `written_by_kind`, the least-trusted author whose words may remain in it, from the document's history (below). Trust labels use `written_by`. |
 | `problems`                                          | What kept the text from being read as section 2 describes (`code`, `message`); normally empty, since validation blocks such text, but a later parser may read old text differently.                                                                                                                                                                                                                                                                                                                                                                                                                |
 
-Pending catalog proposals touching the entity (12.1) join as
-`pending_proposals` with catalog proposals (M2-4).
+**`pending_proposals`** (M2-4b): catalog proposals waiting for approval
+whose changes touch the entity by its ID or an alias (12.1), oldest first:
+`proposal_id`, `number`, `author`, `author_kind`, `created_at`,
+`approval_classes` and `related_task`. No free text: a proposal's
+explanation and operations are read from the proposal itself.
 
 **Lists** carry `items` and `next_offset` (the offset of the next page, or
 `null`), 50 items by default and at most 500:

@@ -126,6 +126,19 @@ export interface CatalogEntity extends CatalogEntitySummary {
   applies: { policies: CatalogApplies[]; runbooks: CatalogApplies[] }
   body: CatalogSection[]
   problems: { code: string; message: string }[]
+  /** Catalog proposals waiting for approval that change it, oldest first. */
+  pending_proposals: CatalogPendingProposal[]
+}
+
+/** A catalog proposal waiting for approval, on an entity it changes. */
+export interface CatalogPendingProposal {
+  proposal_id: string
+  number: number
+  author: string
+  author_kind: "person" | "agent"
+  created_at: string
+  approval_classes: string[]
+  related_task: string | null
 }
 
 export interface CatalogEntityAnswer extends CatalogAnswer {

@@ -7,6 +7,7 @@ import {
   desc,
   eq,
   gt,
+  inArray,
   isNull,
   lt,
   schema,
@@ -28,7 +29,7 @@ import { appendEvent } from "../../events.js"
 import type { EventCredit, WriteScope } from "../../events.js"
 import { rateLimits, takeRateLimit } from "../../rate-limits.js"
 import { recordSecurityEntry } from "../../security-log.js"
-import { isId } from "../../validation.js"
+import { checkStorable, isId } from "../../validation.js"
 import type {
   CatalogOperation,
   OperationProblem,
@@ -46,8 +47,8 @@ import type { LatestDocument, Prepare } from "./pool.js"
 import type { LoadedText } from "./protocol.js"
 import type { CatalogSize, Prepared, PrepareInput } from "./work.js"
 
-type ProposalRow = typeof schema.catalogProposals.$inferSelect
-type CatalogProposalState = ProposalRow["state"]
+export type ProposalRow = typeof schema.catalogProposals.$inferSelect
+export type CatalogProposalState = ProposalRow["state"]
 
 /** A catalog proposal as operations return it (catalog §8.1). */
 export interface CatalogProposal {
@@ -74,7 +75,19 @@ export interface CatalogProposal {
   /** Who applied, rejected or withdrew it. */
   decidedBy: string | null
   rejectionReason: string | null
+  /** The applied proposal this one reverts, for a revert. */
+  revertsProposalId: string | null
+  /**
+   * Whether its author is still a current member, or an enabled agent of
+   * one, so a reviewer looks harder at a proposal from a disabled agent or a
+   * member who left (catalog §8.2). Given by the operations that read
+   * proposals (`getCatalogProposal`, `listCatalogProposals`, the recent
+   * changes); left out where a proposal was just made or decided.
+   */
+  authorStatus?: AuthorStatus
 }
+
+export type AuthorStatus = "current" | "agent-disabled" | "member-left"
 
 /**
  * What became of a proposal:
@@ -158,22 +171,71 @@ export async function proposeCatalogChange(
   workspaceId: string,
   input: unknown,
 ): Promise<ProposalOutcome> {
+  return submitProposal(ctx, workspaceId, () => {
+    const proposal = checkProposalInput(input)
+    return Promise.resolve({
+      request: [
+        proposal.explanation,
+        proposal.relatedTask ?? null,
+        proposal.operations,
+      ],
+      explanation: proposal.explanation,
+      relatedTask: proposal.relatedTask ?? null,
+      idempotencyKey: proposal.idempotencyKey ?? null,
+      revertsProposalId: null,
+      operations: () => Promise.resolve(proposal.operations),
+    })
+  })
+}
+
+/** A proposal to submit, as `submitProposal` takes it. */
+export interface Submission {
+  /**
+   * The request as its author sent it, which a retry with the same
+   * idempotency key must match: for a revert, the proposal it reverts and
+   * the explanation, not the operations worked out from them.
+   */
+  request: unknown
+  explanation: string
+  relatedTask: string | null
+  idempotencyKey: string | null
+  /** The applied proposal it reverts, for a revert. */
+  revertsProposalId: string | null
+  /**
+   * The operations, worked out in each attempt of the proposal's turn from
+   * what that attempt reads, so text a purge removed meanwhile is never
+   * used (M2-10), or why the proposal cannot be made.
+   */
+  operations: (scope: ProposalScope) => Promise<CatalogOperation[] | NotApplied>
+}
+
+/**
+ * The path every proposal takes (`proposeCatalogChange`,
+ * `revertCatalogProposal`): `prepare` checks the request in a first,
+ * read-only transaction, where a retry with the same idempotency key gets
+ * the stored proposal back; then the proposal takes its turn.
+ */
+export async function submitProposal(
+  ctx: Context,
+  workspaceId: string,
+  prepare: (scope: ProposalScope) => Promise<Submission>,
+): Promise<ProposalOutcome> {
   const plan = await inWorkspace(
     ctx,
     workspaceId,
     "catalog.propose",
     async (scope) => {
-      const proposal = checkProposalInput(input)
-      const requestHash = hashOf(proposal)
+      const submission = await prepare(scope)
+      const requestHash = hashOf(submission.request)
       const existing = await byIdempotencyKey(
         scope,
-        proposal.idempotencyKey,
+        submission.idempotencyKey,
         requestHash,
       )
       if (existing) return { replay: true as const, row: existing }
       return {
         replay: false as const,
-        proposal,
+        submission,
         requestHash,
         actor: scope.actor,
         // A person who may approve applies their own gated edit at once; for
@@ -189,7 +251,8 @@ export async function proposeCatalogChange(
   )
   if (plan.replay)
     return { outcome: plan.row.state, proposal: proposalOf(plan.row) }
-  const { proposal, requestHash } = plan
+  const { submission: proposal, requestHash } = plan
+  const { revertsProposalId } = proposal
 
   return inTurn(
     ctx,
@@ -197,11 +260,13 @@ export async function proposeCatalogChange(
     "catalog.propose",
     plan.actor,
     async (base, prepare): Promise<Stored<ProposalOutcome>> => {
+      const operations = base.operations!
+      if (!Array.isArray(operations)) return { done: operations }
       const prepared = await work(ctx, workspaceId, "catalog.propose", {
         prepare,
         base,
         input: {
-          operations: proposal.operations,
+          operations,
           by: plan.actor.label,
           explanation: proposal.explanation,
           approver: plan.approver,
@@ -236,7 +301,8 @@ export async function proposeCatalogChange(
           )
             return { moved: true }
 
-          const gated = isGated(prepared.classes)
+          const strict = await isStrict(scope)
+          const gated = needsApproval(prepared.classes, strict)
           const appliesNow =
             mayApprove(scope) && !plan.approver.preview
               ? true
@@ -258,11 +324,11 @@ export async function proposeCatalogChange(
               number: next,
               ...actorColumns(scope.actor),
               explanation: proposal.explanation,
-              relatedTask: proposal.relatedTask ?? null,
-              operations: proposal.operations,
+              relatedTask: proposal.relatedTask,
+              operations,
               basedOnRevision: base.revision,
               approvalClasses: prepared.classes,
-              approvalReasons: prepared.reasons,
+              approvalReasons: reasonsFor(prepared, strict),
               touches: prepared.touches,
               validation: prepared.warnings as unknown as Record<
                 string,
@@ -270,6 +336,7 @@ export async function proposeCatalogChange(
               >[],
               idempotencyKey: proposal.idempotencyKey ?? null,
               requestHash,
+              revertsProposalId,
             })
             .returning()
           if (!appliesNow) {
@@ -290,6 +357,7 @@ export async function proposeCatalogChange(
           }
           const applied = await apply(scope, row!, prepared, {
             approvedBy: gated ? scope.actor : null,
+            reasons: reasonsFor(prepared, strict),
           })
           return {
             done: { outcome: "applied", proposal: proposalOf(applied) },
@@ -299,6 +367,7 @@ export async function proposeCatalogChange(
     },
     // Counted in the turn, so a proposal refused as busy is not.
     ctx.actor.kind === "agent" ? ctx.actor.agentId : null,
+    proposal.operations,
   )
 }
 
@@ -368,6 +437,7 @@ export async function approveCatalogProposal(
           checkAccepts(prepared, scope.actor.label)
           const applied = await apply(scope, current, prepared, {
             approvedBy: scope.actor,
+            reasons: reasonsFor(prepared, await isStrict(scope)),
           })
           return {
             done: { outcome: "applied", proposal: proposalOf(applied) },
@@ -400,6 +470,7 @@ export async function rejectCatalogProposal(
         "reason-too-long",
         `The reason is longer than ${rejectionReasonLimit} characters`,
       )
+    checkStorable(reason, "The reason")
     const row = await pendingProposal(scope, input.proposalId)
     const [updated] = await scope.tx
       .update(schema.catalogProposals)
@@ -482,7 +553,7 @@ export async function getCatalogProposal(
           ),
         )
       if (!row) throw new NotFoundError()
-      return proposalOf(row)
+      return (await withAuthorStatus(scope.tx, scope.workspaceId, [row]))[0]!
     },
     snapshotRead,
   )
@@ -532,13 +603,13 @@ export async function listCatalogProposals(
         )
         .orderBy(input.oldestFirst ? asc(t.number) : desc(t.number))
         .limit(limit)
-      return rows.map(proposalOf)
+      return withAuthorStatus(scope.tx, scope.workspaceId, rows)
     },
     snapshotRead,
   )
 }
 
-type ProposalScope = WriteScope & {
+export type ProposalScope = WriteScope & {
   action: "catalog.propose" | "catalog.approve"
 }
 
@@ -547,6 +618,8 @@ interface Base {
   revision: number
   documents: LatestDocument[]
   memberHandles: string[]
+  /** A submission's operations, worked out from the same snapshot. */
+  operations?: CatalogOperation[] | NotApplied
 }
 
 /** What one attempt did: finished, or found that another process stored a revision first. */
@@ -579,16 +652,23 @@ async function inTurn<T>(
   actor: ResolvedActor,
   attempt: (base: Base, prepare: Prepare) => Promise<Stored<T>>,
   agentId: string | null,
+  operations?: Submission["operations"],
 ): Promise<T> {
   try {
     return await catalogWorkers().run(workspaceId, async (prepare) => {
       if (agentId) await throttle(ctx, agentId)
       for (let n = 1; ; n++) {
+        // The operations are worked out from the same snapshot as the base.
         const base = await inWorkspace(
           ctx,
           workspaceId,
           action,
-          readBase,
+          async (scope) => {
+            const read = await readBase(scope)
+            return operations
+              ? { ...read, operations: await operations(scope) }
+              : read
+          },
           snapshotRead,
         )
         const stored = await attempt(base, prepare)
@@ -698,6 +778,37 @@ async function textsAt(
         )})`,
       ),
     )
+}
+
+/** The reason the strict setting adds (catalog §8.2). */
+export const strictReason =
+  "The workspace's strict setting is on: every change except a recheck needs catalog approval"
+
+/**
+ * Whether a change needs catalog approval: it is in a gated class, or the
+ * strict setting is on and it is more than a recheck (catalog §8.2).
+ */
+function needsApproval(classes: readonly ApprovalClass[], strict: boolean) {
+  return isGated(classes) || (strict && classes.some((c) => c !== "recheck"))
+}
+
+function reasonsFor(
+  prepared: Extract<Prepared, { outcome: "ready" }>,
+  strict: boolean,
+): string[] {
+  return strict &&
+    !isGated(prepared.classes) &&
+    needsApproval(prepared.classes, strict)
+    ? [...prepared.reasons, strictReason]
+    : prepared.reasons
+}
+
+async function isStrict(scope: ProposalScope): Promise<boolean> {
+  const [workspace] = await scope.tx
+    .select({ strict: schema.workspaces.catalogStrict })
+    .from(schema.workspaces)
+    .where(eq(schema.workspaces.id, scope.workspaceId))
+  return workspace?.strict ?? false
 }
 
 function mayApprove(scope: ProposalScope): boolean {
@@ -835,7 +946,11 @@ async function apply(
   scope: ProposalScope,
   row: ProposalRow,
   prepared: Extract<Prepared, { outcome: "ready" }>,
-  options: { approvedBy: ProposalScope["actor"] | null },
+  options: {
+    approvedBy: ProposalScope["actor"] | null
+    /** Why it needed catalog approval, if it did. */
+    reasons: string[]
+  },
 ): Promise<ProposalRow> {
   const approver = options.approvedBy
   const source: RevisionSource = {
@@ -863,7 +978,7 @@ async function apply(
       state: "applied",
       appliedRevision: revision,
       approvalClasses: prepared.classes,
-      approvalReasons: prepared.reasons,
+      approvalReasons: options.reasons,
       touches: prepared.touches,
       validation: prepared.warnings as unknown as Record<string, unknown>[],
       ...decided(scope),
@@ -1038,21 +1153,9 @@ function securityDetails(row: ProposalRow): Record<string, unknown> {
   }
 }
 
-function hashOf(proposal: {
-  explanation: string
-  relatedTask?: string | null
-  operations: readonly CatalogOperation[]
-}): string {
+function hashOf(request: unknown): string {
   return createHash("sha256")
-    .update(
-      JSON.stringify(
-        canonical([
-          proposal.explanation,
-          proposal.relatedTask ?? null,
-          proposal.operations,
-        ]),
-      ),
-    )
+    .update(JSON.stringify(canonical(request)))
     .digest("base64url")
 }
 
@@ -1068,7 +1171,52 @@ function canonical(value: unknown): unknown {
   return value
 }
 
-function proposalOf(row: ProposalRow): CatalogProposal {
+/** The proposals, each with whether its author is still current. */
+export async function withAuthorStatus(
+  tx: Transaction,
+  workspaceId: string,
+  rows: readonly ProposalRow[],
+): Promise<CatalogProposal[]> {
+  const people = [
+    ...new Set(rows.flatMap((r) => (r.actorPersonId ? [r.actorPersonId] : []))),
+  ]
+  const agentIds = [
+    ...new Set(rows.flatMap((r) => (r.actorAgentId ? [r.actorAgentId] : []))),
+  ]
+  const members =
+    people.length === 0
+      ? []
+      : await tx
+          .select({ personId: schema.members.personId })
+          .from(schema.members)
+          .where(
+            and(
+              eq(schema.members.workspaceId, workspaceId),
+              inArray(schema.members.personId, people),
+              isNull(schema.members.removedAt),
+            ),
+          )
+  const current = new Set(members.map((m) => m.personId))
+  const agents =
+    agentIds.length === 0
+      ? []
+      : await tx
+          .select({ id: schema.agents.id, enabled: schema.agents.enabled })
+          .from(schema.agents)
+          .where(inArray(schema.agents.id, agentIds))
+  const enabled = new Set(agents.filter((a) => a.enabled).map((a) => a.id))
+  return rows.map((row) => ({
+    ...proposalOf(row),
+    authorStatus:
+      row.actorPersonId && !current.has(row.actorPersonId)
+        ? "member-left"
+        : row.actorAgentId && !enabled.has(row.actorAgentId)
+          ? "agent-disabled"
+          : "current",
+  }))
+}
+
+export function proposalOf(row: ProposalRow): CatalogProposal {
   return {
     id: row.id,
     number: row.number,
@@ -1087,5 +1235,6 @@ function proposalOf(row: ProposalRow): CatalogProposal {
     decidedAt: row.decidedAt,
     decidedBy: row.decidedByLabel,
     rejectionReason: row.rejectionReason,
+    revertsProposalId: row.revertsProposalId,
   }
 }

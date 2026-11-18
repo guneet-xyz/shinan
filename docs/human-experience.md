@@ -998,7 +998,8 @@ those. Search leaves retired entities out unless asked.
 If catalog accuracy slips during the trial, a workspace owner turns on the
 strict setting (owner, O-3, [#25]); while it is on, approval works in bulk
 (all proposals of one task, or a selected list), following the Catalog
-document. The setting is in [workspace settings](#workspace-settings).
+document. Bulk approval approves exactly the list the person was shown: a
+proposal added to the task after they looked waits for its own review. The setting is in [workspace settings](#workspace-settings).
 
 ## Start here and onboarding
 

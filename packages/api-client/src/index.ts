@@ -1,4 +1,13 @@
 import type {
+  CatalogBulkApprovalResult,
+  CatalogBulkRejectionResult,
+  CatalogBulkSelection,
+  CatalogProposalComment,
+  CatalogProposalOutcome,
+  CatalogSettings,
+  RecentCatalogChanges,
+} from "./catalog-review.js"
+import type {
   AgentStartHerePreviewAnswer,
   CatalogChangesAnswer,
   CatalogDocumentTextAnswer,
@@ -17,6 +26,7 @@ import type {
 
 export { sameSitePath } from "./paths.js"
 export * from "./catalog.js"
+export * from "./catalog-review.js"
 
 // The REST API's contract, shared by the web app, CLI and plugin. Times are
 // ISO 8601 strings; IDs of records are UUIDs, except event and security-log
@@ -684,6 +694,88 @@ export function createApiClient(options: ApiClientOptions = {}) {
       ),
     markCatalogPageOpened: (workspaceId: string, id: string) =>
       request<void>("POST", `${catalog(workspaceId)}/opened`, { id }),
+
+    // Reviewing catalog changes (M2-4).
+    catalogSettings: (workspaceId: string) =>
+      request<CatalogSettings>("GET", `${catalog(workspaceId)}/settings`),
+    setCatalogStrict: (workspaceId: string, strict: boolean) =>
+      request<CatalogSettings>("PATCH", `${catalog(workspaceId)}/settings`, {
+        strict,
+      }),
+    bulkApproveCatalogProposals: (
+      workspaceId: string,
+      selection: CatalogBulkSelection,
+    ) =>
+      request<{ results: CatalogBulkApprovalResult[] }>(
+        "POST",
+        `${catalog(workspaceId)}/proposals/bulk-approve`,
+        selection,
+      ),
+    bulkRejectCatalogProposals: (
+      workspaceId: string,
+      selection: CatalogBulkSelection,
+      reason: string,
+    ) =>
+      request<{ results: CatalogBulkRejectionResult[] }>(
+        "POST",
+        `${catalog(workspaceId)}/proposals/bulk-reject`,
+        { ...selection, reason },
+      ),
+    catalogProposalComments: (
+      workspaceId: string,
+      proposalId: string,
+      options: { cursor?: string; limit?: number } = {},
+    ) =>
+      request<{
+        items: CatalogProposalComment[]
+        nextCursor: string | null
+        total: number
+      }>(
+        "GET",
+        `${catalog(workspaceId)}/proposals/${encodeURIComponent(proposalId)}/comments${search(
+          {
+            cursor: options.cursor,
+            limit: options.limit?.toString(),
+          },
+        )}`,
+      ),
+    commentOnCatalogProposal: (
+      workspaceId: string,
+      proposalId: string,
+      text: string,
+      idempotencyKey?: string,
+    ) =>
+      request<CatalogProposalComment>(
+        "POST",
+        `${catalog(workspaceId)}/proposals/${encodeURIComponent(proposalId)}/comments`,
+        idempotencyKey === undefined ? { text } : { text, idempotencyKey },
+      ),
+    revertCatalogProposal: (
+      workspaceId: string,
+      proposalId: string,
+      options: { explanation?: string; idempotencyKey?: string } = {},
+    ) =>
+      request<CatalogProposalOutcome>(
+        "POST",
+        `${catalog(workspaceId)}/proposals/${encodeURIComponent(proposalId)}/revert`,
+        options,
+      ),
+    recentCatalogChanges: (
+      workspaceId: string,
+      options: {
+        cursor?: number
+        limit?: number
+        approval?: "without" | "any"
+      } = {},
+    ) =>
+      request<RecentCatalogChanges>(
+        "GET",
+        `${catalog(workspaceId)}/recent-changes${search({
+          cursor: options.cursor?.toString(),
+          limit: options.limit?.toString(),
+          approval: options.approval,
+        })}`,
+      ),
   }
 }
 

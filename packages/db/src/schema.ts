@@ -309,6 +309,11 @@ export const workspaces = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     name: text("name").notNull(),
     createdAt: createdAt(),
+    /**
+     * The catalog's strict setting (catalog §8.2): when on, every catalog
+     * change except a recheck needs catalog approval.
+     */
+    catalogStrict: boolean("catalog_strict").notNull().default(false),
   },
   (t) => [check("workspaces_name_not_blank", sql`btrim(${t.name}) <> ''`)],
 )
@@ -866,9 +871,19 @@ export const catalogProposals = pgTable(
     decidedByLabel: text("decided_by_label"),
     /** Why it was rejected (catalog §8.6). */
     rejectionReason: text("rejection_reason"),
+    /** The applied proposal it reverts, for a revert (catalog §8.2). */
+    revertsProposalId: uuid("reverts_proposal_id"),
   },
   (t) => [
     unique("catalog_proposals_workspace_id_id").on(t.workspaceId, t.id),
+    foreignKey({
+      name: "catalog_proposals_reverts_fk",
+      columns: [t.workspaceId, t.revertsProposalId],
+      foreignColumns: [t.workspaceId, t.id],
+    }),
+    index("catalog_proposals_reverts_proposal_id").on(t.revertsProposalId),
+    // Pending proposals are shown on the entities they touch (catalog §8.6).
+    index("catalog_proposals_touches").using("gin", t.touches),
     unique("catalog_proposals_workspace_id_number").on(t.workspaceId, t.number),
     // Per author: an agent by itself, a person by themselves.
     uniqueIndex("catalog_proposals_idempotency_key")
@@ -912,6 +927,61 @@ export const catalogProposals = pgTable(
     check(
       "catalog_proposals_rejection_reason",
       sql`(${t.state} = 'rejected') = (${t.rejectionReason} is not null)`,
+    ),
+  ],
+)
+
+/**
+ * A comment on a catalog proposal (catalog §8.6): members and agents
+ * comment, and an agent asked to review a proposal records its findings
+ * here; only people approve. Comments are not edited; purge (M2-10) can
+ * remove one.
+ */
+export const catalogProposalComments = pgTable(
+  "catalog_proposal_comments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id),
+    proposalId: uuid("proposal_id").notNull(),
+    createdAt: createdAt(),
+    ...actorColumns(),
+    text: text("text").notNull(),
+    /** A key the author chose, so a retried comment is stored once; unique per author. */
+    idempotencyKey: text("idempotency_key"),
+  },
+  (t) => [
+    uniqueIndex("catalog_proposal_comments_idempotency_key")
+      .on(
+        t.workspaceId,
+        sql`coalesce(${t.actorAgentId}, ${t.actorPersonId})`,
+        t.idempotencyKey,
+      )
+      .where(sql`${t.idempotencyKey} is not null`),
+    foreignKey({
+      name: "catalog_proposal_comments_proposal_fk",
+      columns: [t.workspaceId, t.proposalId],
+      foreignColumns: [catalogProposals.workspaceId, catalogProposals.id],
+    }),
+    foreignKey({
+      name: "catalog_proposal_comments_actor_person_id_fk",
+      columns: [t.actorPersonId],
+      foreignColumns: [people.id],
+    }),
+    foreignKey({
+      name: "catalog_proposal_comments_actor_agent_id_fk",
+      columns: [t.actorAgentId],
+      foreignColumns: [agents.id],
+    }),
+    actorCheck("catalog_proposal_comments_actor_known", t),
+    check(
+      "catalog_proposal_comments_text_not_blank",
+      sql`btrim(${t.text}) <> ''`,
+    ),
+    index("catalog_proposal_comments_proposal_id").on(
+      t.proposalId,
+      t.createdAt,
     ),
   ],
 )

@@ -234,6 +234,18 @@ export const rules = deepFreeze({
     reauthentication: false,
   },
   /**
+   * Comment on catalog proposals (catalog §8.6; identity §5.1): every
+   * member, and agents with `catalog:propose`, such as an agent asked to
+   * review a proposal recording its findings.
+   */
+  "catalog.comment": {
+    level: "workspace",
+    access: "write",
+    roles: ["owner", "contributor"],
+    agents: ["catalog:propose"],
+    reauthentication: false,
+  },
+  /**
    * Approve or reject catalog proposals waiting for catalog approval
    * (catalog §8.2, §8.6). Reserved for people (identity §6.3): an agent
    * approving would be its person approving without looking.
