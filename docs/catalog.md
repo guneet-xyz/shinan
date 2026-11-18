@@ -1154,8 +1154,11 @@ check before applying is much cheaper than cleaning up afterwards.
 - The check is a safety net, not a guarantee; secrets stay the team's job.
 - **Proposed (M2-1, [#82](https://github.com/guneet-xyz/shinan/issues/82)):**
   what is matched. The whole text of every document a proposal writes is
-  checked (frontmatter and body), and the proposal's other text.
-  - **Blocked:** private key blocks (`-----BEGIN … PRIVATE KEY-----`) and
+  checked (frontmatter and body), and the proposal's other text. Frontmatter
+  values and keys are also checked as read, so a secret written with YAML
+  escapes (such as `\x41` for `A`) is found too.
+  - **Blocked:** private key blocks (`-----BEGIN … PRIVATE KEY-----`), also
+    in base64 as Kubernetes secrets hold them (`LS0tLS1CRUdJTi…`), and
     `age` secret keys; Shinan agent tokens (the prefix from
     [identity §7.4](identity.md#74-handling) followed by at least 20 letters
     and digits); GitHub, GitLab, Slack (including app tokens), AWS access
@@ -1178,8 +1181,11 @@ check before applying is much cheaper than cleaning up afterwards.
     validation message is cut the same way wherever it would repeat a
     secret-looking value (for example a token typed as a `type` or `by`), so
     validation results, which are stored with the proposal, never repeat
-    one.
-  - Each document and each proposal text is at most 64 KiB
+    one. A near-certain secret is cut from every message; a weaker sign only
+    from messages about the text where it was found, so an ordinary word
+    after `token:` is not cut elsewhere; and each message is checked itself
+    before it is returned.
+  - Each document and each proposal text is at most 64 KiB of UTF-8
     ([2.1](#21-one-document-per-entity-and-what-source-of-truth-means));
     longer text is refused, so the check always reads all of it.
 
@@ -1352,7 +1358,7 @@ how the rules are applied.
   `cancelled` are left out. Reason: `subscription.status: cancelled` or
   `registration.state: done` are real facts, and a false alarm must never
   block a correct change.
-- **Size.** A document or proposal text longer than 64 KiB is refused
+- **Size.** A document or proposal text longer than 64 KiB of UTF-8 is refused
   (`too-large`), as [2.1](#21-one-document-per-entity-and-what-source-of-truth-means)
   sets for documents. Reason: it bounds the work of every check, and no
   catalog document needs more.

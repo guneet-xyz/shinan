@@ -21,11 +21,15 @@ export interface SecretFinding {
    * findings can be stored and shown without spreading the secret further.
    */
   excerpt: string
-  /**
-   * The secret itself: the whole match, or for an assignment or a URL only
-   * the value or password. Never store or show it; validation uses it to
-   * remove the secret from every message and to tell findings apart.
-   */
+}
+
+/**
+ * A finding with the secret itself, for validation only: the whole match,
+ * or for an assignment or a URL only the value or password. Validation uses
+ * it to cut the secret out of messages and to tell findings apart; it is
+ * never stored, shown or exported from core.
+ */
+export interface SecretMatch extends SecretFinding {
   secret: string
 }
 
@@ -56,6 +60,16 @@ const certain: Pattern[] = [
   {
     kind: "private key",
     pattern: /-----BEGIN (?:[A-Z0-9]{1,20} ){0,4}PRIVATE KEY(?: BLOCK)?-----/g,
+  },
+  {
+    // A PEM private key in base64, as Kubernetes secrets hold them:
+    // "LS0tLS1CRUdJTi" is "-----BEGIN " in base64.
+    kind: "private key (base64)",
+    pattern: /LS0tLS1CRUdJTi[A-Za-z0-9+/]{20,}={0,2}/g,
+    accept: (m) =>
+      /^-----BEGIN (?:[A-Z0-9]{1,20} ){0,4}PRIVATE KEY/.test(
+        Buffer.from(m[0].slice(0, 96), "base64").toString("latin1"),
+      ),
   },
   {
     kind: "age secret key",
@@ -184,11 +198,26 @@ const suspicious: Pattern[] = [
   },
 ]
 
-/** Finds secret-looking values in `text`, which starts at `offset` in its document. */
+/**
+ * Finds secret-looking values in `text`, which starts at `offset` in its
+ * document: where they are and what they look like, never the values.
+ */
 export function findSecrets(text: string, offset = 0): SecretFinding[] {
+  return scanSecrets(text, offset).map(
+    ({ severity, kind, range, excerpt }) => ({
+      severity,
+      kind,
+      range,
+      excerpt,
+    }),
+  )
+}
+
+/** As `findSecrets`, with each secret's value. Internal to core: see `SecretMatch`. */
+export function scanSecrets(text: string, offset = 0): SecretMatch[] {
   const checked =
     text.length > maxCheckedLength ? text.slice(0, maxCheckedLength) : text
-  const findings: SecretFinding[] = []
+  const findings: SecretMatch[] = []
   const taken: Range[] = []
   const scan = (patterns: Pattern[], severity: Severity | null) => {
     for (const { kind, pattern, group, accept } of patterns) {

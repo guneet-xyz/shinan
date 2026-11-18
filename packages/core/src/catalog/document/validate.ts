@@ -19,13 +19,15 @@ import type {
   SchemaDocument,
   StartHereDocument,
 } from "./model.js"
-import { maxDocumentLength } from "./parse.js"
+import { maxDocumentBytes } from "./parse.js"
 import { blocking, warning } from "./problems.js"
 import type { Problem, ProblemCode } from "./problems.js"
 import { anyTarget, taskTarget } from "./schemas.js"
-import { excerpt, findSecrets } from "./secrets.js"
-import type { SecretFinding } from "./secrets.js"
+import { excerpt, scanSecrets } from "./secrets.js"
+import type { SecretMatch } from "./secrets.js"
+import { utf8Length } from "./source.js"
 import type { Range } from "./source.js"
+import type { YamlNode } from "./yaml.js"
 
 /**
  * Validation of catalog documents (catalog §8.3). It runs on the Markdown a
@@ -155,10 +157,10 @@ export function validateChange(
   }
 
   for (const { label, text } of change.texts ?? []) {
-    if (text.length > maxDocumentLength)
+    if (utf8Length(text) > maxDocumentBytes)
       problems.push(tooLarge(null, `${label}: `))
-    for (const finding of findSecrets(text)) {
-      after.secrets.push(finding.secret)
+    for (const finding of scanSecrets(text)) {
+      after.secrets.push({ ...finding, documentId: null })
       problems.push(after.secretProblem(finding, null, `${label}: `))
     }
   }
@@ -199,7 +201,9 @@ const schemaCaused: ReadonlySet<ProblemCode> = new Set([
 /**
  * What tells two problems apart when comparing before and after: the
  * matched value for secret findings (a hash, never the value), the message
- * otherwise.
+ * otherwise. In memory only: if these hashes are ever stored, they must
+ * become an HMAC with an installation key, since a plain hash of a weak
+ * password can be guessed.
  */
 const fingerprints = new WeakMap<Problem, string>()
 
@@ -217,29 +221,64 @@ function subtract(found: Problem[], earlier: Problem[]): Problem[] {
   })
 }
 
+/** A secret found while validating, with where it was found. */
+type FoundSecret = SecretMatch & { documentId: string | null }
+
 /**
- * Cuts every secret-looking value to its excerpt in every message, so
- * problems can be stored and shown (catalog §7.3). Done once, here, rather
- * than in each message.
+ * Cuts secret-looking values to their excerpt in every message, so problems
+ * can be stored and shown (catalog §7.3). Done once, here, rather than in
+ * each message:
+ *
+ * - a near-certain secret is cut wherever it appears;
+ * - a weaker sign (such as the value after `token:`) is cut only from
+ *   problems about the text where it was found, so an ordinary word that
+ *   happens to follow `token:` is not cut from unrelated messages;
+ * - finally each message is checked itself, which catches a secret written
+ *   with YAML escapes (`\x41`) that a message repeats decoded.
  */
-function redact(problems: Problem[], secrets: readonly string[]): Problem[] {
-  const values = [...new Set(secrets)]
-    .filter((s) => s.length >= 4)
-    .sort((a, b) => b.length - a.length)
-  if (values.length === 0) return problems
+function redact(
+  problems: Problem[],
+  secrets: readonly FoundSecret[],
+): Problem[] {
+  const everywhere = values(
+    secrets.filter((s) => s.severity === "blocking").map((s) => s.secret),
+  )
+  const local = secrets.filter((s) => s.severity === "warning")
   return problems.map((p) => {
-    let message = p.message
-    for (const value of values)
-      if (message.includes(value))
-        message = message.split(value).join(excerpt(value))
+    const near = p.range
+      ? local
+          .filter(
+            (s) =>
+              s.documentId === p.documentId &&
+              s.range.start < (p.range as Range).end &&
+              (p.range as Range).start < s.range.end,
+          )
+          .map((s) => s.secret)
+      : []
+    let message = cut(p.message, [...everywhere, ...values(near)])
+    message = cut(message, values(scanSecrets(message).map((s) => s.secret)))
     return message === p.message ? p : { ...p, message }
   })
+}
+
+function values(secrets: readonly string[]): string[] {
+  return [...new Set(secrets)]
+    .filter((s) => s.length >= 4)
+    .sort((a, b) => b.length - a.length)
+}
+
+function cut(message: string, secrets: readonly string[]): string {
+  let result = message
+  for (const value of secrets)
+    if (result.includes(value))
+      result = result.split(value).join(excerpt(value))
+  return result
 }
 
 function tooLarge(documentId: string | null, where = ""): Problem {
   return blocking(
     "too-large",
-    `${where}This text is longer than ${maxDocumentLength / 1024} KiB, the most a catalog document or proposal text may hold`,
+    `${where}This text is longer than ${maxDocumentBytes / 1024} KiB of UTF-8, the most a catalog document or proposal text may hold`,
     documentId,
   )
 }
@@ -247,7 +286,7 @@ function tooLarge(documentId: string | null, where = ""): Problem {
 /** The problems of every document of one catalog, and the secret values found in them. */
 class Validation {
   readonly byDocument = new Map<CatalogDocument, Problem[]>()
-  readonly secrets: string[] = []
+  readonly secrets: FoundSecret[] = []
 
   constructor(catalog: Catalog, context: ValidationContext) {
     const v = new Validator(catalog, context, this)
@@ -256,7 +295,7 @@ class Validation {
   }
 
   secretProblem(
-    finding: SecretFinding,
+    finding: SecretMatch,
     documentId: string | null,
     where = "",
   ): Problem {
@@ -349,8 +388,8 @@ class Validator {
     this.uniqueNames(document, add)
     check.owner(document.owner, "owner")
     check.body()
-    for (const finding of findSecrets(document.text)) {
-      this.validation.secrets.push(finding.secret)
+    for (const finding of secretsIn(document)) {
+      this.validation.secrets.push({ ...finding, documentId: document.id })
       problems.push(this.validation.secretProblem(finding, document.id))
     }
 
@@ -724,6 +763,42 @@ class Checks {
     }
     this.reference(to, fact.key, fact.range, relation.targets)
   }
+}
+
+/**
+ * Secrets in a document's text, and in frontmatter values and keys whose
+ * YAML escapes (such as `\x41` in a quoted string) make the read value
+ * differ from the written text. A decoded finding points at the value.
+ */
+function secretsIn(document: CatalogDocument): SecretMatch[] {
+  const found = scanSecrets(document.text)
+  const seen = new Set(found.map((f) => f.secret))
+  const decoded = (value: string, range: Range) => {
+    if (document.text.slice(range.start, range.end) === value) return
+    for (const f of scanSecrets(value)) {
+      if (seen.has(f.secret)) continue
+      seen.add(f.secret)
+      found.push({ ...f, range })
+    }
+  }
+  const stack: YamlNode[] = [...document.fields.values()].map((e) => {
+    decoded(e.key, e.keyRange)
+    return e.value
+  })
+  while (stack.length > 0) {
+    const node = stack.pop() as YamlNode
+    if (node.kind === "scalar") {
+      if (typeof node.value === "string") decoded(node.value, node.range)
+    } else if (node.kind === "list") {
+      stack.push(...node.items)
+    } else {
+      for (const e of node.entries) {
+        decoded(e.key, e.keyRange)
+        stack.push(e.value)
+      }
+    }
+  }
+  return found
 }
 
 function field(document: CatalogDocument, name: string): Range | undefined {

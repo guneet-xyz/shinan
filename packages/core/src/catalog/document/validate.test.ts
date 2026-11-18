@@ -915,3 +915,66 @@ describe("messages that help", () => {
     expect(result.problems[0]?.message).toContain("https://")
   })
 })
+
+describe("secrets written with YAML escapes (catalog §7.3)", () => {
+  // `\x41` is "A": the text never contains the token, the value read does.
+  const escaped = "ghp_0123456789abcdefghij\\x41BCDEFGHIJ012345"
+  const token = "ghp_0123456789abcdefghijABCDEFGHIJ012345"
+
+  it.each<[string, string]>([
+    [
+      "a fact value",
+      `${check()}    observed:\n      platform.os: "${escaped}"\n`,
+    ],
+    [
+      "a fact check's by",
+      `${check("2026-11-14", `"guneet ${escaped}"`)}    observed:\n      role: dev\n`,
+    ],
+    ["a fact key", `${check()}    observed:\n      "${escaped}": x\n`],
+  ])("are found in %s, and never repeated", (_, facts) => {
+    const text = entity("machine/daedalus", { facts })
+    expect(text).not.toContain(token)
+    const result = change({ "machine/daedalus": text })
+    expect(result.problems.map((p) => p.code)).toContain("secret")
+    for (const p of result.problems) expect(p.message).not.toContain(token)
+  })
+})
+
+describe("redaction keeps ordinary words", () => {
+  it("cuts a weak sign's value only where it was found", () => {
+    const result = change({
+      "machine/daedalus": entity("machine/daedalus", {
+        facts: `${check()}    observed:\n      ups.model: X1\n`,
+        body: "Set token: machine before the first run.\n",
+      }),
+    })
+    expect(result.problems.map((p) => p.code).sort()).toEqual([
+      "key-not-in-schema",
+      "secret-suspected",
+    ])
+    const key = result.problems.find((p) => p.code === "key-not-in-schema")
+    expect(key?.message).toContain("machine type schema")
+  })
+
+  it("still cuts a near-certain secret everywhere", () => {
+    const token = "ghp_0123456789abcdefghijABCDEFGHIJ012345"
+    const result = change({
+      "machine/daedalus": entity("machine/daedalus", {
+        body: `Token ${token}.\n`,
+      }),
+      "service/ingress": entity("service/ingress", {
+        facts: `${check()}    observed:\n      runs-on: ${token}\n`,
+      }),
+    })
+    for (const p of result.problems) expect(p.message).not.toContain(token)
+  })
+})
+
+describe("limits in bytes", () => {
+  it("measures a proposal text in UTF-8 bytes", () => {
+    const text = "é".repeat(40 * 1024)
+    expect(text.length).toBeLessThan(64 * 1024)
+    const result = change({}, { texts: [{ label: "Explanation", text }] })
+    expect(result.problems.map((p) => p.code)).toEqual(["too-large"])
+  })
+})

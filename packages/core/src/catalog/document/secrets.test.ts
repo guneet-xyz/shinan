@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import { agentTokenPrefix } from "../../tokens.js"
-import { findSecrets, maxCheckedLength } from "./secrets.js"
+import { findSecrets, maxCheckedLength, scanSecrets } from "./secrets.js"
 
 const kinds = (text: string) =>
   findSecrets(text).map((f) => [f.severity, f.kind])
@@ -213,16 +213,45 @@ describe("the check for secret-looking values (catalog §7.3)", () => {
     const [finding] = findSecrets(`x ${token}`, 100)
     expect(finding?.range).toEqual({ start: 102, end: 102 + token.length })
     expect(finding?.excerpt).toBe("ghp_01…")
-    expect(finding?.secret).toBe(token)
+    expect(JSON.stringify(finding)).not.toContain(token.slice(6))
+    expect(finding && "secret" in finding).toBe(false)
   })
 
-  it("keeps only the value as the secret of an assignment or URL", () => {
-    expect(findSecrets("DB_PASSWORD=Sup3rS3cretPass")[0]?.secret).toBe(
+  it("keeps the value for validation only, and only the value of an assignment or URL", () => {
+    const token = "ghp_0123456789abcdefghijABCDEFGHIJ012345"
+    expect(scanSecrets(`x ${token}`)[0]?.secret).toBe(token)
+    expect(scanSecrets("DB_PASSWORD=Sup3rS3cretPass")[0]?.secret).toBe(
       "Sup3rS3cretPass",
     )
     expect(
-      findSecrets("redis://:Sup3rS3cretPass@redis.internal")[0]?.secret,
+      scanSecrets("redis://:Sup3rS3cretPass@redis.internal")[0]?.secret,
     ).toBe("Sup3rS3cretPass")
+  })
+
+  it.each([
+    "RSA PRIVATE KEY",
+    "PRIVATE KEY",
+    "EC PRIVATE KEY",
+    "ENCRYPTED PRIVATE KEY",
+    "OPENSSH PRIVATE KEY",
+  ])("blocks a %s written in base64", (type) => {
+    const pem = `-----BEGIN ${type}-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC7\n-----END ${type}-----\n`
+    const encoded = Buffer.from(pem).toString("base64")
+    expect(kinds(`tls.key: ${encoded}`)).toEqual([
+      ["blocking", "private key (base64)"],
+    ])
+  })
+
+  it("does not block a certificate or public key written in base64", () => {
+    for (const type of ["CERTIFICATE", "PUBLIC KEY"]) {
+      const pem = `-----BEGIN ${type}-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAu1SU1L\n-----END ${type}-----\n`
+      const encoded = Buffer.from(pem).toString("base64")
+      expect(
+        findSecrets(`tls.crt: ${encoded}`).filter(
+          (f) => f.severity === "blocking",
+        ),
+      ).toEqual([])
+    }
   })
 
   it("reports overlapping matches once, as the stronger kind", () => {
@@ -271,6 +300,7 @@ describe("the check on hostile input", () => {
     "SSH key starts": fill("ssh-rsa AAAA "),
     "fingerprint starts": fill("SHA256:"),
     "agent-token prefixes": fill(agentTokenPrefix),
+    "base64 PEM starts": fill("LS0tLS1CRUdJTi"),
     base64: random(
       "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/",
     ),
