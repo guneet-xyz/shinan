@@ -6,6 +6,9 @@ import { defineConfig, globalIgnores } from "eslint/config"
 import globals from "globals"
 import tseslint from "typescript-eslint"
 
+const connectionsMessage =
+  "Use createDatabase from @shinan/db: only it makes the application's connections, which tests guard."
+
 export default defineConfig([
   globalIgnores(["**/dist/", "**/coverage/", "packages/db/migrations/"]),
   js.configs.recommended,
@@ -48,7 +51,9 @@ export default defineConfig([
   {
     // Only createDatabase makes the application's pool, so tests can guard
     // it (refuseNestedConnections); the migration lock and the test
-    // database's admin client are the other connections (#144).
+    // database's admin client are the other connections (#144). That covers
+    // the drivers' subpaths too, and Drizzle's driver entry points, whose
+    // `drizzle(url)` makes a pool of its own (#147).
     rules: {
       "no-restricted-imports": [
         "error",
@@ -56,9 +61,22 @@ export default defineConfig([
           paths: ["pg", "pg-pool", "postgres"].map((name) => ({
             name,
             ...(name === "pg" ? { allowImportNames: ["DatabaseError"] } : {}),
-            message:
-              "Use createDatabase from @shinan/db: only it makes the application's connections, which tests guard.",
+            message: connectionsMessage,
           })),
+          patterns: [
+            {
+              group: [
+                "pg/*",
+                "pg-pool/*",
+                "postgres/*",
+                "drizzle-orm/node-postgres",
+                "drizzle-orm/node-postgres/*",
+                "drizzle-orm/postgres-js",
+                "drizzle-orm/postgres-js/*",
+              ],
+              message: connectionsMessage,
+            },
+          ],
         },
       ],
     },
