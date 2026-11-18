@@ -9,6 +9,7 @@ import {
   createAgentToken,
   createWorkspace,
   expectationOf,
+  getAgentStartHerePreview,
   readCatalog,
 } from "@shinan/core"
 import type { JobQueue, Person } from "@shinan/core"
@@ -443,6 +444,14 @@ describe("the MCP endpoint", () => {
           ],
         },
       })
+      // The wiki's "Preview as agent" shows exactly this path, as sent.
+      const preview = await getAgentStartHerePreview(
+        { db, actor: { kind: "person", personId: owner.id } },
+        workspaceId,
+      )
+      expect(preview.start_here).toEqual(context.structuredContent.start_here)
+      expect(context.content[0]!.text).toContain(`"start_here":${preview.text}`)
+      expect(preview.bytes).toBe(Buffer.byteLength(preview.text!, "utf8"))
     } finally {
       await client.close()
     }

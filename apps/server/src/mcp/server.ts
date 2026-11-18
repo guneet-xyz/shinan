@@ -6,6 +6,7 @@ import { bodyLimit } from "hono/body-limit"
 import * as z from "zod/v4"
 
 import {
+  agentAnswerText,
   agentCatalogList,
   agentCatalogLists,
   agentGetEntity,
@@ -379,7 +380,7 @@ async function answer(run: () => Promise<object>): Promise<CallToolResult> {
   try {
     const result = await run()
     return {
-      content: [{ type: "text", text: JSON.stringify(result) }],
+      content: [{ type: "text", text: agentAnswerText(result) }],
       structuredContent: result,
     }
   } catch (error) {

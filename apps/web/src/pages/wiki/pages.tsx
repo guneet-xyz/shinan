@@ -23,6 +23,7 @@ import { formatTime } from "../../format"
 import { useWorkspace } from "../workspace/context"
 import { EntityLink, FactRow, linkClass } from "./facts"
 import { entityPath, wikiPath } from "./format"
+import { sectionElementId } from "./links"
 import { IndexBehind } from "./notices"
 
 /** What each workspace-wide list is, in words (catalog §10). */
@@ -234,12 +235,14 @@ export function SearchPage() {
                     <p className="text-xs">
                       Matching sections:{" "}
                       {item.sections
-                        .filter((s) => s.anchor)
+                        .flatMap((s) =>
+                          s.anchor ? [{ ...s, anchor: s.anchor }] : [],
+                        )
                         .map((s, i) => (
                           <span key={s.anchor}>
                             {i > 0 && ", "}
                             <Link
-                              to={`${entityPath(workspace.id, item.entity.id)}#section-${s.anchor}`}
+                              to={`${entityPath(workspace.id, item.entity.id)}#${sectionElementId(s.anchor)}`}
                               className={linkClass}
                             >
                               {s.heading}

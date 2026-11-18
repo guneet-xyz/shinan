@@ -78,6 +78,10 @@ describe("catalog Markdown in the wiki", () => {
     "<iframe src=https://evil.example></iframe>",
     "[entity](machine/musashi#cautions) and [section](#cautions)",
     "[mail](mailto:guneet@example.com)",
+    "[up](a/../../../../../../api/account)",
+    "[settings](machine/../../../settings)",
+    "[dot](a/./b) [empty](a//b) [encoded](machine/%2e%2e/x) [deeper](machine/musashi/../x)",
+    "[odd anchor](machine/musashi#../../x)",
   ].join("\n\n")
 
   async function render() {
@@ -117,13 +121,31 @@ describe("catalog Markdown in the wiki", () => {
       a.getAttribute("href"),
     )
     for (const href of hrefs)
-      expect(href).toMatch(/^(https?:|mailto:|\/w\/1\/wiki\/e\/|#section-)/)
+      expect(href).toMatch(
+        /^(?:https?:|mailto:|\/w\/1\/wiki\/e\/[a-z0-9-]+\/[a-z0-9-]+(?:#section-[\p{L}\p{N}\p{M}_-]+)?$|#section-[\p{L}\p{N}\p{M}_-]+$)/u,
+      )
+    expect(hrefs.some((h) => h!.includes(".."))).toBe(false)
     expect(hrefs).toContain("/w/1/wiki/e/machine/musashi#section-cautions")
     expect(hrefs).toContain("#section-cautions")
     expect(hrefs).toContain("mailto:guneet@example.com")
     // An image is a link to it, never an image.
     expect(hrefs).toContain("https://evil.example/pixel.png")
-    for (const text of ["js", "JS", "vb", "file", "data", "relative", "root"])
+    for (const text of [
+      "js",
+      "JS",
+      "vb",
+      "file",
+      "data",
+      "relative",
+      "root",
+      "up",
+      "settings",
+      "dot",
+      "empty",
+      "encoded",
+      "deeper",
+      "odd anchor",
+    ])
       expect(container.textContent).toContain(text)
     expect(hrefs.some((h) => /javascript|vbscript|data:|file:/i.test(h!))).toBe(
       false,

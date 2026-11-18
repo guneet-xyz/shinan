@@ -185,6 +185,7 @@ export type {
 export * from "./catalog/document/index.js"
 export * from "./catalog/index/index.js"
 export {
+  getAgentStartHerePreview,
   getCatalogDocumentText,
   listCatalogHistory,
   listCatalogPagesOpened,
@@ -193,6 +194,7 @@ export {
   typeIndexLimit,
 } from "./catalog/wiki.js"
 export type {
+  AgentStartHerePreviewAnswer,
   CatalogDocumentTextAnswer,
   CatalogHistoryAnswer,
   CatalogHistoryItemJson,

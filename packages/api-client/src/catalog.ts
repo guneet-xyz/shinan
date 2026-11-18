@@ -266,6 +266,17 @@ export interface StartHereAnswer extends CatalogAnswer {
   } | null
 }
 
+/**
+ * The agents' path exactly as an agent's \`workspace_context\` gives it,
+ * with trust labels, and the compact JSON agents receive.
+ */
+export interface AgentStartHerePreviewAnswer extends CatalogAnswer {
+  start_here: Record<string, unknown> | null
+  text: string | null
+  /** The size of \`text\` in bytes of UTF-8. */
+  bytes: number
+}
+
 export interface CatalogHistoryItem {
   revision: number
   at: string

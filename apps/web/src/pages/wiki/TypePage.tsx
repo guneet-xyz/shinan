@@ -17,7 +17,7 @@ import { useWorkspace } from "../workspace/context"
 import { EntityLink, linkClass } from "./facts"
 import { ageText, daysSince, entityPath, wikiPath } from "./format"
 import { Markdown } from "./markdown"
-import { IndexBehind } from "./notices"
+import { IndexBehind, PageNotice } from "./notices"
 
 type Item = CatalogTypeIndexAnswer["items"][number]
 
@@ -86,6 +86,7 @@ export function TypePage() {
       </PageHeader>
     )
   const details = schema.data?.schema
+  const listed = (index.data?.items.length ?? 0).toLocaleString("en")
   const items = [...(index.data?.items ?? [])].sort((a, b) => {
     const x = sortValue(a, sort.key)
     const y = sortValue(b, sort.key)
@@ -180,11 +181,22 @@ export function TypePage() {
         {index.data && items.length === 0 && (
           <p className="text-sm text-muted-foreground">No entities yet.</p>
         )}
+        {index.data?.truncated && (
+          <PageNotice>
+            This type has more than {listed} entities. Only the first {listed}{" "}
+            by ID are listed, and sorting orders only those; search to find
+            others.
+          </PageNotice>
+        )}
         {items.length > 0 && (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[40rem] text-left text-sm">
               <caption className="sr-only">
-                Entities of type {type}; the column buttons sort the table.
+                Entities of type {type}; the column buttons sort the table
+                {index.data?.truncated
+                  ? ` (the first ${listed} by ID only)`
+                  : ""}
+                .
               </caption>
               <thead className="text-xs text-muted-foreground">
                 <tr className="border-b">
@@ -270,11 +282,6 @@ export function TypePage() {
               </tbody>
             </table>
           </div>
-        )}
-        {index.data?.truncated && (
-          <p className="text-sm text-muted-foreground">
-            Only the first 1,000 entities are listed; search to find others.
-          </p>
         )}
       </Section>
     </div>

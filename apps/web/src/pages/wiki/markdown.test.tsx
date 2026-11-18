@@ -39,6 +39,14 @@ describe("link destinations in catalog Markdown", () => {
       { kind: "entity", id: "machine/musashi", anchor: "cautions" },
     ],
     ["#cautions", { kind: "section", anchor: "cautions" }],
+    [
+      "schema/dns-zone",
+      { kind: "entity", id: "schema/dns-zone", anchor: null },
+    ],
+    [
+      "machine/musashi#identity-and-role",
+      { kind: "entity", id: "machine/musashi", anchor: "identity-and-role" },
+    ],
   ])("follows %s", (destination, target) => {
     expect(linkTarget(destination)).toEqual(target)
   })
@@ -55,6 +63,17 @@ describe("link destinations in catalog Markdown", () => {
     "",
     "musashi",
     "Machine/Musashi",
+    // Only the ID form: no `.` or `..` segment, empty segment or extra `/`.
+    "a/../../../api/account",
+    "machine/../../../settings",
+    "machine/../x",
+    "a/./b",
+    "a//b",
+    "machine/musashi/x",
+    "machine/%2e%2e",
+    "machine/musashi.old",
+    "machine/musashi#../../x",
+    "#a/b",
   ])("does not follow %j", (destination) => {
     expect(linkTarget(destination)).toBeNull()
   })
@@ -72,6 +91,16 @@ describe("the Markdown renderer", () => {
       ["H3", "", "Quoted heading"],
       ["H4", "section-cautions", "Cautions"],
     ])
+  })
+
+  it("shows a link that would leave the wiki as plain text", () => {
+    const container = renderMarkdown(
+      "[account](a/../../../api/account) and [settings](machine/../../../settings), but [Musashi](machine/musashi#cautions)",
+    )
+    expect(
+      [...container.querySelectorAll("a")].map((a) => a.getAttribute("href")),
+    ).toEqual(["/w/1/wiki/e/machine/musashi#section-cautions"])
+    expect(container.textContent).toBe("account and settings, but Musashi")
   })
 
   it("renders lists, code, emphasis and strikethrough without HTML", () => {

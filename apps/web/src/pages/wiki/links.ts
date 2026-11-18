@@ -12,6 +12,16 @@ export type LinkTarget =
 
 const scheme = /^([a-z][a-z0-9+.-]*):/i
 
+/**
+ * An entity or type schema ID (catalog §2.4; `ids.ts` in core): a type and
+ * a slug, both lowercase kebab-case. Nothing else, so no `.` or `..`
+ * segment, empty segment or extra `/` can make a link leave the wiki.
+ */
+const entityId = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\/[a-z0-9]+(?:-[a-z0-9]+)*$/
+
+/** A section anchor as the body reader makes them (`AnchorMaker` in core). */
+const sectionAnchor = /^[\p{L}\p{N}\p{M}_-]+$/u
+
 export function linkTarget(destination: string): LinkTarget | null {
   const url = destination.trim()
   if (url === "") return null
@@ -24,16 +34,17 @@ export function linkTarget(destination: string): LinkTarget | null {
   }
   if (url.startsWith("#")) {
     const anchor = decode(url.slice(1))
-    return anchor === "" ? null : { kind: "section", anchor }
+    return sectionAnchor.test(anchor) ? { kind: "section", anchor } : null
   }
-  // An entity reference has no scheme and does not start with `/`, `.` or
-  // `?` (catalog §2.4); a `#section` part names a section of that page.
-  if (/^[/.?]/.test(url)) return null
+  // An entity reference is an ID, optionally with a `#section` part naming
+  // a section of that page (catalog §2.4).
   const hash = url.indexOf("#")
-  const id = decode(hash < 0 ? url : url.slice(0, hash))
-  if (!/^[a-z0-9][a-z0-9/_.-]*$/.test(id) || !id.includes("/")) return null
-  const anchor = hash < 0 ? null : decode(url.slice(hash + 1)) || null
-  return { kind: "entity", id, anchor }
+  const id = hash < 0 ? url : url.slice(0, hash)
+  if (!entityId.test(id)) return null
+  if (hash < 0) return { kind: "entity", id, anchor: null }
+  const anchor = decode(url.slice(hash + 1))
+  if (anchor === "") return { kind: "entity", id, anchor: null }
+  return sectionAnchor.test(anchor) ? { kind: "entity", id, anchor } : null
 }
 
 function decode(text: string): string {

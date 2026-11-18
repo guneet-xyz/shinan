@@ -3,6 +3,7 @@ import type { Hono, Context as HonoContext } from "hono"
 import type * as Api from "@shinan/api-client"
 import {
   catalogLists,
+  getAgentStartHerePreview,
   getCatalogChanges,
   getCatalogDocumentText,
   getCatalogEntity,
@@ -130,6 +131,12 @@ export function catalogRoutes(
       workspaceId(c),
       { path },
     )
+    return c.json(answer)
+  })
+
+  app.get(`${base}/start-here/agent-preview`, async (c) => {
+    const answer: Api.AgentStartHerePreviewAnswer =
+      await getAgentStartHerePreview(ctx(c), workspaceId(c))
     return c.json(answer)
   })
 

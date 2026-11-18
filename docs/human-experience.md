@@ -952,8 +952,9 @@ same way (per-type indexes and links) and that works.
 
 **Proposed (M2-7):** until the Now screen exists (M3), opening a workspace
 opens its wiki home: Start here, search, the types, the workspace-wide
-lists and recent changes. A type's index lists at most 1,000 entities and
-says when there are more. Search leaves retired entities out unless asked.
+lists and recent changes. A type's index lists at most 1,000 entities, the
+first by ID, and says when there are more and that sorting then orders only
+those. Search leaves retired entities out unless asked.
 
 ### Changing the catalog from the wiki
 
@@ -1040,10 +1041,11 @@ owned by the [Catalog](catalog.md) document; this section is how it is shown.
   are told.
 - The page shows the total size of the agents' path and warns when it grows
   large. **Proposed.** Reason: every agent session reads all of it.
-  **Proposed (M2-7):** the preview is the agents' path exactly as the agent
-  index gives it (its steps, notes and the entities they name), its size is
-  that text's size in UTF-8, and the warning shows above 8 KB, about 2,000
-  words of an agent's context.
+  **Proposed (M2-7):** the preview is the agents' path exactly as an agent
+  receives it in MCP's `workspace_context`: its steps, notes and the
+  entities they name, with their trust labels, as the compact JSON the same
+  code writes. Its size is that text's size in UTF-8, and the warning shows
+  above 8 KB, about 2,000 words of an agent's context.
 
 ### First run for a new workspace
 

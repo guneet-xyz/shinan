@@ -192,6 +192,7 @@ export function fakeApi(overrides: Partial<ApiClient> = {}): Fake {
     "catalogList",
     "catalogChanges",
     "catalogStartHere",
+    "catalogAgentPreview",
     "catalogHistory",
     "catalogText",
     "catalogPagesOpened",

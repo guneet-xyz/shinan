@@ -1,7 +1,11 @@
 import { useState } from "react"
 import { Link } from "react-router"
 
-import type { StartHereAnswer, StartHereStep } from "@shinan/api-client"
+import type {
+  AgentStartHerePreviewAnswer,
+  StartHereAnswer,
+  StartHereStep,
+} from "@shinan/api-client"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -24,9 +28,10 @@ export function StartHerePage() {
   const api = useApi()
   const { workspace } = useWorkspace()
   const paths = useResource(`start-here:${workspace.id}`, async () => {
-    const [people, agents] = await Promise.all([
+    const [people, agents, preview] = await Promise.all([
       api.catalogStartHere(workspace.id, "people"),
       api.catalogStartHere(workspace.id, "agents"),
+      api.catalogAgentPreview(workspace.id),
     ])
     const ids = (people.start_here?.steps ?? []).flatMap((s) =>
       "to" in s ? [s.to] : [],
@@ -35,12 +40,12 @@ export function StartHerePage() {
       ids.length === 0
         ? { items: [] }
         : await api.catalogPagesOpened(workspace.id, ids)
-    return { people, agents, opened: opened.items }
+    return { people, agents, preview, opened: opened.items }
   })
 
   if (paths.error) return <ErrorMessage error={paths.error} />
   if (!paths.data) return <Loading />
-  const { people, agents, opened } = paths.data
+  const { people, agents, preview, opened } = paths.data
   const document = people.start_here
   return (
     <div className="flex flex-col gap-6">
@@ -88,7 +93,11 @@ export function StartHerePage() {
               </ol>
             )}
           </Section>
-          <AgentsPath workspaceId={workspace.id} answer={agents} />
+          <AgentsPath
+            workspaceId={workspace.id}
+            answer={agents}
+            preview={preview}
+          />
         </>
       )}
     </div>
@@ -144,12 +153,19 @@ function StepTarget(props: { workspaceId: string; step: StartHereStep }) {
   )
 }
 
-/** The agents' path, its size, and exactly what an agent is given. */
-function AgentsPath(props: { workspaceId: string; answer: StartHereAnswer }) {
+/**
+ * The agents' path, its size, and exactly what an agent is given: the text
+ * MCP's `workspace_context` sends for it, trust labels included.
+ */
+function AgentsPath(props: {
+  workspaceId: string
+  answer: StartHereAnswer
+  preview: AgentStartHerePreviewAnswer
+}) {
   const [preview, setPreview] = useState(false)
   const steps = props.answer.start_here?.steps ?? []
-  const given = JSON.stringify(props.answer.start_here, null, 2)
-  const bytes = new TextEncoder().encode(given).length
+  const given = props.preview.text ?? "null"
+  const bytes = props.preview.bytes
   return (
     <Section
       title="For agents"
@@ -187,7 +203,7 @@ function AgentsPath(props: { workspaceId: string; answer: StartHereAnswer }) {
           id="agent-preview"
           tabIndex={0}
           aria-label="What an agent is given"
-          className="max-h-96 overflow-auto rounded-md border bg-muted p-3 font-mono text-xs/5"
+          className="max-h-96 overflow-auto rounded-md border bg-muted p-3 font-mono text-xs/5 break-all whitespace-pre-wrap"
         >
           {given}
         </pre>

@@ -322,6 +322,62 @@ describe("an entity page", () => {
     )
   })
 
+  it("scrolls to a section linked from another page once it has rendered", async () => {
+    const scrolled: string[] = []
+    // The test DOM does not scroll; record what would be scrolled to.
+    const original = Object.getOwnPropertyDescriptor(
+      Element.prototype,
+      "scrollIntoView",
+    )
+    Element.prototype.scrollIntoView = function (this: Element) {
+      scrolled.push(this.id)
+    }
+    try {
+      const registry: CatalogEntity = {
+        ...musashi,
+        id: "service/registry",
+        type: "service",
+        title: "Container registry",
+        aliases: [],
+        body: [
+          {
+            ...musashi.body[0]!,
+            heading: "Container registry",
+            anchor: "container-registry",
+            text: "# Container registry\n\nRuns on [Musashi, with care](machine/musashi#cautions).\n",
+          },
+        ],
+      }
+      renderApp(
+        `/w/${workspaceId}/wiki/e/service/registry`,
+        fakeApi({
+          catalogEntity: (_w, id) =>
+            // Answered later than the navigation, as over the network.
+            new Promise((resolve) =>
+              setTimeout(
+                () =>
+                  resolve({
+                    ...answer,
+                    entity: id === "service/registry" ? registry : musashi,
+                  }),
+                20,
+              ),
+            ),
+          catalogHistory: () => Promise.resolve(history),
+        }),
+      )
+      await userEvent.click(
+        await screen.findByRole("link", { name: "Musashi, with care" }),
+      )
+      await waitFor(() => expect(scrolled).toEqual(["section-cautions"]))
+      expect(currentPath()).toBe(`${entityPath}#section-cautions`)
+    } finally {
+      if (original)
+        Object.defineProperty(Element.prototype, "scrollIntoView", original)
+      else delete (Element.prototype as Partial<Element>).scrollIntoView
+    }
+  })
+
   it("says first when an entity is retired, with its replacement", async () => {
     renderApp(
       entityPath,
@@ -393,6 +449,18 @@ describe("an entity page", () => {
 
 describe("start here", () => {
   it("numbers the people's steps with opened markers, and previews the agents' path", async () => {
+    // What MCP's workspace_context sends: compact JSON with trust labels.
+    const given = JSON.stringify({
+      path: "agents",
+      steps: [
+        {
+          url: "https://git.guneet.dev/guneet/workspace",
+          note: "Follow it before touching any machine.",
+          label: { author_kind: "member", author: "guneet", instruction: "no" },
+        },
+      ],
+      label: { author_kind: "member", author: "guneet", instruction: "no" },
+    })
     const summary = (id: string, title: string) => ({
       id,
       type: id.split("/")[0]!,
@@ -438,6 +506,13 @@ describe("start here", () => {
                   ],
           },
         }),
+      catalogAgentPreview: () =>
+        Promise.resolve({
+          ...answer,
+          start_here: {},
+          text: given,
+          bytes: 9000,
+        }),
       catalogPagesOpened: () =>
         Promise.resolve({
           items: [
@@ -476,13 +551,15 @@ describe("start here", () => {
     const agents = screen
       .getByRole("heading", { name: "For agents" })
       .closest("section")!
-    expect(agents.textContent).toMatch(/Its size: \d+ bytes/)
+    // The size is the server's measure of exactly that text.
+    expect(agents.textContent).toContain("Its size: 8.8 KB.")
+    expect(agents.textContent).toContain("The agents' path is large (8.8 KB)")
     await userEvent.click(
       within(agents).getByRole("button", { name: "Preview as agent" }),
     )
     expect(
       within(agents).getByLabelText("What an agent is given").textContent,
-    ).toContain('"note": "Follow it before touching any machine."')
+    ).toBe(given)
   })
 })
 
@@ -581,6 +658,65 @@ describe("moving around the wiki", () => {
         .getAttribute("aria-sort"),
     ).toBe("descending")
     expect(screen.getByText("required")).toBeTruthy()
+  })
+
+  it("says when a type's index holds only its first entities", async () => {
+    renderApp(
+      `/w/${workspaceId}/wiki/types/domain`,
+      fakeApi({
+        catalogType: () =>
+          Promise.resolve({
+            ...answer,
+            schema: {
+              type: "domain",
+              built_in: false,
+              extended: false,
+              status: "active",
+              document: null,
+              keys: [],
+              required: [],
+              sections: [],
+              title: null,
+              summary: null,
+              body: [],
+            },
+          }),
+        catalogTypeIndex: () =>
+          Promise.resolve({
+            ...answer,
+            truncated: true,
+            items: [
+              {
+                entity: {
+                  id: "domain/a",
+                  type: "domain",
+                  title: "A",
+                  summary: null,
+                  status: "active",
+                  owner: null,
+                },
+                freshness: {
+                  facts: 0,
+                  oldest_checked_at: null,
+                  due: 0,
+                  not_checked: 0,
+                  unknown: 0,
+                },
+              },
+            ],
+          }),
+      }),
+    )
+    expect(
+      await screen.findByText(
+        /Only the first 1 by ID are listed, and sorting orders only those/,
+      ),
+    ).toBeTruthy()
+    expect(
+      screen.getByRole("table", {
+        name: /sort the table \(the first 1 by ID only\)\./,
+      }),
+    ).toBeTruthy()
   })
 
   it("searches, leaving out retired entities unless asked", async () => {

@@ -177,6 +177,26 @@ describe("the catalog for the wiki", () => {
         entity: expect.objectContaining({ title: "Musashi" }) as unknown,
       },
     ])
+    // What an agent is given: compact JSON, with trust labels.
+    const preview = await get<Api.AgentStartHerePreviewAnswer>(
+      ws("/start-here/agent-preview"),
+    )
+    expect(preview.body.start_here).toMatchObject({
+      path: "agents",
+      label: { author_kind: "member", instruction: "no" },
+      steps: [
+        {
+          list: "discrepancies",
+          note: "Look here first.",
+          label: { author_kind: "member" },
+        },
+      ],
+    })
+    expect(preview.body.text).toBe(JSON.stringify(preview.body.start_here))
+    expect(preview.body.bytes).toBe(preview.body.text!.length)
+    expect((await get(ws("/start-here/agent-preview"), outsider)).status).toBe(
+      404,
+    )
   })
 
   it("reads a page's history and its text at a revision", async () => {

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import type { ReactNode } from "react"
 import {
   Link,
@@ -55,6 +55,21 @@ export function EntityPage() {
     if (entity)
       api.markCatalogPageOpened(workspaceId, entity.id).catch(() => undefined)
   }, [api, workspaceId, entity?.id, entity?.revision, entity])
+
+  // A link to a section of this page (`#section-…`), followed from another
+  // page or search, scrolls to it once the page has rendered: the browser
+  // looked for it before the page's data arrived.
+  const rendered = entity !== undefined && entity.id === id
+  useEffect(() => {
+    if (!rendered || location.hash.length < 2) return
+    let target: string
+    try {
+      target = decodeURIComponent(location.hash.slice(1))
+    } catch {
+      return
+    }
+    document.getElementById(target)?.scrollIntoView()
+  }, [rendered, entity?.id, location.hash])
 
   if (answer.error) {
     if (isApiError(answer.error, "not-found")) return <NotFound />
@@ -604,14 +619,18 @@ function Comparison(props: {
   now: { revision: number; at: string; changed_by: string; text: string }
 }) {
   const { then, now } = props
-  const lines = diffLines(then.text, now.text)
+  // Comparing two long texts can take a noticeable moment: once per pair.
+  const lines = useMemo(
+    () => diffLines(then.text, now.text),
+    [then.text, now.text],
+  )
   const changes = lines.filter((l) => l.kind !== "same").length
   return (
     <Section
       title={`Revision ${then.revision} compared with revision ${now.revision}`}
       description={`Revision ${then.revision}: ${formatDate(then.at)} by ${then.changed_by}. Now: revision ${now.revision}, ${formatDate(now.at)} by ${now.changed_by}. ${changes === 0 ? "No differences." : `${changes} lines differ: removed lines are marked "−", added lines "+".`}`}
     >
-      <pre className="overflow-x-auto rounded-md border font-mono text-xs/5">
+      <div className="overflow-x-auto rounded-md border font-mono text-xs/5">
         {lines.map((line, i) => (
           <div
             key={i}
@@ -643,7 +662,7 @@ function Comparison(props: {
             {line.text || " "}
           </div>
         ))}
-      </pre>
+      </div>
     </Section>
   )
 }

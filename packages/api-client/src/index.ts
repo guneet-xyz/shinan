@@ -1,4 +1,5 @@
 import type {
+  AgentStartHerePreviewAnswer,
   CatalogChangesAnswer,
   CatalogDocumentTextAnswer,
   CatalogEntityAnswer,
@@ -647,6 +648,11 @@ export function createApiClient(options: ApiClientOptions = {}) {
       request<StartHereAnswer>(
         "GET",
         `${catalog(workspaceId)}/start-here${search({ path })}`,
+      ),
+    catalogAgentPreview: (workspaceId: string) =>
+      request<AgentStartHerePreviewAnswer>(
+        "GET",
+        `${catalog(workspaceId)}/start-here/agent-preview`,
       ),
     catalogHistory: (
       workspaceId: string,

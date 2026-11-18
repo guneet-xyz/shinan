@@ -4,11 +4,12 @@ import type { ActorKind, Confidence, Transaction } from "@shinan/db"
 import { inWorkspace, snapshotRead } from "../authorize.js"
 import type { Context } from "../context.js"
 import { InvalidInputError, NotFoundError } from "../errors.js"
-import { entityStatuses } from "./document/index.js"
+import { entityStatuses, utf8Length } from "./document/index.js"
 import type { EntityStatus } from "./document/index.js"
+import { agentAnswerText, labelledStartHere } from "./index/agent.js"
 import { summaryJson } from "./index/format.js"
 import type { CatalogAnswer, EntitySummaryJson } from "./index/format.js"
-import { answerFor } from "./index/queries.js"
+import { answerFor, readCatalogStartHere } from "./index/queries.js"
 
 /**
  * What the wiki reads besides the agent index's own queries (human
@@ -465,6 +466,50 @@ export async function listCatalogPagesOpened(
             opened_at: visit ? visit.openedAt.toISOString() : null,
           }
         }),
+      }
+    },
+    snapshotRead,
+  )
+}
+
+export interface AgentStartHerePreviewAnswer extends CatalogAnswer {
+  /** The agents' path exactly as `workspace_context` gives it, trust labels included; null before the document exists. */
+  start_here: Record<string, unknown> | null
+  /** That path as agents receive it: compact JSON. */
+  text: string | null
+  /** The text's size in bytes of UTF-8. */
+  bytes: number
+}
+
+/**
+ * "Preview as agent" (human experience, start here for agents): the
+ * agents' path written out by the same code as MCP's `workspace_context`,
+ * so what a person sees, and its size, is what an agent is given.
+ */
+export async function getAgentStartHerePreview(
+  ctx: Context,
+  workspaceId: string,
+): Promise<AgentStartHerePreviewAnswer> {
+  return inWorkspace(
+    ctx,
+    workspaceId,
+    "catalog.read",
+    async (scope) => {
+      const answer = await readCatalogStartHere(scope.tx, scope.workspaceId, {
+        path: "agents",
+      })
+      const startHere = await labelledStartHere(
+        scope.tx,
+        scope.workspaceId,
+        answer.start_here,
+      )
+      const text = startHere ? agentAnswerText(startHere) : null
+      return {
+        catalog_revision: answer.catalog_revision,
+        index_behind: answer.index_behind,
+        start_here: startHere,
+        text,
+        bytes: text === null ? 0 : utf8Length(text),
       }
     },
     snapshotRead,
