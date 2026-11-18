@@ -392,7 +392,11 @@ export const invitations = pgTable(
     invitedByMemberId: uuid("invited_by_member_id").notNull(),
     createdAt: createdAt(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
-    /** When it was accepted, declined, withdrawn or replaced. */
+    /**
+     * When it was accepted, declined, withdrawn or expired (as of its
+     * expiry); null while pending, and again once an expired one is sent
+     * again.
+     */
     decidedAt: timestamp("decided_at", { withTimezone: true }),
     /** The membership an accepted invitation created. */
     memberId: uuid("member_id"),

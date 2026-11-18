@@ -461,6 +461,93 @@ describe("expireInvitations", () => {
     expect(stored).toMatchObject({ state: "withdrawn" })
   })
 
+  it("lets an owner send a recorded-expired invitation again, reopening it", async () => {
+    const { invitation } = await invite()
+    await pastExpiry(invitation.id)
+    await expireInvitations({ db, actor: shinan })
+    const resent = await resendInvitation(as(owner), {
+      workspaceId,
+      invitationId: invitation.id,
+    })
+    expect(resent).toMatchObject({ id: invitation.id, state: "pending" })
+    const [stored] = await db
+      .select()
+      .from(schema.invitations)
+      .where(eq(schema.invitations.id, invitation.id))
+    expect(stored).toMatchObject({ state: "pending", decidedAt: null })
+    // The new link works.
+    const token = await latestToken(invitee.email)
+    await acceptInvitation(as(invitee), { token })
+  })
+
+  it("refuses to reopen an expired invitation that a newer one replaced", async () => {
+    const { invitation } = await invite()
+    await pastExpiry(invitation.id)
+    const { invitation: newer } = await invite()
+    await expect(
+      resendInvitation(as(owner), {
+        workspaceId,
+        invitationId: invitation.id,
+      }),
+    ).rejects.toMatchObject({ rule: "already-invited" })
+    // The newer one can be sent again as usual.
+    await resendInvitation(as(owner), {
+      workspaceId,
+      invitationId: newer.id,
+    })
+  })
+
+  it("never deadlocks with an owner changing the workspace's invitations", async () => {
+    const { invitation } = await invite()
+    await pastExpiry(invitation.id)
+    // An owner inviting the address again: the workspace is locked first,
+    // then the old invitation is updated.
+    const owner_ = await pool.connect()
+    try {
+      await owner_.query("begin")
+      await owner_.query("select id from workspaces where id = $1 for update", [
+        workspaceId,
+      ])
+      const job = expireInvitations({ db, actor: shinan })
+      // Let the job reach this workspace while the owner holds it.
+      await new Promise((resolve) => setTimeout(resolve, 300))
+      await owner_.query(
+        "update invitations set state = 'expired', decided_at = expires_at where id = $1",
+        [invitation.id],
+      )
+      await owner_.query("commit")
+      // The job leaves the busy workspace for its next run.
+      await expect(job).resolves.toEqual(expect.any(Number))
+    } finally {
+      owner_.release()
+    }
+    const events = (await listEvents(as(owner), workspaceId)).filter(
+      (e) => e.kind === "invitation.expired",
+    )
+    expect(events).toEqual([])
+  })
+
+  it("records the expiry of a replaced invitation as Shinan's, with no request", async () => {
+    const { invitation } = await invite()
+    await pastExpiry(invitation.id)
+    await invite()
+    const [event] = (await listEvents(as(owner), workspaceId)).filter(
+      (e) => e.kind === "invitation.expired",
+    )
+    expect(event).toMatchObject({
+      actorKind: "shinan",
+      origin: "shinan_action",
+    })
+    const [entry] = (await listSecurityLog(as(owner), workspaceId)).filter(
+      (e) => e.action === "invitation.expired",
+    )
+    expect(entry).toMatchObject({
+      actorKind: "shinan",
+      networkAddress: null,
+      client: null,
+    })
+  })
+
   it("is Shinan's own job", async () => {
     await expect(expireInvitations(as(owner))).rejects.toBeInstanceOf(
       ForbiddenError,
