@@ -6,26 +6,31 @@ import {
   parseCatalogDocument,
   readCatalog,
 } from "../document/index.js"
+import { readDocumentId } from "../document/parse.js"
 import { attributeSections } from "./attribution.js"
 import { deriveDocumentRows } from "./derive.js"
 import type { FactRow } from "./derive.js"
 import { factJson, freshnessJson } from "./format.js"
+import { Provenance } from "./provenance.js"
 
 const catalog = readCatalog(fixtures.allDocuments)
 
 function rowsOf(text: string) {
   const document = parseCatalogDocument(text)
+  const provenance = new Provenance()
   return deriveDocumentRows({
     workspaceId: "00000000-0000-4000-8000-000000000001",
     documentId: "00000000-0000-4000-8000-000000000002",
     revision: 3,
     document,
     registry: catalog.registry,
-    attribution: attributeSections([], document.body.sections, {
-      revision: 3,
-      authorKind: "person",
-      author: "guneet",
-    }),
+    attribution: attributeSections(
+      [],
+      document.body.sections,
+      { revision: 3, authorKind: "person", author: "guneet" },
+      provenance,
+    ),
+    provenance,
   })
 }
 
@@ -130,6 +135,7 @@ describe("deriveDocumentRows", () => {
         document,
         registry: catalog.registry,
         attribution: [],
+        provenance: new Provenance(),
       }),
     ).toThrow(/credit/)
   })
@@ -180,5 +186,26 @@ describe("freshness when read", () => {
         due_at: null,
       },
     })
+  })
+})
+
+describe("readDocumentId", () => {
+  it("reads the same ID as the full parse", () => {
+    const texts = [
+      ...fixtures.allDocuments,
+      fixtures.machineExtension,
+      '---\nid: "schema\\x2fdomain"\ntitle: D\n---\n',
+      "---\n{ id: schema/area, title: Area }\n---\n",
+      "---\nid: schema/a\nid: schema/b\n---\n",
+      "---\nid: [schema/a]\n---\n",
+      "---\nid: schema/a\n",
+      "no frontmatter",
+      `---\nid: schema/big\n---\n${"x".repeat(70_000)}`,
+      "---\nid: schema/x\n  bad: indent\n---\n",
+    ]
+    for (const text of texts)
+      expect(readDocumentId(text), text.slice(0, 40)).toBe(
+        parseCatalogDocument(text).id,
+      )
   })
 })

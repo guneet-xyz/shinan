@@ -1,6 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 
-import { asPerson, newPerson, testDatabase } from "../../../test/helpers.js"
+import {
+  asAgent,
+  asPerson,
+  newPerson,
+  testDatabase,
+} from "../../../test/helpers.js"
 import type { Person } from "../../identity/people.js"
 import { createWorkspace } from "../../identity/workspaces.js"
 import { appendCatalogRevision } from "../revisions.js"
@@ -54,20 +59,47 @@ facts:
 
 Runs batch work for the fleet.${extra}
 
+${prose(i, 1)}
+
 ## Cautions
 
 Drain it before a restart.
+
+${prose(i, 2)}
+
+## Access prerequisites
+
+${prose(i, 3)}
 `
+}
+
+const vocabulary =
+  "the a machine fleet worker queue drain restart deploy owner approval disk data backup restore network address host key access agent task stack service registry container image build release version check before after only never always when then while because so that this each every one two three logs metrics alert dashboard runbook policy decision project repository branch commit review merge test run script cron job timer volume mount path user group permission secret store vault rotate token expire renew certificate domain dns proxy route port firewall rule window maintenance upgrade rollback snapshot schedule weekly daily monthly ticket issue note caution warning".split(
+    " ",
+  )
+
+/** About 100 words of prose that differ from document to document, like real bodies. */
+function prose(i: number, part: number): string {
+  let seed = i * 7919 + part * 104729
+  const words: string[] = []
+  for (let n = 0; n < 100; n++) {
+    seed = (seed * 1103515245 + 12345) % 2147483648
+    words.push(vocabulary[seed % vocabulary.length]!)
+  }
+  return words.join(" ").replace(/(([a-z]+ ){12})/g, "$1\n")
 }
 
 let owner: Person
 let workspaceId: string
+let agentId: string
+let agentLabel: string
+/** An agent writes the catalog, as during the trial, so every word has a provenance to keep. */
 const actor = (): RevisionActor => ({
-  kind: "person",
+  kind: "agent",
   personId: owner.id,
-  agentId: null,
+  agentId,
   agentSessionId: null,
-  label: owner.handle,
+  label: agentLabel,
   confidence: "recorded",
 })
 
@@ -75,6 +107,10 @@ beforeAll(async () => {
   owner = await newPerson(db, "owner")
   workspaceId = (await createWorkspace(asPerson(db, owner), { name: "Fleet" }))
     .workspace.id
+  const agent = await asAgent(db, owner, workspaceId)
+  if (agent.actor.kind !== "agent") throw new Error("Expected an agent")
+  agentId = agent.actor.agentId
+  agentLabel = `${owner.handle} via ${agent.actor.agentHandle}`
   const documents = Array.from({ length: entities }, (_, i) => ({
     text: machine(i),
   }))
@@ -136,6 +172,14 @@ describe("a catalog of a few thousand entities", () => {
     const check = performance.now() - started
     console.info(
       `Rebuild: ${rebuild.toFixed(0)} ms, check: ${check.toFixed(0)} ms for ${entities} entities`,
+    )
+    const [size] = await db
+      .execute<{ provenance: string; index: string }>(
+        `select pg_size_pretty(pg_total_relation_size('catalog_index_provenance')) as provenance, pg_size_pretty(pg_total_relation_size('catalog_index_documents') + pg_total_relation_size('catalog_index_facts') + pg_total_relation_size('catalog_index_relations') + pg_total_relation_size('catalog_index_sections') + pg_total_relation_size('catalog_index_provenance')) as index`,
+      )
+      .then((r) => r.rows as [{ provenance: string; index: string }])
+    console.info(
+      `Storage: word provenance ${size.provenance}, whole index ${size.index} (the test database, all workspaces)`,
     )
     expect(rebuilt.documents).toBe(entities)
     expect(compared.differences).toEqual([])

@@ -21,9 +21,9 @@ import { addMember } from "../../identity/members.js"
 import type { Person } from "../../identity/people.js"
 import { createWorkspace } from "../../identity/workspaces.js"
 import type { JobQueue } from "../../jobs.js"
-import { parserVersion } from "../document/index.js"
+import { parseCatalogDocument, parserVersion } from "../document/index.js"
 import { appendCatalogRevision, findCatalogDocument } from "../revisions.js"
-import type { RevisionActor } from "../revisions.js"
+import type { RevisionActor, RevisionDocument } from "../revisions.js"
 import { compareWorkspaceIndex, rebuildWorkspaceIndex } from "./indexer.js"
 import {
   checkCatalogIndexes,
@@ -73,10 +73,7 @@ const shinanActor: RevisionActor = {
   confidence: "recorded",
 }
 
-async function apply(
-  actor: RevisionActor,
-  documents: { documentId?: string; text: string }[],
-) {
+async function apply(actor: RevisionActor, documents: RevisionDocument[]) {
   return db.transaction((tx) =>
     appendCatalogRevision(tx, workspaceId, actor, documents),
   )
@@ -98,6 +95,7 @@ async function snapshot(): Promise<string> {
     schema.catalogIndexRelations,
     schema.catalogIndexDiscrepancies,
     schema.catalogIndexSections,
+    schema.catalogIndexProvenance,
   ] as const
   const all: unknown[] = []
   for (const table of tables) {
@@ -171,6 +169,17 @@ describe("appending revisions", () => {
     await expect(
       apply(personActor(owner), [{ documentId: id!, text: fixtures.guneet }]),
     ).rejects.toThrow(/documents of its workspace/)
+  })
+
+  it("refuses a parse that is not of the text it comes with", async () => {
+    await expect(
+      apply(personActor(owner), [
+        {
+          text: fixtures.guneet,
+          parsed: parseCatalogDocument(fixtures.musashi),
+        },
+      ]),
+    ).rejects.toThrow(/parse of its text/)
   })
 
   it("never edits a stored revision", async () => {

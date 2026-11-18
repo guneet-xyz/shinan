@@ -79,6 +79,35 @@ export function parseCatalogDocument(text: string): CatalogDocument {
   }
 }
 
+/**
+ * The ID `parseCatalogDocument` would read from a document, found by
+ * reading only its frontmatter, the way `read` does: for telling type
+ * schema documents apart before reading every document in full (an index
+ * rebuild). Null when the text has no readable ID.
+ */
+export function readDocumentId(text: string): string | null {
+  if (utf8Length(text) > maxDocumentBytes) return null
+  try {
+    const split = splitFrontmatter(text)
+    if (!split.frontmatter) return null
+    const yaml = parseYaml(
+      text.slice(split.frontmatter.start, split.frontmatter.end),
+      split.frontmatter.start,
+    )
+    if (yaml.node?.kind !== "map") return null
+    let id: YamlEntry | undefined
+    for (const e of yaml.node.entries) if (e.key === "id") id = e
+    const value = id?.value
+    return value?.kind === "scalar" &&
+      typeof value.value === "string" &&
+      value.value.trim() !== ""
+      ? value.value
+      : null
+  } catch {
+    return null
+  }
+}
+
 /** A document that could not be read at all: only its text and the problem. */
 function unread(
   text: string,

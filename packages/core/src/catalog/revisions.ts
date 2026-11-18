@@ -46,6 +46,9 @@ export async function appendCatalogRevision(
   const given = documents.flatMap((d) => (d.documentId ? [d.documentId] : []))
   if (new Set(given).size !== given.length)
     throw new Error("A catalog revision changes each document once")
+  // A parse handed in is used as it is, so it must be of this very text.
+  if (documents.some((d) => d.parsed && d.parsed.text !== d.text))
+    throw new Error("A parsed document must be the parse of its text")
 
   const state = await lockIndexState(tx, workspaceId)
   // A process still running an older parser than the one that last built

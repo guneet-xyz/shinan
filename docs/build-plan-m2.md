@@ -323,9 +323,11 @@ a second PR, so M2-2 and M2-3 can start earlier.
 - **Trust labels** ([trust labels](agent-integrations.md#trust-labels)) on
   every text field: `author_kind`, `author` and `instruction`. All catalog
   text is `instruction: no`. The author of each fact is its fact check's
-  actor; the author of each body section is the actor of the revision that
-  last changed it, derived from history by the indexer (M2-3). Labels come
-  from Shinan's records, never from the text.
+  actor; the author of each body section is its `written_by`, the
+  least-trusted author whose words may remain in it, derived from history by
+  the indexer (M2-3, [#110](https://github.com/guneet-xyz/shinan/issues/110);
+  catalog §12.4). Labels come from Shinan's records, never from claims in
+  the text.
 - **Server instructions:** a short version of the conventions and a pointer
   to the skill ([design rule 7](agent-integrations.md#design-rules)).
 - **Writes are retry-safe** (design rule 3) through the idempotency key.

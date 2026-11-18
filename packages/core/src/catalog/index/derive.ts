@@ -18,6 +18,7 @@ import type {
 } from "../document/index.js"
 import type { AttributedSection } from "./attribution.js"
 import { stepJson, typeSchemaJson } from "./format.js"
+import type { Provenance } from "./provenance.js"
 
 export type DocumentRow = typeof schema.catalogIndexDocuments.$inferInsert
 export type FactRow = typeof schema.catalogIndexFacts.$inferInsert
@@ -25,6 +26,7 @@ export type RelationRow = typeof schema.catalogIndexRelations.$inferInsert
 export type DiscrepancyRow =
   typeof schema.catalogIndexDiscrepancies.$inferInsert
 export type SectionRow = typeof schema.catalogIndexSections.$inferInsert
+export type ProvenanceRow = typeof schema.catalogIndexProvenance.$inferInsert
 
 /** Every index row one catalog document gives. */
 export interface DocumentRows {
@@ -33,6 +35,7 @@ export interface DocumentRows {
   relations: RelationRow[]
   discrepancies: DiscrepancyRow[]
   sections: SectionRow[]
+  provenance: ProvenanceRow
 }
 
 export interface DeriveInput {
@@ -45,6 +48,8 @@ export interface DeriveInput {
   registry: TypeRegistry
   /** Credits for `document.body.sections`, in the same order. */
   attribution: readonly AttributedSection[]
+  /** Where the document's words came from, after this revision. */
+  provenance: Provenance
 }
 
 /**
@@ -165,6 +170,7 @@ export function deriveDocumentRows(input: DeriveInput): DocumentRows {
         leastTrusted: credit.leastTrusted,
       }
     }),
+    provenance: { ...base, ...input.provenance.encode() },
   }
 }
 

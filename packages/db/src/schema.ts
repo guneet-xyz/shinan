@@ -898,6 +898,10 @@ const tsvector = customType<{ data: string }>({
   dataType: () => "tsvector",
 })
 
+const bytea = customType<{ data: Buffer }>({
+  dataType: () => "bytea",
+})
+
 const parserVersionColumn = () => integer("parser_version").notNull()
 
 /** Where a workspace's index stands, and the last round-trip check. */
@@ -1150,9 +1154,8 @@ export const catalogIndexSections = pgTable(
     /** The author's written form (identity §8.7). */
     author: text("author").notNull(),
     /**
-     * The least-trusted author who wrote any of the section since it first
-     * appeared, for trust labels: a person editing an agent's section does
-     * not make it the person's.
+     * The least-trusted author whose words may be in the section, from the
+     * document's word provenance (catalog §12.4), for trust labels.
      */
     leastTrustedKind: actorKindEnum("least_trusted_kind").notNull(),
     leastTrusted: text("least_trusted").notNull(),
@@ -1177,5 +1180,35 @@ export const catalogIndexSections = pgTable(
     index("catalog_index_sections_workspace_id").on(t.workspaceId),
     index("catalog_index_sections_search").using("gin", t.search),
     index("catalog_index_sections_search_simple").using("gin", t.searchSimple),
+  ],
+)
+
+/**
+ * Where a document's words came from (catalog §12.4, `written_by`): for each
+ * unit of its words (a hashed, normalised word 5-gram) that anyone less
+ * trusted than a person ever introduced into the document, the
+ * least-trusted author who did. Derived from the document's history like
+ * every index row, and compared by the round-trip check.
+ */
+export const catalogIndexProvenance = pgTable(
+  "catalog_index_provenance",
+  {
+    documentId: uuid("document_id").primaryKey(),
+    workspaceId: uuid("workspace_id").notNull(),
+    parserVersion: parserVersionColumn(),
+    /** The authors the units name, sorted: their kind and written form. */
+    authors: jsonb("authors")
+      .$type<{ kind: ActorKind; author: string }[]>()
+      .notNull(),
+    /** The units, sorted, 10 bytes each: a 53-bit hash and the author's place in `authors`. */
+    units: bytea("units").notNull(),
+  },
+  (t) => [
+    foreignKey({
+      name: "catalog_index_provenance_document_fk",
+      columns: [t.documentId],
+      foreignColumns: [catalogIndexDocuments.documentId],
+    }).onDelete("cascade"),
+    index("catalog_index_provenance_workspace_id").on(t.workspaceId),
   ],
 )
