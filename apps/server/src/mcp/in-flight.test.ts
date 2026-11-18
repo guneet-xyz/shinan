@@ -40,7 +40,7 @@ beforeAll(async () => {
       { name: "Team" },
     )
   ).workspace.id
-  for (const machine of ["one", "two", "three"])
+  for (const machine of ["one", "two", "three", "four"])
     tokens.push(
       (
         await createAgentToken(
@@ -166,20 +166,30 @@ describe("slow senders at /mcp", () => {
     const over = send(tokens[0]!, "192.0.2.100", { stall: true })
     expect(await statusWithin(over, 5000)).toBe(429)
 
-    // Several tokens from one address: only perAddress requests are held.
-    const address = "198.51.100.7"
-    const fromAddress = [
-      ...Array.from({ length: mcpInFlight.perAddress / 2 }, () =>
-        send(tokens[1]!, address, { stall: true }),
+    // Several tokens from one address, each below its own cap (6, 6 and 4),
+    // and an IPv6 address counted by its /64: only perAddress are held.
+    const inSameNetwork = (i: number) => `2001:db8:0:1::${(i + 1).toString(16)}`
+    const split = [6, 6, mcpInFlight.perAddress - 12]
+    const fromAddress = split.flatMap((count, t) =>
+      Array.from({ length: count }, (_, i) =>
+        send(tokens[t + 1]!, inSameNetwork(t * 8 + i), { stall: true }),
       ),
-      ...Array.from({ length: mcpInFlight.perAddress / 2 }, () =>
-        send(tokens[2]!, address, { stall: true }),
-      ),
-    ]
+    )
     await settle()
+    for (const sent of fromAddress)
+      expect(await statusWithin(sent, 50)).toBeNull()
+    // The 17th, on a token with room left, is refused by the address's cap.
     expect(
-      await statusWithin(send(tokens[2]!, address, { stall: true }), 5000),
+      await statusWithin(
+        send(tokens[3]!, inSameNetwork(100), { stall: true }),
+        5000,
+      ),
     ).toBe(429)
+    // The same token from another /64 still has room.
+    const elsewhere = send(tokens[3]!, "2001:db8:0:2::1", { stall: true })
+    await settle()
+    expect(await statusWithin(elsewhere, 50)).toBeNull()
+    fromAddress.push(elsewhere)
 
     // Node cuts off every stalled request once its time to send is up
     // (408, or the connection closed), which frees its body and its slot.

@@ -32,6 +32,7 @@ import {
   proposalLimits,
   RuleViolationError,
   shinanLabel,
+  throttleAddress,
 } from "@shinan/core"
 import type { AgentActor, Context, RequestInfo } from "@shinan/core"
 import type { Database } from "@shinan/db"
@@ -81,7 +82,8 @@ export const protocolVersions = ["2026-07-28", "2025-11-25"] as const
  *
  * 1. the per-address request limit, as for `/api/agent`, since a working
  *    token is not held up by the failed-token limit;
- * 2. the requests in flight from the address (`mcpInFlight`);
+ * 2. the requests in flight from the address, an IPv6 address by its /64
+ *    (`mcpInFlight`);
  * 3. the body size, before the body is read;
  * 4. `Origin`: a request a browser sends from another site is refused
  *    (403), as the transport requires;
@@ -121,7 +123,8 @@ export function createMcp(options: McpOptions) {
     "*",
     limitInFlight<AgentEnv>({
       max: mcpInFlight.perAddress,
-      key: (c) => options.requestInfo(c).networkAddress,
+      // An IPv6 address by its /64, as the rate limits count it.
+      key: (c) => throttleAddress(options.requestInfo(c).networkAddress),
       refuse: tooManyInFlight,
     }),
   )

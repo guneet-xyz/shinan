@@ -283,8 +283,12 @@ in the `Authorization` header, and load the agent skill from
 - **`/mcp` refuses sign-in cookies**, a token in the address and requests
   from other sites, so a browser can't be used to call it. Each token is rate
   limited (600 requests a minute); so are failed token uses per address. At
-  most 8 requests may be in flight at once per token and 16 per address;
-  more get 429, before their bodies are read.
+  most 8 requests may be in flight at once per token and 16 per address (an
+  IPv6 address by its /64); more get 429, before their bodies are read.
+  OpenCode (checked in its source, 2026-11-18) retries a 429 twice, after
+  250 ms and 1 s, only while connecting and listing tools; a tool call that
+  gets 429 fails at once, and the agent sees the error and can call again.
+  Normal use, a few tool calls at a time, stays well below the cap.
   Agents' catalog proposals have their own limit (60 in 10 minutes).
 - **`/skills/`** serves only the skill's own files, the same for every
   installation, with no workspace data

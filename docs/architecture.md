@@ -903,7 +903,7 @@ sit behind NAT, firewalls or tailnets. The agent-facing parts of
   2026-07-28 revision and, statelessly, the 2025 `initialize` handshake from
   one per-request server. Each request passes, in order: the per-address
   request limit (as `/api/agent`), at most 16 requests in flight per
-  address, a 512 KB body limit (larger than the API's 64 KB, because one
+  address (an IPv6 address by its /64), a 512 KB body limit (larger than the API's 64 KB, because one
   catalog proposal may hold 256 KiB of JSON), the `Origin` check (a request
   carrying any `Origin` but the installation's own is refused with 403),
   `requireAgent`, and at most 8 requests in flight per token; over either
