@@ -219,6 +219,52 @@ Migrations are written to work with the previous release, so this needs no
 database change, unless the release notes say otherwise; then restore the dump
 you took in step 2.
 
+### Upgrading from 0.2 to 0.3 (the catalog)
+
+0.3 adds the catalog, the agents' MCP endpoint and the agent skill. Before you
+upgrade:
+
+- **Memory.** `web` now runs a [catalog worker](#catalog-workers) thread. The
+  reference Compose file raises its limit from 512 MiB to 1,536 MiB
+  (`SHINAN_WEB_MEMORY`). If you copied the Compose file, raise `web`'s
+  `mem_limit` the same way. If the host is short of memory, a smaller ceiling
+  works with a smaller heap: `SHINAN_CATALOG_WORKER_HEAP_MB=640` and 1,280 MiB.
+- **Settings.** `SHINAN_CATALOG_WORKERS` and `SHINAN_CATALOG_WORKER_HEAP_MB`
+  are new and optional (defaults 1 and 768).
+- **Your proxy** needs nothing new if it already routes every path. Agents use
+  `/mcp`, and OpenCode fetches `/skills/` without signing in ([reverse
+  proxy](#reverse-proxy)). Don't limit request bodies below 512 KB:
+  Shinan limits them itself, before reading them (64 KB on the API, 512 KB on
+  `/mcp` and catalog proposals). MCP answers are plain JSON, not a stream.
+- **Migrations** only add tables, columns, indexes and triggers. 0.2's code
+  runs on the upgraded database: rolling back is setting the previous digest
+  again, and the catalog and agents stay in the database, unused, until you
+  upgrade again. Until then, agents calling `/mcp` get the web app's page.
+- **The agent index** has nothing to rebuild on the first start, since the
+  catalog starts empty. From then on the worker checks it every night
+  ([the agent index](#the-agent-index)).
+
+## Agents: the MCP endpoint, tokens and the skill
+
+Coding agents reach Shinan at `https://<your host>/mcp`, with an agent token
+in the `Authorization` header, and load the agent skill from
+`https://<your host>/skills/`
+([agent integrations](agent-integrations.md#mcp-server-and-tools)).
+
+- **Tokens** are made by members, by hand, for their own agents (Your agents,
+  then **Set up OpenCode** for the steps). Each is shown once and stored only
+  as a hash. A token is read-only or full, works only in the workspace it was
+  made for, and is bound to `SHINAN_URL`. Members revoke their own tokens;
+  workspace owners can revoke any token in the workspace. Each new token
+  emails its member, and is recorded in the workspace's security log.
+- **`/mcp` refuses sign-in cookies**, a token in the address and requests
+  from other sites, so a browser can't be used to call it. Each token is rate
+  limited (600 requests a minute); so are failed token uses per address.
+  Agents' catalog proposals have their own limit (60 in 10 minutes).
+- **`/skills/`** serves only the skill's own files, the same for every
+  installation, with no workspace data
+  ([D-056](decisions/D-056-public-skill-path.md)).
+
 ## Backups: your responsibility
 
 Shinan has **no built-in backups**. The owner's own installation accepts that

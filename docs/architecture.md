@@ -1242,7 +1242,9 @@ From the `workspace` repository's catalog and `infra/musashi` (read 2026-11-16):
 - **Proposed** starting memory limits: web 512 MiB, worker 384 MiB, PostgreSQL
   512 MiB; estimates to be measured during the proof of concept. **M2-4:**
   web 1,536 MiB, for its one catalog worker (heap up to 768 MiB, §5.3); the
-  `infra/musashi` stack needs the same change when M2 is deployed.
+  `infra/musashi` stack's change is drafted for the M2 deployment request
+  ([infra/musashi#130](https://git.guneet.dev/infra/musashi/issues/130),
+  draft PR [#131](https://git.guneet.dev/infra/musashi/pulls/131); M2-12).
 - **Proposed:** containers hardened as in [10.1](#101-threats-and-controls); the
   same image and reference Compose layout self-hosters get, adapted to
   Musashi's rules. Reason: proves the self-hosting path by using it.
