@@ -19,6 +19,7 @@ import type {
 import { classifyChange, touchedIds } from "./classify.js"
 import type { ApprovalClass } from "./classify.js"
 import { estimatedBytes } from "./estimate.js"
+import { repairCheckProblems } from "./repair-check.js"
 
 /** The latest revision of one stored document, already parsed. */
 export interface StoredDocument {
@@ -170,6 +171,11 @@ export function prepareChangeIncrementally(
   if (!result.applied)
     return { prepared: { outcome: "problems", problems: result.problems } }
   if (result.changes.length === 0) return { prepared: { outcome: "unchanged" } }
+  if (input.repair) {
+    const problems = repairCheckProblems(result.changes, input.by)
+    if (problems.length > 0)
+      return { prepared: { outcome: "problems", problems } }
+  }
 
   const context = validationContext(input, kept.secretScans)
   const base = kept.base

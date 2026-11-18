@@ -3,7 +3,13 @@ import { createHash } from "node:crypto"
 import { and, eq, schema } from "@shinan/db"
 
 import type { Context } from "../../context.js"
-import { InvalidInputError, NotFoundError } from "../../errors.js"
+import {
+  InvalidInputError,
+  NotFoundError,
+  RuleViolationError,
+} from "../../errors.js"
+import { checkStorable } from "../../validation.js"
+import { parseCatalogDocument } from "../document/index.js"
 import type { CatalogOperation } from "../document/index.js"
 import { findCatalogDocument } from "../revisions.js"
 import { proposalLimits } from "./input.js"
@@ -97,6 +103,16 @@ async function repairOperations(
     )
     .where(and(eq(d.workspaceId, scope.workspaceId), eq(d.id, documentId)))
   if (!current?.catalogId) throw new NotFoundError()
+  // Only for what no other change can fix (catalog §8.3). Stored text, read
+  // here as the indexer reads it.
+  if (
+    current.revision === input.revision &&
+    parseCatalogDocument(current.text).problems.length === 0
+  )
+    throw new RuleViolationError(
+      "not-needed",
+      `"${current.catalogId}" reads without problems: change it with a catalog proposal instead`,
+    )
   if (current.revision !== input.revision)
     return {
       outcome: "conflict",
@@ -143,6 +159,7 @@ function checkRevision(revision: unknown): number {
 function checkText(text: unknown): string {
   if (typeof text !== "string")
     throw new InvalidInputError("text", "text is the document's whole text")
+  checkStorable(text, "text")
   // The document's own limit is checked when the text is read, as for any
   // document; this only bounds the request.
   if (text.length > proposalLimits.bytes)
@@ -159,6 +176,7 @@ function checkExplanation(explanation: unknown): string {
       "explanation-blank",
       "Explain the repair in a few sentences",
     )
+  checkStorable(explanation, "explanation")
   if (explanation.length > proposalLimits.explanation)
     throw new InvalidInputError(
       "explanation-too-long",

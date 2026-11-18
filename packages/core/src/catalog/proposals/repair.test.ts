@@ -54,7 +54,10 @@ function stored(outcome: ProposalOutcome): CatalogProposal {
   return outcome.proposal
 }
 
-/** Musashi as an earlier parser wrote it: a relation attribute named `by`, unreadable since #130. */
+/**
+ * Musashi as an earlier parser wrote it, checked by the owner's agent: a
+ * relation attribute named `by`, unreadable since #130.
+ */
 const unreadable = (title = "Musashi") => `---
 id: machine/musashi
 type: machine
@@ -64,7 +67,7 @@ status: active
 owner: ${person}
 facts:
   - checked: ${today}
-    by: ${owner.handle}
+    by: ${owner.handle} via opencode-daedalus
     scope: A look at the machine
     source: ssh musashi
     observed:
@@ -305,6 +308,88 @@ describe("repairing a document that reads with problems", () => {
         text: "---\nid: schema/machine\ntitle: Machine\nsummary: A host.\nstatus: active\nowner: person/x\n---\n",
       }),
     ).toMatchObject({ outcome: "invalid" })
+  })
+
+  it("is only for a document that reads with problems", async () => {
+    stored(await repair(asOwner))
+    // Repaired: it now reads without problems, so ordinary proposals change it.
+    await expect(
+      repair(asOwner, { text: repaired().replace("Musashi", "Musashi II") }),
+    ).rejects.toMatchObject({ rule: "not-needed" })
+    // Nor any other document that reads well, such as a person entity.
+    const revision = await db
+      .select({ revision: schema.catalogDocuments.currentRevision })
+      .from(schema.catalogDocuments)
+      .where(
+        eq(
+          schema.catalogDocuments.id,
+          (await db.transaction((tx) =>
+            findCatalogDocument(tx, workspaceId, person),
+          ))!,
+        ),
+      )
+      .then((rows) => rows[0]!.revision)
+    await expect(
+      repairCatalogDocument(asOwner, workspaceId, {
+        id: person,
+        revision,
+        text:
+          "---\nid: " + person + "\ntype: person\ntitle: Someone else\n---\n",
+        explanation: "A new title.",
+      }),
+    ).rejects.toMatchObject({ rule: "not-needed" })
+  })
+
+  it("never credits a fact check to anyone but the repairing owner (identity §8.7)", async () => {
+    const agentCheck = `by: ${owner.handle} via opencode-daedalus`
+    const refused = async (text: string) =>
+      expect(await repair(asOwner, { text })).toMatchObject({
+        outcome: "invalid",
+        problems: [
+          { code: "operation-invalid", documentId: "machine/musashi" },
+        ],
+      })
+    // Another agent's name, or another member's.
+    await refused(
+      repaired().replace(agentCheck, `by: ${owner.handle} via opencode-forged`),
+    )
+    await refused(repaired().replace(agentCheck, `by: ${contributor.handle}`))
+    // The agent's fact check with another scope, or with a fact it did not cover.
+    await refused(
+      repaired().replace(
+        "scope: A look at the machine",
+        "scope: Something else",
+      ),
+    )
+    await refused(
+      repaired().replace(
+        "      hostname: musashi\n",
+        "      hostname: musashi\n      role: Production host\n",
+      ),
+    )
+    // Removing a fact from it, or naming yourself, is fine.
+    expect(
+      await repair(asOwner, {
+        text: repaired()
+          .replace(agentCheck, `by: ${owner.handle}`)
+          .replace(
+            "      hostname: musashi\n",
+            "      hostname: musashi\n      role: Production host\n",
+          ),
+      }),
+    ).toMatchObject({ outcome: "applied" })
+  })
+
+  it("refuses characters PostgreSQL cannot store, as input", async () => {
+    for (const input of [
+      { text: repaired() + "\u0000" },
+      { text: repaired() + "\ud800" },
+      { explanation: "Fix \u0000 it." },
+      { idempotencyKey: "key-\ud800" },
+    ])
+      await expect(repair(asOwner, input)).rejects.toMatchObject({
+        rule: "text-characters",
+      })
   })
 
   it("applies only to the text the owner read", async () => {

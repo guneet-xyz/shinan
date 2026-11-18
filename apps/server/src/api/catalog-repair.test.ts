@@ -141,6 +141,14 @@ describe("repairing a catalog document over the API", () => {
     ).toEqual(["field-missing"])
   })
 
+  it("refuses characters PostgreSQL cannot store with 422", async () => {
+    const answer = await repair({ explanation: "Fix \u0000 it." })
+    expect(answer.status).toBe(422)
+    expect(((await answer.json()) as Api.ErrorBody).rule).toBe(
+      "text-characters",
+    )
+  })
+
   it("refuses a malformed body", async () => {
     const answer = await api.request(
       `/workspaces/${workspaceId}/catalog/proposals/repair`,

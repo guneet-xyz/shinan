@@ -1648,7 +1648,9 @@ how the rules are applied.
     every later change to the document.
   - **The repair.** A workspace owner, after re-authentication, replaces
     the document's whole text, starting from the text at a revision they
-    read. It is a catalog proposal with one `restore-document` operation,
+    read. Only a document whose stored text reads with problems may be
+    repaired (`not-needed` otherwise): anything else is changed with
+    ordinary operations. It is a catalog proposal with one `restore-document` operation,
     the one a revert uses. It takes the same turn, conflict check (the
     document must still be at that revision), validation and records.
   - **Validation charges the document only with problems it did not
@@ -1656,6 +1658,18 @@ how the rules are applied.
     anything it newly breaks, in that document or another, blocks it. A
     near-certain secret is charged even when the document already held it,
     since the repair writes the whole text again.
+  - **Nobody else's name in `by`** ([identity §8.7](identity.md#87-how-an-actor-is-written-in-text)):
+    a fact check credited to anyone but the repairing owner must be one the
+    earlier text had, field for field, covering only facts it covered
+    there. The owner may remove facts from it, or put facts under a fact
+    check naming themselves. Reason: otherwise a repair could make a fact
+    look checked by another member or an agent.
+  - **Text PostgreSQL cannot store** (a NUL character, an unpaired
+    surrogate) in the text, explanation or idempotency key is refused as
+    input (`text-characters`), as everywhere.
+  - **Reverting a repair** puts back the earlier text, which read with
+    problems, and ordinary validation charges them, so the revert is
+    blocked while that text reads with problems.
   - **It applies at once and is recorded as the owner's approval** in the
     security log (`catalog-proposal.approved`, with `repair: true`),
     whatever its approval classes.
