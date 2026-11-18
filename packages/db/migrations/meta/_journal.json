@@ -78,6 +78,13 @@
       "when": 1795025727689,
       "tag": "0010_catalog_review",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1795038460378,
+      "tag": "0011_email_changes",
+      "breakpoints": true
     }
   ]
 }

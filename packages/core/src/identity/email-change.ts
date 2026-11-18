@@ -70,21 +70,24 @@ export async function requestEmailChange(
   ctx: Context,
   input: { email: string },
 ): Promise<PendingEmailChange> {
-  return atInstallation(ctx, "email-change.request", async (scope) => {
-    const personId = scope.actor.personId!
-    // Counted as Shinan, by the person: after the permission check, and
-    // whether or not the request then succeeds.
-    const limit = await takeRateLimit(
-      { db: ctx.db, actor: shinan, request: ctx.request ?? {} },
+  // The permission check first, then the rate limit, which takes its own
+  // connection, so it runs between transactions, never inside one. Counted
+  // as Shinan, by the person, whether or not the request then succeeds.
+  const personId = await atInstallation(ctx, "email-change.request", (scope) =>
+    Promise.resolve(scope.actor.personId!),
+  )
+  const limit = await takeRateLimit(
+    { db: ctx.db, actor: shinan, request: ctx.request ?? {} },
+    "email-change",
+    { key: personId },
+  )
+  if (!limit.allowed)
+    throw new BusyError(
       "email-change",
-      { key: personId },
+      "Too many email address changes asked for; try again later",
+      limit.retryAfterSeconds,
     )
-    if (!limit.allowed)
-      throw new BusyError(
-        "email-change",
-        "Too many email address changes asked for; try again later",
-        limit.retryAfterSeconds,
-      )
+  return atInstallation(ctx, "email-change.request", async (scope) => {
     const person = await personOf(scope.tx, personId)
     let email: string
     try {
