@@ -1,5 +1,6 @@
 import { createMarkdown } from "@shinan/markdown"
 import type {
+  Env,
   MarkdownIt,
   StateBlock,
   StateInline,
@@ -46,7 +47,13 @@ export interface Section {
 export interface BodyLink {
   /** `link` (`[text](url)`), `image` (`![alt](url)`) or `definition` (`[label]: url`). */
   kind: "link" | "image" | "definition"
-  /** The destination as written, with Markdown escapes decoded. */
+  /**
+   * The destination as written, with Markdown escapes and character
+   * references decoded, and nothing else changed (no percent-encoding or
+   * decoding). Every destination is listed, including `javascript:`,
+   * `file:` and `data:` ones, so validation sees them; the wiki's renderer
+   * never makes those clickable.
+   */
   url: string
   /**
    * The entity ID the destination names, when it is a reference
@@ -57,9 +64,9 @@ export interface BodyLink {
   reference: string | null
   /**
    * Where the link is written: from `[` (or `<`, `![`) to the closing `)`
-   * or `>`, or for a definition its first and last lines. If the text
-   * cannot be found where the parser read it (a tab inside a list item
-   * that the parser expanded to spaces), the range covers the line.
+   * or `>`, or for a definition its first and last lines. If the link's
+   * text cannot be found where the parser read it, the range covers the
+   * lines it was read from, so it always contains the link.
    */
   range: Range
 }
@@ -82,7 +89,12 @@ export class BodyTooComplexError extends Error {}
 export function parseBody(text: string, offset: number): Body {
   const refusal = tooComplex(bodyShape(text))
   if (refusal) throw new BodyTooComplexError(refusal)
-  const tokens = markdown.parse(text, {})
+  const env: ParseEnv = {}
+  const tokens = markdown.parse(text, env)
+  if (env.cutOff)
+    throw new BodyTooComplexError(
+      `The body nests quotes or lists deeper than the Markdown reader goes (${markdown.options.maxNesting} levels, about ${Math.floor(markdown.options.maxNesting / 2)} lists inside each other), so the rest would be lost`,
+    )
   const lines = new Lines(text)
   return {
     range: { start: offset, end: offset + text.length },
@@ -204,14 +216,16 @@ function collectLinks(
         viaDefinition?: boolean
       } | null
       if (at?.viaDefinition) continue
+      const start = at?.start === undefined ? null : place.source(at.start)
+      const end = at?.end === undefined ? null : place.source(at.end)
       const range =
-        at?.start !== undefined && at.end !== undefined
-          ? { start: place.source(at.start), end: place.source(at.end) }
+        start !== null && end !== null && end > start
+          ? { start, end }
           : place.whole()
       links.push(
         link(kind, href, {
           start: offset + range.start,
-          end: offset + Math.max(range.start, range.end),
+          end: offset + range.end,
         }),
       )
     }
@@ -219,8 +233,7 @@ function collectLinks(
   return links
 }
 
-function link(kind: BodyLink["kind"], href: string, range: Range): BodyLink {
-  const url = markdown.normalizeLinkText(href)
+function link(kind: BodyLink["kind"], url: string, range: Range): BodyLink {
   return { kind, url, reference: referenceTarget(url), range }
 }
 
@@ -276,19 +289,31 @@ class Lines {
   }
 }
 
+/** One line of an inline token's content, and where it is in the body. */
+interface Piece {
+  /** Its offset in the content. */
+  content: number
+  /** Spaces it starts with in the content (tabs the parser expanded, too). */
+  lead: number
+  /** Where its first other character is in the body, or null if not found. */
+  source: number | null
+  /** The body line it was read from. */
+  line: number
+  /** Offsets after `lead` of `|` that the body writes `\|` (table cells). */
+  pipes: number[]
+}
+
 /**
  * Maps offsets in an inline token's content back to the body's text. The
  * content is the block's lines, each without its quote and list markers and
  * indentation, joined with line breaks and trimmed; so each line of content
  * is found at the end of its source line (or, for a table cell or a heading
- * with closing `#`, inside it).
+ * with closing `#`, inside it). Each line is anchored at its first
+ * character that is not a space, since the parser may have turned a tab
+ * there into spaces; in a table cell, `|` is looked for as written, `\|`.
  */
 class ContentPlace {
-  private readonly pieces: {
-    content: number
-    source: number | null
-    line: number
-  }[] = []
+  private readonly pieces: Piece[] = []
 
   constructor(
     content: string,
@@ -299,43 +324,32 @@ class ContentPlace {
     let at = 0
     content.split("\n").forEach((piece, i) => {
       const line = Math.min(map[0] + i, Math.max(map[0], map[1] - 1))
-      const source = lines.line(line)
       const core = piece.trimStart()
       const lead = piece.length - core.length
-      let found: number | null = null
-      const trimmed = source.trimEnd()
-      if (core !== "" && trimmed.endsWith(core)) {
-        found = trimmed.length - core.length - lead
-      } else {
-        const from = cursor.get(line) ?? 0
-        const index = core === "" ? -1 : source.indexOf(core, from)
-        if (index >= 0) {
-          found = index - lead
-          cursor.set(line, index + core.length)
-        }
-      }
+      const place = find(lines.line(line), core, cursor.get(line) ?? 0)
+      if (place) cursor.set(line, place.end)
       this.pieces.push({
         content: at,
-        source: found === null ? null : lines.start(line) + Math.max(0, found),
+        lead,
+        source: place ? lines.start(line) + place.start : null,
         line,
+        pipes: place?.pipes ?? [],
       })
       at += piece.length + 1
     })
   }
 
-  /** The body offset of a content offset. */
-  source(offset: number): number {
+  /** The body offset of a content offset, or null if it cannot be placed. */
+  source(offset: number): number | null {
     let piece = this.pieces[0]
     for (const p of this.pieces) {
       if (p.content > offset) break
       piece = p
     }
-    if (!piece) return 0
-    if (piece.source === null) return this.lines.start(piece.line)
-    return Math.min(
-      piece.source + (offset - piece.content),
-      this.lines.end(piece.line),
-    )
+    if (!piece || piece.source === null) return null
+    const into = Math.max(0, offset - piece.content - piece.lead)
+    const escapes = piece.pipes.filter((p) => p < into).length
+    return Math.min(piece.source + into + escapes, this.lines.end(piece.line))
   }
 
   /** The lines the content was read from. */
@@ -344,6 +358,38 @@ class ContentPlace {
     const last = this.pieces.at(-1)?.line ?? first
     return { start: this.lines.start(first), end: this.lines.end(last) }
   }
+}
+
+/**
+ * Finds a line of content in its source line: at the end (after trailing
+ * spaces), or else from `from` on, or else with `|` written as `\|`.
+ */
+function find(
+  source: string,
+  core: string,
+  from: number,
+): { start: number; end: number; pipes: number[] } | null {
+  if (core === "") return null
+  const trimmed = source.trimEnd()
+  if (trimmed.endsWith(core)) {
+    const start = trimmed.length - core.length
+    return { start, end: trimmed.length, pipes: [] }
+  }
+  const index = source.indexOf(core, from)
+  if (index >= 0) return { start: index, end: index + core.length, pipes: [] }
+  if (!core.includes("|")) return null
+  const escaped = core.replaceAll("|", "\\|")
+  const found = source.indexOf(escaped, from)
+  if (found < 0) return null
+  const pipes: number[] = []
+  for (let i = core.indexOf("|"); i >= 0; i = core.indexOf("|", i + 1))
+    pipes.push(i)
+  return { start: found, end: found + escaped.length, pipes }
+}
+
+type ParseEnv = Env & {
+  /** Set when markdown-it stopped reading at its nesting limit. */
+  cutOff?: boolean
 }
 
 type InlineRule = (state: StateInline, silent: boolean) => boolean
@@ -381,9 +427,10 @@ function withPositions(md: MarkdownIt): MarkdownIt {
           .find((t) => t.type === "link_open" || t.type === "image")
         if (token) {
           const written = state.src.slice(start, state.pos)
-          // A reference-style link (`[text][label]`) takes its destination
-          // from a definition, which is listed itself.
-          const viaDefinition = name !== "autolink" && !written.includes("](")
+          // A reference-style link (`[text][label]`, `[text]`) takes its
+          // destination from a definition, which is listed itself; an
+          // inline link always ends with `)`.
+          const viaDefinition = name !== "autolink" && !written.endsWith(")")
           token.meta = { ...token.meta, start, end: state.pos, viaDefinition }
         }
       }
@@ -417,6 +464,22 @@ function withPositions(md: MarkdownIt): MarkdownIt {
   // Keep the definition tokens: markdown-it drops them before reading
   // inline content, but the body model lists definitions as links.
   md.core.ruler.disable("strip_references")
+  // Keep every destination as written, and list them all, including
+  // `javascript:`, `file:` and `data:`, so validation sees them. Only this
+  // instance does so; the wiki renders with its own, which refuses them.
+  md.normalizeLink = (url) => url
+  md.validateLink = () => true
+  // markdown-it stops reading, silently, where blocks nest deeper than
+  // `maxNesting`; note it, so the body is refused instead.
+  const tokenize = md.block.tokenize.bind(md.block)
+  md.block.tokenize = (state, startLine, endLine) => {
+    if (state.level >= md.options.maxNesting) {
+      const line = state.skipEmptyLines(startLine)
+      if (line < endLine && state.sCount[line]! >= state.blkIndent)
+        (state.env as ParseEnv).cutOff = true
+    }
+    tokenize(state, startLine, endLine)
+  }
   return md
 }
 

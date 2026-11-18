@@ -6,9 +6,10 @@
  * with the square of these shapes. The parser is now markdown-it
  * (`@shinan/markdown`), which reads every one of them in about linear time
  * (`packages/markdown/src/index.test.ts`); the limits stay as a cheap guard
- * for the server and the wiki alike. The depth limit also matters for
- * markdown-it itself: it stops reading past its nesting limit, so the scan
- * ensures nothing a stored document holds is silently cut off.
+ * for the server and the wiki alike. They do not bound how deep blocks nest
+ * across lines (lists nested by indentation): markdown-it stops reading,
+ * silently, past its nesting limit, so the body model watches for that
+ * itself after reading and refuses such a body (`body.ts`).
  *
  * **When unsure, count.** The scan does not try to parse Markdown exactly;
  * wherever a line could be one of the costly shapes, it is counted as one:

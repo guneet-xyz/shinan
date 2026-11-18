@@ -236,3 +236,19 @@
 .base-ui-disable-scrollbar::-webkit-scrollbar {
   display: none;
 }
+
+/*
+ * Table alignment in rendered Markdown. @shinan/markdown writes it as these
+ * classes, because the Content Security Policy allows no inline styles.
+ */
+.align-left {
+  text-align: left;
+}
+
+.align-center {
+  text-align: center;
+}
+
+.align-right {
+  text-align: right;
+}

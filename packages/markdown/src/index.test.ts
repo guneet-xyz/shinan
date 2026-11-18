@@ -1,10 +1,72 @@
 import { describe, expect, it } from "vitest"
 
-import { createMarkdown, markdownOptions } from "./index.js"
+import { alignmentClasses, createMarkdown, markdownOptions } from "./index.js"
+import { growth, maxGrowth } from "./testing.js"
 
 const md = createMarkdown()
 
 describe("the shared configuration", () => {
+  // Every construct the configuration reads, including hostile ones.
+  const everything = `# Heading **bold** _em_ ~~gone~~ \`code\`
+
+Setext
+===
+
+Text with [a link](machine/musashi), <https://example.com/x>, an
+![image](https://example.com/i.png), a ![data image](data:image/png;base64,AAAA),
+[script](javascript:alert(1)), [vb](vbscript:x), [file](file:///etc/passwd),
+[data](data:text/html,<script>x</script>), [ref][r] and [![inner](i.png)](machine/x).
+
+> A quote with <b onclick="x">raw HTML</b> and <script>alert(1)</script>
+> - a list in it
+
+1. one
+2. two
+   - nested
+
+| Left | Centre | Right | None |
+|:-----|:------:|------:|------|
+| a | b | c | d |
+
+\`\`\`js
+const x = "<script>"
+\`\`\`
+
+    indented code
+
+<div style="color: red">raw block</div>
+
+---
+
+[r]: machine/y "Title"
+`
+
+  it("renders HTML the Content Security Policy allows", () => {
+    const html = md.render(everything)
+    // Inside tags only: raw HTML written in the text is shown escaped.
+    expect(html).not.toMatch(/<[^>]*\sstyle=/i)
+    expect(html).not.toMatch(/<script/i)
+    expect(html).not.toMatch(/<img/i)
+    expect(html).not.toMatch(/<[^>]*\son[a-z]+=/i)
+    expect(html).not.toMatch(/(href|src)="(javascript|vbscript|file|data):/i)
+    expect(html).toContain(`<th class="${alignmentClasses.left}">Left</th>`)
+    expect(html).toContain(`<td class="${alignmentClasses.center}">b</td>`)
+    expect(html).toContain(`<td class="${alignmentClasses.right}">c</td>`)
+    expect(html).toContain("<td>d</td>")
+    expect(html).toContain('<a href="https://example.com/i.png">image</a>')
+    expect(html).toContain('<a href="machine/x">inner</a>')
+    expect(html).toContain('<a href="machine/musashi">a link</a>')
+  })
+
+  it("leaves refused destinations as text", () => {
+    const html = md.render(
+      "[s](javascript:x) ![d](data:image/png;base64,AAAA)\n",
+    )
+    expect(html).toBe(
+      "<p>[s](javascript:x) ![d](data:image/png;base64,AAAA)</p>\n",
+    )
+  })
+
   it("renders no raw HTML and reads tables and strikethrough", () => {
     const html = md.render(
       "<script>alert(1)</script>\n\n| a |\n| - |\n| ~~b~~ |\n",
@@ -36,19 +98,11 @@ describe("the shared configuration", () => {
 describe("time on hostile input (#102)", () => {
   // Inputs that made the earlier parser (micromark) take seconds to minutes
   // at 64 KiB, here with no limits in front. markdown-it's time must grow
-  // about linearly: from 16 KiB to 64 KiB, the best of three runs grows well
-  // under 16 times (quadratic). Wall-clock time is a loose backstop only.
+  // about linearly (see `growth` in ./testing.ts: CPU time, best of five,
+  // the full size against four quarters).
   const fill = (unit: string, size: number) =>
     unit.repeat(Math.ceil(size / unit.length)).slice(0, size)
-  const best = (text: string) => {
-    let fastest = Infinity
-    for (let i = 0; i < 3; i++) {
-      const started = performance.now()
-      md.parse(text, {})
-      fastest = Math.min(fastest, performance.now() - started)
-    }
-    return fastest
-  }
+  const read = (text: string) => md.parse(text, {})
 
   it.each<[string, (size: number) => string]>([
     ["emphasis *a_", (n) => fill("*a_", n)],
@@ -94,20 +148,36 @@ describe("time on hostile input (#102)", () => {
   ])(
     "reads %s in time that grows about linearly",
     (_, make) => {
-      // Times of a few milliseconds are noise, so the quarter size counts
-      // as at least 20 ms; a quadratic regression takes seconds at 64 KiB.
-      // Measured again (up to three times) before failing, since other
-      // tests run alongside.
-      let ratio = Infinity
-      let full = Infinity
-      for (let i = 0; i < 3 && ratio >= 8; i++) {
-        const quarter = Math.max(best(make(16 * 1024)), 20)
-        full = best(make(64 * 1024))
-        ratio = Math.min(ratio, full / quarter)
-      }
-      expect(ratio).toBeLessThan(8)
+      const { ratio, full } = growth(make, read, 64 * 1024)
+      expect(ratio).toBeLessThan(maxGrowth)
       expect(full).toBeLessThan(30_000)
     },
     120_000,
   )
+})
+
+describe("the growth measurement itself", () => {
+  // Work that is quadratic or linear in the length of the text, to check
+  // that `growth` tells them apart reliably.
+  const quadratic = (text: string) => {
+    const n = text.length >> 3
+    let sum = 0
+    for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) sum += i ^ j
+    return sum
+  }
+  const linear = (text: string) => {
+    let sum = 0
+    for (let k = 0; k < 64; k++)
+      for (let i = 0; i < text.length; i++) sum += text.charCodeAt(i) ^ k
+    return sum
+  }
+  const make = (size: number) => "a".repeat(size)
+
+  it("flags quadratic work", () => {
+    expect(growth(make, quadratic, 64 * 1024).ratio).toBeGreaterThan(maxGrowth)
+  })
+
+  it("passes linear work", () => {
+    expect(growth(make, linear, 64 * 1024).ratio).toBeLessThan(maxGrowth)
+  })
 })

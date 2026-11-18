@@ -361,7 +361,7 @@ importers:
   packages/markdown:
     dependencies:
       markdown-it:
-        specifier: ^15.0.3
+        specifier: ~15.0.3
         version: 15.0.3
 
 packages:
