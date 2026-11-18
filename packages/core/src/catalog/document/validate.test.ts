@@ -943,6 +943,19 @@ describe("secrets written with YAML escapes (catalog §7.3)", () => {
 })
 
 describe("redaction keeps ordinary words", () => {
+  it("does not cut a weak sign's value from the warning that reports it", () => {
+    const result = change({
+      "machine/daedalus": entity("machine/daedalus", {
+        body: "Ask for the password: person at the desk.\n",
+      }),
+    })
+    expect(result.problems.map((p) => p.code)).toEqual(["secret-suspected"])
+    expect(result.problems[0]?.message).toContain("a person confirms")
+    expect(result.problems[0]?.message).toContain(
+      "(password or key written as a value, passw…)",
+    )
+  })
+
   it("cuts a weak sign's value only where it was found", () => {
     const result = change({
       "machine/daedalus": entity("machine/daedalus", {

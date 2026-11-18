@@ -1157,8 +1157,7 @@ check before applying is much cheaper than cleaning up afterwards.
   checked (frontmatter and body), and the proposal's other text. Frontmatter
   values and keys are also checked as read, so a secret written with YAML
   escapes (such as `\x41` for `A`) is found too.
-  - **Blocked:** private key blocks (`-----BEGIN … PRIVATE KEY-----`), also
-    in base64 as Kubernetes secrets hold them (`LS0tLS1CRUdJTi…`), and
+  - **Blocked:** private key blocks (`-----BEGIN … PRIVATE KEY-----`), also in base64 as Kubernetes secrets hold them, even after a certificate in the same bundle, and
     `age` secret keys; Shinan agent tokens (the prefix from
     [identity §7.4](identity.md#74-handling) followed by at least 20 letters
     and digits); GitHub, GitLab, Slack (including app tokens), AWS access

@@ -242,6 +242,21 @@ describe("the check for secret-looking values (catalog §7.3)", () => {
     ])
   })
 
+  it("blocks a private key after a certificate in a base64 bundle, or after a line break", () => {
+    const certificate =
+      "-----BEGIN CERTIFICATE-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAu1SU1L\n-----END CERTIFICATE-----\n"
+    const key =
+      "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC7\n-----END PRIVATE KEY-----\n"
+    for (const pem of [certificate + key, `\n${key}`, `ab${key}`]) {
+      const encoded = Buffer.from(pem).toString("base64")
+      expect(kinds(`tls.key: ${encoded}`)).toEqual([
+        ["blocking", "private key (base64)"],
+      ])
+    }
+    const url = Buffer.from(`\n${key}`).toString("base64url")
+    expect(kinds(url)).toEqual([["blocking", "private key (base64)"]])
+  })
+
   it("does not block a certificate or public key written in base64", () => {
     for (const type of ["CERTIFICATE", "PUBLIC KEY"]) {
       const pem = `-----BEGIN ${type}-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAu1SU1L\n-----END ${type}-----\n`
@@ -301,6 +316,7 @@ describe("the check on hostile input", () => {
     "fingerprint starts": fill("SHA256:"),
     "agent-token prefixes": fill(agentTokenPrefix),
     "base64 PEM starts": fill("LS0tLS1CRUdJTi"),
+    "one long base64 run with a BEGIN marker": `LS0tLS1CRUdJTi${fill("QUFB")}`,
     base64: random(
       "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/",
     ),

@@ -251,7 +251,14 @@ function redact(
             (s) =>
               s.documentId === p.documentId &&
               s.range.start < (p.range as Range).end &&
-              (p.range as Range).start < s.range.end,
+              (p.range as Range).start < s.range.end &&
+              // The warning that reports the value already shows only its
+              // excerpt; cutting the value again would garble its words.
+              !(
+                p.code === "secret-suspected" &&
+                p.range?.start === s.range.start &&
+                p.range.end === s.range.end
+              ),
           )
           .map((s) => s.secret)
       : []

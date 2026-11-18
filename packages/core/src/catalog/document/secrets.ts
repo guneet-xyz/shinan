@@ -51,6 +51,9 @@ interface Pattern {
 
 const escapedPrefix = agentTokenPrefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 
+/** "-----BEGIN" in base64, at each of the three byte alignments. */
+const base64Begin = ["LS0tLS1CRUdJTi", "LS0tQkVHSU4", "LS0tLUJFR0lO"]
+
 /** Not inside a longer word of letters, digits, `_` or `-`. */
 const start = "(?<![A-Za-z0-9_-])"
 const end = "(?![A-Za-z0-9_-])"
@@ -62,13 +65,16 @@ const certain: Pattern[] = [
     pattern: /-----BEGIN (?:[A-Z0-9]{1,20} ){0,4}PRIVATE KEY(?: BLOCK)?-----/g,
   },
   {
-    // A PEM private key in base64, as Kubernetes secrets hold them:
-    // "LS0tLS1CRUdJTi" is "-----BEGIN " in base64.
+    // A PEM private key in base64, as Kubernetes secrets hold them. A long
+    // base64 run that holds "-----BEGIN" at any of the three byte
+    // alignments is decoded whole, so a key after a certificate in a
+    // bundle, or after a leading line break, is found too.
     kind: "private key (base64)",
-    pattern: /LS0tLS1CRUdJTi[A-Za-z0-9+/]{20,}={0,2}/g,
+    pattern: /(?<![A-Za-z0-9+/=_-])[A-Za-z0-9+/_-]{40,}={0,2}/g,
     accept: (m) =>
-      /^-----BEGIN (?:[A-Z0-9]{1,20} ){0,4}PRIVATE KEY/.test(
-        Buffer.from(m[0].slice(0, 96), "base64").toString("latin1"),
+      base64Begin.some((marker) => m[0].includes(marker)) &&
+      /-----BEGIN (?:[A-Z0-9]{1,20} ){0,4}PRIVATE KEY/.test(
+        Buffer.from(m[0], "base64").toString("latin1"),
       ),
   },
   {
