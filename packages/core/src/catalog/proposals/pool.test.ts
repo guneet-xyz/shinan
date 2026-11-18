@@ -95,26 +95,33 @@ describe("the catalog workers", { timeout: 120_000 }, () => {
   })
 
   it("stops only the workspace whose proposal ran out of time", async () => {
+    // Enough documents that validating them takes far longer than the
+    // limit: with two small ones, a fast machine answered within 1 ms.
+    const many: LatestDocument[] = [...documents]
+    for (let i = 0; i < 300; i++) {
+      texts[`m${i}`] = fixtures.daedalus.replace(
+        "id: machine/daedalus",
+        `id: machine/m${i}`,
+      )
+      many.push({ documentId: `m${i}`, revision: 1 })
+    }
     const { workers, loaded, load } = setUp({ timeLimitMs: 1 })
     const other = new CatalogWorkers()
     try {
       await other.prepare("w2", documents, load, input)
       await expect(
-        workers.prepare("w1", documents, load, input),
+        workers.prepare("w1", many, load, input),
       ).rejects.toMatchObject({ rule: "too-complex" })
       await expect(
-        workers.prepare("w1", documents, load, input),
+        workers.prepare("w1", many, load, input),
       ).rejects.toMatchObject({ rule: "too-complex" })
       await other.prepare("w2", documents, load, input)
     } finally {
       await other.close()
     }
     // w1 loaded twice, once per new worker; w2 once.
-    expect(loaded).toEqual([
-      ["a@1", "b@1"],
-      ["a@1", "b@1"],
-      ["a@1", "b@1"],
-    ])
+    const times = (key: string) => loaded.flat().filter((k) => k === key).length
+    expect([times("a@1"), times("m0@1"), times("m299@1")]).toEqual([3, 2, 2])
   })
 
   it("forget a workspace's catalog when told, as purge needs", async () => {
