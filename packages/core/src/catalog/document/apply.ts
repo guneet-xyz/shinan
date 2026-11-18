@@ -162,8 +162,10 @@ export type ApplyResult =
  * operation's expectations are checked against the documents as the earlier
  * operations left them.
  *
- * The result still has to be validated (catalog §8.3) with
- * `validateChange`; this function only makes the text.
+ * This function only makes the text. The result is then validated as a
+ * whole (catalog §8.3), on the Markdown and not on the operations:
+ * `validateChange({ before, after, changed: changes.map((c) => c.after) },
+ * context)`.
  */
 export function applyOperations(
   documents: Iterable<CatalogDocument | string>,

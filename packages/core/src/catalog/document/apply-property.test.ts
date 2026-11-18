@@ -11,11 +11,13 @@ import {
 import { comparableValue, discrepancies } from "./analysis.js"
 import { applyOperations, expectationOf } from "./apply.js"
 import { readCatalog } from "./catalog.js"
+import type { Catalog } from "./catalog.js"
 import type { Fact, ResolvedEntity } from "./entity.js"
 import { factIdentityKey } from "./identity.js"
 import type { CatalogDocument, EntityDocument, FactState } from "./model.js"
 import type { CatalogOperation, CheckInput, FactInput } from "./operations.js"
 import { builtInSchemas, keySchema } from "./schemas.js"
+import { validateCatalog, validateChange } from "./validate.js"
 
 /**
  * Property tests (architecture §5.2, rule 5): random sequences of
@@ -803,7 +805,7 @@ function operationFor(
         operation: {
           op: "retire",
           document: id,
-          ...(c.flag ? { replacedBy: "service/postgres" } : {}),
+          ...(c.flag ? { replacedBy: `${document.type}/replacement` } : {}),
           expect: { status: document.status ?? "active" },
         },
         target: { kind: "field", names: new Set(["status", "replaced_by"]) },
@@ -1141,6 +1143,40 @@ describe("operations on the catalog document's examples", () => {
   )
 })
 
+const now = Date.parse("2026-11-18T00:00:00Z")
+
+/**
+ * Small entities for everything the documents and commands may refer to,
+ * so references resolve and validation judges only what operations write.
+ */
+function stubs(catalog: Catalog, vocabulary: Vocabulary, id: string): string[] {
+  const type = id.slice(0, id.indexOf("/"))
+  const wanted = new Set([
+    "person/guneet",
+    `${type}/replacement`,
+    ...machines,
+    ...services,
+    ...vocabulary.relations.flatMap((r) => r.targets),
+  ])
+  for (const document of catalog.documents)
+    for (const link of document.body.links)
+      if (link.reference) wanted.add(link.reference)
+  for (const entity of catalog.entities.values())
+    for (const fact of entity.facts) if (fact.to) wanted.add(fact.to)
+  const taken = new Set(
+    catalog.documents.flatMap((d) => [
+      d.id,
+      ...(d.kind === "entity" ? d.aliases : []),
+    ]),
+  )
+  return [...wanted]
+    .filter((ref) => !taken.has(ref))
+    .map(
+      (ref) =>
+        `---\nid: ${ref}\ntype: ${ref.slice(0, ref.indexOf("/"))}\ntitle: Stub\nsummary: A stub.\nstatus: active\nowner: person/guneet\n---\n`,
+    )
+}
+
 /**
  * Applies each command to the entity `id` among `documents`, one proposal
  * at a time, checking every result. Returns the entity's last text.
@@ -1151,10 +1187,19 @@ function runCommands(
   vocabulary: Vocabulary,
   commands: Command[],
 ): string {
-  const index = readCatalog(documents).documents.findIndex((d) => d.id === id)
-  const others = documents.filter((_, i) => i !== index)
+  const start = readCatalog(documents)
+  const index = start.documents.findIndex((d) => d.id === id)
+  const others = [
+    ...documents.filter((_, i) => i !== index),
+    ...stubs(start, vocabulary, id),
+  ]
   let text = documents[index] as string
   let current = id
+  expect(
+    validateCatalog(readCatalog([...others, text]), { now }).problems.filter(
+      (p) => p.severity === "blocking",
+    ),
+  ).toEqual([])
   for (const c of commands) {
     const catalog = readCatalog([...others, text])
     const document = catalog.documents.find(
@@ -1187,6 +1232,18 @@ function runCommands(
     checkUntouched(document, entity, after, afterEntity, planned.target)
     checkModel(afterEntity, planned.target)
     checkAccepted(entity, afterEntity, planned.target)
+    // The result validates (catalog §8.3): nothing the operation wrote blocks it.
+    const validation = validateChange(
+      {
+        before: result.before,
+        after: result.after,
+        changed: result.changes.map((change) => change.after),
+      },
+      { now },
+    )
+    expect(
+      validation.problems.filter((p) => p.severity === "blocking"),
+    ).toEqual([])
     text = after.text
     current = after.id as string
   }

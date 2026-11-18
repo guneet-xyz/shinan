@@ -17,6 +17,7 @@ import type {
   PresentFact,
 } from "./operations.js"
 import { maxDocumentBytes } from "./parse.js"
+import { validateChange } from "./validate.js"
 
 const by = "guneet via opencode-daedalus"
 
@@ -1622,5 +1623,65 @@ describe("documents that cannot be edited", () => {
         ],
       ),
     ).toMatchObject([{ kind: "invalid", code: "operation-invalid" }])
+  })
+})
+
+describe("validation of the result (catalog §8.3)", () => {
+  const person = `---
+id: person/guneet
+type: person
+title: Guneet
+summary: The owner.
+status: active
+owner: person/guneet
+---
+`
+  const stub = (id: string) =>
+    `---\nid: ${id}\ntype: ${id.split("/")[0]}\ntitle: Stub\nsummary: A stub.\nstatus: active\nowner: person/guneet\n---\n`
+  const documents = [person, musashi, stub("service/ingress")]
+  const validate = (operations: CatalogOperation[]) => {
+    const result = apply(documents, operations)
+    return validateChange(
+      {
+        before: result.before,
+        after: result.after,
+        changed: result.changes.map((c) => c.after),
+      },
+      { now: Date.parse("2026-11-18T00:00:00Z") },
+    )
+  }
+
+  it("runs on what the operations wrote: a valid change passes", () => {
+    expect(
+      validate([
+        {
+          op: "set-fact",
+          document: "machine/musashi",
+          fact: { key: "disk.data.free", state: "observed", value: "70 GiB" },
+          check,
+          expect: current(musashi, "disk.data.free|observed"),
+        },
+      ]).blocked,
+    ).toBe(false)
+  })
+
+  it("blocks what the operations allow but the catalog does not: a check in the future, a broken reference", () => {
+    const result = validate([
+      {
+        op: "set-fact",
+        document: "machine/musashi",
+        fact: { key: "on-network", state: "observed", to: "service/nowhere" },
+        check: { ...check, checked: "2027-01-01" },
+        expect: {
+          identity: "on-network|observed|to=service/nowhere",
+          absent: true,
+        },
+      },
+    ])
+    expect(result.blocked).toBe(true)
+    expect(result.problems.map((p) => p.code).sort()).toEqual([
+      "checked-in-future",
+      "reference-unresolved",
+    ])
   })
 })
