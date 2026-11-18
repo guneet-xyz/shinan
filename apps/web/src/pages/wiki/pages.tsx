@@ -486,6 +486,7 @@ function ChangeItem(props: {
         <span className="font-medium">Revision {change.revision}</span>{" "}
         <span className="text-muted-foreground">
           · {formatTime(change.at)} · {change.changed_by}
+          {change.approved_by && ` · approved by ${change.approved_by}`}
         </span>
         {proposal && (
           <>

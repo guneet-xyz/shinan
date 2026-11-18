@@ -146,14 +146,15 @@ function StepTarget(props: { workspaceId: string; step: StartHereStep }) {
     )
   if ("url" in step) return <MaybeLink text={step.url} />
   const title = listTitles[step.list] ?? step.list
-  if (step.list === "waiting-for-approval")
-    // Catalog review comes with catalog proposals (M2-4, M2-8).
-    return <span className="font-semibold">{title}</span>
   return (
     <Link
       to={wikiPath(
         workspaceId,
-        step.list === "recent-changes" ? "/changes" : `/lists/${step.list}`,
+        step.list === "recent-changes"
+          ? "/changes"
+          : step.list === "waiting-for-approval"
+            ? "/review"
+            : `/lists/${step.list}`,
       )}
       className={linkClass}
     >

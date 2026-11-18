@@ -3,7 +3,7 @@ import { MemoryRouter } from "react-router"
 import { describe, expect, it } from "vitest"
 
 import { diffLines } from "./diff"
-import { ageText, freshnessSummary, summaryParts } from "./format"
+import { ageText, entityPath, freshnessSummary, summaryParts } from "./format"
 import { linkTarget } from "./links"
 import { Markdown } from "./markdown"
 
@@ -47,6 +47,7 @@ describe("link destinations in catalog Markdown", () => {
       "machine/musashi#identity-and-role",
       { kind: "entity", id: "machine/musashi", anchor: "identity-and-role" },
     ],
+    ["start-here", { kind: "entity", id: "start-here", anchor: null }],
   ])("follows %s", (destination, target) => {
     expect(linkTarget(destination)).toEqual(target)
   })
@@ -74,6 +75,7 @@ describe("link destinations in catalog Markdown", () => {
     "machine/musashi.old",
     "machine/musashi#../../x",
     "#a/b",
+    "Start-Here",
   ])("does not follow %j", (destination) => {
     expect(linkTarget(destination)).toBeNull()
   })
@@ -90,6 +92,29 @@ describe("the Markdown renderer", () => {
       ["H3", "section-musashi", "Musashi"],
       ["H3", "", "Quoted heading"],
       ["H4", "section-cautions", "Cautions"],
+    ])
+  })
+
+  it("leads type schema and start-here references to their own pages", () => {
+    expect(entityPath("1", "schema/dns-zone")).toBe("/w/1/wiki/types/dns-zone")
+    expect(entityPath("1", "start-here")).toBe("/w/1/wiki/start-here")
+    expect(entityPath("1", "machine/musashi")).toBe(
+      "/w/1/wiki/e/machine/musashi",
+    )
+    const container = render(
+      <MemoryRouter>
+        <Markdown
+          text="See the [domain type](schema/domain), [start here](start-here) and [its cautions](schema/domain#cautions)."
+          entityPath={(id) => entityPath("1", id)}
+        />
+      </MemoryRouter>,
+    ).container
+    expect(
+      [...container.querySelectorAll("a")].map((a) => a.getAttribute("href")),
+    ).toEqual([
+      "/w/1/wiki/types/domain",
+      "/w/1/wiki/start-here",
+      "/w/1/wiki/types/domain#section-cautions",
     ])
   })
 

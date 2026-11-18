@@ -16,6 +16,9 @@ const scheme = /^([a-z][a-z0-9+.-]*):/i
  * An entity or type schema ID (catalog §2.4; `ids.ts` in core): a type and
  * a slug, both lowercase kebab-case. Nothing else, so no `.` or `..`
  * segment, empty segment or extra `/` can make a link leave the wiki.
+ * Besides entities, it names type schema documents (`schema/<type>`), and
+ * `start-here` is the one ID without a type; `entityPath` leads each to
+ * its own page.
  */
 const entityId = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\/[a-z0-9]+(?:-[a-z0-9]+)*$/
 
@@ -40,7 +43,8 @@ export function linkTarget(destination: string): LinkTarget | null {
   // a section of that page (catalog §2.4).
   const hash = url.indexOf("#")
   const id = hash < 0 ? url : url.slice(0, hash)
-  if (!entityId.test(id)) return null
+  // The start-here document is the one catalog ID without a type.
+  if (!entityId.test(id) && id !== "start-here") return null
   if (hash < 0) return { kind: "entity", id, anchor: null }
   const anchor = decode(url.slice(hash + 1))
   if (anchor === "") return { kind: "entity", id, anchor: null }

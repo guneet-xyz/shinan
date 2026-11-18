@@ -211,6 +211,8 @@ const history: CatalogHistoryAnswer = {
       changed_by_kind: "person",
       confidence: "recorded",
       purge: 2,
+      approved_by: null,
+      proposal: { id: "44444444-4444-4444-8444-444444444444", number: 12 },
     },
     {
       revision: 3,
@@ -219,6 +221,8 @@ const history: CatalogHistoryAnswer = {
       changed_by_kind: "agent",
       confidence: "recorded",
       purge: null,
+      approved_by: "ana",
+      proposal: { id: "55555555-5555-4555-8555-555555555555", number: 4 },
     },
   ],
   next_before: null,
@@ -388,6 +392,44 @@ describe("an entity page", () => {
     }
   })
 
+  it("lists the proposals waiting on it, under its header", async () => {
+    renderApp(
+      entityPath,
+      api({
+        ...musashi,
+        pending_proposals: [
+          {
+            proposal_id: "66666666-6666-4666-8666-666666666666",
+            number: 9,
+            author: "guneet via opencode-daedalus",
+            author_kind: "agent",
+            created_at: "2026-11-18T10:00:00.000Z",
+            approval_classes: ["lifecycle"],
+            related_task: "SHN-12",
+          },
+        ],
+      }),
+    )
+    const section = (
+      await screen.findByRole("heading", { name: "Waiting for approval" })
+    ).closest("section")!
+    expect(
+      within(section)
+        .getByRole("link", { name: "Catalog proposal 9" })
+        .getAttribute("href"),
+    ).toBe(
+      `/w/${workspaceId}/wiki/proposals/66666666-6666-4666-8666-666666666666`,
+    )
+    expect(section.textContent).toContain(
+      "guneet via opencode-daedalus (an agent) · SHN-12",
+    )
+    expect(section.textContent).toContain("Kind of change: lifecycle")
+    // Right after the header, before the rest of the page.
+    expect(
+      screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent)[0],
+    ).toBe("Waiting for approval")
+  })
+
   it("says first when an entity is retired, with its replacement", async () => {
     renderApp(
       entityPath,
@@ -428,6 +470,17 @@ describe("an entity page", () => {
     ).closest("section")!
     await within(historySection).findByText("Revision 3")
     expect(historySection.textContent).toContain("current")
+    // Who approved it, and the proposal that applied it.
+    expect(historySection.textContent).toContain(
+      "guneet via opencode-daedalus · approved by ana",
+    )
+    expect(
+      within(historySection)
+        .getByRole("link", { name: "catalog proposal 4" })
+        .getAttribute("href"),
+    ).toBe(
+      `/w/${workspaceId}/wiki/proposals/55555555-5555-4555-8555-555555555555`,
+    )
     await userEvent.click(
       within(historySection).getByRole("link", { name: "Compare with now" }),
     )
@@ -507,6 +560,7 @@ describe("start here", () => {
                       entity: summary("service/vault", "Vault"),
                     },
                     { list: "discrepancies", note: "What disagrees." },
+                    { list: "waiting-for-approval", note: "Look here." },
                   ]
                 : [
                     {
@@ -557,7 +611,14 @@ describe("start here", () => {
       expect.stringMatching(/^2Dockyard.*changed since you opened it/),
       expect.stringMatching(/^3Vault.*not opened yet/),
       expect.stringMatching(/^4Discrepancies.*What disagrees\.$/),
+      expect.stringMatching(/^5Waiting for approval.*Look here\.$/),
     ])
+    // The waiting-for-approval list is catalog review.
+    expect(
+      within(people)
+        .getByRole("link", { name: "Waiting for approval" })
+        .getAttribute("href"),
+    ).toBe(`/w/${workspaceId}/wiki/review`)
     const agents = screen
       .getByRole("heading", { name: "For agents" })
       .closest("section")!
@@ -815,6 +876,7 @@ describe("moving around the wiki", () => {
                     at: "2026-11-16T10:00:00.000Z",
                     changed_by: "guneet",
                     changed_by_kind: "person",
+                    approved_by: revision === 2 ? "ana" : null,
                     documents: [{ id: "machine/musashi", kind: "entity" }],
                   })),
           }),
@@ -825,6 +887,8 @@ describe("moving around the wiki", () => {
       "Revision 2",
       "Revision 1",
     ])
+    expect(items[0]!.closest("li")!.textContent).toContain("approved by ana")
+    expect(items[1]!.closest("li")!.textContent).not.toContain("approved by")
   })
 })
 

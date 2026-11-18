@@ -5,8 +5,15 @@ import type {
   ScalarValue,
 } from "@shinan/api-client"
 
-/** The wiki page of an entity (an ID may hold `/`). */
+/**
+ * The wiki page a catalog ID names (an ID may hold `/`): an entity's page;
+ * for a type schema document (`schema/<type>`) its type's page; for
+ * `start-here`, Start here.
+ */
 export function entityPath(workspaceId: string, id: string): string {
+  if (id === "start-here") return `/w/${workspaceId}/wiki/start-here`
+  const type = /^schema\/([a-z][a-z0-9]*(?:-[a-z0-9]+)*)$/.exec(id)?.[1]
+  if (type) return `/w/${workspaceId}/wiki/types/${type}`
   return `/w/${workspaceId}/wiki/e/${id.split("/").map(encodeURIComponent).join("/")}`
 }
 

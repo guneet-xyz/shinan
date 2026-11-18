@@ -989,6 +989,8 @@ export interface CatalogChangeJson {
   at: string
   changed_by: string
   changed_by_kind: string
+  /** Who gave catalog approval, when the change needed one; null otherwise. */
+  approved_by: string | null
   /** The documents it changed, by their current ID (null if the text has none), with their kind. */
   documents: { id: string | null; kind: string | null }[]
 }
@@ -1070,6 +1072,7 @@ export async function readCatalogChanges(
       at: s.createdAt.toISOString(),
       changed_by: s.actorLabel,
       changed_by_kind: s.actorKind,
+      approved_by: s.approvedByLabel,
       documents: changed
         .filter((c) => c.revision === s.number)
         .map((c) => ({ id: c.id, kind: c.kind })),

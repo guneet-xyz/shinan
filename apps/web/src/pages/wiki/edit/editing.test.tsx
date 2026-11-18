@@ -1066,6 +1066,7 @@ describe("catalog review", () => {
             at: "2026-11-18T10:00:00.000Z",
             changed_by: account.person.handle,
             changed_by_kind: "person",
+            approved_by: null,
             documents: [{ id: "machine/musashi", kind: "entity" }],
           },
         ],

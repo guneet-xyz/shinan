@@ -31,6 +31,7 @@ const facts = schema.catalogIndexFacts
 const revisions = schema.catalogRevisions
 const revisionDocuments = schema.catalogRevisionDocuments
 const visits = schema.catalogPageVisits
+const proposals = schema.catalogProposals
 
 type DocumentRecord = typeof documents.$inferSelect
 
@@ -99,6 +100,10 @@ export interface CatalogHistoryItemJson {
    * latest text with purged text replaced by a marker. Null for a change.
    */
   purge: number | null
+  /** Who gave catalog approval, when it needed one (a person's own gated edit is their approval). */
+  approved_by: string | null
+  /** The catalog proposal it applied; null for revisions stored without one. */
+  proposal: { id: string; number: number } | null
 }
 
 export interface CatalogHistoryAnswer extends CatalogAnswer {
@@ -150,6 +155,9 @@ export async function listCatalogHistory(
           kind: revisions.actorKind,
           confidence: revisions.confidence,
           purge: schema.catalogPurges.number,
+          approvedBy: revisions.approvedByLabel,
+          proposalId: proposals.id,
+          proposalNumber: proposals.number,
         })
         .from(revisionDocuments)
         .innerJoin(
@@ -164,6 +172,13 @@ export async function listCatalogHistory(
           and(
             eq(schema.catalogPurges.workspaceId, revisions.workspaceId),
             eq(schema.catalogPurges.id, revisions.purgeId),
+          ),
+        )
+        .leftJoin(
+          proposals,
+          and(
+            eq(proposals.workspaceId, revisions.workspaceId),
+            eq(proposals.id, revisions.proposalId),
           ),
         )
         .where(
@@ -189,6 +204,11 @@ export async function listCatalogHistory(
           changed_by_kind: r.kind,
           confidence: r.confidence,
           purge: r.purge,
+          approved_by: r.approvedBy,
+          proposal:
+            r.proposalId === null || r.proposalNumber === null
+              ? null
+              : { id: r.proposalId, number: r.proposalNumber },
         })),
         next_before:
           rows.length > limit ? shown[shown.length - 1]!.revision : null,

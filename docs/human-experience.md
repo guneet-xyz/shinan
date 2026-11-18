@@ -881,13 +881,21 @@ details of the page as built.
   headings carry the sections' anchors. Raw HTML is shown as text; only web
   and mail addresses, entity references and links to a section of the page
   are links ([security checklist 10.3](security-checklist.md#10-features-not-built-yet)).
-- **History** lists the catalog revisions that changed the page (when, and
-  who they are credited to). Opening one shows the document's stored text at
+- **History** lists the catalog revisions that changed the page (when, who
+  they are credited to, who approved them when they needed approval, and
+  the catalog proposal that applied them). Opening one shows the document's stored text at
   that revision compared line by line with the current text. Reason: the
   stored text is the source of truth (D-006), so the comparison shows
   exactly what changed, fields and facts included.
-- **Pending catalog proposals** and who approved a revision are added once
-  catalog proposals exist ([M2-4](https://github.com/guneet-xyz/shinan/issues/86)).
+- **Pending catalog proposals** are listed under the header as "Waiting for
+  approval": each proposal's number (linking to it in catalog review), its
+  author, when, the related task and the kind of change, from the entity's
+  `pending_proposals` ([catalog §12.4](catalog.md#124-the-index-format)).
+  The page itself shows the catalog as it is now. Recent changes also say
+  who approved each revision.
+- **Links** in the body to a type schema document (`schema/<type>`) open
+  the type's page, and links to `start-here` open Start here; the
+  "Waiting for approval" step of a start-here path opens catalog review.
 - **A page that could not be read in full** lists what could not be read.
   For a workspace owner it links **Repair this page**; others are told a
   workspace owner can repair it. **Proposed
