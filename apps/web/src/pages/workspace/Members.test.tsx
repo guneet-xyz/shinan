@@ -34,6 +34,44 @@ describe("the members screen", () => {
     expect(you.textContent).toContain("Nobody (created the workspace)")
   })
 
+  it("shows each member's agents", async () => {
+    renderApp(
+      path,
+      fakeApi({
+        members: () =>
+          Promise.resolve([
+            ownerMember,
+            {
+              ...contributorMember,
+              agents: [
+                {
+                  id: "a1",
+                  handle: "opencode-daedalus",
+                  name: "OpenCode on Daedalus",
+                  enabled: true,
+                },
+                {
+                  id: "a2",
+                  handle: "codex-takezo",
+                  name: "Codex on Takezo",
+                  enabled: false,
+                },
+              ],
+            },
+          ]),
+      }),
+    )
+    const sam = await memberCard("Sam")
+    expect(sam.textContent).toContain(
+      "AgentsOpenCode on Daedalus, Codex on Takezo (disabled)",
+    )
+    expect((await memberCard("Guneet")).textContent).toContain("AgentsNone")
+    await userEvent.click(within(sam).getByRole("button", { name: "Remove…" }))
+    expect(sam.textContent).toContain(
+      "Their agents here are disabled and their tokens stop working: OpenCode on Daedalus.",
+    )
+  })
+
   it("lets a workspace owner change a role", async () => {
     const api = fakeApi({
       changeRole: () =>

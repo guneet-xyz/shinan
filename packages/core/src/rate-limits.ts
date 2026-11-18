@@ -56,6 +56,27 @@ export const rateLimits = {
     windowSeconds: 60,
     record: { action: "request.throttled" },
   },
+  /**
+   * Failed agent token use per network address (identity §10): unknown,
+   * revoked or otherwise refused tokens. Only failures count, and only
+   * failures are refused: a working token from the same address still goes
+   * through, so nobody sharing an address can lock it out.
+   */
+  "agent-token-failure": {
+    max: 10,
+    windowSeconds: 60,
+    record: { action: "request.throttled" },
+  },
+  /**
+   * Requests with one agent token, from anywhere (architecture §10.1,
+   * per-token limits), counted by the token rather than the address: a
+   * stolen token used from many addresses is still limited.
+   */
+  "agent-token": {
+    max: 600,
+    windowSeconds: 60,
+    record: { action: "request.throttled" },
+  },
 } as const satisfies Record<string, RateLimit>
 
 export type RateLimitName = keyof typeof rateLimits
@@ -75,9 +96,10 @@ export type RateLimitOutcome =
 export async function takeRateLimit(
   ctx: Context,
   name: RateLimitName,
+  options: RateLimitOptions = {},
 ): Promise<RateLimitOutcome> {
   const limit: RateLimit = rateLimits[name]
-  const address = throttleAddress(ctx.request?.networkAddress) ?? "unknown"
+  const key = options.key ?? addressKey(ctx)
   return atInstallation(ctx, "rate-limit", async (scope) => {
     const t = schema.rateLimits
     const expired = sql`${t.windowStart} <= now() - make_interval(secs => ${limit.windowSeconds})`
@@ -85,7 +107,7 @@ export async function takeRateLimit(
     // the first refusal is exactly `max + 1`.
     const [row] = await scope.tx
       .insert(t)
-      .values({ key: `${name}:${address}`, windowStart: sql`now()`, count: 1 })
+      .values({ key: `${name}:${key}`, windowStart: sql`now()`, count: 1 })
       .onConflictDoUpdate({
         target: t.key,
         set: {
@@ -110,11 +132,23 @@ export async function takeRateLimit(
         details:
           limit.record.action === "sign-in.failed"
             ? { method: limit.record.method, reason: "throttled" }
-            : { limit: name },
+            : { limit: name, ...(options.key ? { key: options.key } : {}) },
       })
     }
     return { allowed: false, retryAfterSeconds }
   })
+}
+
+export interface RateLimitOptions {
+  /**
+   * What to count by instead of the request's network address, such as an
+   * agent token's ID. Never a secret: it is stored and may be logged.
+   */
+  key?: string
+}
+
+function addressKey(ctx: Context): string {
+  return throttleAddress(ctx.request?.networkAddress) ?? "unknown"
 }
 
 /**

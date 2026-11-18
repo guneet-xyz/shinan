@@ -129,6 +129,31 @@ describe("worker", () => {
     expect(signIn?.cron).toBe("15 * * * *")
     const rateLimits = await worker.boss.getSchedule(queues.rateLimitPrune)
     expect(rateLimits?.cron).toBe("20 * * * *")
+    const tokenUse = await worker.boss.getSchedule(queues.agentTokenUse)
+    expect(tokenUse?.cron).toBe("25 * * * *")
+  })
+
+  it("summarises agent token use", async () => {
+    worker = await startWorker({
+      databaseUrl,
+      db,
+      emailSender,
+      pollingIntervalSeconds: 0.5,
+    })
+    const id = await worker.boss.send(queues.agentTokenUse)
+
+    await vi.waitFor(
+      async () => {
+        const [job] = await worker!.boss.findJobs(queues.agentTokenUse, {
+          id: id!,
+        })
+        expect(job?.state).toBe("completed")
+        expect(job?.output).toEqual({
+          summarized: expect.any(Number) as number,
+        })
+      },
+      { timeout: 10_000, interval: 200 },
+    )
   })
 
   it("prunes rate-limit counts", async () => {

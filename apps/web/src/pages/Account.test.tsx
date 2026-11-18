@@ -162,9 +162,23 @@ describe("sign-in methods, sessions and invitations", () => {
     expect(api.endSignInSession).toHaveBeenCalledWith("s2")
 
     await userEvent.click(
+      screen.getByRole("checkbox", { name: /Also revoke all my agent tokens/ }),
+    )
+    await userEvent.click(
       screen.getByRole("button", { name: "Sign out everywhere" }),
     )
-    expect(api.signOutEverywhere).toHaveBeenCalled()
+    expect(api.signOutEverywhere).toHaveBeenCalledWith({
+      revokeAgentTokens: true,
+    })
+  })
+
+  it("links to your agents", async () => {
+    renderApp("/account")
+    expect(
+      (await screen.findByRole("link", { name: "Your agents" })).getAttribute(
+        "href",
+      ),
+    ).toBe("/account/agents")
   })
 
   it("lists pending invitations to accept or decline", async () => {

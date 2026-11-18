@@ -64,19 +64,26 @@ All files go in one directory, next to `compose.yml`.
 2. **Settings** that are not secret go in `.env`: copy
    [`deploy/.env.example`](../deploy/.env.example) and fill it in.
 
-   | Setting                  | What to put                                                                                                                  |
-   | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
-   | `SHINAN_IMAGE`           | The image, pinned by digest (`…@sha256:…`), or `shinan:local`                                                                |
-   | `SHINAN_URL`             | The address people open, such as `https://shinan.example.com`: HTTPS, no path. Every link Shinan sends starts with it        |
-   | `SHINAN_OPERATORS`       | Installation operators' email addresses, separated by commas. They can sign in from the start and manage the email allowlist |
-   | `SHINAN_TRUSTED_PROXIES` | Your proxy's address as Shinan sees it ([below](#reverse-proxy)); empty trusts nobody                                        |
-   | `SHINAN_PORT`            | Port on `127.0.0.1` for your proxy (default 3000)                                                                            |
-   | `EMAIL_FROM`             | The address Shinan sends from, verified in SES                                                                               |
-   | `SES_REGION`             | The SES region, such as `us-east-1`                                                                                          |
-   | `SES_CONFIGURATION_SET`  | Optional SES configuration set                                                                                               |
+   | Setting                  | What to put                                                                                                                                                                                                         |
+   | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+   | `SHINAN_IMAGE`           | The image, pinned by digest (`…@sha256:…`), or `shinan:local`                                                                                                                                                       |
+   | `SHINAN_URL`             | The address people open, such as `https://shinan.example.com`: HTTPS, no path. Every link Shinan sends starts with it. Agent tokens are bound to it: changing it stops every agent token, and members make new ones |
+   | `SHINAN_OPERATORS`       | Installation operators' email addresses, separated by commas. They can sign in from the start and manage the email allowlist                                                                                        |
+   | `SHINAN_TRUSTED_PROXIES` | Your proxy's address as Shinan sees it ([below](#reverse-proxy)); empty trusts nobody                                                                                                                               |
+   | `SHINAN_PORT`            | Port on `127.0.0.1` for your proxy (default 3000)                                                                                                                                                                   |
+   | `EMAIL_FROM`             | The address Shinan sends from, verified in SES                                                                                                                                                                      |
+   | `SES_REGION`             | The SES region, such as `us-east-1`                                                                                                                                                                                 |
+   | `SES_CONFIGURATION_SET`  | Optional SES configuration set                                                                                                                                                                                      |
 
    The [README's settings table](../README.md#developing-locally) lists every
    variable Shinan reads.
+
+   **Changing `SHINAN_URL` later stops every agent token.** Each token
+   records the address it was made for and works only there
+   ([identity §7.4](identity.md#74-handling)), so after a change every
+   member must make a new token for each of their agents (Your account,
+   Your agents) and put it on the machine. Shinan also refuses every token
+   if `SHINAN_URL` is not set.
 
 3. **Secrets** are files in `secrets/`, one value per file. Compose mounts each
    only into the containers that need it. Keep the directory private: the

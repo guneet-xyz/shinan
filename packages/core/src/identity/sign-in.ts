@@ -16,6 +16,7 @@ import {
 import { recordSecurityEntry } from "../security-log.js"
 import { hashToken, newToken } from "../tokens.js"
 import { isId, normalizeEmail } from "../validation.js"
+import { revokeTokensOfPerson } from "./agents.js"
 import { isAllowlisted, personWith } from "./allowlist.js"
 import { getInstallation } from "./installation.js"
 import { createAccount } from "./people.js"
@@ -501,17 +502,25 @@ export async function endSignInSession(
 
 /**
  * "Sign out everywhere": ends all the person's sign-in sessions, this one
- * included (identity §3.3, §7.5). Revoking their agent tokens as well
- * becomes an option when agents exist (M2).
+ * included, and if they choose, revokes all their agent tokens in every
+ * workspace (identity §3.3, §7.5). Returns how many sessions ended.
  */
-export async function endAllSignInSessions(ctx: Context): Promise<number> {
+export async function endAllSignInSessions(
+  ctx: Context,
+  options: { revokeAgentTokens?: boolean } = {},
+): Promise<number> {
   return atInstallation(ctx, "sign-in-session.end", async (scope) => {
+    const personId = scope.actor.personId!
     const ended = await scope.tx
       .delete(schema.signInSessions)
-      .where(eq(schema.signInSessions.personId, scope.actor.personId!))
+      .where(eq(schema.signInSessions.personId, personId))
       .returning({ id: schema.signInSessions.id })
-    await record(scope, "sign-in.signed-out-everywhere", scope.actor.personId, {
+    const tokensRevoked = options.revokeAgentTokens
+      ? await revokeTokensOfPerson(scope, personId, "signed-out-everywhere")
+      : 0
+    await record(scope, "sign-in.signed-out-everywhere", personId, {
       sessionsEnded: ended.length,
+      agentTokensRevoked: tokensRevoked,
     })
     return ended.length
   })
@@ -728,6 +737,8 @@ export async function sendSecurityAlert(
   },
   person: { email: string },
   alert: SecurityAlert,
+  /** The page the email links to, where the person can review it. */
+  reviewPath = "/account",
 ): Promise<void> {
   const installation = await getInstallation(scope.tx)
   await queueEmail(scope, {
@@ -735,7 +746,7 @@ export async function sendSecurityAlert(
     to: person.email,
     content: securityAlertEmail({
       installationName: installation?.name ?? "Shinan",
-      accountLink: installationLink(scope, "/account"),
+      accountLink: installationLink(scope, reviewPath),
       alert,
     }),
   })

@@ -96,8 +96,10 @@ const safeMethods = new Set(["GET", "HEAD", "OPTIONS"])
  * needs no state and no change to the web app. `SameSite=Lax` cookies alone
  * are not enough: other sites under the same domain (other services on
  * `guneet.dev`) count as the same site, and forms can post without a body.
- * Requests without a cookie (agent tokens, from M2) are not at risk; they can
- * be let through here when they arrive.
+ *
+ * Agent endpoints are not behind this check: they are routed ahead of it
+ * and take no cookie at all (`requireAgent`), so a forged browser request
+ * has no credential to use there. Everything else stays behind it.
  */
 export function sameOriginOnly(
   installationUrl: string | undefined,

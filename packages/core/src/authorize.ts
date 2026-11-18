@@ -1,7 +1,7 @@
 import { and, eq, isNull, schema, sql } from "@shinan/db"
 import type { Role, Transaction } from "@shinan/db"
 
-import type { Actor, ResolvedActor } from "./actor.js"
+import type { Actor, AgentActor, ResolvedActor } from "./actor.js"
 import { writtenActor } from "./actor.js"
 import type { Context, InstallationScope, WorkspaceScope } from "./context.js"
 import {
@@ -268,13 +268,33 @@ function publicError(reason: RefusalReason): Error {
   }
 }
 
-/** Adds the person's current membership in the workspace, if any. */
+/**
+ * Adds the actor's current membership in the workspace, if any. An agent
+ * acts only through the membership it was created with, not its person's
+ * current one: an agent of a person who left and rejoined stays outside
+ * (identity §5.3).
+ */
 async function withMembership(
   tx: Transaction,
   actor: ResolvedActor,
   workspaceId: string,
 ): Promise<ResolvedActor> {
   if (!actor.personId) return actor
+  if (actor.agentId) {
+    const [member] = await tx
+      .select({ id: schema.members.id, role: schema.members.role })
+      .from(schema.agents)
+      .innerJoin(schema.members, eq(schema.members.id, schema.agents.memberId))
+      .where(
+        and(
+          eq(schema.agents.id, actor.agentId),
+          eq(schema.agents.workspaceId, workspaceId),
+          eq(schema.members.workspaceId, workspaceId),
+          isNull(schema.members.removedAt),
+        ),
+      )
+    return { ...actor, member: member ?? null }
+  }
   const [member] = await tx
     .select({ id: schema.members.id, role: schema.members.role })
     .from(schema.members)
@@ -316,10 +336,15 @@ async function resolveActor(
   if (
     actor.kind === "agent" &&
     (!isId(actor.agentId) ||
+      !isId(actor.tokenId) ||
       (actor.agentSessionId !== undefined && !isId(actor.agentSessionId)))
   ) {
     return null
   }
+  // An agent counts only while it is enabled and the token the request
+  // used is not revoked, checked again here on every operation (identity
+  // §7.5), whatever the token layer found earlier in the request.
+  if (actor.kind === "agent" && !(await agentIsLive(tx, actor))) return null
   const [person] = await tx
     .select({
       handle: schema.people.handle,
@@ -342,4 +367,27 @@ async function resolveActor(
     // Only a person's own requests count as an operator's; never an agent's.
     operator: actor.kind === "person" && person.operator,
   }
+}
+
+async function agentIsLive(
+  tx: Transaction,
+  actor: AgentActor,
+): Promise<boolean> {
+  const [live] = await tx
+    .select({ id: schema.agents.id })
+    .from(schema.agents)
+    .innerJoin(
+      schema.agentTokens,
+      eq(schema.agentTokens.agentId, schema.agents.id),
+    )
+    .where(
+      and(
+        eq(schema.agents.id, actor.agentId),
+        eq(schema.agents.personId, actor.personId),
+        eq(schema.agents.enabled, true),
+        eq(schema.agentTokens.id, actor.tokenId),
+        isNull(schema.agentTokens.revokedAt),
+      ),
+    )
+  return live !== undefined
 }

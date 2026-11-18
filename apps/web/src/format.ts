@@ -1,9 +1,14 @@
 import { sameSitePath } from "@shinan/api-client"
-import type { Role } from "@shinan/api-client"
+import type { Role, TokenAccess } from "@shinan/api-client"
 
 export const roleNames: Record<Role, string> = {
   owner: "Workspace owner",
   contributor: "Contributor",
+}
+
+export const accessNames: Record<TokenAccess, string> = {
+  full: "Full",
+  "read-only": "Read-only",
 }
 
 const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" })

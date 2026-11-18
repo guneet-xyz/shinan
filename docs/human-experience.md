@@ -1179,6 +1179,13 @@ Screen details:
   already connected to another workspace cannot be added (owner, O-59, [#25]).
   Each repository shows its "turn new issues into tasks" setting, on by
   default (owner, NO-2, [#26]). **Proposed** wording.
+- **Agents.** **Proposed (M2-5):** the same rows as Your agents, with the
+  member each agent acts for. On another member's agent a workspace owner is
+  offered only Revoke token and Disable; their own agents have every action.
+  "Last agent session seen" joins with agent sessions (M4). Like the other
+  owner-only screens, the tab is not shown to contributors; their own agents
+  are in Your agents. The Members screen lists each member's agents by name,
+  with "(disabled)" where it applies.
 - **Removing a member** lists the consequences first: their agents and tokens
   that will be disabled, tasks they are assigned to, agent sessions of theirs
   attached to tasks, and git host connections they set up. **Proposed.**
@@ -1281,6 +1288,32 @@ and last use, and lets them rename or disable an agent and revoke its token.
 Because tokens never expire, the last use is shown prominently so unused ones
 are easy to spot and revoke. **Proposed.** Reason: long-lived tokens (O-44)
 make revoking unused ones the main protection.
+
+**Proposed (M2-5, [#83](https://github.com/guneet-xyz/shinan/issues/83)),
+as built until browser approval arrives (M4):**
+
+- **Your agents** is its own page (`/account/agents`), linked from Your
+  account. It lists the person's agents in every workspace they belong to.
+  Each row shows the agent's name and handle, its state (a full or read-only
+  token, no token, or disabled), "Last used … from <network address>" or
+  "Never used" on its own line, "Unused for 30 days" as a warning mark, the
+  workspace, coding tool, machine, when the token was made and how many
+  requests it has made.
+- Row actions: **Replace token…** (a new token with the same access, shown
+  once; the old one stops working), **Rename**, **Revoke token…** and
+  **Disable…**. Replace, Revoke and Disable each ask first, saying the
+  current token stops on its next request; Revoke and Disable also say that
+  the agent's git host access on that machine is not affected
+  ([Identity](identity.md) section 7.5). **Enable** for a disabled agent.
+- **Create a token by hand** asks for the workspace (when there is more than
+  one), the coding tool (OpenCode, Claude Code, Codex, Gemini CLI, or another
+  by name), the machine, an optional name ("OpenCode on Daedalus" is
+  suggested) and the access (full or read-only), then asks the person to sign
+  in again. The token is shown once, with a Copy button, a reminder that it
+  will not be shown again, and how the coding tool sends it
+  (`Authorization: Bearer`).
+- "Sign out everywhere" on Your account has an unticked option to also
+  revoke all the person's agent tokens.
 
 ### Your machines (phase 3)
 

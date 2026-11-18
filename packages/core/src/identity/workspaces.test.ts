@@ -128,7 +128,7 @@ describe("renameWorkspace", () => {
       }),
     ).rejects.toBeInstanceOf(ReauthenticationRequiredError)
     await expect(
-      renameWorkspace(asAgent(db, owner, workspaceId), {
+      renameWorkspace(await asAgent(db, owner, workspaceId), {
         workspaceId,
         name: "X",
       }),

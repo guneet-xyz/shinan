@@ -179,6 +179,12 @@ how each is tested. In short:
   A refusal is 429 with `Retry-After` (seconds left in the window).
 - Every answer carries security headers and a strict Content Security Policy
   (no inline scripts or styles; `apps/server/src/security.ts`).
+- Agent endpoints (`/api/agent`, and `/mcp` from M2-6) take an agent token
+  only as `Authorization: Bearer`, never in the address and never with a
+  cookie. They are the only routes outside the same-origin check above. Make a token by hand under Your account, Your agents, then check
+  it with `curl -H "Authorization: Bearer $(cat token-file)"
+http://localhost:5173/api/agent`. Only its SHA-256 hash is stored, and it
+  is bound to `SHINAN_URL`.
 - Health checks are only on the internal listener: `/healthz` (liveness) and
   `/readyz` (database reachable and migrated); the public listener answers
   404 to any spelling of those paths. `/api/status` is the public, minimal

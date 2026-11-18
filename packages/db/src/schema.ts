@@ -338,6 +338,12 @@ export const members = pgTable(
     // Lets other tables reference a member together with its workspace, so
     // the database refuses references that cross workspaces.
     unique("members_workspace_id_id").on(t.workspaceId, t.id),
+    // Lets agents reference a member together with its person too.
+    unique("members_workspace_id_id_person_id").on(
+      t.workspaceId,
+      t.id,
+      t.personId,
+    ),
     foreignKey({
       name: "members_invited_by_same_workspace",
       columns: [t.workspaceId, t.invitedByMemberId],
@@ -417,6 +423,156 @@ export const invitations = pgTable(
   ],
 )
 
+/** Agent token scopes (identity §7.2). */
+export const agentScopes = [
+  "catalog:read",
+  "catalog:propose",
+  "tasks:read",
+  "tasks:write",
+  "presence",
+] as const
+
+const slug = (column: AnyPgColumn) =>
+  sql`${column} ~ '^[a-z0-9]+(-[a-z0-9]+)*$'`
+
+/**
+ * One member's coding tool on one machine (identity §6.1, O-40): it belongs
+ * to one workspace and acts for the member through the membership it was
+ * created with, so it can never outlive that membership (identity §5.3).
+ * Rows are kept when disabled, so past records stay credited.
+ */
+export const agents = pgTable(
+  "agents",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id),
+    memberId: uuid("member_id").notNull(),
+    personId: uuid("person_id")
+      .notNull()
+      .references(() => people.id),
+    /** Such as `opencode`. */
+    codingTool: text("coding_tool").notNull(),
+    /** Such as `daedalus`. */
+    machine: text("machine").notNull(),
+    /** `<coding tool>-<machine>`; never changes (identity §8.7). */
+    handle: text("handle").notNull(),
+    /** What people call it, such as "OpenCode on Daedalus"; can be renamed. */
+    name: text("name").notNull(),
+    /** The `machine` catalog entity it runs on, such as `machine/daedalus`. */
+    machineEntityId: text("machine_entity_id"),
+    enabled: boolean("enabled").notNull().default(true),
+    createdAt: createdAt(),
+    disabledAt: timestamp("disabled_at", { withTimezone: true }),
+  },
+  (t) => [
+    // The membership is in the agent's workspace and is its person's.
+    foreignKey({
+      name: "agents_member_same_workspace_and_person",
+      columns: [t.workspaceId, t.memberId, t.personId],
+      foreignColumns: [members.workspaceId, members.id, members.personId],
+    }),
+    // Lets tokens reference an agent together with its workspace.
+    unique("agents_workspace_id_id").on(t.workspaceId, t.id),
+    check("agents_coding_tool_format", slug(t.codingTool)),
+    check("agents_machine_format", slug(t.machine)),
+    check(
+      "agents_handle_from_tool_and_machine",
+      sql`${t.handle} = ${t.codingTool} || '-' || ${t.machine}`,
+    ),
+    check("agents_name_not_blank", sql`btrim(${t.name}) <> ''`),
+    check(
+      "agents_disabled_at_when_disabled",
+      sql`${t.enabled} = (${t.disabledAt} is null)`,
+    ),
+    uniqueIndex("agents_member_handle").on(t.memberId, t.handle),
+    index("agents_workspace_id").on(t.workspaceId),
+    index("agents_person_id").on(t.personId),
+  ],
+)
+
+/**
+ * Why an agent token stopped working (identity §7.3, §7.5), recorded on the
+ * token and in the security log.
+ */
+export const tokenRevocationReasons = [
+  /** Its member or a workspace owner revoked it. */
+  "revoked",
+  /** A new token was issued for the agent (one token per agent, NO-1). */
+  "replaced",
+  "agent-disabled",
+  "member-removed",
+  "member-left",
+  "allowlist-removed",
+  "signed-out-everywhere",
+] as const
+export type TokenRevocationReason = (typeof tokenRevocationReasons)[number]
+
+/**
+ * An agent's long-lived token (identity §7). Only a SHA-256 hash is stored,
+ * never the token (§7.4); the database refuses anything that is not a hash.
+ * Revoked tokens are kept for their use summary. At most one per agent is
+ * not revoked (NO-1).
+ */
+export const agentTokens = pgTable(
+  "agent_tokens",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id").notNull(),
+    agentId: uuid("agent_id").notNull(),
+    /** SHA-256 of the token, URL-safe base64. */
+    tokenHash: text("token_hash").notNull().unique(),
+    scopes: text("scopes").array().notNull(),
+    /** The origin of the installation that issued it (identity §7.4). */
+    installationUrl: text("installation_url").notNull(),
+    createdAt: createdAt(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    revokedReason: text("revoked_reason").$type<TokenRevocationReason>(),
+    firstUsedAt: timestamp("first_used_at", { withTimezone: true }),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    lastNetworkAddress: inet("last_network_address"),
+    requestCount: bigint("request_count", { mode: "number" })
+      .notNull()
+      .default(0),
+    /** `request_count` at the last use summary in the security log. */
+    summarizedCount: bigint("summarized_count", { mode: "number" })
+      .notNull()
+      .default(0),
+  },
+  (t) => [
+    foreignKey({
+      name: "agent_tokens_agent_same_workspace",
+      columns: [t.workspaceId, t.agentId],
+      foreignColumns: [agents.workspaceId, agents.id],
+    }),
+    check(
+      "agent_tokens_hash_only",
+      sql`${t.tokenHash} ~ '^[A-Za-z0-9_-]{43}$'`,
+    ),
+    check(
+      "agent_tokens_known_scopes",
+      sql`cardinality(${t.scopes}) > 0 and ${t.scopes} <@ array[${sql.raw(
+        agentScopes.map((s) => `'${s}'`).join(", "),
+      )}]::text[]`,
+    ),
+    check(
+      "agent_tokens_reason_when_revoked",
+      sql`(${t.revokedAt} is null) = (${t.revokedReason} is null)`,
+    ),
+    check(
+      "agent_tokens_known_reason",
+      sql`${t.revokedReason} in (${sql.raw(
+        tokenRevocationReasons.map((r) => `'${r}'`).join(", "),
+      )})`,
+    ),
+    uniqueIndex("agent_tokens_one_active")
+      .on(t.agentId)
+      .where(sql`${t.revokedAt} is null`),
+    index("agent_tokens_workspace_id").on(t.workspaceId),
+  ],
+)
+
 /** Something an event is about (domain model, Event). */
 export interface EventSubject {
   type: string
@@ -481,6 +637,11 @@ export const events = pgTable(
       name: "events_actor_person_id_fk",
       columns: [t.actorPersonId],
       foreignColumns: [people.id],
+    }),
+    foreignKey({
+      name: "events_actor_agent_id_fk",
+      columns: [t.actorAgentId],
+      foreignColumns: [agents.id],
     }),
     actorCheck("events_actor_known", t),
     index("events_workspace_id_id").on(t.workspaceId, t.id),

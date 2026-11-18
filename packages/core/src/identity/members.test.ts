@@ -9,6 +9,7 @@ import {
   newPerson,
   testDatabase,
 } from "../../test/helpers.js"
+import type { AgentActor } from "../actor.js"
 import {
   ForbiddenError,
   InvalidInputError,
@@ -121,7 +122,9 @@ describe("createWorkspace", () => {
       createWorkspace(asShinan(db), { name: "Shinan's" }),
     ).rejects.toBeInstanceOf(ForbiddenError)
     await expect(
-      createWorkspace(asAgent(db, owner, workspaceId), { name: "Agent's" }),
+      createWorkspace(await asAgent(db, owner, workspaceId), {
+        name: "Agent's",
+      }),
     ).rejects.toBeInstanceOf(ForbiddenError)
   })
 
@@ -396,7 +399,7 @@ describe("changeRole", () => {
 
   it("is reserved for people", async () => {
     await expect(
-      changeRole(asAgent(db, owner, workspaceId), {
+      changeRole(await asAgent(db, owner, workspaceId), {
         workspaceId,
         memberId: contributorMemberId,
         role: "owner",
@@ -540,8 +543,9 @@ describe("the security log", () => {
   })
 
   it("records agents attempting actions reserved for people", async () => {
+    const agent = await asAgent(db, owner, workspaceId)
     await expect(
-      removeMember(asAgent(db, owner, workspaceId), {
+      removeMember(agent, {
         workspaceId,
         memberId: contributorMemberId,
       }),
@@ -551,7 +555,7 @@ describe("the security log", () => {
     expect(entry).toMatchObject({
       action: "request.refused",
       actorKind: "agent",
-      actorLabel: `${owner.handle} via opencode-daedalus`,
+      actorLabel: `${owner.handle} via ${(agent.actor as AgentActor).agentHandle}`,
       details: { action: "member.remove", reason: "people-only" },
     })
   })
@@ -647,7 +651,7 @@ describe("the security log", () => {
 
   it("is not readable by agents", async () => {
     await expect(
-      listSecurityLog(asAgent(db, owner, workspaceId), workspaceId),
+      listSecurityLog(await asAgent(db, owner, workspaceId), workspaceId),
     ).rejects.toBeInstanceOf(ForbiddenError)
   })
 
@@ -671,7 +675,7 @@ describe("the security log", () => {
 describe("agents", () => {
   it("read the workspace with a read scope", async () => {
     const members = await listMembers(
-      asAgent(db, contributor, workspaceId, ["tasks:read"]),
+      await asAgent(db, contributor, workspaceId, ["tasks:read"]),
       workspaceId,
     )
     expect(members).toHaveLength(2)
@@ -680,7 +684,7 @@ describe("agents", () => {
   it("do not read without a read scope", async () => {
     await expect(
       listMembers(
-        asAgent(db, contributor, workspaceId, ["presence"]),
+        await asAgent(db, contributor, workspaceId, ["presence"]),
         workspaceId,
       ),
     ).rejects.toMatchObject({ reason: "scope" })
@@ -692,7 +696,7 @@ describe("agents", () => {
       memberId: contributorMemberId,
     })
     await expect(
-      listMembers(asAgent(db, contributor, workspaceId), workspaceId),
+      listMembers(await asAgent(db, contributor, workspaceId), workspaceId),
     ).rejects.toBeInstanceOf(NotFoundError)
   })
 })

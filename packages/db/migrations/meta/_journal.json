@@ -36,6 +36,13 @@
       "when": 1794862489696,
       "tag": "0004_rate_limits",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1794968097506,
+      "tag": "0005_agents",
+      "breakpoints": true
     }
   ]
 }

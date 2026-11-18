@@ -5,7 +5,7 @@ import type { InvitationForYou, SignInSession } from "@shinan/api-client"
 
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
+import { Button, buttonVariants } from "@/components/ui/button"
 
 import { useAccount } from "../account"
 import { useAction } from "../action"
@@ -19,9 +19,9 @@ import { leaveApp } from "../navigation"
 
 /**
  * Your account (human experience, Your account): separate from any
- * workspace. Profile, workspaces, pending invitations, sign-in methods and
- * sign-in sessions; linked Forgejo accounts, your agents and notification
- * settings come later.
+ * workspace. Profile, workspaces, pending invitations, a link to your
+ * agents, sign-in methods and sign-in sessions; linked Forgejo accounts and
+ * notification settings come later.
  */
 export function Account() {
   const { account } = useAccount()
@@ -86,6 +86,19 @@ export function Account() {
         <CreateWorkspace />
       </Section>
       <PendingInvitations />
+      <Section
+        title="Your agents"
+        description="Your coding tools on your machines, their tokens and when each was last used."
+      >
+        <Actions>
+          <Link
+            to="/account/agents"
+            className={buttonVariants({ variant: "outline" })}
+          >
+            Your agents
+          </Link>
+        </Actions>
+      </Section>
       <SignInMethods />
       <SignInSessions />
       <SignOut />
@@ -256,6 +269,7 @@ function SignInSessions() {
   const navigate = useNavigate()
   const sessions = useResource("sign-in-sessions", () => api.signInSessions())
   const everywhere = useAction()
+  const [revokeAgentTokens, setRevokeAgentTokens] = useState(false)
 
   return (
     <Section title="Sign-in sessions">
@@ -274,6 +288,18 @@ function SignInSessions() {
       ) : (
         <Loading />
       )}
+      <label className="flex items-start gap-2 text-sm">
+        <input
+          type="checkbox"
+          className="mt-0.5 size-4 accent-primary"
+          checked={revokeAgentTokens}
+          onChange={(event) => setRevokeAgentTokens(event.target.checked)}
+        />
+        <span>
+          Also revoke all my agent tokens, in every workspace. Agents then need
+          new tokens to connect.
+        </span>
+      </label>
       <Actions>
         <Button
           type="button"
@@ -281,7 +307,7 @@ function SignInSessions() {
           disabled={everywhere.pending}
           onClick={() =>
             everywhere.run(
-              () => api.signOutEverywhere(),
+              () => api.signOutEverywhere({ revokeAgentTokens }),
               () => void navigate("/sign-in", { replace: true }),
             )
           }

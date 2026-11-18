@@ -109,6 +109,93 @@ export interface Member {
   role: Role
   joinedAt: string
   invitedByHandle: string | null
+  /** The agents of this membership, enabled or not. */
+  agents: AgentLabel[]
+}
+
+/**
+ * The scopes a token is issued with (identity §7.2): all five, or only the
+ * two `read` scopes.
+ */
+export type TokenAccess = "full" | "read-only"
+
+/** An agent's working token: never the token itself, only its use. */
+export interface AgentToken {
+  id: string
+  access: TokenAccess
+  scopes: string[]
+  createdAt: string
+  firstUsedAt: string | null
+  lastUsedAt: string | null
+  lastNetworkAddress: string | null
+  requestCount: number
+  /** Not used for 30 days (identity §7.3). */
+  unused: boolean
+}
+
+/** One member's coding tool on one machine (identity §6.1). */
+export interface Agent {
+  id: string
+  workspaceId: string
+  workspaceName: string
+  memberId: string
+  personId: string
+  personHandle: string
+  personName: string
+  codingTool: string
+  machine: string
+  /** `<coding tool>-<machine>`; never changes. */
+  handle: string
+  name: string
+  machineEntityId: string | null
+  enabled: boolean
+  createdAt: string
+  disabledAt: string | null
+  /** The token that works now, if any. */
+  token: AgentToken | null
+}
+
+/** An agent as shown beside its member. */
+export interface AgentLabel {
+  id: string
+  handle: string
+  name: string
+  enabled: boolean
+}
+
+/** A token made by hand: shown in this answer only, never again. */
+export interface IssuedAgentToken {
+  agent: Agent
+  token: string
+  /** Whether the agent was registered for this token. */
+  agentCreated: boolean
+  /** Whether the agent's earlier token was revoked by this one. */
+  replacedToken: boolean
+}
+
+/** What `GET /api/agent` tells an agent about itself. */
+export interface ConnectedAgent {
+  agent: {
+    id: string
+    handle: string
+    name: string
+    codingTool: string
+    machine: string
+  }
+  person: { handle: string; name: string }
+  workspace: { id: string; name: string }
+  role: Role
+  access: TokenAccess
+  scopes: string[]
+}
+
+export interface NewAgentToken {
+  codingTool: string
+  machine: string
+  name?: string
+  access: TokenAccess
+  /** A `machine` catalog entity, such as `machine/daedalus`. */
+  machineEntityId?: string
 }
 
 export type ActorKind = "person" | "agent" | "shinan" | "outside" | "unknown"
@@ -198,6 +285,8 @@ export interface PageRequest {
 /**
  * Error codes in API error bodies (`{ error, message, rule?, reason? }`):
  * - `sign-in-required` (401): nobody is signed in;
+ * - `invalid-token` (401): an agent endpoint got no working agent token, the
+ *   same answer whatever was wrong with it;
  * - `reauthentication-required` (403): the action needs a recent sign-in;
  * - `forbidden` (403): the role or kind of actor does not allow it (`reason`);
  * - `not-found` (404): it does not exist, or the requester may not know it does;
@@ -210,6 +299,7 @@ export interface PageRequest {
  */
 export type ErrorCode =
   | "sign-in-required"
+  | "invalid-token"
   | "reauthentication-required"
   | "forbidden"
   | "not-found"
@@ -282,6 +372,8 @@ export function createApiClient(options: ApiClientOptions = {}) {
   }
 
   const workspace = (id: string) => `/api/workspaces/${encodeURIComponent(id)}`
+  const agentPath = (workspaceId: string, agentId: string) =>
+    `${workspace(workspaceId)}/agents/${encodeURIComponent(agentId)}`
 
   return {
     status: () => request<Status>("GET", "/api/status"),
@@ -321,8 +413,11 @@ export function createApiClient(options: ApiClientOptions = {}) {
         "DELETE",
         `/api/account/sessions/${encodeURIComponent(sessionId)}`,
       ),
-    signOutEverywhere: () =>
-      request<void>("POST", "/api/account/sessions/end-all"),
+    signOutEverywhere: (options: { revokeAgentTokens?: boolean } = {}) =>
+      request<void>("POST", "/api/account/sessions/end-all", {
+        revokeAgentTokens: options.revokeAgentTokens ?? false,
+      }),
+    yourAgents: () => request<Agent[]>("GET", "/api/account/agents"),
     addGitHub: (input: { callbackURL: string }) =>
       request<Redirect>("POST", "/api/account/github", input),
     removeGitHub: () => request<void>("DELETE", "/api/account/github"),
@@ -374,6 +469,33 @@ export function createApiClient(options: ApiClientOptions = {}) {
         "DELETE",
         `${workspace(workspaceId)}/members/${encodeURIComponent(memberId)}`,
       ),
+
+    agents: (workspaceId: string) =>
+      request<Agent[]>("GET", `${workspace(workspaceId)}/agents`),
+    createAgentToken: (workspaceId: string, input: NewAgentToken) =>
+      request<IssuedAgentToken>(
+        "POST",
+        `${workspace(workspaceId)}/agents`,
+        input,
+      ),
+    issueAgentToken: (
+      workspaceId: string,
+      agentId: string,
+      access: TokenAccess,
+    ) =>
+      request<IssuedAgentToken>(
+        "POST",
+        `${agentPath(workspaceId, agentId)}/token`,
+        { access },
+      ),
+    revokeAgentToken: (workspaceId: string, agentId: string) =>
+      request<Agent>("DELETE", `${agentPath(workspaceId, agentId)}/token`),
+    renameAgent: (workspaceId: string, agentId: string, name: string) =>
+      request<Agent>("PATCH", agentPath(workspaceId, agentId), { name }),
+    disableAgent: (workspaceId: string, agentId: string) =>
+      request<Agent>("POST", `${agentPath(workspaceId, agentId)}/disable`),
+    enableAgent: (workspaceId: string, agentId: string) =>
+      request<Agent>("POST", `${agentPath(workspaceId, agentId)}/enable`),
 
     invitations: (workspaceId: string) =>
       request<Invitation[]>("GET", `${workspace(workspaceId)}/invitations`),

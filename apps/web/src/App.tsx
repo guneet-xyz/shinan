@@ -11,6 +11,7 @@ import { NotFound } from "./pages/NotFound"
 import { Setup } from "./pages/Setup"
 import { SignIn } from "./pages/SignIn"
 import { SignInLink } from "./pages/SignInLink"
+import { Agents } from "./pages/workspace/Agents"
 import { General } from "./pages/workspace/General"
 import { Invitations } from "./pages/workspace/Invitations"
 import { Members } from "./pages/workspace/Members"
@@ -19,6 +20,7 @@ import {
   SettingsLayout,
   WorkspaceLayout,
 } from "./pages/workspace/WorkspaceLayout"
+import { YourAgents } from "./pages/YourAgents"
 import { RequireSignIn } from "./session"
 
 /**
@@ -41,6 +43,7 @@ export function App() {
           <Route element={<AppShell />}>
             <Route index element={<Home />} />
             <Route path="account" element={<Account />} />
+            <Route path="account/agents" element={<YourAgents />} />
             <Route path="installation" element={<Installation />} />
             <Route path="w/:workspaceId" element={<WorkspaceLayout />}>
               <Route index element={<Navigate to="settings" replace />} />
@@ -49,6 +52,7 @@ export function App() {
                 <Route path="general" element={<General />} />
                 <Route path="members" element={<Members />} />
                 <Route path="invitations" element={<Invitations />} />
+                <Route path="agents" element={<Agents />} />
                 <Route path="security-log" element={<SecurityLog />} />
               </Route>
             </Route>

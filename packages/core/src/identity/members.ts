@@ -8,6 +8,8 @@ import { appendEvent } from "../events.js"
 import type { WriteScope } from "../events.js"
 import { recordSecurityEntry } from "../security-log.js"
 import { checkRole, isId } from "../validation.js"
+import { agentLabelsByMember, endAgentsOfMember } from "./agents.js"
+import type { AgentLabel } from "./agents.js"
 
 export type Member = typeof schema.members.$inferSelect
 
@@ -20,6 +22,8 @@ export interface MemberSummary {
   joinedAt: Date
   /** The handle of the person who invited them, if anyone did. */
   invitedByHandle: string | null
+  /** The agents of this membership, enabled or not (identity §6.1). */
+  agents: AgentLabel[]
 }
 
 /** Current members of the workspace, oldest first. */
@@ -27,11 +31,16 @@ export async function listMembers(
   ctx: Context,
   workspaceId: string,
 ): Promise<MemberSummary[]> {
-  return inWorkspace(ctx, workspaceId, "workspace.read", (scope) =>
-    currentMembers(scope)
+  return inWorkspace(ctx, workspaceId, "workspace.read", async (scope) => {
+    const members = await currentMembers(scope)
       .where(currentIn(scope))
-      .orderBy(asc(schema.members.joinedAt), asc(schema.members.id)),
-  )
+      .orderBy(asc(schema.members.joinedAt), asc(schema.members.id))
+    const agents = await agentLabelsByMember(scope.tx, scope.workspaceId)
+    return members.map((member) => ({
+      ...member,
+      agents: agents.get(member.id) ?? [],
+    }))
+  })
 }
 
 /**
@@ -88,6 +97,7 @@ export async function addMember(
       role: member!.role,
       joinedAt: member!.joinedAt,
       invitedByHandle: scope.actor.label,
+      agents: [],
     }
   })
 }
@@ -200,7 +210,8 @@ async function findCurrentMember(
     and(currentIn(scope), eq(schema.members.id, memberId)),
   )
   if (!member) throw new NotFoundError()
-  return member
+  const agents = await agentLabelsByMember(scope.tx, scope.workspaceId)
+  return { ...member, agents: agents.get(member.id) ?? [] }
 }
 
 /**
@@ -255,8 +266,11 @@ async function endMembership(
     .update(schema.members)
     .set({ removedAt: sql`now()` })
     .where(and(currentIn(scope), eq(schema.members.id, member.id)))
-  // Disabling the member's agents and revoking their tokens joins this
-  // when agents exist (M2).
+  await endAgentsOfMember(
+    scope,
+    member.id,
+    event.kind === "member.left" ? "member-left" : "member-removed",
+  )
   await record(scope, {
     ...event,
     memberId: member.id,

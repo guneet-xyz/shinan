@@ -70,7 +70,7 @@ describe("getAccount", () => {
       ForbiddenError,
     )
     await expect(
-      getAccount(asAgent(db, person, workspace.id)),
+      getAccount(await asAgent(db, person, workspace.id)),
     ).rejects.toBeInstanceOf(ForbiddenError)
   })
 

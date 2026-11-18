@@ -44,6 +44,35 @@ async function throttledEntries(networkAddress: string, action: string) {
 }
 
 describe("takeRateLimit", () => {
+  it("counts by a key instead of the address when given one", async () => {
+    const key = crypto.randomUUID()
+    const { max } = rateLimits["agent-token"]
+    // Two addresses taking turns: the key is what is counted.
+    const addresses = [freshAddress(), freshAddress()]
+    for (let n = 0; n < max; n++) {
+      const outcome = await takeRateLimit(
+        from(addresses[n % 2]!),
+        "agent-token",
+        { key },
+      )
+      expect(outcome.allowed).toBe(true)
+    }
+    const refused = await takeRateLimit(from(addresses[0]!), "agent-token", {
+      key,
+    })
+    expect(refused.allowed).toBe(false)
+    const [entry] = await db
+      .select()
+      .from(schema.securityLog)
+      .where(
+        and(
+          eq(schema.securityLog.action, "request.throttled"),
+          sql`${schema.securityLog.details}->>'key' = ${key}`,
+        ),
+      )
+    expect(entry?.details).toEqual({ limit: "agent-token", key })
+  })
+
   it("allows up to the limit in a window, then refuses", async () => {
     const address = freshAddress()
     const { max } = rateLimits["sign-in-link"]

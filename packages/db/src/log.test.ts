@@ -43,7 +43,10 @@ describe("errorSummary and errorFrames", () => {
     )
     const frames = errorFrames(sneaky)
     expect(frames).toMatch(/^\s+at /)
-    expect(frames).not.toMatch(/ada@example\.com|token/)
+    // Only the message's own line is checked for, not words such as
+    // "token", which a real frame's file path may contain.
+    expect(frames).not.toContain("ada@example.com")
+    expect(frames.split("\n")).not.toContain("    at ada@example.com (token)")
     // A message changed after the stack was taken: no frames rather than
     // a guess.
     sneaky.message = "changed"

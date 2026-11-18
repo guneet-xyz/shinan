@@ -6,6 +6,7 @@ import type { Context } from "../context.js"
 import { RuleViolationError } from "../errors.js"
 import { recordSecurityEntry } from "../security-log.js"
 import { normalizeEmail } from "../validation.js"
+import { revokeTokensOfPerson } from "./agents.js"
 
 export interface AllowlistEntry {
   email: string
@@ -81,8 +82,8 @@ export async function addToAllowlist(
 
 /**
  * Removes an address from the allowlist. Its person's sign-in sessions end
- * at once, and neither sign-in method works for them any more; agent tokens
- * are revoked too once agents exist (identity §3.2). Operators' own
+ * at once, neither sign-in method works for them any more, and their agent
+ * tokens in every workspace are revoked (identity §3.2). Operators' own
  * addresses come from configuration and cannot be removed here.
  */
 export async function removeFromAllowlist(
@@ -113,8 +114,9 @@ export async function removeFromAllowlist(
           .where(eq(schema.signInSessions.personId, personId))
           .returning({ id: schema.signInSessions.id })
       : []
-    // Revoking the person's agent tokens in every workspace joins this when
-    // agents exist (M2).
+    const tokensRevoked = personId
+      ? await revokeTokensOfPerson(scope, personId, "allowlist-removed")
+      : 0
     await recordSecurityEntry(scope.tx, {
       workspaceId: null,
       action: "allowlist.removed",
@@ -122,7 +124,11 @@ export async function removeFromAllowlist(
       actor: scope.actor,
       subjectPersonId: personId,
       request: scope.request,
-      details: { email, signInSessionsEnded: ended.length },
+      details: {
+        email,
+        signInSessionsEnded: ended.length,
+        agentTokensRevoked: tokensRevoked,
+      },
     })
   })
 }
