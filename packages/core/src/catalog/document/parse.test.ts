@@ -530,49 +530,71 @@ describe("hostile input", () => {
     expect(d.problems[0]?.message).toContain("bytes")
   })
 
-  // Each of these took from 10 seconds to minutes at this size before the
-  // limits (micromark's time grows with their square). The bound is loose
-  // because garbage collection on a busy machine can add seconds.
-  const bound = 5000
+  // Time on a busy machine varies by seconds (garbage collection, other
+  // processes), so instead of a tight wall-clock bound these check how time
+  // grows: from a quarter of the size to the full size, the best of up to
+  // three runs must grow well below quadratically (16 times). A loose
+  // absolute bound remains as a backstop.
+  const best = (body: string, runs = 3) => {
+    let fastest = Infinity
+    for (let i = 0; i < runs; i++) {
+      const started = performance.now()
+      parseCatalogDocument(front + body)
+      fastest = Math.min(fastest, performance.now() - started)
+    }
+    return fastest
+  }
 
-  it.each([
-    ["repeated *a_ (emphasis)", fill("*a_", room)],
-    ["unclosed links", fill("[a](", room)],
-    ["unclosed links to <", fill("[a](<", room)],
-    ["inline HTML comments", fill("a <!-- b\n", room)],
-    ["nested link brackets", fill("[", room)],
-    ["many backticks", fill("`a", room)],
-    ["a long flat list", fill("- a\n", room)],
+  const under = (repeated: string, count: number, size: number) =>
+    (repeated.repeat(count) + fill("x\n\n", size)).slice(0, size)
+
+  it.each<[string, (size: number) => string]>([
+    ["repeated *a_ (emphasis)", (n) => fill("*a_", n)],
+    ["unclosed links just under the limit", (n) => under("[a](\n\n", 990, n)],
+    ["inline HTML comments", (n) => fill("a <!-- b\n", n)],
+    ["nested link brackets", (n) => fill("[", n)],
+    ["many backticks", (n) => fill("`a", n)],
+    ["a long flat list", (n) => fill("- a\n", n)],
+    ["lists nested just under the limit", (n) => under("- a\n  - b\n", 990, n)],
     [
-      "lists nested just under the limit",
-      ("- a\n  - b\n".repeat(990) + fill("x\n\n", room)).slice(0, room),
+      "quotes 31 deep",
+      (n) => `${"> ".repeat(31)}a\n\n${fill("x\n\n", n - 70)}`,
     ],
-    ["quotes 31 deep", `${"> ".repeat(31)}a\n\n${fill("x\n\n", room - 70)}`],
+    ["setext headings just under the limit", (n) => under("a\n===\n", 490, n)],
+    ["separate quotes just under the limit", (n) => under("> b\n\n", 990, n)],
     [
-      "setext headings just under the limit",
-      ("a\n===\n".repeat(490) + fill("x\n\n", room)).slice(0, room),
-    ],
-    [
-      "separate quotes just under the limit",
-      ("> b\n\n".repeat(990) + fill("x\n\n", room)).slice(0, room),
+      "empty list items just under the limit",
+      (n) => under("+\n\nc\n\n", 990, n),
     ],
     [
       "lazy lines just under the limit",
-      (`> a\n${"b\n".repeat(990)}\n` + fill("x\n\n", room)).slice(0, room),
+      (n) => (`> a\n${"  b\n".repeat(990)}\n` + fill("x\n\n", n)).slice(0, n),
     ],
-    ["a long single quote", fill("> a\n", room)],
-    ["a long single list", fill("- a\n", room)],
+    [
+      "list continuation lines",
+      (n) => `123456789. a\n${fill("           b\n", n - 20)}`,
+    ],
+    ["a long single quote", (n) => fill("> a\n", n)],
+    ["a long single list", (n) => fill("- a\n", n)],
   ])(
-    "reads %s quickly",
-    (_, body) => {
-      const started = performance.now()
-      const d = parseCatalogDocument(front + body)
-      expect(performance.now() - started).toBeLessThan(bound)
+    "reads %s, in time that grows about linearly",
+    (_, make) => {
+      const full = make(room)
+      const d = parseCatalogDocument(front + full)
       expect(d.problems).toEqual([])
       expect(d.body.sections.map((s) => s.text).join("")).toBe(d.body.text)
+      const quarter = Math.max(best(make(Math.floor(room / 4))), 5)
+      let fastest = Infinity
+      for (let i = 0; i < 3 && fastest / quarter >= 8; i++)
+        fastest = Math.min(fastest, best(full, 1))
+      expect(fastest / quarter).toBeLessThan(8)
+      expect(fastest).toBeLessThan(30_000)
     },
-    30_000,
+    120_000,
   )
+
+  // Refusals take milliseconds, so a tight bound is safe.
+  const bound = 2000
 
   it.each([
     ["deeply nested quotes", `${">".repeat(room - 2)} x`, "deep"],
@@ -618,7 +640,8 @@ describe("hostile input", () => {
     [
       "thematic breaks inside quotes",
       fill("> a\n> ---\n", room),
-      "lines of only",
+      // `---` could start a list item, so it also counts as a block.
+      "separate quotes",
     ],
     ["many separate quotes", fill("> b\n\n", room), "separate quotes"],
     [
@@ -641,6 +664,47 @@ describe("hostile input", () => {
       `${"> ".repeat(32)}a\n${"b\n".repeat(20_000)}`,
       "without its markers",
     ],
+    // A list marker at the end of a line starts an empty list item.
+    ["empty + list items", fill("+\n\nc\n\n", room), "separate quotes"],
+    ["empty * list items", fill("*\n\nc\n\n", room), "separate quotes"],
+    ["empty 1) list items", fill("1)\n\nc\n\n", room), "separate quotes"],
+    ["empty 1. list items", fill("1.\n\nc\n\n", room), "separate quotes"],
+    // A line without > never belongs to a quote, whatever its indentation.
+    [
+      "lazy lines indented by a tab",
+      `> a\n${fill("\tb\n", room - 4)}`,
+      "without its markers",
+    ],
+    [
+      "lazy lines indented by 2",
+      `> a\n${fill("  b\n", room - 4)}`,
+      "without its markers",
+    ],
+    [
+      "lazy lines indented by 3",
+      `> a\n${fill("   b\n", room - 4)}`,
+      "without its markers",
+    ],
+    [
+      "lazy lines indented by 4",
+      `> a\n${fill("    b\n", room - 4)}`,
+      "without its markers",
+    ],
+    // Below a list item's content column, a line can only be lazy.
+    [
+      "lazy lines under a wide list marker",
+      `123456789. a\n${fill("   b\n", room - 20)}`,
+      "without its markers",
+    ],
+    [
+      "lazy lines just under a wide marker's content",
+      `123456789. a\n${fill("         b\n", room - 20)}`,
+      "without its markers",
+    ],
+    ["lines that could start a list", fill("-x\n\n", room), "separate quotes"],
+    ["unclosed links", fill("[a](", room), "not closed"],
+    ["unclosed links to <", fill("[a](<", room), "not closed"],
+    ["unclosed links, one per line", fill("[a](\n", room), "not closed"],
   ])(
     "refuses %s quickly, without throwing",
     (_, body, reason) => {

@@ -3,9 +3,10 @@ import { describe, expect, it } from "vitest"
 
 import { noReadFailure } from "../../../test/catalog-documents.js"
 import { readCatalog } from "./catalog.js"
-import { parseFactIdentityKey } from "./identity.js"
+import { factIdentityKey, parseFactIdentityKey } from "./identity.js"
 import type { FactState } from "./model.js"
 import { parseCatalogDocument as readDocument } from "./parse.js"
+import { builtInSchemas, keySchema } from "./schemas.js"
 import { slice } from "./source.js"
 import { parseYaml } from "./yaml.js"
 
@@ -25,7 +26,8 @@ interface GeneratedFact {
   state: FactState
   value?: Scalar
   to?: string
-  path?: string
+  /** The identifying attribute of `secrets-in`. */
+  item?: string
   via?: string
   note?: string
   task?: string
@@ -138,31 +140,61 @@ function factFor(state: FactState): fc.Arbitrary<GeneratedFact[]> {
         long: false,
       })),
     )
-  const checkouts = fc
+  // `secrets-in` is identified by its target and `item`.
+  const secrets = fc
     .uniqueArray(fc.tuple(slug, slug), {
       minLength: 1,
       maxLength: 3,
-      selector: ([, p]) => p,
+      selector: ([target, item]) => `${target}|${item}`,
     })
     .map((pairs) =>
-      pairs.map(([target, path]) => ({
+      pairs.map(([target, item]) => ({
         key: "secrets-in",
         state,
         to: `service/${target}`,
-        path: `/srv/${path}`,
+        item: `vault/${item}`,
         long: true,
       })),
     )
-  return fc.oneof(single, single, networks, checkouts)
+  return fc.oneof(single, single, networks, secrets)
 }
+
+const machine = builtInSchemas.get("machine") ?? null
+
+/**
+ * fast-check options: failures report the seed and the shrunk
+ * counterexample; `FC_SEED` and `FC_RUNS` replay or widen a run.
+ */
+const runs = (numRuns: number): fc.Parameters<unknown> => ({
+  numRuns: Number(process.env.FC_RUNS ?? numRuns),
+  verbose: 1,
+  ...(process.env.FC_SEED ? { seed: Number(process.env.FC_SEED) } : {}),
+})
+
+/**
+ * A generous time limit: a busy machine must not turn a slow run into a
+ * failure without a counterexample.
+ */
+const timeout = (numRuns: number) =>
+  Math.max(120_000, Number(process.env.FC_RUNS ?? numRuns) * 50)
 
 /** Drops facts that repeat an earlier fact's identity, so the document stays valid. */
 function dedupe(e: GeneratedEntity): GeneratedEntity {
   const seen = new Set<string>()
-  const identity = (f: GeneratedFact) =>
-    f.key === "on-network" || f.key === "secrets-in"
-      ? [f.key, f.state, f.to, f.path].join("|")
-      : [f.key, f.state, f.via].join("|")
+  // The parser's own identity rules, so the generator cannot disagree.
+  const identity = (f: GeneratedFact) => {
+    const key = keySchema(machine, f.key)
+    return factIdentityKey({
+      key: f.key,
+      state: f.state,
+      many: key.many,
+      relation: key.relation,
+      value: f.value,
+      to: f.to,
+      via: f.via,
+      attributes: f.item === undefined ? {} : { item: f.item },
+    })
+  }
   const groups = e.groups
     .map((g) => ({
       ...g,
@@ -256,7 +288,7 @@ function scalar(v: Scalar): string {
 function writeFact(f: GeneratedFact, indent: string): string {
   const parts: string[] = []
   if (f.to !== undefined) parts.push(`to: ${f.to}`)
-  if (f.path !== undefined) parts.push(`path: ${scalar(f.path)}`)
+  if (f.item !== undefined) parts.push(`item: ${scalar(f.item)}`)
   if (f.value !== undefined) parts.push(`value: ${scalar(f.value)}`)
   if (f.via !== undefined) parts.push(`via: ${f.via}`)
   if (f.note !== undefined) parts.push(`note: ${scalar(f.note)}`)
@@ -318,99 +350,107 @@ function write(e: GeneratedEntity, blockLongForms: boolean): string {
 }
 
 describe("random valid entity documents", () => {
-  it("parse back to what was written, with ranges on the written text", () => {
-    fc.assert(
-      fc.property(entity, fc.boolean(), (e, blockLongForms) => {
-        const text = write(e, blockLongForms)
-        const d = parseCatalogDocument(text)
-        expect(d.problems).toEqual([])
-        if (d.kind !== "entity") throw new Error("expected an entity")
-        expect(d.text).toBe(text)
-        expect(d).toMatchObject({
-          id: `machine/${e.slug}`,
-          title: e.title,
-          summary: e.summary,
-          status: e.status,
-          aliases: e.aliases,
-        })
-
-        const expected = e.groups.flatMap((g) =>
-          g.states.flatMap(({ facts }) => facts.flat()),
-        )
-        expect(
-          d.facts.map((f) => ({
-            key: f.key,
-            state: f.state,
-            value: f.value ?? f.to,
-            path: f.attributes.path,
-            via: f.via,
-            note: f.note,
-            task: f.task,
-          })),
-        ).toEqual(
-          expected.map((f) => ({
-            key: f.key,
-            state: f.state,
-            value: f.value ?? f.to,
-            path: f.path,
-            via: f.via,
-            note: f.note,
-            task: f.task,
-          })),
-        )
-        expect(d.groups.map((g) => g.check?.checked?.text)).toEqual(
-          e.groups.map((g) => g.check?.checked),
-        )
-
-        for (const f of d.facts) {
-          expect(slice(text, f.keyRange)).toBe(f.key)
-          // Re-indented to its column, a value's text reads as YAML on its own.
-          const column =
-            f.valueRange.start -
-            text.lastIndexOf("\n", f.valueRange.start - 1) -
-            1
-          const written = parseYaml(
-            " ".repeat(column) + slice(text, f.valueRange),
-            0,
-          ).node
-          if (f.form === "short")
-            expect(written).toMatchObject({
-              kind: "scalar",
-              value: f.value ?? f.note,
-            })
-          else expect(written?.kind).toBe("map")
-        }
-
-        expect(d.body.sections.map((s) => s.text).join("")).toBe(d.body.text)
-        expect(
-          d.body.sections.filter((s) => s.heading).map((s) => s.heading),
-        ).toEqual(e.sections.map((s) => s.heading))
-
-        const resolved = readCatalog([d]).entities.get(d.id!)!
-        expect(resolved.problems).toEqual([])
-        for (const f of resolved.facts) {
-          expect(parseFactIdentityKey(f.identity)).toMatchObject({
-            key: f.key,
-            state: f.state,
+  it(
+    "parse back to what was written, with ranges on the written text",
+    () => {
+      fc.assert(
+        fc.property(entity, fc.boolean(), (e, blockLongForms) => {
+          const text = write(e, blockLongForms)
+          const d = parseCatalogDocument(text)
+          expect(d.problems).toEqual([])
+          if (d.kind !== "entity") throw new Error("expected an entity")
+          expect(d.text).toBe(text)
+          expect(d).toMatchObject({
+            id: `machine/${e.slug}`,
+            title: e.title,
+            summary: e.summary,
+            status: e.status,
+            aliases: e.aliases,
           })
-        }
-        expect(new Set(resolved.facts.map((f) => f.identity)).size).toBe(
-          resolved.facts.length,
-        )
-      }),
-      { numRuns: 300 },
-    )
-  })
 
-  it("parse the same way every time", () => {
-    fc.assert(
-      fc.property(entity, (e) => {
-        const text = write(e, false)
-        expect(JSON.stringify(parseCatalogDocument(text))).toBe(
-          JSON.stringify(parseCatalogDocument(text)),
-        )
-      }),
-      { numRuns: 50 },
-    )
-  })
+          const expected = e.groups.flatMap((g) =>
+            g.states.flatMap(({ facts }) => facts.flat()),
+          )
+          expect(
+            d.facts.map((f) => ({
+              key: f.key,
+              state: f.state,
+              value: f.value ?? f.to,
+              item: f.attributes.item,
+              via: f.via,
+              note: f.note,
+              task: f.task,
+            })),
+          ).toEqual(
+            expected.map((f) => ({
+              key: f.key,
+              state: f.state,
+              value: f.value ?? f.to,
+              item: f.item,
+              via: f.via,
+              note: f.note,
+              task: f.task,
+            })),
+          )
+          expect(d.groups.map((g) => g.check?.checked?.text)).toEqual(
+            e.groups.map((g) => g.check?.checked),
+          )
+
+          for (const f of d.facts) {
+            expect(slice(text, f.keyRange)).toBe(f.key)
+            // Re-indented to its column, a value's text reads as YAML on its own.
+            const column =
+              f.valueRange.start -
+              text.lastIndexOf("\n", f.valueRange.start - 1) -
+              1
+            const written = parseYaml(
+              " ".repeat(column) + slice(text, f.valueRange),
+              0,
+            ).node
+            if (f.form === "short")
+              expect(written).toMatchObject({
+                kind: "scalar",
+                value: f.value ?? f.note,
+              })
+            else expect(written?.kind).toBe("map")
+          }
+
+          expect(d.body.sections.map((s) => s.text).join("")).toBe(d.body.text)
+          expect(
+            d.body.sections.filter((s) => s.heading).map((s) => s.heading),
+          ).toEqual(e.sections.map((s) => s.heading))
+
+          const resolved = readCatalog([d]).entities.get(d.id!)!
+          expect(resolved.problems).toEqual([])
+          for (const f of resolved.facts) {
+            expect(parseFactIdentityKey(f.identity)).toMatchObject({
+              key: f.key,
+              state: f.state,
+            })
+          }
+          expect(new Set(resolved.facts.map((f) => f.identity)).size).toBe(
+            resolved.facts.length,
+          )
+        }),
+        runs(300),
+      )
+    },
+    timeout(300),
+  )
+
+  it(
+    "parse the same way every time",
+    () => {
+      fc.assert(
+        fc.property(entity, (e) => {
+          const text = write(e, false)
+          expect(JSON.stringify(parseCatalogDocument(text))).toBe(
+            JSON.stringify(parseCatalogDocument(text)),
+          )
+        }),
+        runs(50),
+      )
+    },
+    timeout(50),
+  )
 })

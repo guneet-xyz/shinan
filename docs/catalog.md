@@ -131,25 +131,38 @@ lines, then a Markdown body.
   index, the export, a person) then agrees on what the text says.
 - **Proposed (M2-1):** limits on what Shinan reads, checked before anything
   else. A document is at most 64 KiB of UTF-8 (65,536 bytes); the largest
-  `workspace` repository document is about 19 KB. In the body, counting lines
-  the way Markdown does (a line ends at `\n`, `\r\n` or a lone `\r`):
+  `workspace` repository document is about 19 KB. In the body:
   - a line may start with at most 32 nested quote or list markers;
   - at most 1,000 quotes or list items may be opened inside others;
   - at most 1,000 separate quotes or lists may be started;
   - at most 1,000 lines may continue a quote or list paragraph without its
     markers (lazy continuation lines);
   - at most 500 lines may consist of only `=` or `-` (setext heading
-    underlines), counted also inside quotes and lists.
+    underlines);
+  - at most 1,000 link destinations may be opened with `](` and not closed.
+
+  **When unsure, count.** The limits are checked by a quick scan that does
+  not parse Markdown exactly; wherever a line could be one of the costly
+  shapes, it counts as one. A line ends at `\n`, `\r\n` or a lone `\r`; a
+  marker counts whether a space, a tab or the end of the line follows it; a
+  line that could start with a marker but continues with text (`-x`, `1.5`)
+  counts as a block start, and inside a quote or list as a lazy line; every
+  unmarked line continuing a quote paragraph is lazy, at any indentation, and
+  so is one in a list item indented less than the item's content; underlines
+  count inside quotes and lists; markers inside code count too. Reason: an
+  exact scan would be a second Markdown parser with its own gaps, while
+  over-counting costs nothing for real documents, which stay below every
+  limit (at most 452 blocks and 220 lazy lines, counted this way, across the
+  `workspace` repository and Shinan's own documents).
 
   Emphasis, inline HTML and hard line breaks are not parsed in the body
   model, which uses only headings and links. Longer or more complex
   documents are refused (`too-large`, `body-invalid`). Reason: the Markdown
-  parser's time grows with the square of these on hostile input (a 64 KB
-  body of nested lists took over a minute), and every proposal, MCP write
-  and index rebuild reads documents. Real documents stay far below the
-  limits (the most quote or list blocks any `workspace` document opens is
-  72). These checks cannot be proven complete, so proposal and MCP text is
-  also read off the main event loop with a time limit
+  parser's time grows with the square of these shapes on hostile input (a
+  64 KB body of nested lists took over a minute), and every proposal, MCP
+  write and index rebuild reads documents. The scan cannot be proven
+  complete, so proposal and MCP text is also read off the main event loop
+  with a time limit
   ([security checklist 10.8](security-checklist.md#10-features-not-built-yet);
   M2-4, M2-6).
 

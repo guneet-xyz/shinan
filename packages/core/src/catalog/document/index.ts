@@ -94,6 +94,7 @@ export {
   maxLazyLines,
   maxNestedContainers,
   maxNesting,
+  maxUnclosedLinks,
   maxUnderlines,
   tooComplex,
 } from "./limits.js"
