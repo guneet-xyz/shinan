@@ -66,6 +66,7 @@ export const purgeLimits = {
  *   (validation's findings, approval reasons, touched catalog IDs, the
  *   rejection reason). The request hash is computed again.
  * - `events`: the summary and data.
+ * - `catalog_proposal_comments`: the text, and the idempotency key cleared.
  * - The agent index: rebuilt from the purged text, then checked, except
  *   the columns naming who wrote what (an actor's written form is not
  *   catalog content), those derived from other columns, and the word
@@ -77,10 +78,14 @@ export const purgeTargets = {
     text: ["explanation", "relatedTask", "rejectionReason"],
     json: ["operations", "validation", "approvalReasons"],
     list: ["touches"],
-    /** Cleared rather than rewritten: two keys could become the same. */
+    /**
+     * Cleared: a retry of the request as it was sent no longer matches the
+     * purged proposal, and two rewritten keys could become the same.
+     */
     cleared: ["idempotencyKey"],
   },
   events: { text: ["summary"], json: ["data"] },
+  comments: { text: ["text"], cleared: ["idempotencyKey"] },
   index: {
     tables: [
       schema.catalogIndexDocuments,
@@ -111,6 +116,8 @@ export interface CatalogPurgePreview {
   waitingProposals: number
   /** Timeline events that hold it. */
   events: number
+  /** Comments on catalog proposals that hold it. */
+  comments: number
   /**
    * Documents whose agent index rows hold it while their stored text does
    * not, because the text writes it differently (YAML escapes, for
@@ -137,6 +144,7 @@ export interface EncodedForm {
   revisionTexts: number
   proposals: number
   events: number
+  comments: number
 }
 
 /** A purge, as operations return it: never the purged text. */
@@ -270,6 +278,7 @@ export async function previewCatalogPurge(
         waitingProposals: found.proposals.filter((p) => p.state === "pending")
           .length,
         events: found.events.length,
+        comments: found.comments.length,
         writtenDifferently: found.index
           .filter((id) => !documents.has(id))
           .map(name)
@@ -293,7 +302,8 @@ export async function previewCatalogPurge(
  *
  * 1. records the purge: who, when and why, never the text;
  * 2. replaces every occurrence (`PurgeMatcher`) with `purgeMarker` in every
- *    revision's stored text, in catalog proposals and in timeline events
+ *    revision's stored text, in catalog proposals and their comments, and
+ *    in timeline events
  *    (`purgeTargets`), rejecting waiting proposals that held it;
  * 3. stores the cleaned latest text of each document whose latest text
  *    held it as a new catalog revision, credited to the workspace owner,
@@ -362,7 +372,11 @@ export async function purgeCatalogText(
         actor: scope.actor,
       })
       const events = await purgeEvents(tx, workspace, match)
-      if (texts.length + proposals.length + events.length === 0) {
+      const comments = await purgeComments(tx, workspace, match)
+      if (
+        texts.length + proposals.length + events.length + comments.length ===
+        0
+      ) {
         const found = await find(tx, workspace, match)
         throw found.index.length > 0
           ? await writtenDifferently(tx, found.index, match)
@@ -390,7 +404,10 @@ export async function purgeCatalogText(
       if (left.index.length > 0)
         throw await writtenDifferently(tx, left.index, match)
       if (
-        left.revisionTexts.length + left.proposals.length + left.events.length >
+        left.revisionTexts.length +
+          left.proposals.length +
+          left.events.length +
+          left.comments.length >
         0
       )
         throw new Error("A purge left the text in stored catalog records")
@@ -402,6 +419,7 @@ export async function purgeCatalogText(
         proposals: proposals.length,
         rejectedProposals: proposals.filter((p) => p.rejected).length,
         events: events.length,
+        comments: comments.length,
       }
       const [stored] = await tx
         .update(p)
@@ -413,7 +431,12 @@ export async function purgeCatalogText(
         subjects: [
           { type: "catalog-purge", id: purge.id },
           ...documents.map((id) => ({ type: "catalog-document", id })),
-          ...proposals.map((p) => ({ type: "catalog-proposal", id: p.id })),
+          ...[
+            ...new Set([
+              ...proposals.map((p) => p.id),
+              ...comments.map((c) => c.proposalId),
+            ]),
+          ].map((id) => ({ type: "catalog-proposal", id })),
         ],
         summary: `${scope.actor.label} purged text from the catalog (purge ${purge.number}): ${describe(counts)}`,
         data: {
@@ -475,6 +498,7 @@ const emptyCounts: CatalogPurgeCounts = {
   proposals: 0,
   rejectedProposals: 0,
   events: 0,
+  comments: 0,
 }
 
 function purgeOf(
@@ -497,6 +521,7 @@ function describe(counts: CatalogPurgeCounts): string {
     counts.revisionTexts > 0 &&
       `${plural(counts.revisionTexts, "revision text")} of ${plural(counts.documents, "document")}`,
     counts.proposals > 0 && plural(counts.proposals, "catalog proposal"),
+    counts.comments > 0 && plural(counts.comments, "comment"),
     counts.events > 0 && plural(counts.events, "timeline event"),
   ].filter((part): part is string => typeof part === "string")
   return parts.join(", ")
@@ -649,6 +674,7 @@ async function find(
   revisionTexts: { documentId: string; revision: number }[]
   proposals: { id: string; state: ProposalRow["state"] }[]
   events: number[]
+  comments: string[]
   /** Documents whose index rows hold it. */
   index: string[]
 }> {
@@ -690,7 +716,11 @@ async function find(
     for (const found of rows.rows)
       if (holdsJson(found.row, match)) index.add(found.document_id)
   }
-  return { revisionTexts, proposals, events, index: [...index] }
+  const comments = (await commentCandidates(tx, workspaceId, match))
+    .filter((row) => match.test(row.text))
+    .map((row) => row.id)
+
+  return { revisionTexts, proposals, events, comments, index: [...index] }
 }
 
 /** Revision texts that might hold the text, to check one by one. */
@@ -882,25 +912,35 @@ async function encodedForms(
     const r = schema.catalogRevisionDocuments
     const p = schema.catalogProposals
     const e = schema.events
+    const c = schema.catalogProposalComments
     const [counts] = (
       await tx.execute<{
         revision_texts: number
         proposals: number
         events: number
+        comments: number
       }>(
         sql`select
           (select count(*)::int from ${r} where ${r.workspaceId} = ${workspaceId} and ${has(sql`${r.text}`, form.text)}) as revision_texts,
           (select count(*)::int from ${p} where ${p.workspaceId} = ${workspaceId} and ${has(sql`to_jsonb(${p})::text`, inJson(form.text))}) as proposals,
-          (select count(*)::int from ${e} where ${e.workspaceId} = ${workspaceId} and (${has(sql`${e.summary}`, form.text)} or ${has(sql`${e.data}::text`, inJson(form.text))})) as events`,
+          (select count(*)::int from ${e} where ${e.workspaceId} = ${workspaceId} and (${has(sql`${e.summary}`, form.text)} or ${has(sql`${e.data}::text`, inJson(form.text))})) as events,
+          (select count(*)::int from ${c} where ${c.workspaceId} = ${workspaceId} and ${has(sql`${c.text}`, form.text)}) as comments`,
       )
     ).rows
-    if (counts!.revision_texts + counts!.proposals + counts!.events > 0)
+    if (
+      counts!.revision_texts +
+        counts!.proposals +
+        counts!.events +
+        counts!.comments >
+      0
+    )
       result.push({
         form: form.form,
         text: form.text,
         revisionTexts: counts!.revision_texts,
         proposals: counts!.proposals,
         events: counts!.events,
+        comments: counts!.comments,
       })
   }
   return result
@@ -969,11 +1009,9 @@ async function purgeProposals(
         >[],
         approvalReasons: mapStrings(row.approvalReasons, findings) as string[],
         touches: row.touches.map(plain),
-        idempotencyKey:
-          row.idempotencyKey === null || match.test(row.idempotencyKey)
-            ? null
-            : row.idempotencyKey,
-        requestHash: hashOf({ explanation, relatedTask, operations }),
+        // A retry of the request as it was sent can no longer match it.
+        idempotencyKey: null,
+        requestHash: hashOf(["purged", explanation, relatedTask, operations]),
         ...(pending
           ? {
               state: "rejected" as const,
@@ -992,6 +1030,41 @@ async function purgeProposals(
       })
       .where(eq(schema.catalogProposals.id, row.id))
     purged.push({ id: row.id, number: row.number, rejected: pending })
+  }
+  return purged
+}
+
+/** Comments on proposals that might hold the text, to check one by one. */
+function commentCandidates(
+  tx: Transaction,
+  workspaceId: string,
+  match: PurgeMatcher,
+) {
+  const c = schema.catalogProposalComments
+  return tx
+    .select({ id: c.id, proposalId: c.proposalId, text: c.text })
+    .from(c)
+    .where(and(eq(c.workspaceId, workspaceId), match.mayHold(sql`${c.text}`)))
+}
+
+/**
+ * Rewrites the comments on proposals that hold the text, clearing their
+ * idempotency keys: a retry of the comment as it was sent no longer matches.
+ */
+async function purgeComments(
+  tx: Transaction,
+  workspaceId: string,
+  match: PurgeMatcher,
+): Promise<{ id: string; proposalId: string }[]> {
+  const purged: { id: string; proposalId: string }[] = []
+  const c = schema.catalogProposalComments
+  for (const row of await commentCandidates(tx, workspaceId, match)) {
+    if (!match.test(row.text)) continue
+    await tx
+      .update(c)
+      .set({ text: match.replace(row.text), idempotencyKey: null })
+      .where(eq(c.id, row.id))
+    purged.push({ id: row.id, proposalId: row.proposalId })
   }
   return purged
 }
@@ -1037,7 +1110,7 @@ const vacuumLog = createLimitedLog()
 async function vacuumPurged(ctx: Context): Promise<void> {
   try {
     await ctx.db.execute(
-      sql`vacuum (skip_locked) catalog_revision_documents, catalog_proposals, events, catalog_index_documents, catalog_index_facts, catalog_index_relations, catalog_index_discrepancies, catalog_index_sections, catalog_index_provenance`,
+      sql`vacuum (skip_locked) catalog_revision_documents, catalog_proposals, catalog_proposal_comments, events, catalog_index_documents, catalog_index_facts, catalog_index_relations, catalog_index_discrepancies, catalog_index_sections, catalog_index_provenance`,
     )
   } catch (error) {
     vacuumLog(

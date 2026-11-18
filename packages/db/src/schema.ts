@@ -968,6 +968,8 @@ export interface CatalogPurgeCounts {
   rejectedProposals: number
   /** Events (timeline entries). */
   events: number
+  /** Comments on catalog proposals. */
+  comments: number
 }
 
 const xid8 = customType<{ data: string }>({ dataType: () => "xid8" })

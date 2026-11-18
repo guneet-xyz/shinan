@@ -22,6 +22,7 @@ const preview: CatalogPurgePreview = {
   proposals: 2,
   waitingProposals: 1,
   events: 1,
+  comments: 0,
   writtenDifferently: [],
   alsoWrittenAs: [],
   structure: [{ id: "machine/daedalus", where: "alias" }],
@@ -41,6 +42,7 @@ const purge: CatalogPurge = {
     proposals: 2,
     rejectedProposals: 1,
     events: 1,
+    comments: 0,
   },
 }
 
@@ -143,6 +145,7 @@ describe("the data screen", () => {
               revisionTexts: 1,
               proposals: 0,
               events: 0,
+              comments: 0,
             },
           ],
         }),

@@ -308,6 +308,7 @@ export interface CatalogPurgeCounts {
   proposals: number
   rejectedProposals: number
   events: number
+  comments: number
 }
 
 /** Where a text is in a workspace's catalog, before purging it. */
@@ -321,6 +322,8 @@ export interface CatalogPurgePreview {
   /** Waiting catalog proposals that hold it: the purge rejects them. */
   waitingProposals: number
   events: number
+  /** Comments on catalog proposals that hold it. */
+  comments: number
   /** Catalog IDs of documents whose index holds it while their text writes it differently. */
   writtenDifferently: string[]
   /** Copies in encoded forms the purge does not reach; `text` is the form to purge. */
@@ -330,6 +333,7 @@ export interface CatalogPurgePreview {
     revisionTexts: number
     proposals: number
     events: number
+    comments: number
   }[]
   /** Where purging would change a document's structure. */
   structure: { id: string; where: "id" | "alias" | "key" | "frontmatter" }[]

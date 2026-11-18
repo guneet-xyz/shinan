@@ -122,7 +122,11 @@ function PurgeText(props: { onPurged: () => void }) {
   const preview = found?.text === text ? found.preview : undefined
   const anywhere =
     preview !== undefined &&
-    preview.revisionTexts + preview.proposals + preview.events > 0
+    preview.revisionTexts +
+      preview.proposals +
+      preview.events +
+      preview.comments >
+      0
 
   return (
     <Section
@@ -198,6 +202,7 @@ function PurgeText(props: { onPurged: () => void }) {
                   <span className="text-muted-foreground">
                     · {plural(form.revisionTexts, "stored text")},{" "}
                     {plural(form.proposals, "proposal")},{" "}
+                    {plural(form.comments, "comment")},{" "}
                     {plural(form.events, "event")}
                   </span>
                 </p>
@@ -240,6 +245,8 @@ function PurgeText(props: { onPurged: () => void }) {
               {plural(preview.proposals, "catalog proposal")}
               {preview.waitingProposals > 0 &&
                 `; ${plural(preview.waitingProposals, "waiting proposal")} will be rejected`}
+              {preview.comments > 0 &&
+                `; ${plural(preview.comments, "comment")} on proposals`}
             </dd>
             <dt>Timeline</dt>
             <dd>{plural(preview.events, "event")}</dd>
@@ -359,6 +366,7 @@ function PurgeList(props: { purges: CatalogPurge[] }) {
             {[
               `${plural(p.counts.revisionTexts, "revision text")} of ${plural(p.counts.documents, "document")}`,
               plural(p.counts.proposals, "proposal"),
+              plural(p.counts.comments, "comment"),
               plural(p.counts.events, "event"),
             ].join(", ")}
             {p.revision !== null && `; cleaned pages in revision ${p.revision}`}

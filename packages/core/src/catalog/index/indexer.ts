@@ -640,6 +640,7 @@ export async function reindexDocuments(
     new Map(),
   )
   const sorted = [...ids].sort()
+  const pause = pauser()
   for (let i = 0; i < sorted.length; i += batchSize) {
     const history = await textHistory(
       tx,
@@ -657,7 +658,11 @@ export async function reindexDocuments(
       while (end < history.length && history[end]!.documentId === documentId)
         end++
       const own = history.slice(start, end)
-      const { attribution, provenance, document } = replay(own, authors)
+      const { attribution, provenance, document } = await replay(
+        own,
+        authors,
+        pause,
+      )
       // A document that has become a type schema document changes how
       // others are read: rebuild everything.
       if (document?.kind === "schema") {

@@ -421,10 +421,11 @@ How:
   through a purge.
 - **Where the text is rewritten:** `catalog_revision_documents.text` (every
   revision, in place); `catalog_proposals` (the request and what Shinan
-  stored about it; the request hash is computed again, the idempotency key
-  cleared if it held the text); `events.summary` and `events.data`. The
+  stored about it; the request hash is computed again and the idempotency
+  key cleared); comments on proposals (`catalog_proposal_comments.text`,
+  the idempotency key cleared); `events.summary` and `events.data`. The
   list lives in one place in core (`purgeTargets`); a later table holding
-  catalog text, such as comments on proposals (M2-4b), joins it.
+  catalog text joins it.
 - **The append-only triggers are narrowed, not removed** (migration
   `0010_catalog_purge`): an update of `events` may change only `summary` and
   `data`, and an update of `catalog_revision_documents` only `text`, and

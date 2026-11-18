@@ -1,6 +1,6 @@
 import { afterAll, beforeEach, describe, expect, inject, it } from "vitest"
 
-import { and, asc, createDatabase, eq, schema, sql } from "@shinan/db"
+import { and, asc, createDatabase, eq, schema } from "@shinan/db"
 
 import {
   asAgent,
@@ -22,8 +22,9 @@ import { rateLimits } from "../../rate-limits.js"
 import type { CatalogOperation, CheckInput } from "../document/index.js"
 import { compareWorkspaceIndex } from "../index/indexer.js"
 import { getCatalogEntity } from "../index/queries.js"
+import { purgeCatalogText } from "../purge/purge.js"
 import { CatalogWorkers, replaceCatalogWorkers } from "./pool.js"
-import type { Prepare } from "./pool.js"
+import type { Prepare, Turn } from "./pool.js"
 import {
   getCatalogProposal,
   proposeCatalogChange,
@@ -460,7 +461,7 @@ describe("bulk approval", () => {
     class BusyAfterOne extends CatalogWorkers {
       override run<T>(
         workspace: string,
-        work: (prepare: Prepare) => Promise<T>,
+        work: (prepare: Prepare, turn: Turn) => Promise<T>,
       ): Promise<T> {
         if (++turns > 1)
           return Promise.reject(new BusyError("catalog-busy", "Busy", 5))
@@ -728,24 +729,20 @@ describe("review fixes", () => {
         },
       ]),
     )
-    // As purge (M2-10) will: the stored text rewritten in place, after the
-    // revert was asked for and before its turn.
+    // A purge (M2-10) after the revert was asked for and before its turn.
+    let purged = false
     class PurgeFirst extends CatalogWorkers {
       override async run<T>(
         workspace: string,
-        work: (prepare: Prepare) => Promise<T>,
+        work: (prepare: Prepare, turn: Turn) => Promise<T>,
       ): Promise<T> {
-        await db.transaction(async (tx) => {
-          await tx.execute(
-            sql`alter table catalog_revision_documents disable trigger catalog_revision_documents_append_only`,
-          )
-          await tx.execute(
-            sql`update catalog_revision_documents set text = replace(text, ${secret}, '(purged)') where workspace_id = ${workspaceId}`,
-          )
-          await tx.execute(
-            sql`alter table catalog_revision_documents enable trigger catalog_revision_documents_append_only`,
-          )
-        })
+        if (!purged) {
+          purged = true
+          await purgeCatalogText(asOwner, workspaceId, {
+            text: secret,
+            reason: "A test secret.",
+          })
+        }
         return super.run(workspace, work)
       }
     }

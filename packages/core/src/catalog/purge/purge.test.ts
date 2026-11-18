@@ -39,6 +39,10 @@ import type {
   CatalogProposal,
   ProposalOutcome,
 } from "../proposals/proposals.js"
+import {
+  commentOnCatalogProposal,
+  listCatalogProposalComments,
+} from "../proposals/review.js"
 import { getCatalogDocumentText, listCatalogHistory } from "../wiki.js"
 import {
   listCatalogPurges,
@@ -106,8 +110,8 @@ function stored(outcome: ProposalOutcome): CatalogProposal {
 /**
  * The secret, planted wherever the catalog stores text: in Musashi's first
  * revision only, in Daedalus's latest text, in proposals (applied, waiting
- * and rejected: operations, explanations, a rejection reason) and in a
- * timeline event (the rejection's reason).
+ * and rejected: operations, explanations, a rejection reason), in a comment
+ * on a proposal, and in a timeline event (the rejection's reason).
  */
 async function plant(): Promise<{
   waiting: CatalogProposal
@@ -209,6 +213,11 @@ async function plant(): Promise<{
     proposalId: rejected.id,
     reason: `Not before ${secret} is rotated.`,
   })
+  await commentOnCatalogProposal(asOwnersAgent, workspaceId, {
+    proposalId: waiting.id,
+    text: `The old passphrase ${secret}\nstill works.`,
+    idempotencyKey: "comment-1",
+  })
   return { waiting, rejected }
 }
 
@@ -265,6 +274,7 @@ describe("purging catalog text", { timeout: 60_000 }, () => {
       proposals: 5,
       waitingProposals: 1,
       events: 1,
+      comments: 1,
       writtenDifferently: [],
       alsoWrittenAs: [],
       structure: [],
@@ -285,6 +295,7 @@ describe("purging catalog text", { timeout: 60_000 }, () => {
         proposals: 5,
         rejectedProposals: 1,
         events: 1,
+        comments: 1,
       },
       newProblems: [],
     })
@@ -384,6 +395,19 @@ describe("purging catalog text", { timeout: 60_000 }, () => {
       rejectionReason: `Rejected by purge 1: it held text a workspace owner purged`,
       decidedBy: owner.handle,
     })
+    const [comment] = await listCatalogProposalComments(
+      asOwner,
+      workspaceId,
+      waiting.id,
+    ).then((page) => page.items)
+    expect(comment).toMatchObject({
+      text: `The old passphrase ${purgeMarker}\nstill works.`,
+    })
+    const [stored] = await db
+      .select({ key: schema.catalogProposalComments.idempotencyKey })
+      .from(schema.catalogProposalComments)
+      .where(eq(schema.catalogProposalComments.proposalId, waiting.id))
+    expect(stored!.key).toBeNull()
     expect(
       await getCatalogProposal(asOwner, workspaceId, rejected.id),
     ).toMatchObject({
@@ -624,6 +648,7 @@ describe("purging catalog text", { timeout: 60_000 }, () => {
         revisionTexts: 1,
         proposals: 0,
         events: 0,
+        comments: 0,
       },
     ])
 
@@ -758,6 +783,7 @@ describe("the database's append-only rules", () => {
     proposals: 0,
     rejectedProposals: 0,
     events: 0,
+    comments: 0,
   }
 
   async function recordPurge(
@@ -772,14 +798,7 @@ describe("the database's append-only rules", () => {
       actorLabel: owner.handle,
       confidence: "recorded",
       reason: "Test.",
-      counts: {
-        revisionTexts: 0,
-        documents: 0,
-        latestDocuments: 0,
-        proposals: 0,
-        rejectedProposals: 0,
-        events: 0,
-      },
+      counts: emptyCounts,
     })
   }
 

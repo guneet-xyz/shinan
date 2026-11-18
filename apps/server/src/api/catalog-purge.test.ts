@@ -145,6 +145,7 @@ describe("catalog purge over the API", () => {
       proposals: 0,
       waitingProposals: 0,
       events: 0,
+      comments: 0,
       writtenDifferently: [],
       alsoWrittenAs: [],
       structure: [],

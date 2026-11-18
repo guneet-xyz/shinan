@@ -1813,7 +1813,7 @@ what each operation expects.
   index's `pending_proposals` ([12.4](#124-the-index-format)). Comments
   are kept with the proposal, in any state, up to 4,000 characters each,
   from members and from agents whose token has `catalog:propose`; they
-  are not edited, and purge (M2-10) can remove one. A comment may carry an
+  are not edited, and purge (M2-10) can replace text in one. A comment may carry an
   idempotency key, kept per author, so a retry is stored once; an agent
   sends at most 60 comments in 10 minutes. Each comment is an event whose
   summary does not repeat its text, since an agent's comment is outside
@@ -1867,7 +1867,7 @@ approval and history mean nothing.
       occurrence is replaced by `(purged)` in every revision of every
       document, in catalog proposals (their explanation, operations, related
       task, validation findings, approval reasons, touched IDs and rejection
-      reason) and in timeline events. Reason: a leaked secret or a person's
+      reason), in comments on proposals, and in timeline events. Reason: a leaked secret or a person's
       details are a text, wherever they ended up; replacing only those bytes
       keeps every document readable and every record in its shape, and it
       keeps section credits (only the purged words change). The marker is
