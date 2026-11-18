@@ -1098,6 +1098,12 @@ const settable: Record<
   },
 }
 
+const decisionFields: ReadonlySet<string> = new Set([
+  "decision_state",
+  "decided_on",
+  "decided_by",
+])
+
 function currentField(
   document: CatalogDocument,
   name: string,
@@ -1131,7 +1137,7 @@ function setField(editor: Editor, operation: SetField) {
   const rule = settable[document.kind][operation.field]
   if (
     !rule ||
-    (operation.field.startsWith("decide") &&
+    (decisionFields.has(operation.field) &&
       document.kind === "entity" &&
       document.type !== "decision")
   )

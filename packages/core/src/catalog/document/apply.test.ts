@@ -845,7 +845,7 @@ describe("entity fields, retire and change of ID (catalog §2.3, §2.4)", () => 
           },
         ],
       ),
-    ).toMatchObject([{ kind: "invalid" }])
+    ).toMatchObject([{ kind: "invalid", code: "operation-invalid" }])
     expect(
       refused(
         [dockyard],
@@ -860,6 +860,44 @@ describe("entity fields, retire and change of ID (catalog §2.3, §2.4)", () => 
         ],
       ),
     ).toMatchObject([{ kind: "invalid" }])
+  })
+
+  it("changes a decision's fields, adding them in Shinan's order", () => {
+    const decision = `---
+id: decision/no-git-mirror
+type: decision
+title: No Git mirror for now
+summary: Revisions stay in PostgreSQL.
+status: active
+owner: person/guneet
+decision_state: proposed
+---
+`
+    expect(
+      edit(
+        decision,
+        {
+          op: "set-field",
+          document: "decision/no-git-mirror",
+          field: "decision_state",
+          value: "accepted",
+          expect: { value: "proposed" },
+        },
+        {
+          op: "set-field",
+          document: "decision/no-git-mirror",
+          field: "decided_on",
+          value: "2026-11-16",
+          expect: { value: null },
+        },
+      ),
+    ).toBe(
+      swap(
+        decision,
+        "decision_state: proposed\n",
+        "decision_state: accepted\ndecided_on: 2026-11-16\n",
+      ),
+    )
   })
 
   it("retires an entity and names its replacement after its owner", () => {
