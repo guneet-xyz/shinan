@@ -845,7 +845,7 @@ export const catalogProposals = pgTable(
     validation: jsonb("validation")
       .$type<Record<string, unknown>[]>()
       .notNull(),
-    /** A key the author chose, so a retried request is stored once. */
+    /** A key the author chose, so a retried request is stored once; unique per author. */
     idempotencyKey: text("idempotency_key"),
     /** A hash of the request, to tell a retry from a different request with the same key. */
     requestHash: text("request_hash").notNull(),
@@ -866,8 +866,13 @@ export const catalogProposals = pgTable(
   (t) => [
     unique("catalog_proposals_workspace_id_id").on(t.workspaceId, t.id),
     unique("catalog_proposals_workspace_id_number").on(t.workspaceId, t.number),
+    // Per author: an agent by itself, a person by themselves.
     uniqueIndex("catalog_proposals_idempotency_key")
-      .on(t.workspaceId, t.idempotencyKey)
+      .on(
+        t.workspaceId,
+        sql`coalesce(${t.actorAgentId}, ${t.actorPersonId})`,
+        t.idempotencyKey,
+      )
       .where(sql`${t.idempotencyKey} is not null`),
     index("catalog_proposals_workspace_id_state").on(t.workspaceId, t.state),
     foreignKey({

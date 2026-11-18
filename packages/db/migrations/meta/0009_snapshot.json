@@ -1,5 +1,5 @@
 {
-  "id": "68abe5ae-e993-4885-b2b1-30fee464457e",
+  "id": "72428bb2-d114-4d67-8e6b-7dcd262bbb42",
   "prevId": "09dfa32e-8be4-4651-bd84-c164083494d1",
   "version": "7",
   "dialect": "postgresql",
@@ -1938,6 +1938,12 @@
               "expression": "workspace_id",
               "isExpression": false,
               "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "coalesce(\"actor_agent_id\", \"actor_person_id\")",
+              "asc": true,
+              "isExpression": true,
               "nulls": "last"
             },
             {
