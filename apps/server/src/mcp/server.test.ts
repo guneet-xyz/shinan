@@ -334,6 +334,7 @@ describe("the MCP endpoint", () => {
       const { tools } = await client.listTools()
       expect(tools.map((t) => t.name).sort()).toEqual([
         "catalog_lists",
+        "comment_on_catalog_proposal",
         "get_catalog_proposal",
         "get_entity",
         "propose_catalog_change",
@@ -343,6 +344,7 @@ describe("the MCP endpoint", () => {
         "workspace_context",
       ])
       const writes = [
+        "comment_on_catalog_proposal",
         "propose_catalog_change",
         "record_fact_check",
         "withdraw_catalog_proposal",
@@ -1325,11 +1327,37 @@ facts:
         },
       })
       const id = (retire.structuredContent.proposal as { id: string }).id
+      // A comment, stored once on a retry, and shown labelled as the agent's.
+      const commented = await callTool(client, "comment_on_catalog_proposal", {
+        id,
+        text: "Checked: nothing runs on Build 1 any more.",
+        idempotency_key: "comment-1",
+      })
+      expect(commented.structuredContent).toMatchObject({
+        comment: {
+          proposal_id: id,
+          author: agentLabel,
+          author_kind: "agent",
+          label: { author_kind: "agent", instruction: "no" },
+        },
+      })
+      await callTool(client, "comment_on_catalog_proposal", {
+        id,
+        text: "Checked: nothing runs on Build 1 any more.",
+        idempotency_key: "comment-1",
+      })
       const read = await callTool(client, "get_catalog_proposal", { id })
       expect(read.structuredContent).toMatchObject({
         outcome: "pending",
         proposal: { id, state: "pending" },
+        comments: [
+          {
+            text: "Checked: nothing runs on Build 1 any more.",
+            label: { author_kind: "agent", author: agentLabel },
+          },
+        ],
       })
+      expect(read.structuredContent.comments).toHaveLength(1)
       expectLabelsEverywhere(read.structuredContent)
 
       const withdrawn = await callTool(client, "withdraw_catalog_proposal", {

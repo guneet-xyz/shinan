@@ -28,7 +28,10 @@ export type CatalogOperation =
   | SetStartHerePath
   | RestoreDocument
 
-/** Every operation's name, in the order of catalog §8.1's table. */
+/**
+ * Every operation's name that a proposal may send, in the order of catalog
+ * §8.1's table. `restore-document` is left out: only a revert makes it.
+ */
 export const operationNames = [
   "create-entity",
   "set-fact",
@@ -48,7 +51,7 @@ export const operationNames = [
 // Fails to compile when an operation is missing from the list.
 const allNamed: Exclude<
   CatalogOperation["op"],
-  (typeof operationNames)[number]
+  (typeof operationNames)[number] | "restore-document"
 > extends never
   ? true
   : never = true

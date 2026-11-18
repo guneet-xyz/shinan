@@ -948,8 +948,17 @@ export const catalogProposalComments = pgTable(
     createdAt: createdAt(),
     ...actorColumns(),
     text: text("text").notNull(),
+    /** A key the author chose, so a retried comment is stored once; unique per author. */
+    idempotencyKey: text("idempotency_key"),
   },
   (t) => [
+    uniqueIndex("catalog_proposal_comments_idempotency_key")
+      .on(
+        t.workspaceId,
+        sql`coalesce(${t.actorAgentId}, ${t.actorPersonId})`,
+        t.idempotencyKey,
+      )
+      .where(sql`${t.idempotencyKey} is not null`),
     foreignKey({
       name: "catalog_proposal_comments_proposal_fk",
       columns: [t.workspaceId, t.proposalId],

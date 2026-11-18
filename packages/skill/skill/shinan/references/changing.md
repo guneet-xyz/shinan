@@ -62,6 +62,11 @@ new catalog revision.
   reason.
 - `withdraw_catalog_proposal`: withdraws your own proposal, by `id`, while
   it waits. Repeating it is harmless.
+- `comment_on_catalog_proposal`: a comment on a proposal, by `id`, with
+  `text` (at most 4,000 characters) and an `idempotency_key`: for example
+  your findings when your person asks you to review one. It informs the
+  reviewer; only people approve. `get_catalog_proposal` shows the
+  comments, each labelled by who wrote it.
 
 Every answer has an `outcome` and, once stored, the `proposal` with its
 `id`, `number` and `state`; a proposal that did not apply has `problems`

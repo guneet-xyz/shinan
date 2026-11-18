@@ -8,18 +8,22 @@ import {
   inArray,
   isNull,
   lt,
+  lte,
   schema,
   sql,
 } from "@shinan/db"
 
+import { shinan } from "../../actor.js"
 import { inWorkspace, snapshotRead } from "../../authorize.js"
 import type { Context } from "../../context.js"
 import {
+  BusyError,
   InvalidInputError,
   NotFoundError,
   RuleViolationError,
 } from "../../errors.js"
 import { appendEvent } from "../../events.js"
+import { rateLimits, takeRateLimit } from "../../rate-limits.js"
 import { recordSecurityEntry } from "../../security-log.js"
 import { isId } from "../../validation.js"
 import { maxOperations, taskIdPattern } from "../document/index.js"
@@ -31,8 +35,9 @@ import type {
 import { proposalLimits } from "./input.js"
 import {
   approveCatalogProposal,
-  proposalOf,
+  rejectCatalogProposal,
   submitProposal,
+  withAuthorStatus,
 } from "./proposals.js"
 import type {
   ApprovalOutcome,
@@ -77,7 +82,7 @@ export const commentLimit = 4000
 export async function commentOnCatalogProposal(
   ctx: Context,
   workspaceId: string,
-  input: { proposalId: string; text: string },
+  input: { proposalId: string; text: string; idempotencyKey?: string | null },
 ): Promise<CatalogProposalComment> {
   return inWorkspace(ctx, workspaceId, "catalog.comment", async (scope) => {
     const text = typeof input.text === "string" ? input.text.trim() : ""
@@ -88,11 +93,42 @@ export async function commentOnCatalogProposal(
         "comment-too-long",
         `A comment is at most ${commentLimit} characters`,
       )
+    const key = checkKey(input.idempotencyKey)
     const proposal = await findProposal(
       scope.tx,
       scope.workspaceId,
       input.proposalId,
     )
+    const t = schema.catalogProposalComments
+    const stored = async () => {
+      if (key === null) return null
+      const [existing] = await scope.tx
+        .select()
+        .from(t)
+        .where(
+          and(
+            eq(t.workspaceId, scope.workspaceId),
+            eq(t.idempotencyKey, key),
+            scope.actor.agentId
+              ? eq(t.actorAgentId, scope.actor.agentId)
+              : and(
+                  eq(t.actorPersonId, scope.actor.personId!),
+                  isNull(t.actorAgentId),
+                ),
+          ),
+        )
+      if (!existing) return null
+      if (existing.proposalId !== proposal.id || existing.text !== text)
+        throw new InvalidInputError(
+          "idempotency-key-reused",
+          "You used this idempotency key for a different comment",
+        )
+      return commentOf(existing)
+    }
+    const retried = await stored()
+    if (retried) return retried
+    if (ctx.actor.kind === "agent")
+      await throttle(ctx, "catalog-comment", ctx.actor.agentId)
     const [row] = await scope.tx
       .insert(schema.catalogProposalComments)
       .values({
@@ -105,8 +141,12 @@ export async function commentOnCatalogProposal(
         actorLabel: scope.actor.label,
         confidence: scope.actor.confidence,
         text,
+        idempotencyKey: key,
       })
+      .onConflictDoNothing()
       .returning()
+    // The same key from a retry running at the same time.
+    if (!row) return (await stored())!
     await appendEvent(scope, {
       kind: "catalog.proposal-commented",
       subjects: [{ type: "catalog-proposal", id: proposal.id }],
@@ -115,10 +155,10 @@ export async function commentOnCatalogProposal(
       data: {
         proposalId: proposal.id,
         number: proposal.number,
-        commentId: row!.id,
+        commentId: row.id,
       },
     })
-    return commentOf(row!)
+    return commentOf(row)
   })
 }
 
@@ -153,6 +193,25 @@ export async function listCatalogProposalComments(
     },
     snapshotRead,
   )
+}
+
+/** Counts an agent's request against one of its rate limits (`rateLimits`). */
+async function throttle(
+  ctx: Context,
+  name: "catalog-comment",
+  agentId: string,
+): Promise<void> {
+  const outcome = await takeRateLimit(
+    { db: ctx.db, actor: shinan, request: ctx.request ?? {} },
+    name,
+    { key: agentId },
+  )
+  if (!outcome.allowed)
+    throw new BusyError(
+      name,
+      `This agent has sent ${rateLimits[name].max} comments in ${rateLimits[name].windowSeconds / 60} minutes; send this one again later`,
+      outcome.retryAfterSeconds,
+    )
 }
 
 function commentOf(
@@ -249,43 +308,147 @@ async function strictOf(
   return workspace?.strict ?? false
 }
 
-// Bulk approval.
+// Bulk approval and rejection.
 
-/** The most proposals one bulk approval takes. */
+/** The most proposals one bulk approval or rejection takes. */
 export const bulkApprovalLimit = 50
+
+/**
+ * Which waiting proposals a bulk action takes: exactly the ones the person
+ * was shown. Either their IDs, or one related task's waiting proposals up
+ * to the highest proposal number the person saw (`seenUpTo`), so a
+ * proposal added to the task later is never included.
+ */
+export type BulkSelection =
+  { proposalIds: string[] } | { relatedTask: string; seenUpTo: number }
 
 export type BulkApprovalResult = {
   proposalId: string
   number: number | null
-} & (ApprovalOutcome | { outcome: "refused"; rule: string; message: string })
+} & (
+  | ApprovalOutcome
+  | { outcome: "refused"; rule: string; message: string }
+  /** Shinan was busy before it reached this one: send it again later. */
+  | { outcome: "not-attempted"; retryAfterSeconds: number }
+)
+
+export type BulkRejectionResult = {
+  proposalId: string
+  number: number | null
+} & (
+  | { outcome: "rejected"; proposal: CatalogProposal }
+  | { outcome: "refused"; rule: string; message: string }
+)
 
 /**
  * Approves several waiting proposals (catalog §8.2: "when it is on,
- * approval works in bulk"): a selected list, or every waiting proposal of
- * one task, oldest first, at most `bulkApprovalLimit`. Each is approved as
- * `approveCatalogProposal` does, in its own turn, so each is checked,
- * applied and recorded on its own; one that cannot apply does not stop the
- * others, and is reported with why.
+ * approval works in bulk"): exactly the ones the person was shown
+ * (`BulkSelection`), oldest first, at most `bulkApprovalLimit`. Each is
+ * approved as `approveCatalogProposal` does, in its own turn, so each is
+ * checked, applied and recorded on its own; one that cannot apply does not
+ * stop the others, and is reported with why. When Shinan is busy, the
+ * results so far are returned and the rest are `not-attempted`, with when
+ * to send them again.
  */
 export async function approveCatalogProposals(
   ctx: Context,
   workspaceId: string,
-  input: { proposalIds: string[] } | { relatedTask: string },
+  selection: BulkSelection,
 ): Promise<{ results: BulkApprovalResult[] }> {
-  const selected = await inWorkspace(
+  const selected = await select(ctx, workspaceId, selection)
+  const results: BulkApprovalResult[] = []
+  for (const [i, { proposalId, number }] of selected.entries()) {
+    try {
+      const outcome = await approveCatalogProposal(ctx, workspaceId, proposalId)
+      results.push({ proposalId, number, ...outcome })
+    } catch (error) {
+      if (error instanceof BusyError) {
+        for (const rest of selected.slice(i))
+          results.push({
+            ...rest,
+            outcome: "not-attempted",
+            retryAfterSeconds: error.retryAfterSeconds,
+          })
+        break
+      }
+      const refused = refusalOf(error)
+      if (!refused) throw error
+      results.push({ proposalId, number, ...refused })
+    }
+  }
+  return { results }
+}
+
+/**
+ * Rejects several waiting proposals with one reason, such as those of an
+ * agent that was disabled: exactly the ones the person was shown, as
+ * `rejectCatalogProposal` does for each.
+ */
+export async function rejectCatalogProposals(
+  ctx: Context,
+  workspaceId: string,
+  input: BulkSelection & { reason: string },
+): Promise<{ results: BulkRejectionResult[] }> {
+  const selected = await select(ctx, workspaceId, input)
+  const results: BulkRejectionResult[] = []
+  for (const { proposalId, number } of selected) {
+    try {
+      const proposal = await rejectCatalogProposal(ctx, workspaceId, {
+        proposalId,
+        reason: input.reason,
+      })
+      results.push({ proposalId, number, outcome: "rejected", proposal })
+    } catch (error) {
+      const refused = refusalOf(error)
+      if (!refused) throw error
+      // A bad reason is the same for every proposal.
+      if (error instanceof InvalidInputError) throw error
+      results.push({ proposalId, number, ...refused })
+    }
+  }
+  return { results }
+}
+
+/** A refusal that concerns one proposal, reported in its result. */
+function refusalOf(
+  error: unknown,
+): { outcome: "refused"; rule: string; message: string } | null {
+  if (error instanceof NotFoundError)
+    return {
+      outcome: "refused",
+      rule: "not-found",
+      message: "There is no such catalog proposal",
+    }
+  if (error instanceof RuleViolationError)
+    return { outcome: "refused", rule: error.rule, message: error.message }
+  return null
+}
+
+/** The proposals a bulk action takes, oldest first; checked for `catalog.approve`. */
+async function select(
+  ctx: Context,
+  workspaceId: string,
+  selection: BulkSelection,
+): Promise<{ proposalId: string; number: number | null }[]> {
+  return inWorkspace(
     ctx,
     workspaceId,
     "catalog.approve",
     async (scope) => {
       const t = schema.catalogProposals
-      if ("relatedTask" in input) {
+      if ("relatedTask" in selection) {
         if (
-          typeof input.relatedTask !== "string" ||
-          !taskIdPattern.test(input.relatedTask)
+          typeof selection.relatedTask !== "string" ||
+          !taskIdPattern.test(selection.relatedTask)
         )
           throw new InvalidInputError(
             "related-task",
             "relatedTask is a task ID, such as SHN-12",
+          )
+        if (!Number.isInteger(selection.seenUpTo) || selection.seenUpTo < 1)
+          throw new InvalidInputError(
+            "seen-up-to",
+            "seenUpTo is the highest proposal number the person was shown",
           )
         const rows = await scope.tx
           .select({ id: t.id, number: t.number })
@@ -293,8 +456,9 @@ export async function approveCatalogProposals(
           .where(
             and(
               eq(t.workspaceId, scope.workspaceId),
-              eq(t.relatedTask, input.relatedTask),
+              eq(t.relatedTask, selection.relatedTask),
               eq(t.state, "pending"),
+              lte(t.number, selection.seenUpTo),
             ),
           )
           .orderBy(asc(t.number))
@@ -302,11 +466,13 @@ export async function approveCatalogProposals(
         if (rows.length > bulkApprovalLimit) throw tooMany()
         return rows.map((r) => ({ proposalId: r.id, number: r.number }))
       }
-      const ids = Array.isArray(input.proposalIds) ? input.proposalIds : null
+      const ids = Array.isArray(selection.proposalIds)
+        ? selection.proposalIds
+        : null
       if (!ids || ids.length === 0 || ids.some((id) => typeof id !== "string"))
         throw new InvalidInputError(
           "proposal-ids",
-          "proposalIds lists the proposals to approve",
+          "proposalIds lists the proposals the person was shown",
         )
       if (ids.length > bulkApprovalLimit) throw tooMany()
       const wanted = [...new Set(ids.map((id) => id.toLowerCase()))]
@@ -326,40 +492,12 @@ export async function approveCatalogProposals(
     },
     snapshotRead,
   )
-
-  const results: BulkApprovalResult[] = []
-  for (const { proposalId, number } of selected) {
-    try {
-      const outcome = await approveCatalogProposal(ctx, workspaceId, proposalId)
-      results.push({ proposalId, number, ...outcome })
-    } catch (error) {
-      if (error instanceof NotFoundError)
-        results.push({
-          proposalId,
-          number,
-          outcome: "refused",
-          rule: "not-found",
-          message: "There is no such catalog proposal",
-        })
-      else if (error instanceof RuleViolationError)
-        results.push({
-          proposalId,
-          number,
-          outcome: "refused",
-          rule: error.rule,
-          message: error.message,
-        })
-      // Anything else (permission, busy, a failure) stops the rest.
-      else throw error
-    }
-  }
-  return { results }
 }
 
 function tooMany(): InvalidInputError {
   return new InvalidInputError(
     "too-many",
-    `Bulk approval takes at most ${bulkApprovalLimit} proposals at a time`,
+    `A bulk action takes at most ${bulkApprovalLimit} proposals at a time`,
   )
 }
 
@@ -484,10 +622,15 @@ export async function listRecentCatalogChanges(
             state: row.state,
           })
       }
+      const proposals = await withAuthorStatus(
+        scope.tx,
+        scope.workspaceId,
+        page.map((row) => row.proposal),
+      )
       return {
-        items: page.map((row) => ({
+        items: page.map((row, i) => ({
           revision: row.revision,
-          proposal: proposalOf(row.proposal),
+          proposal: proposals[i]!,
           approvedBy: row.approvedBy,
           revertible: !stale.has(row.revision),
           revertedBy: reverts.get(row.proposal.id) ?? null,
@@ -536,20 +679,23 @@ export async function revertCatalogProposal(
         "proposal-not-applied",
         `Catalog proposal ${row.number} is ${row.state}; only an applied proposal is reverted`,
       )
-    const explanation =
+    const explanation = checkExplanation(
       input.explanation === undefined
         ? `Reverts catalog proposal ${row.number}.`
-        : input.explanation
-    const built = await revertOperations(scope, row)
-    if ("outcome" in built) return built
+        : input.explanation,
+    )
     return {
-      proposal: {
-        explanation: checkExplanation(explanation),
-        relatedTask: row.relatedTask,
-        operations: built.operations,
-        idempotencyKey: checkKey(input.idempotencyKey),
-      },
+      // A retry is the same revert, whatever the operations come to now.
+      request: ["revert", row.id, explanation],
+      explanation,
+      relatedTask: row.relatedTask,
+      idempotencyKey: checkKey(input.idempotencyKey),
       revertsProposalId: row.id,
+      // Worked out in each attempt of the turn, from the text it reads.
+      operations: async (attempt) => {
+        const built = await revertOperations(attempt, row)
+        return "outcome" in built ? built : built.operations
+      },
     }
   })
 }

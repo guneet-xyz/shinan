@@ -6,6 +6,7 @@ import type {
   EntityDocument,
   Fact,
   Problem,
+  YamlNode,
 } from "../document/index.js"
 
 /**
@@ -75,28 +76,38 @@ export function classifyChange(
     }
     const entity = now
     const earlier = was
+    // The classes this document's change is in.
+    const kinds: ApprovalClass[] = []
+    const mark = (kind: ApprovalClass) => {
+      kinds.push(kind)
+      classes.add(kind)
+    }
+    const gateDoc = (kind: ApprovalClass, reason: string) => {
+      kinds.push(kind)
+      gate(kind, reason)
+    }
     const types = new Set([entity.type, earlier?.type])
     if (types.has("person") || types.has("agent"))
-      gate(
+      gateDoc(
         "people-and-agents",
         `Changes the ${[...types].filter((t) => t === "person" || t === "agent").join(" and ")} entity ${name}`,
       )
     if (types.has("policy"))
-      gate("rules", `${earlier ? "Changes" : "Creates"} the policy ${name}`)
+      gateDoc("rules", `${earlier ? "Changes" : "Creates"} the policy ${name}`)
     if (decisionSettled(earlier, entity))
-      gate(
+      gateDoc(
         "rules",
         `Records the decision ${name} as ${entity.decision?.state ?? earlier?.decision?.state}`,
       )
     if ((earlier?.status ?? "active") !== (entity.status ?? "active"))
-      gate(
+      gateDoc(
         "lifecycle",
         `Changes the status of ${name} from ${earlier?.status ?? "active"} to ${entity.status ?? "active"}`,
       )
     if (earlier && earlier.id !== entity.id)
-      gate("lifecycle", `Changes the ID ${earlier.id} to ${entity.id}`)
+      gateDoc("lifecycle", `Changes the ID ${earlier.id} to ${entity.id}`)
     if (earlier && earlier.owner !== entity.owner)
-      gate(
+      gateDoc(
         "lifecycle",
         `Changes the owner of ${name} from ${earlier.owner ?? "none"} to ${entity.owner ?? "none"}`,
       )
@@ -106,23 +117,33 @@ export function classifyChange(
         earlier.aliases.join("\n") !== entity.aliases.join("\n")) &&
       earlier.id === entity.id
     )
-      gate("lifecycle", `Changes the aliases or replacement of ${name}`)
+      gateDoc("lifecycle", `Changes the aliases or replacement of ${name}`)
     if (
       !earlier ||
       earlier.title !== entity.title ||
       earlier.summary !== entity.summary ||
       earlier.body.text !== entity.body.text
     )
-      classes.add("body-and-bookkeeping")
+      mark("body-and-bookkeeping")
 
     const factClasses = compareFacts(
       earlier ? resolveEntity(earlier, before.registry).facts : [],
       resolveEntity(entity, after.registry).facts,
     )
-    for (const kind of factClasses.classes) classes.add(kind)
+    for (const kind of factClasses.classes) mark(kind)
     accepts.push(...factClasses.accepts)
     if (factClasses.accepts.length > 0)
-      gate("doubtful", `Accepts a discrepancy on ${name}`)
+      gateDoc("doubtful", `Accepts a discrepancy on ${name}`)
+    // Fail closed: a change is a recheck only when nothing but fact checks
+    // changed. Anything else the rules above did not sort is at least
+    // bookkeeping, so it never hides behind a recheck beside it.
+    const onlyChecks =
+      earlier !== null &&
+      sameApartFromFacts(earlier, entity) &&
+      [...factClasses.classes].every((c) => c === "recheck") &&
+      factClasses.accepts.length === 0
+    if (!onlyChecks && !kinds.some((k) => k !== "recheck"))
+      mark("body-and-bookkeeping")
   }
   for (const problem of warnings)
     gate(
@@ -136,6 +157,34 @@ export function classifyChange(
     classes: approvalClasses.filter((c) => classes.has(c)),
     reasons,
     accepts: [...new Set(accepts)],
+  }
+}
+
+/**
+ * Whether two versions of an entity are the same apart from their facts:
+ * every other frontmatter field, compared by value, and the body.
+ */
+function sameApartFromFacts(a: EntityDocument, b: EntityDocument): boolean {
+  return a.body.text === b.body.text && fieldsOf(a) === fieldsOf(b)
+}
+
+function fieldsOf(document: EntityDocument): string {
+  return JSON.stringify(
+    [...document.fields.entries()]
+      .filter(([key]) => key !== "facts")
+      .sort(([x], [y]) => (x < y ? -1 : 1))
+      .map(([key, entry]) => [key, plain(entry.value)]),
+  )
+}
+
+function plain(node: YamlNode): unknown {
+  switch (node.kind) {
+    case "scalar":
+      return node.value
+    case "list":
+      return node.items.map(plain)
+    case "map":
+      return node.entries.map((e) => [e.key, plain(e.value)])
   }
 }
 

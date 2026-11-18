@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto"
+import fc from "fast-check"
 import { describe, expect, it } from "vitest"
 
 import * as fixtures from "../../../test/catalog-index-fixtures.js"
@@ -45,8 +46,24 @@ facts:
 # Guneet
 `
 
+/** A decision not settled yet. */
+const decision = `---
+id: decision/use-shinan
+type: decision
+title: Use Shinan
+summary: Whether the team uses Shinan.
+status: active
+owner: person/guneet
+decision_state: proposed
+decided_on: 2026-11-01
+---
+
+# Use Shinan
+`
+
 const documents = [
   guneet,
+  decision,
   ...fixtures.allDocuments.filter((d) => d !== fixtures.guneet),
 ]
 const stored = documents.map((text, i) => ({
@@ -399,8 +416,8 @@ describe("approval classes (catalog §8.2)", () => {
 
     const decision = ready({
       op: "create-entity",
-      id: "decision/use-shinan",
-      title: "Use Shinan",
+      id: "decision/adopt-shinan",
+      title: "Adopt Shinan",
       summary: "The team uses Shinan.",
       owner: "person/guneet",
       decision: {
@@ -411,7 +428,7 @@ describe("approval classes (catalog §8.2)", () => {
     })
     expect(decision.classes).toContain("rules")
     expect(decision.reasons).toEqual([
-      "Records the decision decision/use-shinan as accepted",
+      "Records the decision decision/adopt-shinan as accepted",
     ])
     expect(
       classesOf({
@@ -495,5 +512,110 @@ describe("approval classes (catalog §8.2)", () => {
       outcome: "ready",
       classes: ["recheck", "doubtful"],
     })
+  })
+})
+
+describe("a recheck beside another change (strict setting)", () => {
+  const recheck: CatalogOperation = {
+    op: "recheck-facts",
+    document: "machine/daedalus",
+    facts: [present("machine/daedalus", "hostname")],
+    check,
+  }
+  const decidedOn: CatalogOperation = {
+    op: "set-field",
+    document: "decision/use-shinan",
+    field: "decided_on",
+    value: "2026-11-02",
+    expect: { value: "2026-11-01" },
+  }
+
+  it("still classes the other change, which the strict setting holds", () => {
+    expect(ready(decidedOn).classes).toEqual(["body-and-bookkeeping"])
+    expect(ready(recheck, decidedOn).classes).toEqual([
+      "recheck",
+      "body-and-bookkeeping",
+    ])
+  })
+
+  /** Whether the strict setting holds a change with these classes. */
+  const strictHolds = (classes: readonly string[]) =>
+    classes.some((c) => c !== "recheck")
+
+  // Changes to other documents than the recheck's, and to its own.
+  const changes: CatalogOperation[] = [
+    decidedOn,
+    {
+      op: "set-field",
+      document: "decision/use-shinan",
+      field: "summary",
+      value: "Whether we use Shinan.",
+      expect: { value: "Whether the team uses Shinan." },
+    },
+    {
+      op: "set-field",
+      document: "machine/daedalus",
+      field: "title",
+      value: "Daedalus II",
+      expect: { value: "Daedalus" },
+    },
+    {
+      op: "edit-body",
+      document: "machine/daedalus",
+      text: "# Daedalus\n\nAgents and people work here.\n",
+      expect: { text: bodyOf("machine/daedalus") },
+    },
+    {
+      op: "set-fact",
+      document: "machine/daedalus",
+      fact: { key: "role", state: "observed", value: "Build host" },
+      check,
+      expect: present("machine/daedalus", "role"),
+    },
+    {
+      op: "set-field",
+      document: "machine/daedalus",
+      field: "owner",
+      value: "person/guneet",
+      expect: { value: "person/guneet" },
+    },
+    {
+      op: "retire",
+      document: "machine/takezo",
+      expect: { status: "retired" },
+    },
+    {
+      op: "set-field",
+      document: "policy/no-secrets",
+      field: "title",
+      value: "No secrets",
+      expect: { value: "No secrets in the catalog" },
+    },
+  ]
+
+  it("never lowers a proposal's class (property)", () => {
+    fc.assert(
+      fc.property(
+        fc.subarray(changes, { minLength: 1 }),
+        fc.boolean(),
+        (picked, first) => {
+          const alone = prepare(...picked)
+          fc.pre(alone.outcome === "ready")
+          const withRecheck = first
+            ? prepare(recheck, ...picked)
+            : prepare(...picked, recheck)
+          if (alone.outcome !== "ready" || withRecheck.outcome !== "ready")
+            return withRecheck.outcome !== "ready"
+          if (isGated(alone.classes))
+            expect(isGated(withRecheck.classes)).toBe(true)
+          if (strictHolds(alone.classes))
+            expect(strictHolds(withRecheck.classes)).toBe(true)
+          for (const kind of alone.classes)
+            if (kind !== "recheck") expect(withRecheck.classes).toContain(kind)
+          return true
+        },
+      ),
+      { numRuns: 60 },
+    )
   })
 })

@@ -22,6 +22,7 @@ export {
   isNotNull,
   isNull,
   lt,
+  lte,
   ne,
   or,
   sql,

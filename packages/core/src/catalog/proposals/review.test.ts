@@ -1,6 +1,6 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest"
 
-import { and, asc, eq, schema } from "@shinan/db"
+import { and, asc, eq, schema, sql } from "@shinan/db"
 
 import {
   asAgent,
@@ -10,6 +10,7 @@ import {
 } from "../../../test/helpers.js"
 import type { Context } from "../../context.js"
 import {
+  BusyError,
   ForbiddenError,
   InvalidInputError,
   RuleViolationError,
@@ -17,9 +18,12 @@ import {
 import { addMember } from "../../identity/members.js"
 import type { Person } from "../../identity/people.js"
 import { createWorkspace } from "../../identity/workspaces.js"
+import { rateLimits } from "../../rate-limits.js"
 import type { CatalogOperation, CheckInput } from "../document/index.js"
 import { compareWorkspaceIndex } from "../index/indexer.js"
 import { getCatalogEntity } from "../index/queries.js"
+import { CatalogWorkers, replaceCatalogWorkers } from "./pool.js"
+import type { Prepare } from "./pool.js"
 import {
   getCatalogProposal,
   proposeCatalogChange,
@@ -33,6 +37,7 @@ import {
   getCatalogSettings,
   listCatalogProposalComments,
   listRecentCatalogChanges,
+  rejectCatalogProposals,
   revertCatalogProposal,
   setCatalogStrict,
 } from "./review.js"
@@ -351,7 +356,7 @@ describe("the strict setting", () => {
 })
 
 describe("bulk approval", () => {
-  it("approves every waiting proposal of one task, each in its own turn", async () => {
+  it("approves the waiting proposals of one task the person saw, each in its own turn", async () => {
     await setCatalogStrict(asOwner, { workspaceId, strict: true })
     const first = stored(
       await propose(agent, [setRole("Build host")], { relatedTask: "SHN-7" }),
@@ -372,15 +377,34 @@ describe("bulk approval", () => {
         },
       ]),
     )
+    // Added to the task after the person looked: not approved with it.
+    const later = stored(
+      await propose(
+        agent,
+        [
+          {
+            op: "set-field",
+            document: person,
+            field: "summary",
+            value: "Owns everything.",
+            expect: { value: "Owns the workspace." },
+          },
+        ],
+        { relatedTask: "SHN-7" },
+      ),
+    )
     const { results } = await approveCatalogProposals(
       asContributor,
       workspaceId,
-      { relatedTask: "SHN-7" },
+      { relatedTask: "SHN-7", seenUpTo: other.number },
     )
     expect(results.map((r) => [r.number, r.outcome])).toEqual([
       [first.number, "applied"],
       [second.number, "applied"],
     ])
+    expect(
+      (await getCatalogProposal(asOwner, workspaceId, later.id)).state,
+    ).toBe("pending")
     expect(
       (await getCatalogProposal(asOwner, workspaceId, other.id)).state,
     ).toBe("pending")
@@ -425,9 +449,76 @@ describe("bulk approval", () => {
     ).toMatchObject([{ outcome: "refused", rule: "own-agent" }])
   })
 
+  it("returns what it did so far when Shinan is busy, and the rest to send again", async () => {
+    await setCatalogStrict(asOwner, { workspaceId, strict: true })
+    const ids = [
+      stored(await propose(agent, [setRole("Build host")])).id,
+      stored(await propose(agent, [rename("Musashi", "Musashi I")])).id,
+      stored(await propose(agent, [retire])).id,
+    ]
+    let turns = 0
+    class BusyAfterOne extends CatalogWorkers {
+      override run<T>(
+        workspace: string,
+        work: (prepare: Prepare) => Promise<T>,
+      ): Promise<T> {
+        if (++turns > 1)
+          return Promise.reject(new BusyError("catalog-busy", "Busy", 5))
+        return super.run(workspace, work)
+      }
+    }
+    const busy = new BusyAfterOne()
+    const previous = replaceCatalogWorkers(busy)
+    try {
+      expect(
+        (
+          await approveCatalogProposals(asContributor, workspaceId, {
+            proposalIds: ids,
+          })
+        ).results,
+      ).toMatchObject([
+        { proposalId: ids[0], outcome: "applied" },
+        { proposalId: ids[1], outcome: "not-attempted", retryAfterSeconds: 5 },
+        { proposalId: ids[2], outcome: "not-attempted", retryAfterSeconds: 5 },
+      ])
+    } finally {
+      replaceCatalogWorkers(previous!)
+      await busy.close()
+    }
+  })
+
+  it("rejects what the person saw, with one reason", async () => {
+    const first = stored(await propose(agent, [retire]))
+    const second = stored(await propose(agent, [retire]))
+    await expect(
+      rejectCatalogProposals(asContributor, workspaceId, {
+        proposalIds: [first.id],
+        reason: " ",
+      }),
+    ).rejects.toMatchObject({ rule: "reason-blank" })
+    const { results } = await rejectCatalogProposals(
+      asContributor,
+      workspaceId,
+      {
+        proposalIds: [first.id, second.id],
+        reason: "The agent was disabled.",
+      },
+    )
+    expect(results.map((r) => r.outcome)).toEqual(["rejected", "rejected"])
+    await expect(
+      rejectCatalogProposals(agent, workspaceId, {
+        proposalIds: [first.id],
+        reason: "No",
+      }),
+    ).rejects.toBeInstanceOf(ForbiddenError)
+  })
+
   it("is for people only, with at most 50 at a time", async () => {
     await expect(
-      approveCatalogProposals(agent, workspaceId, { relatedTask: "SHN-7" }),
+      approveCatalogProposals(agent, workspaceId, {
+        relatedTask: "SHN-7",
+        seenUpTo: 1,
+      }),
     ).rejects.toBeInstanceOf(ForbiddenError)
     await expect(
       approveCatalogProposals(asOwner, workspaceId, {
@@ -435,8 +526,17 @@ describe("bulk approval", () => {
       }),
     ).rejects.toMatchObject({ rule: "too-many" })
     await expect(
-      approveCatalogProposals(asOwner, workspaceId, { relatedTask: "nope" }),
+      approveCatalogProposals(asOwner, workspaceId, {
+        relatedTask: "nope",
+        seenUpTo: 1,
+      }),
     ).rejects.toBeInstanceOf(InvalidInputError)
+    // A task's proposals only up to what the person saw.
+    await expect(
+      approveCatalogProposals(asOwner, workspaceId, {
+        relatedTask: "SHN-7",
+      } as never),
+    ).rejects.toMatchObject({ rule: "seen-up-to" })
   })
 })
 
@@ -573,6 +673,201 @@ describe("the recent-changes feed and revert", () => {
         },
       ]),
     ).rejects.toMatchObject({ rule: "restore-document" })
+  })
+})
+
+describe("review fixes", () => {
+  it("gives a retried revert its stored proposal back, by its idempotency key", async () => {
+    const renamed = stored(
+      await propose(agent, [rename("Musashi", "Musashi I")]),
+    )
+    const first = stored(
+      await revertCatalogProposal(agent, workspaceId, {
+        proposalId: renamed.id,
+        idempotencyKey: "revert-1",
+      }),
+    )
+    const again = await revertCatalogProposal(agent, workspaceId, {
+      proposalId: renamed.id,
+      idempotencyKey: "revert-1",
+    })
+    expect(again).toMatchObject({
+      outcome: "applied",
+      proposal: { id: first.id },
+    })
+    await expect(
+      revertCatalogProposal(agent, workspaceId, {
+        proposalId: renamed.id,
+        explanation: "Another reason.",
+        idempotencyKey: "revert-1",
+      }),
+    ).rejects.toMatchObject({ rule: "idempotency-key-reused" })
+  })
+
+  it("works a revert out from the text read in its turn, so a purge committed meanwhile is respected", async () => {
+    const secret = "hunter2-not-a-real-one"
+    stored(
+      await propose(asOwner, [
+        {
+          op: "set-field",
+          document: "machine/musashi",
+          field: "summary",
+          value: `The production host. Note: ${secret}.`,
+          expect: { value: "The production host." },
+        },
+      ]),
+    )
+    const removed = stored(
+      await propose(asOwner, [
+        {
+          op: "set-field",
+          document: "machine/musashi",
+          field: "summary",
+          value: "The production host.",
+          expect: { value: `The production host. Note: ${secret}.` },
+        },
+      ]),
+    )
+    // As purge (M2-10) will: the stored text rewritten in place, after the
+    // revert was asked for and before its turn.
+    class PurgeFirst extends CatalogWorkers {
+      override async run<T>(
+        workspace: string,
+        work: (prepare: Prepare) => Promise<T>,
+      ): Promise<T> {
+        await db.transaction(async (tx) => {
+          await tx.execute(
+            sql`alter table catalog_revision_documents disable trigger catalog_revision_documents_append_only`,
+          )
+          await tx.execute(
+            sql`update catalog_revision_documents set text = replace(text, ${secret}, '(purged)') where workspace_id = ${workspaceId}`,
+          )
+          await tx.execute(
+            sql`alter table catalog_revision_documents enable trigger catalog_revision_documents_append_only`,
+          )
+        })
+        return super.run(workspace, work)
+      }
+    }
+    const workers = new PurgeFirst()
+    const previous = replaceCatalogWorkers(workers)
+    try {
+      const revert = stored(
+        await revertCatalogProposal(asOwner, workspaceId, {
+          proposalId: removed.id,
+        }),
+      )
+      expect(JSON.stringify(revert.operations)).not.toContain(secret)
+      expect(JSON.stringify(revert.operations)).toContain("(purged)")
+    } finally {
+      replaceCatalogWorkers(previous!)
+      await workers.close()
+    }
+    expect(await latestText("machine/musashi")).not.toContain(secret)
+  })
+
+  it("holds a recheck bundled with a change the classifier does not otherwise sort, under the strict setting", async () => {
+    stored(
+      await propose(asOwner, [
+        {
+          op: "create-entity",
+          id: "decision/use-shinan",
+          title: "Use Shinan",
+          summary: "Whether the team uses Shinan.",
+          owner: person,
+          decision: { state: "proposed", decidedOn: "2026-11-01" },
+        },
+      ]),
+    )
+    await setCatalogStrict(asOwner, { workspaceId, strict: true })
+    const bundled = stored(
+      await propose(agent, [
+        recheckHostname,
+        {
+          op: "set-field",
+          document: "decision/use-shinan",
+          field: "decided_on",
+          value: "2026-11-02",
+          expect: { value: "2026-11-01" },
+        },
+      ]),
+    )
+    expect(bundled).toMatchObject({
+      state: "pending",
+      approvalClasses: ["recheck", "body-and-bookkeeping"],
+      approvalReasons: [strictReason],
+    })
+  })
+
+  it("stores a retried comment once, and limits how many an agent sends", async () => {
+    const waiting = stored(await propose(agent, [retire]))
+    const first = await commentOnCatalogProposal(agent, workspaceId, {
+      proposalId: waiting.id,
+      text: "Checked.",
+      idempotencyKey: "c-1",
+    })
+    const again = await commentOnCatalogProposal(agent, workspaceId, {
+      proposalId: waiting.id,
+      text: "Checked.",
+      idempotencyKey: "c-1",
+    })
+    expect(again.id).toBe(first.id)
+    await expect(
+      commentOnCatalogProposal(agent, workspaceId, {
+        proposalId: waiting.id,
+        text: "Something else.",
+        idempotencyKey: "c-1",
+      }),
+    ).rejects.toMatchObject({ rule: "idempotency-key-reused" })
+    expect(
+      await listCatalogProposalComments(asOwner, workspaceId, waiting.id),
+    ).toHaveLength(1)
+
+    const actor = agent.actor as { agentId: string }
+    await db
+      .update(schema.rateLimits)
+      .set({ count: rateLimits["catalog-comment"].max })
+      .where(eq(schema.rateLimits.key, `catalog-comment:${actor.agentId}`))
+    await expect(
+      commentOnCatalogProposal(agent, workspaceId, {
+        proposalId: waiting.id,
+        text: "One more.",
+      }),
+    ).rejects.toMatchObject({ rule: "catalog-comment" })
+    // A retry is not counted.
+    await expect(
+      commentOnCatalogProposal(agent, workspaceId, {
+        proposalId: waiting.id,
+        text: "Checked.",
+        idempotencyKey: "c-1",
+      }),
+    ).resolves.toMatchObject({ id: first.id })
+  })
+
+  it("says when a proposal's author is a disabled agent or a member who left", async () => {
+    const waiting = stored(await propose(agent, [retire]))
+    const own = stored(
+      await propose(asContributor, [rename("Musashi", "Musashi I")]),
+    )
+    const status = async (id: string) =>
+      (await getCatalogProposal(asOwner, workspaceId, id)).authorStatus
+    expect(await status(waiting.id)).toBe("current")
+    const actor = agent.actor as { agentId: string }
+    await db
+      .update(schema.agents)
+      .set({ enabled: false, disabledAt: new Date() })
+      .where(eq(schema.agents.id, actor.agentId))
+    expect(await status(waiting.id)).toBe("agent-disabled")
+    await db
+      .update(schema.members)
+      .set({ removedAt: new Date() })
+      .where(
+        and(
+          eq(schema.members.workspaceId, workspaceId),
+          eq(schema.members.personId, contributor.id),
+        ),
+      )
+    expect(await status(own.id)).toBe("member-left")
   })
 })
 

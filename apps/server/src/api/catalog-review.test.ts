@@ -164,11 +164,26 @@ describe("catalog review over the API", () => {
     const bulk = await call<{ results: Api.CatalogBulkApprovalResult[] }>(
       "POST",
       ws("/proposals/bulk-approve"),
-      { relatedTask: "SHN-1" },
+      { relatedTask: "SHN-1", seenUpTo: 10 },
     )
     expect(bulk).toEqual({ status: 200, body: { results: [] } })
-    expect((await call("POST", ws("/proposals/bulk-approve"), {})).status).toBe(
-      422,
-    )
+    // A task needs the highest proposal number the person saw.
+    for (const body of [{}, { relatedTask: "SHN-1" }])
+      expect(
+        (await call("POST", ws("/proposals/bulk-approve"), body)).status,
+      ).toBe(422)
+    const rejected = await call<{
+      results: Api.CatalogBulkRejectionResult[]
+    }>("POST", ws("/proposals/bulk-reject"), {
+      proposalIds: [renamed.id],
+      reason: "Not now.",
+    })
+    expect(rejected.body.results).toMatchObject([
+      {
+        proposalId: renamed.id,
+        outcome: "refused",
+        rule: "proposal-not-pending",
+      },
+    ])
   })
 })

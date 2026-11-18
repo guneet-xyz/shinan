@@ -21,6 +21,11 @@ import {
   withdrawCatalogProposal,
 } from "./proposals.js"
 import type { CatalogProposal, ProposalOutcome } from "./proposals.js"
+import {
+  commentOnCatalogProposal,
+  listCatalogProposalComments,
+} from "./review.js"
+import type { CatalogProposalComment } from "./review.js"
 
 /**
  * Catalog proposals as agents make and read them (agent integrations, tool
@@ -90,6 +95,19 @@ export interface AgentProposalAnswer {
     CatalogProposal["state"] | "conflict" | "invalid" | "blocked" | "unchanged"
   proposal?: AgentProposalJson
   problems?: AgentProblemJson[]
+  /** With `get_catalog_proposal`: its comments, oldest first. */
+  comments?: AgentCommentJson[]
+  label: TrustLabel
+}
+
+/** A comment on a proposal, labelled by who wrote it. */
+export interface AgentCommentJson {
+  id: string
+  proposal_id: string
+  created_at: string
+  author: string
+  author_kind: "person" | "agent"
+  text: string
   label: TrustLabel
 }
 
@@ -168,7 +186,49 @@ export async function agentGetCatalogProposal(
 ): Promise<AgentProposalAnswer> {
   const agent = agentOf(ctx)
   const proposal = await getCatalogProposal(ctx, agent.workspaceId, proposalId)
-  return answerOf(ctx, agent, { outcome: proposal.state, proposal }, [])
+  const answer = await answerOf(
+    ctx,
+    agent,
+    { outcome: proposal.state, proposal },
+    [],
+  )
+  answer.comments = (
+    await listCatalogProposalComments(ctx, agent.workspaceId, proposal.id)
+  ).map(commentJson)
+  return answer
+}
+
+/**
+ * The `comment_on_catalog_proposal` tool: a comment on a proposal of the
+ * agent's workspace, such as review findings (catalog §8.6); only people
+ * approve. A retry with the same `idempotencyKey` is stored once. May
+ * throw `BusyError` when the agent sent too many: send it again later.
+ */
+export async function agentCommentOnCatalogProposal(
+  ctx: Context,
+  input: { proposalId: string; text: string; idempotencyKey?: string },
+): Promise<{ comment: AgentCommentJson; label: TrustLabel }> {
+  const agent = agentOf(ctx)
+  const comment = await commentOnCatalogProposal(ctx, agent.workspaceId, {
+    proposalId: input.proposalId,
+    text: input.text,
+    ...(input.idempotencyKey === undefined
+      ? {}
+      : { idempotencyKey: input.idempotencyKey }),
+  })
+  return { comment: commentJson(comment), label: shinanLabel }
+}
+
+function commentJson(comment: CatalogProposalComment): AgentCommentJson {
+  return {
+    id: comment.id,
+    proposal_id: comment.proposalId,
+    created_at: comment.createdAt.toISOString(),
+    author: comment.author.label,
+    author_kind: comment.author.kind,
+    text: comment.text,
+    label: labelForActor(comment.author.kind, comment.author.label),
+  }
 }
 
 /**

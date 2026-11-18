@@ -6,10 +6,11 @@ import {
   getCatalogSettings,
   listCatalogProposalComments,
   listRecentCatalogChanges,
+  rejectCatalogProposals,
   revertCatalogProposal,
   setCatalogStrict,
 } from "@shinan/core"
-import type { Context } from "@shinan/core"
+import type { BulkSelection, Context } from "@shinan/core"
 
 import { BadRequestError } from "./errors.js"
 import type { SignedInEnv } from "./sign-in.js"
@@ -45,19 +46,22 @@ export function catalogReviewRoutes(
   })
 
   app.post(`${base}/proposals/bulk-approve`, async (c) => {
+    const selection = bulkSelection(await readBody(c))
+    return c.json(
+      await approveCatalogProposals(ctx(c), workspaceId(c), selection),
+    )
+  })
+
+  app.post(`${base}/proposals/bulk-reject`, async (c) => {
     const body = await readBody(c)
-    const input =
-      typeof body.relatedTask === "string"
-        ? { relatedTask: body.relatedTask }
-        : Array.isArray(body.proposalIds) &&
-            body.proposalIds.every((id) => typeof id === "string")
-          ? { proposalIds: body.proposalIds }
-          : null
-    if (!input)
-      throw new BadRequestError(
-        'Send "proposalIds" (a list of IDs) or "relatedTask" (a task ID)',
-      )
-    return c.json(await approveCatalogProposals(ctx(c), workspaceId(c), input))
+    if (typeof body.reason !== "string")
+      throw new BadRequestError('"reason" must be a string')
+    return c.json(
+      await rejectCatalogProposals(ctx(c), workspaceId(c), {
+        ...bulkSelection(body),
+        reason: body.reason,
+      }),
+    )
   })
 
   app.get(`${base}/proposals/:proposalId/comments`, async (c) =>
@@ -74,10 +78,18 @@ export function catalogReviewRoutes(
     const body = await readBody(c)
     if (typeof body.text !== "string")
       throw new BadRequestError('"text" must be a string')
+    if (
+      body.idempotencyKey !== undefined &&
+      typeof body.idempotencyKey !== "string"
+    )
+      throw new BadRequestError('"idempotencyKey" must be a string')
     return c.json(
       await commentOnCatalogProposal(ctx(c), workspaceId(c), {
         proposalId: c.req.param("proposalId"),
         text: body.text,
+        ...(typeof body.idempotencyKey === "string"
+          ? { idempotencyKey: body.idempotencyKey }
+          : {}),
       }),
       201,
     )
@@ -115,6 +127,23 @@ export function catalogReviewRoutes(
       }),
     )
   })
+}
+
+/**
+ * What a bulk action takes: the proposals the person was shown, by ID, or a
+ * task's waiting proposals up to the highest number they saw.
+ */
+function bulkSelection(body: Record<string, unknown>): BulkSelection {
+  if (
+    Array.isArray(body.proposalIds) &&
+    body.proposalIds.every((id) => typeof id === "string")
+  )
+    return { proposalIds: body.proposalIds }
+  if (typeof body.relatedTask === "string" && typeof body.seenUpTo === "number")
+    return { relatedTask: body.relatedTask, seenUpTo: body.seenUpTo }
+  throw new BadRequestError(
+    'Send "proposalIds" (the proposals shown), or "relatedTask" with "seenUpTo" (the highest proposal number shown)',
+  )
 }
 
 async function readBody(c: HonoContext): Promise<Record<string, unknown>> {

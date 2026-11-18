@@ -1,5 +1,7 @@
 import type {
   CatalogBulkApprovalResult,
+  CatalogBulkRejectionResult,
+  CatalogBulkSelection,
   CatalogProposalComment,
   CatalogProposalOutcome,
   CatalogSettings,
@@ -702,12 +704,22 @@ export function createApiClient(options: ApiClientOptions = {}) {
       }),
     bulkApproveCatalogProposals: (
       workspaceId: string,
-      selection: { proposalIds: string[] } | { relatedTask: string },
+      selection: CatalogBulkSelection,
     ) =>
       request<{ results: CatalogBulkApprovalResult[] }>(
         "POST",
         `${catalog(workspaceId)}/proposals/bulk-approve`,
         selection,
+      ),
+    bulkRejectCatalogProposals: (
+      workspaceId: string,
+      selection: CatalogBulkSelection,
+      reason: string,
+    ) =>
+      request<{ results: CatalogBulkRejectionResult[] }>(
+        "POST",
+        `${catalog(workspaceId)}/proposals/bulk-reject`,
+        { ...selection, reason },
       ),
     catalogProposalComments: (workspaceId: string, proposalId: string) =>
       request<{ items: CatalogProposalComment[] }>(
@@ -718,11 +730,12 @@ export function createApiClient(options: ApiClientOptions = {}) {
       workspaceId: string,
       proposalId: string,
       text: string,
+      idempotencyKey?: string,
     ) =>
       request<CatalogProposalComment>(
         "POST",
         `${catalog(workspaceId)}/proposals/${encodeURIComponent(proposalId)}/comments`,
-        { text },
+        idempotencyKey === undefined ? { text } : { text, idempotencyKey },
       ),
     revertCatalogProposal: (
       workspaceId: string,

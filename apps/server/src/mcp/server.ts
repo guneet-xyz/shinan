@@ -9,6 +9,7 @@ import {
   agentAnswerText,
   agentCatalogList,
   agentCatalogLists,
+  agentCommentOnCatalogProposal,
   agentGetCatalogProposal,
   agentGetEntity,
   agentProposeCatalogChange,
@@ -17,6 +18,7 @@ import {
   agentWithdrawCatalogProposal,
   agentWorkspaceContext,
   BusyError,
+  commentLimit,
   CoreError,
   entityStatuses,
   ForbiddenError,
@@ -506,11 +508,33 @@ function buildServer(options: McpOptions, call: CallContext): McpServer {
     {
       title: "Get a catalog proposal",
       description:
-        "One catalog proposal by ID: its state (pending, applied, rejected or withdrawn), operations, approval classes and the reasons it waits, validation warnings, the revision it applied as, and a rejection's reason.",
+        "One catalog proposal by ID: its state (pending, applied, rejected or withdrawn), operations, approval classes and the reasons it waits, validation warnings, the revision it applied as, a rejection's reason, and its comments, each labelled by who wrote it.",
       inputSchema: z.object({ id: proposalId }),
       annotations: readOnly,
     },
     (input) => answer(() => agentGetCatalogProposal(ctx, input.id)),
+  )
+
+  server.registerTool(
+    "comment_on_catalog_proposal",
+    {
+      title: "Comment on a catalog proposal",
+      description: `Add a comment to a catalog proposal, by its id: for example your findings when asked to review it. A comment informs the person who reviews it; only people approve. At most ${commentLimit} characters. Send an idempotency_key so a retry is stored once. Needs a full token.`,
+      inputSchema: z.object({
+        id: proposalId,
+        text: z.string().min(1).max(commentLimit),
+        idempotency_key: z.string().min(1).max(200).optional(),
+      }),
+      annotations: write,
+    },
+    (input) =>
+      answer(() =>
+        agentCommentOnCatalogProposal(ctx, {
+          proposalId: input.id,
+          text: input.text,
+          ...defined({ idempotencyKey: input.idempotency_key }),
+        }),
+      ),
   )
 
   server.registerTool(

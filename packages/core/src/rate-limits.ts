@@ -88,6 +88,16 @@ export const rateLimits = {
     windowSeconds: 600,
     record: { action: "request.throttled" },
   },
+  /**
+   * Comments on catalog proposals by one agent, counted by the agent
+   * (**proposed**, M2-4b): an agent asked to review proposals comments a
+   * few times an hour; this stops one from filling the review screens.
+   */
+  "catalog-comment": {
+    max: 60,
+    windowSeconds: 600,
+    record: { action: "request.throttled" },
+  },
 } as const satisfies Record<string, RateLimit>
 
 export type RateLimitName = keyof typeof rateLimits

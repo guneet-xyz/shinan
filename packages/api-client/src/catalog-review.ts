@@ -34,6 +34,11 @@ export interface CatalogProposal {
   rejectionReason: string | null
   /** The applied proposal this one reverts, for a revert. */
   revertsProposalId: string | null
+  /**
+   * Whether its author is still a current member, or an enabled agent of
+   * one; given when proposals are read (a proposal, a list, recent changes).
+   */
+  authorStatus?: "current" | "agent-disabled" | "member-left"
 }
 
 /** An operation that did not apply (catalog §8.5), or a blocking validation problem (§8.3). */
@@ -61,11 +66,30 @@ export interface CatalogSettings {
   strict: boolean
 }
 
+/**
+ * Which proposals a bulk action takes: exactly the ones the person was
+ * shown, by ID, or a task's waiting proposals up to the highest proposal
+ * number shown.
+ */
+export type CatalogBulkSelection =
+  { proposalIds: string[] } | { relatedTask: string; seenUpTo: number }
+
 export type CatalogBulkApprovalResult = {
   proposalId: string
   number: number | null
 } & (
-  CatalogProposalOutcome | { outcome: "refused"; rule: string; message: string }
+  | CatalogProposalOutcome
+  | { outcome: "refused"; rule: string; message: string }
+  /** Shinan was busy before it reached this one: send it again later. */
+  | { outcome: "not-attempted"; retryAfterSeconds: number }
+)
+
+export type CatalogBulkRejectionResult = {
+  proposalId: string
+  number: number | null
+} & (
+  | { outcome: "rejected"; proposal: CatalogProposal }
+  | { outcome: "refused"; rule: string; message: string }
 )
 
 export interface CatalogProposalComment {

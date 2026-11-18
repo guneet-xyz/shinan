@@ -1,5 +1,5 @@
 {
-  "id": "a604bdcb-e320-419b-ae2e-5f629115037b",
+  "id": "858be4ad-92b3-411e-aa47-387f22b91323",
   "prevId": "72428bb2-d114-4d67-8e6b-7dcd262bbb42",
   "version": "7",
   "dialect": "postgresql",
@@ -1830,9 +1830,43 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "idempotency_key": {
+          "name": "idempotency_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
+        "catalog_proposal_comments_idempotency_key": {
+          "name": "catalog_proposal_comments_idempotency_key",
+          "columns": [
+            {
+              "expression": "workspace_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "coalesce(\"actor_agent_id\", \"actor_person_id\")",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "idempotency_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"catalog_proposal_comments\".\"idempotency_key\" is not null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "catalog_proposal_comments_proposal_id": {
           "name": "catalog_proposal_comments_proposal_id",
           "columns": [

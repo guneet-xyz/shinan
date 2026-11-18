@@ -20,6 +20,7 @@ export {
 } from "./proposals.js"
 export type {
   ApprovalOutcome,
+  AuthorStatus,
   CatalogProposal,
   CatalogProposalState,
   ListProposalsInput,
@@ -27,12 +28,14 @@ export type {
   ProposalOutcome,
 } from "./proposals.js"
 export {
+  agentCommentOnCatalogProposal,
   agentGetCatalogProposal,
   agentProposeCatalogChange,
   agentRecordFactCheck,
   agentWithdrawCatalogProposal,
 } from "./agent.js"
 export type {
+  AgentCommentJson,
   AgentProblemJson,
   AgentProposalAnswer,
   AgentProposalJson,
@@ -46,11 +49,14 @@ export {
   getCatalogSettings,
   listCatalogProposalComments,
   listRecentCatalogChanges,
+  rejectCatalogProposals,
   revertCatalogProposal,
   setCatalogStrict,
 } from "./review.js"
 export type {
   BulkApprovalResult,
+  BulkRejectionResult,
+  BulkSelection,
   CatalogProposalComment,
   CatalogSettings,
   RecentCatalogChange,
