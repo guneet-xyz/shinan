@@ -578,7 +578,8 @@ People type secrets; agents never handle them. Agents prepare every step.
 
 Decided by the owner on 2026-11-17 ("Approve and start",
 [issue #79](https://github.com/guneet-xyz/shinan/issues/79)). The labels
-M2-Q1 to M2-Q5 name the questions this plan asked.
+M2-Q1 to M2-Q5 name the questions this plan asked; M2-Q6 came up during
+M2-3 (2026-11-18).
 
 ### 7.1 Answers
 
@@ -602,6 +603,13 @@ M2-Q1 to M2-Q5 name the questions this plan asked.
    record changes.
 4. **M2-Q4, catalog purge:** in M2 (M2-10), catalog content only.
 5. **M2-Q5, agents at trial start:** OpenCode on Daedalus only.
+6. **M2-Q6, what a trust label's author means for catalog body sections**
+   (owner, 2026-11-18, [#110](https://github.com/guneet-xyz/shinan/issues/110)):
+   the least-trusted actor whose words may remain in the section, judged
+   from the document's history (catalog §12.4), not the actor of the last
+   change. Recorded in [agent integrations, trust labels](agent-integrations.md#trust-labels);
+   M2-6 shows `written_by` as `author`/`author_kind`. No decision record
+   changes.
 
 ### 7.2 Defaults for open questions in the documents
 
