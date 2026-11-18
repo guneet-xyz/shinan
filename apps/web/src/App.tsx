@@ -5,6 +5,7 @@ import { ErrorBoundary } from "./components/ErrorBoundary"
 import { AppShell } from "./components/Layout"
 import { Loading } from "./components/status"
 import { Account } from "./pages/Account"
+import { AgentSetup } from "./pages/AgentSetup"
 import { GitHubEmail } from "./pages/GitHubEmail"
 import { Home } from "./pages/Home"
 import { Installation } from "./pages/Installation"
@@ -49,6 +50,7 @@ export function App() {
             <Route index element={<Home />} />
             <Route path="account" element={<Account />} />
             <Route path="account/agents" element={<YourAgents />} />
+            <Route path="account/agents/setup" element={<AgentSetup />} />
             <Route path="installation" element={<Installation />} />
             <Route path="w/:workspaceId" element={<WorkspaceLayout />}>
               {/* The wiki opens a workspace until the Now screen exists (M3). */}

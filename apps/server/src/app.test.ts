@@ -1,10 +1,13 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest"
 
+import { findSecrets } from "@shinan/core"
 import { checkDatabase } from "@shinan/db"
 import { connectTestDatabase } from "@shinan/db/testing"
+import { loadSkillCatalog, skillDirectory } from "@shinan/skill"
+import type { SkillCatalog } from "@shinan/skill"
 
 import { noSignIn } from "./api/sign-in.js"
 import { createApp as createAppWith, createInternalApp } from "./app.js"
@@ -121,6 +124,141 @@ describe("createApp", () => {
       // Paths that only start with the same letters are the app's.
       expect((await app.request("/healthzone")).status).toBe(200)
     })
+  })
+})
+
+describe("the skill at /skills/, without sign-in", () => {
+  let skills: SkillCatalog
+  let webDistDir: string
+  let app: ReturnType<typeof createApp>
+
+  beforeAll(async () => {
+    skills = await loadSkillCatalog()
+    webDistDir = await mkdtemp(join(tmpdir(), "shinan-web-"))
+    await writeFile(join(webDistDir, "index.html"), "<h1>Shinan</h1>")
+    app = createApp({
+      webDistDir,
+      skills,
+      installationUrl: "https://x.example",
+    })
+  })
+
+  afterAll(async () => {
+    await rm(webDistDir, { recursive: true, force: true })
+  })
+
+  it("serves index.json and each file it lists, with their headers", async () => {
+    const response = await app.request("/skills/index.json")
+    expect(response.status).toBe(200)
+    expect(response.headers.get("content-type")).toBe(
+      "application/json; charset=utf-8",
+    )
+    const index = (await response.json()) as {
+      skills: { name: string; version: string; files: string[] }[]
+    }
+    expect(index.skills).toEqual([
+      {
+        name: "shinan",
+        version: skills.version,
+        files: expect.arrayContaining(["SKILL.md"]) as unknown,
+      },
+    ])
+    for (const file of index.skills[0]!.files) {
+      const served = await app.request(`/skills/shinan/${file}`)
+      expect(served.status, file).toBe(200)
+      expect(await served.text()).toBe(
+        await readFile(join(skillDirectory, file), "utf8"),
+      )
+      const headers = served.headers
+      expect(headers.get("content-type")).toBe("text/markdown; charset=utf-8")
+      expect(headers.get("cache-control")).toBe("public, max-age=300")
+      expect(headers.get("etag")).toMatch(/^"[A-Za-z0-9_-]+"$/)
+      expect(headers.get("x-robots-tag")).toBe("noindex")
+      // The global security headers apply here too.
+      expect(headers.get("x-content-type-options")).toBe("nosniff")
+      expect(headers.get("content-security-policy")).toContain(
+        "default-src 'none'",
+      )
+      expect(headers.get("strict-transport-security")).not.toBeNull()
+      expect(headers.get("set-cookie")).toBeNull()
+    }
+  })
+
+  it("answers HEAD and a matching If-None-Match without the body", async () => {
+    const head = await app.request("/skills/shinan/SKILL.md", {
+      method: "HEAD",
+    })
+    expect(head.status).toBe(200)
+    expect(await head.text()).toBe("")
+    const etag = head.headers.get("etag")!
+    const again = await app.request("/skills/shinan/SKILL.md", {
+      headers: { "if-none-match": `"other", ${etag}` },
+    })
+    expect(again.status).toBe(304)
+    expect(await again.text()).toBe("")
+    expect(again.headers.get("etag")).toBe(etag)
+    const changed = await app.request("/skills/shinan/SKILL.md", {
+      headers: { "if-none-match": '"other"' },
+    })
+    expect(changed.status).toBe(200)
+    // Weak comparison: a tag a proxy weakened still matches, and so does *.
+    for (const header of [`W/${etag}`, `"x", W/${etag}`, "*"]) {
+      const weak = await app.request("/skills/shinan/SKILL.md", {
+        headers: { "if-none-match": header },
+      })
+      expect(weak.status, header).toBe(304)
+    }
+    const otherWeak = await app.request("/skills/shinan/SKILL.md", {
+      headers: { "if-none-match": 'W/"other"' },
+    })
+    expect(otherWeak.status).toBe(200)
+  })
+
+  it("serves nothing else: no listing, no other path, no other method", async () => {
+    // Dot segments, even encoded (`%2e%2e`), are resolved when the URL is
+    // read, before routing, so they reach only paths listed here; an
+    // encoded slash stays part of one name and matches no file.
+    for (const path of [
+      "/skills",
+      "/skills/",
+      "/skills/shinan",
+      "/skills/shinan/",
+      "/skills/shinan/references",
+      "/skills/shinan/references/",
+      "/skills/index.json/",
+      "/skills//index.json",
+      "/skills/shinan//SKILL.md",
+      "/skills/shinan/skill.md",
+      "/skills/SHINAN/SKILL.md",
+      "/skills/shinan/SKILL.md.bak",
+      "/skills/shinan/index.json",
+      "/skills/SKILL.md",
+      "/skills/package.json",
+      "/skills/src/index.ts",
+      "/skills/shinan/..%2findex.json",
+      "/skills/shinan/%2e%2e%2f%2e%2e%2fpackage.json",
+      "/skills/nope",
+    ]) {
+      const response = await app.request(path)
+      expect(response.status, path).toBe(404)
+      expect(await response.json(), path).toEqual(notFound)
+    }
+    for (const method of ["POST", "PUT", "PATCH", "DELETE", "OPTIONS"]) {
+      const response = await app.request("/skills/index.json", { method })
+      expect(response.status, method).toBe(404)
+    }
+  })
+
+  it("holds only product conventions: no secrets, no addresses", () => {
+    for (const [path, file] of skills.files) {
+      const text = new TextDecoder().decode(file.body)
+      expect(findSecrets(text), path).toEqual([])
+      // Example addresses only, never a real installation or machine.
+      for (const [url] of text.matchAll(/\bhttps?:\/\/[^\s)"`]+/g))
+        expect(new URL(url).hostname, `${path}: ${url}`).toMatch(
+          /(^|\.)example$/,
+        )
+    }
   })
 })
 

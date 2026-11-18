@@ -304,6 +304,14 @@ async function run() {
     "health checks are not served through the proxy",
   )
   check((await request("/api/status")).status === 200, "/api/status answers")
+  const skills = await request("/skills/index.json")
+  const skill = (await skills.json()).skills?.[0]
+  check(
+    skills.status === 200 &&
+      skill?.name === "shinan" &&
+      (await request(`/skills/shinan/${skill.files[0]}`)).status === 200,
+    "the skill is served at /skills/",
+  )
 
   const setup = await request("/api/setup", {
     body: { token: setupToken, email: operator },

@@ -46,7 +46,13 @@ export function YourAgents() {
     <div className="mx-auto flex max-w-3xl flex-col gap-6">
       <PageHeader title="Your agents">
         An agent is one coding tool on one machine, acting for you in one
-        workspace. Its token lasts until it is revoked.
+        workspace. Its token lasts until it is revoked.{" "}
+        <Link
+          to="/account/agents/setup"
+          className="text-foreground underline underline-offset-4"
+        >
+          Set up OpenCode
+        </Link>
       </PageHeader>
       {issued && (
         <TokenShownOnce

@@ -577,6 +577,110 @@ All **proposed**:
   The `workspace` repository's own collaboration rules get a note at the start
   of the trial, in a separate change to that repository.
 
+**Proposed (M2-9, [#90](https://github.com/guneet-xyz/shinan/issues/90)),
+as built:**
+
+- **Source.** The skill is Markdown in `packages/skill/skill/shinan/`: a
+  short `SKILL.md` (the rules in one screen, with the trust-label wording
+  above verbatim) and three supporting files the agent reads when a step
+  needs them: `references/reading.md` (the read tools, freshness,
+  discrepancies, unknowns), `references/facts.md` (fact states, fact checks,
+  provenance and where secrets live) and `references/changing.md` (the
+  documentation-impact obligation, catalog proposals and the write tools).
+  Reason: OpenCode puts only `SKILL.md` into the conversation and lists the
+  other files, so detail costs context only when it is used. Task, presence
+  and nudge conventions join in M3 and M4.
+- **The catalog format**, checked against
+  [OpenCode skills](https://opencode.ai/docs/skills) ("Catalogs") on
+  2026-11-18: `/skills/index.json` is
+  `{"skills":[{"name":"shinan","version":"…","files":["SKILL.md","references/…"]}]}`,
+  and each file is at `/skills/shinan/<file>`. OpenCode names a catalog skill
+  after that directory, so the skill's ID is **`shinan`** (agents load it with
+  the `skill` tool, people with `@shinan`).
+- **The version** is the first 16 hex digits of a SHA-256 hash of every
+  file's path and content, computed when the `web` role starts, which reads
+  the files into memory. Reason: OpenCode refreshes its copy only when the
+  version changes; a hash changes exactly when the files do, with no build
+  step or number to remember.
+- **Checked when the server starts:** only Markdown files with plain names
+  (letters, digits, hyphens; at most two folders deep), no links or other
+  files, at most 20 files, 64 KiB each and 256 KiB in all, valid UTF-8, and a
+  `SKILL.md`. Anything else stops the `web` role from starting rather than
+  being served. Tests check that the files hold no secret-looking value
+  ([catalog §7.3](catalog.md#73-a-check-for-secret-looking-values)) and no
+  address but `*.example` ones, so no workspace data or installation
+  address is ever in the skill.
+- **Decided (owner, 2026-11-18, M2-Q12 in the
+  [build plan](build-plan-m2.md#71-answers)): if Shinan is down,** the
+  skill tells the agent to carry on with its project's own instructions and
+  the owning sources, say so, and record the catalog updates it owes. It
+  does not name the `workspace` repository. Reason: the skill is public and
+  serves every installation, so which fallback a project has belongs to that
+  project's instructions. For the trial, the `workspace` repository's note
+  says it ([trial start kit](build-plan-m2.md#313-m2-13-trial-start-kit)).
+- **The write tools** are described from M2-4's proposal API and M2-6's
+  planned tool names, marked **to be confirmed** in the skill itself, with
+  the instruction to follow each tool's own description where they differ;
+  M2-6's second PR finalises them.
+- **Serving** is in [architecture §10.2](architecture.md#102-web-hardening).
+
+### Setting up OpenCode with a hand-made token
+
+**Proposed (M2-9), as built:** a signed-in page, **Set up OpenCode**
+(`/account/agents/setup`), linked from Your agents and from the token shown
+once (in a new tab, so the token stays on screen). It fills in the
+installation's own address and gives four steps:
+
+1. Make a token by hand in Your agents (read-only if the agent only reads).
+2. Store it on the machine from a terminal in bash or zsh, never the coding
+   tool's chat, then paste the token and press Enter:
+
+   ```sh
+   (umask 077; mkdir -p ~/.config/shinan && chmod 700 ~/.config/shinan && IFS= read -rs t && : > ~/.config/shinan/token && chmod 600 ~/.config/shinan/token && printf '%s\n' "$t" > ~/.config/shinan/token)
+   ```
+
+   Reason ([requirement 3](#authentication-requirements)): `read -s` shows
+   nothing, so the token is not on screen, in scrollback or terminal logs;
+   it is never on a command line or in shell history, and `printf` is a
+   shell builtin, so it is never in the process list either. The folder is
+   700 and the file 600 even if they existed before (`cat >` or a plain
+   redirect would keep an older file's mode), and the file is emptied and
+   locked down before the token goes in. A shell without `read -s`, such as
+   `dash`, stops at `read` and writes nothing.
+
+3. Add to `opencode.jsonc` in a folder above the projects that should use
+   Shinan, or to `~/.config/opencode/opencode.jsonc` for every folder:
+
+   ```jsonc
+   {
+     "$schema": "https://opencode.ai/config.json",
+     "mcp": {
+       "servers": {
+         "shinan": {
+           "type": "remote",
+           "url": "https://<installation>/mcp",
+           "oauth": false,
+           "headers": {
+             "Authorization": "Bearer {file:~/.config/shinan/token}",
+           },
+         },
+       },
+     },
+     "skills": ["https://<installation>/skills/"],
+   }
+   ```
+
+   The file holds no secret; OpenCode reads the token when it connects and
+   drops the file's trailing newline.
+
+4. Check with `opencode mcp list` (`shinan connected`; a first run can find
+   no servers), then ask the agent to load the `shinan` skill and call
+   `workspace_context`.
+
+It also says never to paste the token into a chat, issue, project file or
+command line, and to revoke it in Your agents if it leaks. The trial's
+machine-level layout on Daedalus is the [trial start kit](build-plan-m2.md#313-m2-13-trial-start-kit)'s.
+
 ## Conventions agents follow
 
 The skill teaches the task-side rules in the [tasks document](tasks.md),

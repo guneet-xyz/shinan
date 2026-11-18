@@ -22,6 +22,7 @@ import {
 } from "@shinan/db"
 import { createSesSender, createSmtpSender } from "@shinan/email"
 import type { EmailSender } from "@shinan/email"
+import { loadSkillCatalog } from "@shinan/skill"
 
 import type { SignIn } from "./api/sign-in.js"
 import { createApp, createInternalApp } from "./app.js"
@@ -116,6 +117,7 @@ async function runWeb(env: Env): Promise<void> {
       installationUrl: config.installationUrl,
       trustedProxies: config.trustedProxies,
       webDistDir: config.webDistDir,
+      skills: await loadSkillCatalog(),
     })
     const internal = createInternalApp({
       checkDatabase: () => checkDatabase(pool),

@@ -1110,7 +1110,8 @@ restriction stays possible later.
   acceptance page, a minimal health check and the skill's files at
   `/skills/` (decided, owner, [D-056](decisions/D-056-public-skill-path.md):
   OpenCode loads HTTP skill catalogs without credentials, and the skill holds
-  only product conventions, never workspace content). The wiki and agent
+  only product conventions, never workspace content; how it is served:
+  [architecture §10.2](architecture.md#102-web-hardening)). The wiki and agent
   index are behind sign-in too. The public health check is `/api/status`, a constant
   answer that touches no database; the liveness and readiness checks are served only inside the
   container network ([architecture §13](architecture.md#13-observability)).
