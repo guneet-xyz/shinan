@@ -312,6 +312,22 @@ describe("decide", () => {
       ).toEqual({ allowed: false, reason: "scope" })
     })
 
+    it("lets every member comment on proposals, and agents with catalog:propose", () => {
+      expect(allowed("catalog.comment", contributor)).toEqual({ allowed: true })
+      expect(
+        allowed("catalog.comment", {
+          ...ownersAgent,
+          scopes: ["catalog:propose"],
+        }),
+      ).toEqual({ allowed: true })
+      expect(
+        allowed("catalog.comment", {
+          ...ownersAgent,
+          scopes: ["catalog:read"],
+        }),
+      ).toEqual({ allowed: false, reason: "scope" })
+    })
+
     it("reserves catalog approval for people", () => {
       expect(allowed("catalog.approve", owner)).toEqual({ allowed: true })
       expect(allowed("catalog.approve", contributor)).toEqual({ allowed: true })

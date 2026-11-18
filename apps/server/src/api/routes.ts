@@ -70,6 +70,7 @@ import { rateLimited, sameOriginOnly } from "../security.js"
 import { isSafeReturnPath } from "../sign-in/paths.js"
 import { requireAgent } from "./agent-auth.js"
 import type { AgentEnv } from "./agent-auth.js"
+import { catalogReviewRoutes } from "./catalog-review.js"
 import { catalogRoutes } from "./catalog.js"
 import { BadRequestError, errorHandler, errorResponse } from "./errors.js"
 import { appendHeaders, requirePerson } from "./sign-in.js"
@@ -611,6 +612,7 @@ export function createApi({
   )
 
   catalogRoutes(signedIn, ctx)
+  catalogReviewRoutes(signedIn, ctx)
 
   api.route("/", signedIn)
   api.all("*", (c) =>

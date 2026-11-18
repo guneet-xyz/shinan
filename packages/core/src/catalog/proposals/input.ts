@@ -105,6 +105,18 @@ export function checkProposalInput(input: unknown): ProposalInput {
       "too-many",
       `A proposal holds at most ${proposalLimits.operations} operations; split it`,
     )
+  if (
+    operations.some(
+      (o) =>
+        typeof o === "object" &&
+        o !== null &&
+        (o as { op?: unknown }).op === "restore-document",
+    )
+  )
+    throw invalid(
+      "restore-document",
+      "Only a revert puts back a document's earlier text; revert the proposal instead",
+    )
   if (utf8Length(JSON.stringify(input)) > proposalLimits.bytes)
     throw invalid(
       "too-large",

@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto"
+
 import { comparableValue, discrepancies } from "./analysis.js"
 import type { Section } from "./body.js"
 import { readCatalog } from "./catalog.js"
@@ -50,6 +52,7 @@ import type {
   PresentFact,
   RecheckFacts,
   RemoveFact,
+  RestoreDocument,
   Retire,
   SetFact,
   SetField,
@@ -477,6 +480,8 @@ class Working {
         )
       case "change-id":
         return this.changeId(operation)
+      case "restore-document":
+        return this.restore(operation)
       case "create-schema":
         return this.create(schemaId(checkType(operation.type)), () =>
           schemaText(operation),
@@ -598,6 +603,39 @@ class Working {
     const editor = new Editor(document, this.registry)
     changeId(editor, operation.id)
     this.commit(entry, editor.finish(document, ["id", "aliases"]))
+  }
+
+  /** Puts back a document's earlier text whole (a revert). */
+  private restore(operation: RestoreDocument) {
+    const entry = this.find(operation.document)
+    const current = createHash("sha256")
+      .update(entry.document.text)
+      .digest("hex")
+    if (current !== operation.expect.sha256)
+      throw conflict(
+        "changed",
+        `"${operation.document}" has changed since the change being reverted; revert it by hand`,
+      )
+    if (utf8Length(operation.text) > maxDocumentBytes)
+      throw invalid(
+        "The text is longer than a catalog document may be",
+        "too-large",
+      )
+    const document = parseCatalogDocument(operation.text)
+    if (document.kind !== entry.document.kind)
+      throw invalid(
+        `The earlier text of "${operation.document}" is ${kindName[document.kind]}, not ${kindName[entry.document.kind]}`,
+      )
+    for (const name of [
+      document.id,
+      ...(document.kind === "entity" ? document.aliases : []),
+    ])
+      if (name !== null && this.taken(name, entry))
+        throw conflict(
+          "document-exists",
+          `Another document now has the ID or alias "${name}"`,
+        )
+    this.commit(entry, document)
   }
 
   private commit(entry: Entry, document: CatalogDocument, created = false) {

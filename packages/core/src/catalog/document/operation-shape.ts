@@ -248,6 +248,12 @@ const shapes: Record<string, Check> = {
     agents: list(step, 200),
     "body?": str,
   }),
+  "restore-document": object({
+    op: str,
+    document: str,
+    text: str,
+    expect: object({ sha256: str }),
+  }),
   "set-start-here-path": object({
     op: str,
     path: str,

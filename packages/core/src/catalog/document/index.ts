@@ -99,6 +99,7 @@ export type {
   PresentFact,
   RecheckFacts,
   RemoveFact,
+  RestoreDocument,
   Retire,
   SetFact,
   SetField,

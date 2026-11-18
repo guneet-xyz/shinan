@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto"
 import { describe, expect, it } from "vitest"
 
 import * as fixtures from "../../../test/catalog-index-fixtures.js"
@@ -241,6 +242,50 @@ describe("accepting a discrepancy (catalog §4.7)", () => {
     expect(withApprover({ handle: "kojiro", preview: true })).toMatchObject({
       outcome: "ready",
       accepts: [{ entityId: "person/guneet" }],
+    })
+  })
+})
+
+describe("restoring a document's earlier text (revert)", () => {
+  const daedalus = () =>
+    stored.find((s) => s.document.id === "machine/daedalus")!.document.text
+  const sha256 = (text: string) =>
+    createHash("sha256").update(text).digest("hex")
+  const earlier = () => daedalus().replace("title: Daedalus", "title: Icarus")
+
+  it("puts the text back whole when the document is as expected", () => {
+    const result = ready({
+      op: "restore-document",
+      document: "machine/daedalus",
+      text: earlier(),
+      expect: { sha256: sha256(daedalus()) },
+    })
+    expect(result.documents.map((d) => d.text)).toEqual([earlier()])
+    expect(result.classes).toEqual(["body-and-bookkeeping"])
+  })
+
+  it("conflicts when the document changed, or its ID is now another's", () => {
+    expect(
+      prepare({
+        op: "restore-document",
+        document: "machine/daedalus",
+        text: earlier(),
+        expect: { sha256: sha256("something else") },
+      }),
+    ).toMatchObject({
+      outcome: "problems",
+      problems: [{ kind: "conflict", code: "changed" }],
+    })
+    expect(
+      prepare({
+        op: "restore-document",
+        document: "machine/daedalus",
+        text: daedalus().replace("id: machine/daedalus", "id: machine/musashi"),
+        expect: { sha256: sha256(daedalus()) },
+      }),
+    ).toMatchObject({
+      outcome: "problems",
+      problems: [{ kind: "conflict", code: "document-exists" }],
     })
   })
 })

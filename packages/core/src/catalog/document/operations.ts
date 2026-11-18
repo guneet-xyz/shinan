@@ -26,6 +26,7 @@ export type CatalogOperation =
   | SetSchemaKey
   | CreateStartHere
   | SetStartHerePath
+  | RestoreDocument
 
 /** Every operation's name, in the order of catalog §8.1's table. */
 export const operationNames = [
@@ -320,4 +321,18 @@ export interface SetStartHerePath {
   path: "people" | "agents"
   steps: readonly StartHereStepInput[]
   expect: { steps: readonly StartHereStepInput[] }
+}
+
+/**
+ * Puts back a document's earlier text whole: what a revert does (catalog
+ * §8.2). Shinan makes it from stored revisions; proposals from agents and
+ * the API cannot send it. It expects the document to be exactly as the
+ * reverted proposal left it, by the SHA-256 of its text (hex).
+ */
+export interface RestoreDocument {
+  op: "restore-document"
+  document: string
+  /** The text to put back. */
+  text: string
+  expect: { sha256: string }
 }

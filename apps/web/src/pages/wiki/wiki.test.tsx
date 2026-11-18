@@ -189,6 +189,7 @@ const musashi: CatalogEntity = {
     },
   ],
   problems: [],
+  pending_proposals: [],
 }
 
 const history: CatalogHistoryAnswer = {

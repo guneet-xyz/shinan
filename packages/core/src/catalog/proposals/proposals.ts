@@ -41,13 +41,14 @@ import type { RevisionSource } from "../revisions.js"
 import { isGated } from "./classify.js"
 import type { ApprovalClass } from "./classify.js"
 import { checkProposalInput } from "./input.js"
+import type { ProposalInput } from "./input.js"
 import { catalogWorkers } from "./pool.js"
 import type { LatestDocument, Prepare } from "./pool.js"
 import type { LoadedText } from "./protocol.js"
 import type { CatalogSize, Prepared, PrepareInput } from "./work.js"
 
-type ProposalRow = typeof schema.catalogProposals.$inferSelect
-type CatalogProposalState = ProposalRow["state"]
+export type ProposalRow = typeof schema.catalogProposals.$inferSelect
+export type CatalogProposalState = ProposalRow["state"]
 
 /** A catalog proposal as operations return it (catalog §8.1). */
 export interface CatalogProposal {
@@ -74,6 +75,8 @@ export interface CatalogProposal {
   /** Who applied, rejected or withdrew it. */
   decidedBy: string | null
   rejectionReason: string | null
+  /** The applied proposal this one reverts, for a revert. */
+  revertsProposalId: string | null
 }
 
 /**
@@ -158,13 +161,39 @@ export async function proposeCatalogChange(
   workspaceId: string,
   input: unknown,
 ): Promise<ProposalOutcome> {
+  return submitProposal(ctx, workspaceId, () =>
+    Promise.resolve({
+      proposal: checkProposalInput(input),
+      revertsProposalId: null,
+    }),
+  )
+}
+
+/** A proposal ready to submit: checked input, and the proposal it reverts, if any. */
+export interface Built {
+  proposal: ProposalInput
+  revertsProposalId: string | null
+}
+
+/**
+ * The path every proposal takes (`proposeCatalogChange`,
+ * `revertCatalogProposal`): `build` makes the proposal in a first, read-only
+ * check; then the proposal takes its turn.
+ */
+export async function submitProposal(
+  ctx: Context,
+  workspaceId: string,
+  build: (scope: ProposalScope) => Promise<Built | NotApplied>,
+): Promise<ProposalOutcome> {
   const plan = await inWorkspace(
     ctx,
     workspaceId,
     "catalog.propose",
     async (scope) => {
-      const proposal = checkProposalInput(input)
-      const requestHash = hashOf(proposal)
+      const built = await build(scope)
+      if ("outcome" in built) return { replay: false as const, refused: built }
+      const { proposal, revertsProposalId } = built
+      const requestHash = hashOf(proposal, revertsProposalId)
       const existing = await byIdempotencyKey(
         scope,
         proposal.idempotencyKey,
@@ -173,6 +202,8 @@ export async function proposeCatalogChange(
       if (existing) return { replay: true as const, row: existing }
       return {
         replay: false as const,
+        refused: null,
+        revertsProposalId,
         proposal,
         requestHash,
         actor: scope.actor,
@@ -189,7 +220,8 @@ export async function proposeCatalogChange(
   )
   if (plan.replay)
     return { outcome: plan.row.state, proposal: proposalOf(plan.row) }
-  const { proposal, requestHash } = plan
+  if (plan.refused) return plan.refused
+  const { proposal, requestHash, revertsProposalId } = plan
 
   return inTurn(
     ctx,
@@ -236,7 +268,8 @@ export async function proposeCatalogChange(
           )
             return { moved: true }
 
-          const gated = isGated(prepared.classes)
+          const strict = await isStrict(scope)
+          const gated = needsApproval(prepared.classes, strict)
           const appliesNow =
             mayApprove(scope) && !plan.approver.preview
               ? true
@@ -262,7 +295,7 @@ export async function proposeCatalogChange(
               operations: proposal.operations,
               basedOnRevision: base.revision,
               approvalClasses: prepared.classes,
-              approvalReasons: prepared.reasons,
+              approvalReasons: reasonsFor(prepared, strict),
               touches: prepared.touches,
               validation: prepared.warnings as unknown as Record<
                 string,
@@ -270,6 +303,7 @@ export async function proposeCatalogChange(
               >[],
               idempotencyKey: proposal.idempotencyKey ?? null,
               requestHash,
+              revertsProposalId,
             })
             .returning()
           if (!appliesNow) {
@@ -290,6 +324,7 @@ export async function proposeCatalogChange(
           }
           const applied = await apply(scope, row!, prepared, {
             approvedBy: gated ? scope.actor : null,
+            reasons: reasonsFor(prepared, strict),
           })
           return {
             done: { outcome: "applied", proposal: proposalOf(applied) },
@@ -368,6 +403,7 @@ export async function approveCatalogProposal(
           checkAccepts(prepared, scope.actor.label)
           const applied = await apply(scope, current, prepared, {
             approvedBy: scope.actor,
+            reasons: reasonsFor(prepared, await isStrict(scope)),
           })
           return {
             done: { outcome: "applied", proposal: proposalOf(applied) },
@@ -538,7 +574,7 @@ export async function listCatalogProposals(
   )
 }
 
-type ProposalScope = WriteScope & {
+export type ProposalScope = WriteScope & {
   action: "catalog.propose" | "catalog.approve"
 }
 
@@ -700,6 +736,37 @@ async function textsAt(
     )
 }
 
+/** The reason the strict setting adds (catalog §8.2). */
+export const strictReason =
+  "The workspace's strict setting is on: every change except a recheck needs catalog approval"
+
+/**
+ * Whether a change needs catalog approval: it is in a gated class, or the
+ * strict setting is on and it is more than a recheck (catalog §8.2).
+ */
+function needsApproval(classes: readonly ApprovalClass[], strict: boolean) {
+  return isGated(classes) || (strict && classes.some((c) => c !== "recheck"))
+}
+
+function reasonsFor(
+  prepared: Extract<Prepared, { outcome: "ready" }>,
+  strict: boolean,
+): string[] {
+  return strict &&
+    !isGated(prepared.classes) &&
+    needsApproval(prepared.classes, strict)
+    ? [...prepared.reasons, strictReason]
+    : prepared.reasons
+}
+
+async function isStrict(scope: ProposalScope): Promise<boolean> {
+  const [workspace] = await scope.tx
+    .select({ strict: schema.workspaces.catalogStrict })
+    .from(schema.workspaces)
+    .where(eq(schema.workspaces.id, scope.workspaceId))
+  return workspace?.strict ?? false
+}
+
 function mayApprove(scope: ProposalScope): boolean {
   return scope.actor.kind === "person" && mayAlso(scope, "catalog.approve")
 }
@@ -825,7 +892,11 @@ async function apply(
   scope: ProposalScope,
   row: ProposalRow,
   prepared: Extract<Prepared, { outcome: "ready" }>,
-  options: { approvedBy: ProposalScope["actor"] | null },
+  options: {
+    approvedBy: ProposalScope["actor"] | null
+    /** Why it needed catalog approval, if it did. */
+    reasons: string[]
+  },
 ): Promise<ProposalRow> {
   const approver = options.approvedBy
   const source: RevisionSource = {
@@ -853,7 +924,7 @@ async function apply(
       state: "applied",
       appliedRevision: revision,
       approvalClasses: prepared.classes,
-      approvalReasons: prepared.reasons,
+      approvalReasons: options.reasons,
       touches: prepared.touches,
       validation: prepared.warnings as unknown as Record<string, unknown>[],
       ...decided(scope),
@@ -1028,11 +1099,14 @@ function securityDetails(row: ProposalRow): Record<string, unknown> {
   }
 }
 
-function hashOf(proposal: {
-  explanation: string
-  relatedTask?: string | null
-  operations: readonly CatalogOperation[]
-}): string {
+function hashOf(
+  proposal: {
+    explanation: string
+    relatedTask?: string | null
+    operations: readonly CatalogOperation[]
+  },
+  revertsProposalId: string | null = null,
+): string {
   return createHash("sha256")
     .update(
       JSON.stringify(
@@ -1040,6 +1114,7 @@ function hashOf(proposal: {
           proposal.explanation,
           proposal.relatedTask ?? null,
           proposal.operations,
+          ...(revertsProposalId ? [revertsProposalId] : []),
         ]),
       ),
     )
@@ -1058,7 +1133,7 @@ function canonical(value: unknown): unknown {
   return value
 }
 
-function proposalOf(row: ProposalRow): CatalogProposal {
+export function proposalOf(row: ProposalRow): CatalogProposal {
   return {
     id: row.id,
     number: row.number,
@@ -1077,5 +1152,6 @@ function proposalOf(row: ProposalRow): CatalogProposal {
     decidedAt: row.decidedAt,
     decidedBy: row.decidedByLabel,
     rejectionReason: row.rejectionReason,
+    revertsProposalId: row.revertsProposalId,
   }
 }

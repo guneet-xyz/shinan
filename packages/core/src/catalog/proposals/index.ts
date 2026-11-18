@@ -21,6 +21,7 @@ export {
 export type {
   ApprovalOutcome,
   CatalogProposal,
+  CatalogProposalState,
   ListProposalsInput,
   NotApplied,
   ProposalOutcome,
@@ -37,3 +38,21 @@ export type {
   AgentProposalJson,
   AgentRecheckInput,
 } from "./agent.js"
+export {
+  approveCatalogProposals,
+  bulkApprovalLimit,
+  commentLimit,
+  commentOnCatalogProposal,
+  getCatalogSettings,
+  listCatalogProposalComments,
+  listRecentCatalogChanges,
+  revertCatalogProposal,
+  setCatalogStrict,
+} from "./review.js"
+export type {
+  BulkApprovalResult,
+  CatalogProposalComment,
+  CatalogSettings,
+  RecentCatalogChange,
+  RecentCatalogChangesInput,
+} from "./review.js"
