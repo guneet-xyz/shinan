@@ -8,7 +8,9 @@ import type { ActorKind } from "@shinan/db"
  * whole of a one- or two-word body (`sectionWords`). For each unit that ever
  * appeared in the document, the provenance keeps the least-trusted author
  * who introduced it, in any revision: a unit is introduced by a revision
- * whose body has it when the document's previous revision did not. Units
+ * whose body has it when the document's previous revision did not, and
+ * by a revision whose author is not a person in every section it changed
+ * (even words the document already had). Units
  * stay known after they leave the document, so text
  * restored later (a revert, a re-added section) keeps its first author.
  *

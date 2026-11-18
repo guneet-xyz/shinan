@@ -1002,6 +1002,12 @@ export const catalogIndexDocuments = pgTable(
       t.type,
       t.status,
     ),
+    // For finding rows another parser or rules version built, on every answer.
+    index("catalog_index_documents_versions").on(
+      t.workspaceId,
+      t.parserVersion,
+      t.rulesVersion,
+    ),
     index("catalog_index_documents_aliases").using("gin", t.aliases),
     index("catalog_index_documents_search").using("gin", t.search),
     index("catalog_index_documents_search_simple").using("gin", t.searchSimple),

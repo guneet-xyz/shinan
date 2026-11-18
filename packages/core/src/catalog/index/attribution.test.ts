@@ -471,6 +471,36 @@ describe("written_by: copyedits of short and long sentences", () => {
   })
 })
 
+describe("written_by: recombined phrases", () => {
+  it("keeps an agent's sentence made of a person's phrases after a person's edit", () => {
+    const personText =
+      "\n## Backups\n\nNever run the backup on friday. Always run the deploy script after the backup.\n"
+    const credits = history(
+      [person, personText],
+      [agent, `${personText}\n## Tip\n\nAlways run the backup on friday.\n`],
+      [
+        person,
+        `${personText}\n## Tip\n\nAlways run the backup on friday, please.\n`,
+      ],
+    )
+    expect(writtenBy(credits)).toEqual({ backups: "person", tip: "agent" })
+  })
+
+  it("makes a person's own section sharing those phrases cautious on its next change", () => {
+    const personText =
+      "\n## Backups\n\nNever run the backup on friday. Always run the deploy script after the backup.\n"
+    const credits = history(
+      [person, personText],
+      [agent, `${personText}\n## Tip\n\nAlways run the backup on friday.\n`],
+      [
+        person,
+        `${personText.replace("friday.", "friday!")}\n## Tip\n\nAlways run the backup on friday.\n`,
+      ],
+    )
+    expect(writtenBy(credits)).toEqual({ backups: "agent", tip: "agent" })
+  })
+})
+
 describe("Provenance.introduce", () => {
   const agentAuthor = {
     kind: "agent" as const,

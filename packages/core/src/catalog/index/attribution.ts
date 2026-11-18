@@ -36,14 +36,17 @@ export interface AttributedSection {
  * previous revision, and records in `provenance` the words the revision
  * introduced:
  *
- * 1. A section with the same anchor and exactly the same text keeps its
- *    credits.
+ * 1. A section with the same anchor and exactly the same text (blank lines
+ *    at its end aside) keeps its credits.
  * 2. A section whose exact text was a previous section left over by step 1
  *    keeps that section's credits, whatever its anchor now is. Anchors of
  *    repeated headings are numbered (`notes`, `notes-1`), so deleting one
  *    section can rename another without changing a byte of it. Among
  *    sections with the same text, the earliest are paired first.
- * 3. Any other section was last changed by `change`. Its least-trusted
+ * 3. Any other section was last changed by `change`, and when `change` is
+ *    not a person, every unit of its new text is recorded as brought in by
+ *    them, even words the document already had (an agent can change what
+ *    text says by recombining a person's phrases). Its least-trusted
  *    author is the least trusted of `change` and of the authors of every
  *    unit of its words (`provenance.ts`: word 3-grams) anyone introduced
  *    in any earlier revision of the document. So it is lifted to a
@@ -88,23 +91,37 @@ export function attributeSections(
     unused.delete(j)
     return previous[j]!
   }
+  // Blank lines at a section's end change with what follows it (adding a
+  // section after it), not with what it says.
+  const texts = previous.map((p) => p.text.trimEnd())
+  const keep = (j: number, section: Pick<Section, "anchor" | "text">) => ({
+    ...take(j),
+    anchor: section.anchor,
+    text: section.text,
+  })
   // 1. Same anchor, same text.
   sections.forEach((section, i) => {
+    const text = section.text.trimEnd()
     const j = previous.findIndex(
       (p, k) =>
-        unused.has(k) && p.anchor === section.anchor && p.text === section.text,
+        unused.has(k) && p.anchor === section.anchor && texts[k] === text,
     )
-    if (j >= 0) result[i] = { ...take(j), anchor: section.anchor }
+    if (j >= 0) result[i] = keep(j, section)
   })
   // 2. Same text, another anchor.
   sections.forEach((section, i) => {
     if (result[i]) return
-    const j = previous.findIndex(
-      (p, k) => unused.has(k) && p.text === section.text,
-    )
-    if (j >= 0) result[i] = { ...take(j), anchor: section.anchor }
+    const text = section.text.trimEnd()
+    const j = previous.findIndex((_, k) => unused.has(k) && texts[k] === text)
+    if (j >= 0) result[i] = keep(j, section)
   })
-  // 3. Changed or new.
+  // 3. Changed or new. Every unit of a section someone other than a person
+  // changed counts as theirs, even words already in the document: an agent
+  // can change what text says by putting a person's phrases together anew.
+  const none = new Map<number, Set<string>>()
+  sections.forEach((_, i) => {
+    if (!result[i]) provenance.introduce(none, storedUnits(words[i]!), author)
+  })
   return sections.map((section, i) => {
     const kept = result[i]
     if (kept) return kept

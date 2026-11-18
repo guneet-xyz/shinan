@@ -520,8 +520,9 @@ indexing (**Proposed**).
     state and on each document's rows. An index built by another version is
     behind and is rebuilt, as after a parser change; so are rows an older
     release wrote after a rollback, which the round-trip check then reports
-    as behind rather than as differing. Changing the rules needs no
-    migration of data.
+    as behind rather than as differing, and answers say the index is behind
+    while any such rows remain. Changing the rules needs no migration of
+    data.
   - **Answers are read from one snapshot** (repeatable read, read only), so
     an answer's catalog revision and its rows agree.
   - **Rolling deployments.** A process still running an older parser after
@@ -535,12 +536,12 @@ indexing (**Proposed**).
     the stored text in one transaction, so readers see the old rows, marked
     behind, until it commits. Measured on Daedalus (2 cores shared with
     other work, load 3 to 4) with agent-written entities of about 300 words
-    of body each: 10.5 s to rebuild and 7.3 s to check 2,000 entities, 25
-    to 29 s and 19 to 20 s for 5,000. The word provenance takes about
-    8.5 KB per such entity (17 MB for 2,000 and 42 MB for 5,000, of 97 MB
-    and 220 MB for the whole index). A rebuild reads only the frontmatter of
-    each document to find the type schema documents before reading every
-    document in full once. The worker asks for one on start for every
+    of body each: 6.4 s to rebuild and 3.4 s to check 2,000 entities, 23 s
+    and 16 s for 5,000. The word provenance takes about 8.5 KB per such
+    entity (17 MB for 2,000 and 42 MB for 5,000, of 98 MB and 220 MB for
+    the whole index). A rebuild reads only the frontmatter of each document
+    to find the type schema documents before reading every document in full
+    once. The worker asks for one on start for every
     workspace whose index (or any of its rows) another parser or rules
     version built, or whose rebuild never finished, and an installation
     operator can run one with `shinan catalog-index rebuild`.

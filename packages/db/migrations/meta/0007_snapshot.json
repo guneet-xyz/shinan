@@ -1,5 +1,5 @@
 {
-  "id": "1d557ae2-43b9-4751-b073-5c8ce53271e6",
+  "id": "59d4c45a-0bea-41b0-aade-8cf6bcb2636c",
   "prevId": "1b2ab6d3-e4c5-48b2-afba-39ccba2fd19b",
   "version": "7",
   "dialect": "postgresql",
@@ -777,6 +777,33 @@
             },
             {
               "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "catalog_index_documents_versions": {
+          "name": "catalog_index_documents_versions",
+          "columns": [
+            {
+              "expression": "workspace_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "parser_version",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "rules_version",
               "isExpression": false,
               "asc": true,
               "nulls": "last"

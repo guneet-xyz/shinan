@@ -27,7 +27,7 @@ import type {
   TypeSchemaAnswerJson,
   TypeSchemaJson,
 } from "./format.js"
-import { stateBehind } from "./indexer.js"
+import { hasStaleRows, stateBehind } from "./indexer.js"
 import { latestRevision } from "./store.js"
 
 /**
@@ -58,7 +58,9 @@ async function answerFor(
   return {
     catalog_revision: state?.revision ?? 0,
     index_behind: state
-      ? state.revision < latest || stateBehind(state)
+      ? state.revision < latest ||
+        stateBehind(state) ||
+        (await hasStaleRows(tx, workspaceId))
       : latest > 0,
   }
 }

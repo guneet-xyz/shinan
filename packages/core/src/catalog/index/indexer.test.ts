@@ -915,6 +915,10 @@ describe("rebuilds and the round-trip check", () => {
     await db
       .delete(schema.catalogIndexProvenance)
       .where(eq(schema.catalogIndexProvenance.documentId, musashi))
+    const answer = await getCatalogEntity(asPerson(db, owner), workspaceId, {
+      id: "person/guneet",
+    })
+    expect(answer.index_behind).toBe(true)
     const [checked] = await checkCatalogIndexes(asShinan(db), {
       workspaceIds: [workspaceId],
     })
