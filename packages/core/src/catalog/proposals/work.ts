@@ -1,8 +1,13 @@
-import { applyOperations, validateChange } from "../document/index.js"
+import {
+  applyOperations,
+  utf8Length,
+  validateChange,
+} from "../document/index.js"
 import type {
   Catalog,
   CatalogDocument,
   CatalogOperation,
+  DocumentChange,
   OperationProblem,
   Problem,
 } from "../document/index.js"
@@ -60,6 +65,13 @@ export type Prepared =
       accepts: { entityId: string; memberHandles: string[] }[]
       /** Catalog IDs the change touches. */
       touches: string[]
+      /** The catalog's size before and after, in bytes of UTF-8 and documents. */
+      size: {
+        bytesBefore: number
+        bytes: number
+        documentsBefore: number
+        documents: number
+      }
     }
 
 /**
@@ -151,6 +163,30 @@ export function prepareChange(
       memberHandles: memberHandlesOf(result.after, entityId),
     })),
     touches: touchedIds(result.changes),
+    size: sizeOf(stored, result.changes),
+  }
+}
+
+function sizeOf(
+  stored: readonly StoredDocument[],
+  changes: readonly DocumentChange[],
+) {
+  const bytesBefore = stored.reduce(
+    (n, s) => n + utf8Length(s.document.text),
+    0,
+  )
+  let bytes = bytesBefore
+  let added = 0
+  for (const change of changes) {
+    if (change.before) bytes -= utf8Length(change.before.text)
+    else added++
+    bytes += utf8Length(change.after.text)
+  }
+  return {
+    bytesBefore,
+    bytes,
+    documentsBefore: stored.length,
+    documents: stored.length + added,
   }
 }
 

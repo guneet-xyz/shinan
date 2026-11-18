@@ -51,6 +51,22 @@ export class InvalidInputError extends RuleViolationError {
 }
 
 /**
+ * Shinan is too busy to take the request now, or the actor sent too many:
+ * nothing was done, and the same request may be sent again after
+ * `retryAfterSeconds`. Agents pass this on as it is.
+ */
+export class BusyError extends CoreError {
+  override name = "BusyError"
+  constructor(
+    readonly rule: string,
+    message: string,
+    readonly retryAfterSeconds: number,
+  ) {
+    super(message)
+  }
+}
+
+/**
  * Why the permission check refused a request:
  * - `actor`: this kind of actor never takes this action;
  * - `not-member`: the actor is not a member of the workspace;

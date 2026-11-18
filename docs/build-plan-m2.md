@@ -592,8 +592,8 @@ People type secrets; agents never handle them. Agents prepare every step.
 Decided by the owner on 2026-11-17 ("Approve and start",
 [issue #79](https://github.com/guneet-xyz/shinan/issues/79)). The labels
 M2-Q1 to M2-Q5 name the questions this plan asked; M2-Q6 came up during
-M2-3 (2026-11-18), and M2-Q12 during M2-9 (2026-11-18; M2-Q7 to M2-Q11
-are taken by answers recorded in other open changes).
+M2-3, M2-Q7 and M2-Q8 during M2-4, and M2-Q12 during M2-9 (2026-11-18;
+M2-Q9 to M2-Q11 are taken by answers recorded in other open changes).
 
 ### 7.1 Answers
 
@@ -624,7 +624,21 @@ are taken by answers recorded in other open changes).
    change. Recorded in [agent integrations, trust labels](agent-integrations.md#trust-labels);
    M2-6 shows `written_by` as `author`/`author_kind`. No decision record
    changes.
-7. **M2-Q12, the skill's fallback when Shinan is down** (owner,
+7. **M2-Q7, changing what an accepted decision says** (owner, 2026-11-18,
+   [#112](https://github.com/guneet-xyz/shinan/pull/112)): not gated. An
+   agent may edit the text of an `accepted`, `rejected` or `superseded`
+   decision, or create a new decision that supersedes one, without catalog
+   approval; only changing a decision's state to one of those is gated
+   (rules). Recorded in [catalog §8.2](catalog.md#82-when-catalog-approval-is-needed).
+   No decision record changes.
+8. **M2-Q8, approving one's own agents' proposals in a team** (owner,
+   2026-11-18, [#112](https://github.com/guneet-xyz/shinan/pull/112)):
+   follow [D-024](decisions/D-024-gated-catalog-approval.md) and O-46 as
+   written. A person may approve their own agents' catalog proposals only
+   while the workspace has one member; with more, another member approves.
+   Recorded in [catalog §8.2](catalog.md#82-when-catalog-approval-is-needed).
+   No decision record changes.
+9. **M2-Q12, the skill's fallback when Shinan is down** (owner,
    2026-11-18, [#90](https://github.com/guneet-xyz/shinan/issues/90)): keep
    it generic: carry on with the project's own instructions and the owning
    sources, say so, and record the catalog updates owed. The skill does not

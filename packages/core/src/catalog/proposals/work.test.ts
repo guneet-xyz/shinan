@@ -115,6 +115,18 @@ describe("preparing a proposal in the catalog worker", () => {
     ])
     expect(result.documents[0]!.parsed.text).toBe(result.documents[0]!.text)
     expect(result.touches).toEqual(["machine/daedalus", "machine/kojiro"])
+    const bytes = (text: string) => Buffer.byteLength(text, "utf8")
+    const before = stored.reduce((n, d) => n + bytes(d.document.text), 0)
+    expect(result.size).toEqual({
+      bytesBefore: before,
+      bytes:
+        before -
+        bytes(daedalus.document.text) +
+        bytes(result.documents[0]!.text) +
+        bytes(result.documents[1]!.text),
+      documentsBefore: stored.length,
+      documents: stored.length + 1,
+    })
   })
 
   it("reports conflicts and invalid operations without validating", () => {

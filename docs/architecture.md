@@ -560,19 +560,44 @@ indexing (**Proposed**).
     was made against and, when it needed catalog approval, the approving
     person. These revision columns are nullable: revisions are never
     edited, so they could not be filled in for revisions stored before them.
-  - **One apply path, one lock order.** Making a proposal and approving one
-    both take the workspace's index lock first, then the proposal row, then
-    read the latest revision, apply, validate and store the revision in the
-    same transaction. Two proposals on one workspace therefore apply one
-    after the other, each against the revision the other left; per-operation
-    expectations decide conflicts (catalog §8.5).
-  - **The catalog worker.** Parsing, applying (`applyOperations`),
-    validation and approval classes run in one worker thread per process,
-    one proposal at a time, with a 20-second limit after which the thread is
-    stopped and started again (security checklist 10.8). The worker keeps
-    parsed documents by document and revision (up to 10,000), so a proposal
-    sends it only the texts it has not parsed yet. Its results come back as
-    the new texts, already parsed, which the indexer reuses.
+  - **Work first, then a short write.** Making or approving a proposal
+    reads the latest revision (its number and each document's revision) in
+    a short read, then applies, validates and classifies the operations in
+    the catalog worker with no transaction open. A second, short
+    transaction takes the workspace's index lock, then the proposal row,
+    checks that no other revision came first and stores the result. If
+    one did, the work is done again on the new revision (up to five times,
+    then the author is told to send it again). So a proposal never holds
+    a database connection or a lock while it waits for or runs in the
+    worker, and two proposals on one workspace still apply one after the
+    other; per-operation expectations decide conflicts (catalog §8.5).
+  - **Catalog workers.** Parsing, applying (`applyOperations`),
+    validation and approval classes run in worker threads (security
+    checklist 10.8): one per workspace with proposals, up to two at once
+    (an idle one gives way to another workspace), one proposal at a time
+    each. Each keeps its workspace's catalog parsed, by document and
+    revision. Numbers, all **proposed**:
+    - **Loading is not charged to a proposal.** Stored texts a worker has
+      not parsed (after a start, a restart or a change) are read in short
+      reads of 100 and parsed in batches, each with its own 60-second
+      limit, and kept as they come. A proposal's 20-second limit starts
+      once every document it needs is parsed. Measured on Daedalus: a new
+      worker took about 23 s to load 1,500 documents of 57 KB, and the first
+      proposal then applied.
+    - **A proposal past its limit** stops only its own workspace's worker;
+      the next proposal there loads that catalog again.
+    - **Memory.** Each worker's cache is limited to 768 MiB, estimated as
+      four times each text plus 16 KiB (measured: one to five times the
+      text), and its heap to 1.5 GiB (`resourceLimits`); a worker out of
+      memory is stopped like one out of time. A workspace's catalog is
+      limited to 100 MiB of text and 20,000 documents (catalog §8.2), which
+      fits.
+    - **Queues.** At most 8 requests per workspace and 32 in all may run
+      or wait; beyond that a request is refused at once as busy, to send
+      again in a few seconds. Agents also have a proposal rate limit
+      (60 in 10 minutes).
+    - Results come back as the new texts, already parsed, which the indexer
+      reuses.
 - **Fact checks.** A recheck that changes only the last-checked time is still a
   text edit and a new revision, and also an event. **Proposed.** Reason: no fact
   data may live outside the text.

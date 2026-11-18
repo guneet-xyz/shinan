@@ -1442,8 +1442,13 @@ how proposals are applied and classed (`packages/core`, `catalog/proposals`).
 - **Classes come from the Markdown, not the operations:** each written
   document is compared before and after. Type schema documents and the
   start-here document are **rules**, and so are `policy` entities and a
-  `decision` whose state or decision fields change while it is, or
-  becomes, `accepted`, `rejected` or `superseded`. Any change to a `person`
+  `decision` whose state or decision fields (`decision_state`,
+  `decided_on`, `decided_by`) change while it is, or becomes, `accepted`,
+  `rejected` or `superseded`. **Owner (2026-11-18, M2-Q7 in the
+  [M2 build plan](build-plan-m2.md#71-answers)):** the rest of such a
+  decision is not gated: an agent may edit the title, summary or body of
+  an accepted decision, or create a new decision that supersedes one,
+  without approval. Any change to a `person`
   or `agent` entity is **people and agents**. A change of status, ID,
   aliases, `replaced_by` or owner is **lifecycle**. Title, summary, body
   and a new entity are **body and bookkeeping**. Facts are compared by
@@ -1453,10 +1458,13 @@ how proposals are applied and classed (`packages/core`, `catalog/proposals`).
   reason. Each gated finding has a reason the reviewer sees.
 - **Who applies it.** A person's own gated edit applies at once (any
   member may approve). An agent's gated proposal waits for a person's
-  approval, including its own person's (O-46). Approval applies the
-  operations again to the latest revision, as the author: if they now
-  conflict or are blocked, the proposal stays waiting and the approver is
-  told why.
+  approval. **Owner (2026-11-18, M2-Q8):** as D-024 and O-46 say, a person
+  may approve their own agents' proposals only while the workspace has
+  one member; with more, another member approves (`own-agent`). Approval
+  applies the operations again to the latest revision, as the author: if
+  they now conflict or are blocked, the proposal stays waiting and the
+  approver is told why. One whose change is already in the catalog
+  (`unchanged`) also stays waiting; the approver rejects it.
 - **Accepting a discrepancy** (`accept-discrepancy`, [4.7](#47-discrepancies)).
   `applyOperations`' `acceptedBy` is set only from a real person's
   approval: the approving person's `person` entity, the one whose `member`
@@ -1471,12 +1479,22 @@ how proposals are applied and classed (`packages/core`, `catalog/proposals`).
   Reason: accepting a discrepancy is a person's judgement; an agent or
   another member cannot give it in their name.
 - **Limits.** The operation and fact limits of [8.1](#81-catalog-proposals),
-  an explanation of 4,000 characters and 256 KiB of JSON per proposal; the
-  catalog worker stops a proposal after 20 seconds (the slowest proposal within the limits, a 100-fact recheck of a 54 KB document, took about 8 s on a busy development host). `applyOperations`
-  checks each operation's shape.
-- **Retries.** A proposal may carry an idempotency key; the same key with
-  the same content returns the stored proposal, with other content it is
-  refused.
+  an explanation of 4,000 characters and 256 KiB of JSON per proposal.
+  `applyOperations` checks each operation's shape. The catalog worker
+  stops a proposal after 20 seconds of its own work (the slowest proposal
+  within the limits, a 100-fact recheck of a 54 KB document, took about
+  8 s on a busy development host); reading the stored catalog first is
+  not counted ([architecture §5.3](architecture.md#53-how-sync-works)).
+- **A workspace's catalog** holds at most 100 MiB of text and 20,000
+  documents; a change that takes it past either and grows it is refused
+  (`catalog-full`). An agent sends at most 60 proposals in 10 minutes.
+  When the catalog workers are busy or an agent is over its limit, the
+  proposal is refused at once as busy (HTTP 429 with `Retry-After`) and
+  can be sent again. Reason: new entities from agents apply on their own,
+  so without these an agent could fill a workspace with large documents.
+- **Retries.** A proposal may carry an idempotency key, kept per author;
+  the same key with the same content (in any key order) returns the stored
+  proposal, with other content it is refused.
 - **Withdrawal** is for the author: a person withdraws their own proposals
   and their agents', an agent only its own. A reviewer rejects instead,
   with a reason for the author.
@@ -1487,6 +1505,9 @@ how proposals are applied and classed (`packages/core`, `catalog/proposals`).
   which validation may have held as secret-looking. Catalog approvals
   (including a person applying their own gated edit) and rejections are
   recorded in the security log.
+- **Left for M2-4b:** a waiting proposal from an agent that has since been
+  disabled, or whose member has left, can still be approved; whether it
+  should be withdrawn instead.
 
 ### 8.3 Validation
 

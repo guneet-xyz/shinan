@@ -9,10 +9,16 @@ import {
   testDatabase,
 } from "../../../test/helpers.js"
 import type { Context } from "../../context.js"
-import { ForbiddenError, InvalidInputError } from "../../errors.js"
+import {
+  BusyError,
+  ForbiddenError,
+  InvalidInputError,
+  RuleViolationError,
+} from "../../errors.js"
 import { addMember } from "../../identity/members.js"
 import type { Person } from "../../identity/people.js"
 import { createWorkspace } from "../../identity/workspaces.js"
+import { rateLimits } from "../../rate-limits.js"
 import type {
   CatalogOperation,
   CheckInput,
@@ -23,9 +29,10 @@ import {
   rebuildWorkspaceIndex,
 } from "../index/indexer.js"
 import { getCatalogEntity } from "../index/queries.js"
-import { CatalogWorker, replaceCatalogWorker } from "./pool.js"
+import { CatalogWorkers, replaceCatalogWorkers } from "./pool.js"
 import {
   approveCatalogProposal,
+  checkCatalogSize,
   getCatalogProposal,
   listCatalogProposals,
   proposeCatalogChange,
@@ -340,20 +347,57 @@ describe("making catalog proposals", () => {
     })
   })
 
-  it("lets a person approve their own agent's proposal (O-46)", async () => {
+  it("lets a person approve their own agent's proposal only while they are the only member (D-024, O-46)", async () => {
     await seed()
-    const waiting = stored(
-      await propose(asOwnersAgent, [
-        {
-          op: "retire",
-          document: "machine/musashi",
-          expect: { status: "active" },
-        },
-      ]),
-    )
+    const retire: CatalogOperation = {
+      op: "retire",
+      document: "machine/musashi",
+      expect: { status: "active" },
+    }
+    const waiting = stored(await propose(asOwnersAgent, [retire]))
     expect(waiting.state).toBe("pending")
+    // The workspace has two members, so the contributor approves.
     await expect(
       approveCatalogProposal(asOwner, workspaceId, waiting.id),
+    ).rejects.toMatchObject({ rule: "own-agent" })
+    expect(
+      (await getCatalogProposal(asOwner, workspaceId, waiting.id)).state,
+    ).toBe("pending")
+
+    const alone = await newPerson(db, "alone")
+    const own = await createWorkspace(asPerson(db, alone), { name: "Solo" })
+    const soloAgent = await asAgent(db, alone, own.workspace.id)
+    const handle = alone.handle
+    stored(
+      await proposeCatalogChange(asPerson(db, alone), own.workspace.id, {
+        explanation: "Seed.",
+        operations: [
+          {
+            op: "create-entity",
+            id: `person/${handle}`,
+            title: "Alone",
+            summary: "The only member.",
+            owner: `person/${handle}`,
+          },
+          {
+            op: "create-entity",
+            id: "machine/musashi",
+            title: "Musashi",
+            summary: "A host.",
+            owner: `person/${handle}`,
+          },
+        ],
+      }),
+    )
+    const solo = stored(
+      await proposeCatalogChange(soloAgent, own.workspace.id, {
+        explanation: "Retire it.",
+        operations: [retire],
+      }),
+    )
+    expect(solo.state).toBe("pending")
+    await expect(
+      approveCatalogProposal(asPerson(db, alone), own.workspace.id, solo.id),
     ).resolves.toMatchObject({ outcome: "applied" })
   })
 
@@ -481,12 +525,66 @@ describe("making catalog proposals", () => {
         idempotencyKey: "recheck-1",
       }),
     ).rejects.toMatchObject({ rule: "idempotency-key-reused" })
+
+    // The same operations with their keys in another order are the same.
+    const operation = recheck("hostname", "musashi") as unknown as Record<
+      string,
+      unknown
+    >
+    const reordered = Object.fromEntries(Object.entries(operation).reverse())
+    expect(
+      stored(
+        await proposeCatalogChange(asOwnersAgent, workspaceId, {
+          operations: [reordered],
+          explanation: "A test change.",
+          idempotencyKey: "recheck-1",
+        }),
+      ).id,
+    ).toBe(stored(first).id)
+  })
+
+  it("keeps idempotency keys per author", async () => {
+    await seed()
+    const first = stored(
+      await propose(asOwnersAgent, [recheck("hostname", "musashi")], {
+        idempotencyKey: "same-key",
+      }),
+    )
+    const other = await asAgent(db, owner, workspaceId)
+    const second = stored(
+      await propose(other, [recheck("role", "Production host")], {
+        idempotencyKey: "same-key",
+      }),
+    )
+    expect(second.id).not.toBe(first.id)
+    expect(await revisions()).toHaveLength(3)
+  })
+
+  it("limits how many proposals an agent sends", async () => {
+    await seed()
+    const actor = asOwnersAgent.actor as { agentId: string }
+    await db.insert(schema.rateLimits).values({
+      key: `catalog-proposal:${actor.agentId}`,
+      windowStart: new Date(),
+      count: rateLimits["catalog-proposal"].max,
+    })
+    const error = await propose(asOwnersAgent, [
+      recheck("hostname", "musashi"),
+    ]).catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(BusyError)
+    expect(error).toMatchObject({ rule: "catalog-proposal-rate" })
+    expect((error as BusyError).retryAfterSeconds).toBeGreaterThan(0)
+    expect(await proposalCount()).toBe(1)
+    // People are not counted.
+    await expect(
+      propose(asOwner, [recheck("hostname", "musashi")]),
+    ).resolves.toMatchObject({ outcome: "applied" })
   })
 
   it("stops a proposal that runs past the worker's time limit", async () => {
     await seed()
-    const slow = new CatalogWorker({ timeLimitMs: 1 })
-    const previous = replaceCatalogWorker(slow)
+    const slow = new CatalogWorkers({ timeLimitMs: 1 })
+    const previous = replaceCatalogWorkers(slow)
     try {
       const error = await propose(asOwnersAgent, [
         recheck("hostname", "musashi"),
@@ -494,7 +592,7 @@ describe("making catalog proposals", () => {
       expect(error).toBeInstanceOf(InvalidInputError)
       expect(error).toMatchObject({ rule: "too-complex" })
     } finally {
-      replaceCatalogWorker(previous!)
+      replaceCatalogWorkers(previous!)
       await slow.close()
     }
     expect(await proposalCount()).toBe(1)
@@ -544,15 +642,37 @@ describe("approval, rejection and withdrawal", () => {
       "Accepts a discrepancy on machine/musashi",
     )
 
-    // The contributor has no person entity to name.
+    // The contributor has no person entity to name yet.
     await expect(
       approveCatalogProposal(asContributor, workspaceId, waiting.id),
     ).resolves.toMatchObject({
       outcome: "invalid",
       problems: [{ code: "needs-approval" }],
     })
+    const contributorEntity = `person/${contributor.handle}`
+    stored(
+      await propose(asContributor, [
+        {
+          op: "create-entity",
+          id: contributorEntity,
+          title: "Contributor",
+          summary: "A member.",
+          owner: contributorEntity,
+          facts: [
+            {
+              fact: {
+                key: "member",
+                state: "observed",
+                value: contributor.handle,
+              },
+              check: { ...check, scope: "Membership", source: "Shinan" },
+            },
+          ],
+        },
+      ]),
+    )
     await expect(
-      approveCatalogProposal(asOwner, workspaceId, waiting.id),
+      approveCatalogProposal(asContributor, workspaceId, waiting.id),
     ).resolves.toMatchObject({ outcome: "applied" })
     const musashi = await getCatalogEntity(asOwner, workspaceId, {
       id: "machine/musashi",
@@ -561,7 +681,7 @@ describe("approval, rejection and withdrawal", () => {
       musashi.entity.facts
         .filter((f) => f.key === "hostname")
         .map((f) => f.accepted),
-    ).toEqual([person, person])
+    ).toEqual([contributorEntity, contributorEntity])
   })
 
   it("leaves a proposal waiting when it conflicts by the time it is approved", async () => {
@@ -579,7 +699,7 @@ describe("approval, rejection and withdrawal", () => {
       { op: "change-id", document: "machine/musashi", id: "machine/kojiro" },
     ])
     expect(
-      await approveCatalogProposal(asOwner, workspaceId, waiting.id),
+      await approveCatalogProposal(asContributor, workspaceId, waiting.id),
     ).toMatchObject({ outcome: "conflict" })
     expect(
       (await getCatalogProposal(asOwner, workspaceId, waiting.id)).state,
@@ -676,6 +796,30 @@ describe("approval, rejection and withdrawal", () => {
   })
 })
 
+describe("the catalog size limit", () => {
+  const limits = { bytes: 1000, documents: 3 }
+  const size = (bytes: number, documents: number, before = 900) => ({
+    bytesBefore: before,
+    bytes,
+    documentsBefore: 3,
+    documents,
+  })
+
+  it("refuses a change that takes the catalog past it and grows it", () => {
+    expect(() => checkCatalogSize(size(1001, 3), limits)).toThrow(
+      RuleViolationError,
+    )
+    expect(() => checkCatalogSize(size(900, 4), limits)).toThrow(
+      /at most .* and 3 documents/,
+    )
+  })
+
+  it("lets a change that shrinks or stays within it apply", () => {
+    expect(() => checkCatalogSize(size(1000, 3), limits)).not.toThrow()
+    expect(() => checkCatalogSize(size(1500, 3, 2000), limits)).not.toThrow()
+  })
+})
+
 describe("the D-006 invariant", () => {
   it("rebuilds the index applied proposals left from the stored text alone", async () => {
     await seed()
@@ -697,7 +841,7 @@ describe("the D-006 invariant", () => {
         },
       ]),
     )
-    await approveCatalogProposal(asOwner, workspaceId, waiting.id)
+    await approveCatalogProposal(asContributor, workspaceId, waiting.id)
 
     const compare = () =>
       db.transaction((tx) => compareWorkspaceIndex(tx, workspaceId), {

@@ -13,6 +13,7 @@ export type {
 } from "./actor.js"
 export type { Context, RequestInfo } from "./context.js"
 export {
+  BusyError,
   CoreError,
   ForbiddenError,
   InvalidInputError,

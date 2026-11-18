@@ -3,15 +3,18 @@ import { createHash } from "node:crypto"
 import { and, asc, desc, eq, gt, isNull, lt, schema, sql } from "@shinan/db"
 import type { Transaction } from "@shinan/db"
 
+import { shinan } from "../../actor.js"
 import { inWorkspace, mayAlso, snapshotRead } from "../../authorize.js"
 import type { Context } from "../../context.js"
 import {
+  BusyError,
   InvalidInputError,
   NotFoundError,
   RuleViolationError,
 } from "../../errors.js"
 import { appendEvent } from "../../events.js"
 import type { EventCredit, WriteScope } from "../../events.js"
+import { rateLimits, takeRateLimit } from "../../rate-limits.js"
 import { recordSecurityEntry } from "../../security-log.js"
 import { isId } from "../../validation.js"
 import type {
@@ -20,15 +23,16 @@ import type {
   Problem,
 } from "../document/index.js"
 import { lockIndexState } from "../index/indexer.js"
-import { latestRevision, latestTexts } from "../index/store.js"
+import { latestRevision } from "../index/store.js"
 import { appendCatalogRevision } from "../revisions.js"
 import type { RevisionSource } from "../revisions.js"
 import { isGated } from "./classify.js"
 import type { ApprovalClass } from "./classify.js"
 import { checkProposalInput } from "./input.js"
-import { catalogWorker } from "./pool.js"
+import { catalogWorkers } from "./pool.js"
 import type { LatestDocument } from "./pool.js"
-import type { Prepared } from "./work.js"
+import type { LoadedText } from "./protocol.js"
+import type { Prepared, PrepareInput } from "./work.js"
 
 type ProposalRow = typeof schema.catalogProposals.$inferSelect
 type CatalogProposalState = ProposalRow["state"]
@@ -90,109 +94,174 @@ export type NotApplied =
   | { outcome: "unchanged" }
 
 /**
+ * The most a workspace's catalog may hold (**proposed**, M2-4): 100 MiB of
+ * text (about 1,800 documents at the 64 KiB limit, or some 20,000 typical
+ * ones) and 20,000 documents. A proposal that would take the catalog past
+ * either, and grow it, is refused; one that shrinks it always applies.
+ * Reason: each workspace's catalog is kept parsed in a catalog worker,
+ * whose memory is bounded (`CatalogWorkerOptions`), and an agent's new
+ * entities apply on their own (§8.2).
+ */
+export const catalogLimits = {
+  bytes: 100 * 1024 * 1024,
+  documents: 20_000,
+} as const
+
+/**
+ * How many times a proposal is applied again when another one applied
+ * first, before the author is told to send it again.
+ */
+const attempts = 5
+
+/**
  * Makes a catalog proposal (catalog §8.1), from a person or an agent: it
  * applies at once as a new catalog revision, or waits for catalog approval
  * when it is in a gated class (§8.2). A person's own gated edit applies at
  * once, since they may approve it.
  *
+ * The work runs against the latest revision with no transaction open: the
+ * catalog worker applies the operations to it, then a short transaction
+ * takes the index lock, checks no other revision came first (otherwise the
+ * work is done again on the new one) and stores the result. So a slow
+ * proposal holds no database connection and no lock (architecture §5.3).
+ *
  * `input` is checked here (`checkProposalInput`), so callers pass the
- * request's JSON as it came.
+ * request's JSON as it came. May throw `BusyError` (the catalog workers'
+ * queues are full, or an agent sent too many proposals): send it again.
  */
 export async function proposeCatalogChange(
   ctx: Context,
   workspaceId: string,
   input: unknown,
 ): Promise<ProposalOutcome> {
-  return inWorkspace(ctx, workspaceId, "catalog.propose", async (scope) => {
-    const proposal = checkProposalInput(input)
-    const requestHash = hashOf(proposal)
-    // The index lock comes first on every path that applies, so two applies
-    // never wait on each other's proposal rows (architecture §5.3).
-    await lockIndexState(scope.tx, scope.workspaceId)
-    if (proposal.idempotencyKey) {
-      const [existing] = await scope.tx
-        .select()
-        .from(schema.catalogProposals)
-        .where(
-          and(
-            eq(schema.catalogProposals.workspaceId, scope.workspaceId),
-            eq(schema.catalogProposals.idempotencyKey, proposal.idempotencyKey),
-          ),
-        )
-      if (existing) {
-        if (existing.requestHash !== requestHash)
-          throw new InvalidInputError(
-            "idempotency-key-reused",
-            "This idempotency key was used for a different proposal",
-          )
-        return { outcome: existing.state, proposal: proposalOf(existing) }
+  const plan = await inWorkspace(
+    ctx,
+    workspaceId,
+    "catalog.propose",
+    async (scope) => {
+      const proposal = checkProposalInput(input)
+      const requestHash = hashOf(proposal)
+      const existing = await byIdempotencyKey(
+        scope,
+        proposal.idempotencyKey,
+        requestHash,
+      )
+      if (existing) return { replay: true as const, row: existing }
+      return {
+        replay: false as const,
+        proposal,
+        requestHash,
+        base: await readBase(scope),
+        by: scope.actor.label,
+        // A person who may approve applies their own gated edit at once; for
+        // anyone else, their person stands in for the approver until one
+        // approves.
+        approver: {
+          handle: await personHandle(scope),
+          preview: !mayApprove(scope),
+        },
       }
-    }
+    },
+    snapshotRead,
+  )
+  if (plan.replay)
+    return { outcome: plan.row.state, proposal: proposalOf(plan.row) }
+  if (ctx.actor.kind === "agent") await throttle(ctx, ctx.actor.agentId)
 
-    const basedOnRevision = await latestRevision(scope.tx, scope.workspaceId)
-    // A person who may approve applies their own gated edit at once; for
-    // anyone else, their person stands in for the approver until one approves.
-    const mayApprove =
-      scope.actor.kind === "person" && mayAlso(scope, "catalog.approve")
-    const prepared = await prepare(scope, proposal.operations, {
-      by: scope.actor.label,
+  const { proposal, requestHash } = plan
+  let base = plan.base
+  for (let attempt = 1; ; attempt++) {
+    const prepared = await work(ctx, workspaceId, "catalog.propose", base, {
+      operations: proposal.operations,
+      by: plan.by,
       explanation: proposal.explanation,
-      approver: {
-        handle: await personHandle(scope),
-        preview: !mayApprove,
-      },
+      approver: plan.approver,
     })
     if (prepared.outcome !== "ready") return refusal(prepared)
+    checkSize(prepared)
 
-    const gated = isGated(prepared.classes)
-    const appliesNow = mayApprove || (!gated && prepared.accepts.length === 0)
-    if (appliesNow) checkAccepts(prepared, scope.actor.label)
+    const stored = await inWorkspace(
+      ctx,
+      workspaceId,
+      "catalog.propose",
+      async (scope): Promise<Stored<ProposalOutcome>> => {
+        // The index lock comes first on every path that applies, so two
+        // applies never wait on each other's proposal rows.
+        await lockIndexState(scope.tx, scope.workspaceId)
+        const existing = await byIdempotencyKey(
+          scope,
+          proposal.idempotencyKey,
+          requestHash,
+        )
+        if (existing)
+          return {
+            done: { outcome: existing.state, proposal: proposalOf(existing) },
+          }
+        if (
+          (await latestRevision(scope.tx, scope.workspaceId)) !== base.revision
+        )
+          return { moved: await readBase(scope) }
 
-    const [{ next }] = (await scope.tx
-      .select({
-        next: sql<number>`coalesce(max(${schema.catalogProposals.number}), 0)::int + 1`,
-      })
-      .from(schema.catalogProposals)
-      .where(eq(schema.catalogProposals.workspaceId, scope.workspaceId))) as [
-      { next: number },
-    ]
-    const [row] = await scope.tx
-      .insert(schema.catalogProposals)
-      .values({
-        workspaceId: scope.workspaceId,
-        number: next,
-        ...actorColumns(scope.actor),
-        explanation: proposal.explanation,
-        relatedTask: proposal.relatedTask ?? null,
-        operations: proposal.operations,
-        basedOnRevision,
-        approvalClasses: prepared.classes,
-        approvalReasons: prepared.reasons,
-        touches: prepared.touches,
-        validation: prepared.warnings as unknown as Record<string, unknown>[],
-        idempotencyKey: proposal.idempotencyKey ?? null,
-        requestHash,
-      })
-      .returning()
-    if (!appliesNow) {
-      await appendEvent(scope, {
-        kind: "catalog.proposal-waiting",
-        subjects: subjectsOf(
-          row!,
-          prepared.documents.flatMap((d) =>
-            d.documentId ? [d.documentId] : [],
-          ),
-        ),
-        summary: `${scope.actor.label} proposed catalog change ${row!.number}, waiting for approval: ${headline(row!)}`,
-        data: eventData(row!),
-      })
-      return { outcome: "pending", proposal: proposalOf(row!) }
-    }
-    const applied = await apply(scope, row!, prepared, {
-      approvedBy: gated ? scope.actor : null,
-    })
-    return { outcome: "applied", proposal: proposalOf(applied) }
-  })
+        const gated = isGated(prepared.classes)
+        const appliesNow =
+          mayApprove(scope) && !plan.approver.preview
+            ? true
+            : !gated && prepared.accepts.length === 0
+        if (appliesNow) checkAccepts(prepared, plan.approver.handle)
+
+        const [{ next }] = (await scope.tx
+          .select({
+            next: sql<number>`coalesce(max(${schema.catalogProposals.number}), 0)::int + 1`,
+          })
+          .from(schema.catalogProposals)
+          .where(
+            eq(schema.catalogProposals.workspaceId, scope.workspaceId),
+          )) as [{ next: number }]
+        const [row] = await scope.tx
+          .insert(schema.catalogProposals)
+          .values({
+            workspaceId: scope.workspaceId,
+            number: next,
+            ...actorColumns(scope.actor),
+            explanation: proposal.explanation,
+            relatedTask: proposal.relatedTask ?? null,
+            operations: proposal.operations,
+            basedOnRevision: base.revision,
+            approvalClasses: prepared.classes,
+            approvalReasons: prepared.reasons,
+            touches: prepared.touches,
+            validation: prepared.warnings as unknown as Record<
+              string,
+              unknown
+            >[],
+            idempotencyKey: proposal.idempotencyKey ?? null,
+            requestHash,
+          })
+          .returning()
+        if (!appliesNow) {
+          await appendEvent(scope, {
+            kind: "catalog.proposal-waiting",
+            subjects: subjectsOf(
+              row!,
+              prepared.documents.flatMap((d) =>
+                d.documentId ? [d.documentId] : [],
+              ),
+            ),
+            summary: `${scope.actor.label} proposed catalog change ${row!.number}, waiting for approval: ${headline(row!)}`,
+            data: eventData(row!),
+          })
+          return { done: { outcome: "pending", proposal: proposalOf(row!) } }
+        }
+        const applied = await apply(scope, row!, prepared, {
+          approvedBy: gated ? scope.actor : null,
+        })
+        return { done: { outcome: "applied", proposal: proposalOf(applied) } }
+      },
+    )
+    if ("done" in stored) return stored.done
+    if (attempt === attempts) throw changingTooFast()
+    base = stored.moved
+  }
 }
 
 export type ApprovalOutcome =
@@ -202,35 +271,64 @@ export type ApprovalOutcome =
  * Gives catalog approval to a waiting proposal (catalog §8.2), which applies
  * it to the latest revision: its expectations are checked and the result
  * validated again, so a proposal that now conflicts stays waiting and the
- * approver is told why. Only people approve (identity §6.3); a person may
- * approve their own agents' proposals (owner, O-46). An `accepted` the
- * proposal writes must name the approver (catalog §4.7).
+ * approver is told why. Only people approve (identity §6.3). A person may
+ * approve their own agents' proposals only while the workspace has one
+ * member (D-024, O-46); otherwise another member approves. An
+ * `accept-discrepancy` names the approver (catalog §4.7).
+ *
+ * Like `proposeCatalogChange`, the work runs with no transaction open.
  */
 export async function approveCatalogProposal(
   ctx: Context,
   workspaceId: string,
   proposalId: string,
 ): Promise<ApprovalOutcome> {
-  return inWorkspace(ctx, workspaceId, "catalog.approve", async (scope) => {
-    await lockIndexState(scope.tx, scope.workspaceId)
-    const row = await pendingProposal(scope, proposalId)
-    const author = authorOf(row)
-    const prepared = await prepare(
-      scope,
-      row.operations as CatalogOperation[],
-      {
-        by: author.label,
-        explanation: row.explanation,
-        approver: { handle: scope.actor.label, preview: false },
+  const plan = await inWorkspace(
+    ctx,
+    workspaceId,
+    "catalog.approve",
+    async (scope) => {
+      const row = await pendingProposal(scope, proposalId, false)
+      await checkNotOwnAgent(scope, row)
+      return { row, base: await readBase(scope), approver: scope.actor.label }
+    },
+    snapshotRead,
+  )
+  const { row } = plan
+  let base = plan.base
+  for (let attempt = 1; ; attempt++) {
+    const prepared = await work(ctx, workspaceId, "catalog.approve", base, {
+      operations: row.operations as CatalogOperation[],
+      by: row.actorLabel,
+      explanation: row.explanation,
+      approver: { handle: plan.approver, preview: false },
+    })
+    if (prepared.outcome !== "ready") return refusal(prepared)
+    checkSize(prepared)
+
+    const stored = await inWorkspace(
+      ctx,
+      workspaceId,
+      "catalog.approve",
+      async (scope): Promise<Stored<ApprovalOutcome>> => {
+        await lockIndexState(scope.tx, scope.workspaceId)
+        const current = await pendingProposal(scope, proposalId, true)
+        await checkNotOwnAgent(scope, current)
+        if (
+          (await latestRevision(scope.tx, scope.workspaceId)) !== base.revision
+        )
+          return { moved: await readBase(scope) }
+        checkAccepts(prepared, scope.actor.label)
+        const applied = await apply(scope, current, prepared, {
+          approvedBy: scope.actor,
+        })
+        return { done: { outcome: "applied", proposal: proposalOf(applied) } }
       },
     )
-    if (prepared.outcome !== "ready") return refusal(prepared)
-    checkAccepts(prepared, scope.actor.label)
-    const applied = await apply(scope, row, prepared, {
-      approvedBy: scope.actor,
-    })
-    return { outcome: "applied", proposal: proposalOf(applied) }
-  })
+    if ("done" in stored) return stored.done
+    if (attempt === attempts) throw changingTooFast()
+    base = stored.moved
+  }
 }
 
 /** The longest rejection reason accepted. */
@@ -396,42 +494,180 @@ type ProposalScope = WriteScope & {
   action: "catalog.propose" | "catalog.approve"
 }
 
-/** Applies, validates and classifies operations against the latest revision, in the catalog worker. */
-async function prepare(
-  scope: ProposalScope,
-  operations: readonly CatalogOperation[],
-  input: {
-    by: string
-    explanation: string
-    approver: { handle: string; preview: boolean }
-  },
-): Promise<Prepared> {
+/** The latest revision a proposal is worked out against. */
+interface Base {
+  revision: number
+  documents: LatestDocument[]
+  memberHandles: string[]
+}
+
+/** What the storing transaction did: finished, or found a newer revision. */
+type Stored<T> = { done: T } | { moved: Base }
+
+async function readBase(scope: ProposalScope): Promise<Base> {
   const d = schema.catalogDocuments
   const documents: LatestDocument[] = await scope.tx
     .select({ documentId: d.id, revision: d.currentRevision })
     .from(d)
     .where(eq(d.workspaceId, scope.workspaceId))
     .orderBy(asc(d.id))
-  const memberHandles = await currentMemberHandles(scope.tx, scope.workspaceId)
-  return catalogWorker().prepare(
+  return {
+    revision: await latestRevision(scope.tx, scope.workspaceId),
     documents,
-    async (wanted) => {
-      const texts = await latestTexts(
-        scope.tx,
-        scope.workspaceId,
-        wanted.map((w) => w.documentId),
-      )
-      return new Map(texts.map((t) => [t.documentId, t.text]))
-    },
-    {
-      operations,
-      by: input.by,
-      explanation: input.explanation,
-      now: Date.now(),
-      memberHandles,
-      approver: input.approver,
-    },
+    memberHandles: await currentMemberHandles(scope.tx, scope.workspaceId),
+  }
+}
+
+/**
+ * Applies, validates and classifies operations against a base revision in
+ * the workspace's catalog worker. Stored texts the worker lacks are read in
+ * short read-only transactions of their own, each checked like any read.
+ */
+async function work(
+  ctx: Context,
+  workspaceId: string,
+  action: ProposalScope["action"],
+  base: Base,
+  input: Omit<PrepareInput, "now" | "memberHandles">,
+): Promise<Prepared> {
+  return catalogWorkers().prepare(
+    workspaceId,
+    base.documents,
+    (documents) =>
+      inWorkspace(
+        ctx,
+        workspaceId,
+        action,
+        (scope) => textsAt(scope.tx, scope.workspaceId, documents),
+        snapshotRead,
+      ),
+    { ...input, now: Date.now(), memberHandles: base.memberHandles },
   )
+}
+
+/** Stored texts at given revisions; never edited, so any snapshot agrees. */
+async function textsAt(
+  tx: Transaction,
+  workspaceId: string,
+  documents: readonly LatestDocument[],
+): Promise<LoadedText[]> {
+  if (documents.length === 0) return []
+  const r = schema.catalogRevisionDocuments
+  return tx
+    .select({ documentId: r.documentId, revision: r.revision, text: r.text })
+    .from(r)
+    .where(
+      and(
+        eq(r.workspaceId, workspaceId),
+        sql`(${r.documentId}, ${r.revision}) in (${sql.join(
+          documents.map(
+            (d) => sql`(${d.documentId}::uuid, ${d.revision}::int)`,
+          ),
+          sql`, `,
+        )})`,
+      ),
+    )
+}
+
+function mayApprove(scope: ProposalScope): boolean {
+  return scope.actor.kind === "person" && mayAlso(scope, "catalog.approve")
+}
+
+/** Counts an agent's proposal against its rate limit (`rateLimits`). */
+async function throttle(ctx: Context, agentId: string): Promise<void> {
+  const outcome = await takeRateLimit(
+    { db: ctx.db, actor: shinan, request: ctx.request ?? {} },
+    "catalog-proposal",
+    { key: agentId },
+  )
+  if (!outcome.allowed)
+    throw new BusyError(
+      "catalog-proposal-rate",
+      `This agent has sent ${rateLimits["catalog-proposal"].max} catalog proposals in ${rateLimits["catalog-proposal"].windowSeconds / 60} minutes; send this one again later`,
+      outcome.retryAfterSeconds,
+    )
+}
+
+function checkSize(prepared: Extract<Prepared, { outcome: "ready" }>) {
+  checkCatalogSize(prepared.size)
+}
+
+/** Refuses a change that takes a catalog past its limits and grows it (`catalogLimits`). */
+export function checkCatalogSize(
+  size: Extract<Prepared, { outcome: "ready" }>["size"],
+  limits: { bytes: number; documents: number } = catalogLimits,
+): void {
+  if (
+    (size.bytes > limits.bytes && size.bytes > size.bytesBefore) ||
+    (size.documents > limits.documents && size.documents > size.documentsBefore)
+  )
+    throw new RuleViolationError(
+      "catalog-full",
+      `A workspace's catalog holds at most ${limits.bytes / 1024 / 1024} MiB of text and ${limits.documents} documents, and this change would take it past that`,
+    )
+}
+
+function changingTooFast(): BusyError {
+  return new BusyError(
+    "catalog-changing",
+    "Other changes to the catalog kept applying first; send this proposal again",
+    1,
+  )
+}
+
+/**
+ * A person may approve their own agents' proposals only while the
+ * workspace has one current member (D-024, O-46).
+ */
+async function checkNotOwnAgent(scope: ProposalScope, row: ProposalRow) {
+  if (row.actorKind !== "agent" || row.actorPersonId !== scope.actor.personId)
+    return
+  const [{ members }] = (await scope.tx
+    .select({ members: sql<number>`count(*)::int` })
+    .from(schema.members)
+    .where(
+      and(
+        eq(schema.members.workspaceId, scope.workspaceId),
+        isNull(schema.members.removedAt),
+      ),
+    )) as [{ members: number }]
+  if (members > 1)
+    throw new RuleViolationError(
+      "own-agent",
+      "Another member approves your agents' catalog proposals: you may approve them yourself only while you are the workspace's only member",
+    )
+}
+
+/** A stored proposal with the author's idempotency key, if any; refused if its content differs. */
+async function byIdempotencyKey(
+  scope: ProposalScope,
+  key: string | null | undefined,
+  requestHash: string,
+): Promise<ProposalRow | null> {
+  if (!key) return null
+  const t = schema.catalogProposals
+  const [existing] = await scope.tx
+    .select()
+    .from(t)
+    .where(
+      and(
+        eq(t.workspaceId, scope.workspaceId),
+        eq(t.idempotencyKey, key),
+        scope.actor.agentId
+          ? eq(t.actorAgentId, scope.actor.agentId)
+          : and(
+              eq(t.actorPersonId, scope.actor.personId!),
+              isNull(t.actorAgentId),
+            ),
+      ),
+    )
+  if (!existing) return null
+  if (existing.requestHash !== requestHash)
+    throw new InvalidInputError(
+      "idempotency-key-reused",
+      "You used this idempotency key for a different proposal",
+    )
+  return existing
 }
 
 /** The handle of the person the scope's actor is or acts for. */
@@ -532,9 +768,10 @@ function checkAccepts(
 async function pendingProposal(
   scope: ProposalScope,
   proposalId: string,
+  lock = true,
 ): Promise<ProposalRow> {
   if (!isId(proposalId)) throw new NotFoundError()
-  const [row] = await scope.tx
+  const query = scope.tx
     .select()
     .from(schema.catalogProposals)
     .where(
@@ -543,7 +780,7 @@ async function pendingProposal(
         eq(schema.catalogProposals.id, proposalId.toLowerCase()),
       ),
     )
-    .for("update")
+  const [row] = lock ? await query.for("update") : await query
   if (!row) throw new NotFoundError()
   if (row.state !== "pending")
     throw new RuleViolationError(
@@ -660,13 +897,27 @@ function hashOf(proposal: {
 }): string {
   return createHash("sha256")
     .update(
-      JSON.stringify([
-        proposal.explanation,
-        proposal.relatedTask ?? null,
-        proposal.operations,
-      ]),
+      JSON.stringify(
+        canonical([
+          proposal.explanation,
+          proposal.relatedTask ?? null,
+          proposal.operations,
+        ]),
+      ),
     )
     .digest("base64url")
+}
+
+/** The same value with every map's keys sorted, so key order does not change the hash. */
+function canonical(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonical)
+  if (typeof value === "object" && value !== null)
+    return Object.fromEntries(
+      Object.keys(value)
+        .sort()
+        .map((k) => [k, canonical((value as Record<string, unknown>)[k])]),
+    )
+  return value
 }
 
 function proposalOf(row: ProposalRow): CatalogProposal {

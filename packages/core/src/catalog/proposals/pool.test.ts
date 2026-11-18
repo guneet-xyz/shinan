@@ -1,15 +1,17 @@
 import { afterEach, describe, expect, it } from "vitest"
 
 import * as fixtures from "../../../test/catalog-index-fixtures.js"
+import { BusyError } from "../../errors.js"
 import { parseCatalogDocument } from "../document/index.js"
-import { CatalogWorker } from "./pool.js"
-import type { LatestDocument } from "./pool.js"
+import { CatalogWorkers } from "./pool.js"
+import type { CatalogWorkerOptions, LatestDocument } from "./pool.js"
+import { estimatedBytes } from "./protocol.js"
 import type { PrepareInput } from "./work.js"
 
-const texts = new Map([
-  ["a", fixtures.guneet],
-  ["b", fixtures.daedalus],
-])
+const texts: Record<string, string> = {
+  a: fixtures.guneet,
+  b: fixtures.daedalus,
+}
 
 const input: PrepareInput = {
   operations: [
@@ -27,27 +29,35 @@ const input: PrepareInput = {
   memberHandles: [],
 }
 
-let worker: CatalogWorker | null = null
+const documents: LatestDocument[] = [
+  { documentId: "a", revision: 1 },
+  { documentId: "b", revision: 1 },
+]
+
+let workers: CatalogWorkers | null = null
 
 afterEach(async () => {
-  await worker?.close()
+  await workers?.close()
+  workers = null
 })
 
-describe("the catalog worker", () => {
-  it("sends only the texts the worker has not parsed, and again after it drops them", async () => {
-    worker = new CatalogWorker({ cacheSize: 1 })
-    const loaded: string[][] = []
-    const load = (documents: readonly LatestDocument[]) => {
-      loaded.push(documents.map((d) => d.documentId))
-      return Promise.resolve(
-        new Map(documents.map((d) => [d.documentId, texts.get(d.documentId)!])),
-      )
-    }
-    const documents = [
-      { documentId: "a", revision: 1 },
-      { documentId: "b", revision: 1 },
-    ]
-    const first = await worker.prepare(documents, load, input)
+/** Catalog workers, and a loader that records what it was asked for. */
+function setUp(options: CatalogWorkerOptions = {}) {
+  workers = new CatalogWorkers(options)
+  const loaded: string[][] = []
+  const load = (wanted: readonly LatestDocument[]) => {
+    loaded.push(wanted.map((d) => `${d.documentId}@${d.revision}`))
+    return Promise.resolve(
+      wanted.map((d) => ({ ...d, text: texts[d.documentId]! })),
+    )
+  }
+  return { workers, loaded, load }
+}
+
+describe("the catalog workers", () => {
+  it("parse stored texts in batches before a proposal, and only those they lack", async () => {
+    const { workers, loaded, load } = setUp({ loadBatch: 1 })
+    const first = await workers.prepare("w1", documents, load, input)
     expect(first).toMatchObject({
       outcome: "ready",
       documents: [{ documentId: "b" }],
@@ -58,25 +68,112 @@ describe("the catalog worker", () => {
     const [written] = first.documents
     expect(written!.parsed.text).toBe(written!.text)
     expect(written!.parsed).toEqual(parseCatalogDocument(written!.text))
-    // The cache holds one document, so the worker dropped `a` and said so.
-    await worker.prepare(documents, load, input)
-    await worker.prepare(
+
+    await workers.prepare("w1", documents, load, input)
+    await workers.prepare(
+      "w1",
       [documents[0]!, { documentId: "b", revision: 2 }],
       load,
       input,
     )
-    expect(loaded).toEqual([["a", "b"], ["a"], ["a", "b"]])
+    expect(loaded).toEqual([["a@1"], ["b@1"], ["b@2"]])
   })
 
-  it("starts a new thread after one is stopped", async () => {
-    worker = new CatalogWorker({ timeLimitMs: 1 })
-    const load = () => Promise.resolve(new Map([["b", fixtures.daedalus]]))
-    const documents = [{ documentId: "b", revision: 1 }]
-    await expect(worker.prepare(documents, load, input)).rejects.toMatchObject({
-      rule: "too-complex",
+  it("refuses a catalog larger than a worker's cache", async () => {
+    const { workers, load } = setUp({
+      loadBatch: 1,
+      cacheBytes: estimatedBytes(texts.b!),
     })
-    await expect(worker.prepare(documents, load, input)).rejects.toMatchObject({
-      rule: "too-complex",
-    })
+    await expect(
+      workers.prepare("w1", documents, load, input),
+    ).rejects.toMatchObject({ rule: "catalog-too-large" })
+  })
+
+  it("stops only the workspace whose proposal ran out of time", async () => {
+    const { workers, loaded, load } = setUp({ timeLimitMs: 1 })
+    const other = new CatalogWorkers()
+    try {
+      await other.prepare("w2", documents, load, input)
+      await expect(
+        workers.prepare("w1", documents, load, input),
+      ).rejects.toMatchObject({ rule: "too-complex" })
+      await expect(
+        workers.prepare("w1", documents, load, input),
+      ).rejects.toMatchObject({ rule: "too-complex" })
+      await other.prepare("w2", documents, load, input)
+    } finally {
+      await other.close()
+    }
+    // w1 loaded twice, once per new worker; w2 once.
+    expect(loaded).toEqual([
+      ["a@1", "b@1"],
+      ["a@1", "b@1"],
+      ["a@1", "b@1"],
+    ])
+  })
+
+  it("keep one worker per workspace, up to their number, giving up idle ones", async () => {
+    const { workers, loaded, load } = setUp({ workers: 1 })
+    await workers.prepare("w1", documents, load, input)
+    await workers.prepare("w2", documents, load, input)
+    await workers.prepare("w2", documents, load, input)
+    await workers.prepare("w1", documents, load, input)
+    expect(loaded).toHaveLength(3)
+  })
+
+  it("refuse requests beyond their queues at once, as busy", async () => {
+    const { workers, load } = setUp({ queuePerWorkspace: 2, queueTotal: 3 })
+    const results = await Promise.allSettled([
+      workers.prepare("w1", documents, load, input),
+      workers.prepare("w1", documents, load, input),
+      workers.prepare("w1", documents, load, input),
+      workers.prepare("w2", documents, load, input),
+      workers.prepare("w2", documents, load, input),
+    ])
+    expect(results.map((r) => r.status)).toEqual([
+      "fulfilled",
+      "fulfilled",
+      "rejected",
+      "fulfilled",
+      "rejected",
+    ])
+    for (const result of results)
+      if (result.status === "rejected") {
+        expect(result.reason).toBeInstanceOf(BusyError)
+        expect(result.reason).toMatchObject({ rule: "catalog-busy" })
+      }
+    await expect(
+      workers.prepare("w1", documents, load, input),
+    ).resolves.toMatchObject({ outcome: "ready" })
+  })
+
+  it("stop a worker that runs out of memory, and start a new one", async () => {
+    const big = Array.from({ length: 400 }, (_, i) => ({
+      documentId: `m${i}`,
+      revision: 1,
+    }))
+    const body = "Words of a long section about the machine.\n\n".repeat(1200)
+    workers = new CatalogWorkers({ heapMb: 24, loadBatch: 400 })
+    const load = (wanted: readonly LatestDocument[]) =>
+      Promise.resolve(
+        wanted.map((d) => ({
+          ...d,
+          text: `---\nid: machine/${d.documentId}\ntype: machine\ntitle: M\nsummary: M.\nowner: person/guneet\n---\n\n# M\n\n${body}`,
+        })),
+      )
+    await expect(workers.prepare("w1", big, load, input)).rejects.toMatchObject(
+      { rule: "catalog-too-large" },
+    )
+    await expect(
+      workers.prepare(
+        "w1",
+        documents,
+        (wanted) =>
+          Promise.resolve(
+            wanted.map((d) => ({ ...d, text: texts[d.documentId]! })),
+          ),
+        input,
+      ),
+    ).resolves.toMatchObject({ outcome: "ready" })
   })
 })

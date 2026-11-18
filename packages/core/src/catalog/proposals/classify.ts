@@ -200,13 +200,12 @@ function compareFacts(
         .sort()
         .join("\n\n")
     if (whole(a) === whole(b)) continue
-    const state = (b[0] ?? a[0])!.state
     if (content(a) === content(b)) {
       if (a.map(checkOf).sort().join() !== b.map(checkOf).sort().join())
         classes.add("recheck")
       continue
     }
-    classes.add(stateClass(state))
+    for (const fact of [...a, ...b]) classes.add(stateClass(fact.state))
   }
   return { classes, accepts }
 }
