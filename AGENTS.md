@@ -34,7 +34,8 @@ phase**. Read these before doing anything else:
   as the pool has connections hang the process. Tests use a database that
   refuses this (`refuseNestedConnections` in `packages/db`), through `db`
   and its pool, and fails any test that leaves a refusal behind, even one
-  the code caught.
+  the code caught. Only `createDatabase` makes connections; ESLint refuses
+  importing `pg` elsewhere.
 - Every PR has tests. Keep CI green: run `pnpm format:write`, `pnpm lint`,
   `pnpm typecheck` and `pnpm test` before pushing (the
   [README](README.md#developing-locally) explains the setup).

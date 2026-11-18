@@ -51,6 +51,31 @@ describe("a query on db while the same work holds a transaction", () => {
     expect(takeNestedConnectionRefusals()).toEqual([])
   })
 
+  it("lets work a transaction started use db once it has ended", async () => {
+    let later: Promise<unknown> | undefined
+    await db.transaction(async (tx) => {
+      later = new Promise((resolve, reject) =>
+        setTimeout(() => {
+          // Runs 20 ms after the transaction committed.
+          db.execute(sql`select 1`).then(resolve, reject)
+        }, 20),
+      )
+      await tx.execute(sql`select 1`)
+    })
+    await expect(later).resolves.toBeDefined()
+    expect(takeNestedConnectionRefusals()).toEqual([])
+  })
+
+  it("still refuses work that runs while the transaction is open", async () => {
+    await expect(
+      db.transaction(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 5))
+        await db.execute(sql`select 1`)
+      }),
+    ).rejects.toBeInstanceOf(NestedConnectionError)
+    expect(takeNestedConnectionRefusals()).toHaveLength(1)
+  })
+
   it("guards the raw pool too, through db.$client and as returned", async () => {
     for (const client of [db.$client, pool]) {
       await expect(

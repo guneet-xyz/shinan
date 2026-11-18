@@ -45,5 +45,27 @@ export default defineConfig([
     files: ["apps/web/src/components/ui/**"],
     rules: { "react-refresh/only-export-components": "off" },
   },
+  {
+    // Only createDatabase makes the application's pool, so tests can guard
+    // it (refuseNestedConnections); the migration lock and the test
+    // database's admin client are the other connections (#144).
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: ["pg", "pg-pool", "postgres"].map((name) => ({
+            name,
+            ...(name === "pg" ? { allowImportNames: ["DatabaseError"] } : {}),
+            message:
+              "Use createDatabase from @shinan/db: only it makes the application's connections, which tests guard.",
+          })),
+        },
+      ],
+    },
+  },
+  {
+    files: ["packages/db/src/index.ts", "packages/db/src/testing.ts"],
+    rules: { "no-restricted-imports": "off" },
+  },
   prettier,
 ])
