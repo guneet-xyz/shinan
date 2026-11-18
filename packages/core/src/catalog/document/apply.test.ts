@@ -751,6 +751,12 @@ describe("expectations and conflicts (catalog §8.5)", () => {
     ).toMatchObject([{ kind: "conflict", code: "identity-changed" }])
   })
 
+  it("refuses an operation it does not know", () => {
+    expect(
+      refused([musashi], [{ op: "rename" } as unknown as CatalogOperation]),
+    ).toMatchObject([{ kind: "invalid", code: "operation-invalid" }])
+  })
+
   it("applies all or nothing, listing every problem", () => {
     const result = applyOperations(
       [musashi, dockyard],

@@ -260,7 +260,7 @@ function targetOf(operation: CatalogOperation): string | null {
     case "set-start-here-path":
       return startHereId
     default:
-      return operation.document
+      return typeof operation.document === "string" ? operation.document : null
   }
 }
 
@@ -340,6 +340,10 @@ class Working {
       case "set-start-here-path":
         return this.edit(startHereId, "start-here", (d) =>
           setStartHerePath(d, operation),
+        )
+      default:
+        throw invalid(
+          `"${String((operation as { op?: unknown }).op)}" is not a catalog operation`,
         )
     }
   }
