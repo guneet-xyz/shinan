@@ -2331,3 +2331,127 @@ b
     ])
   })
 })
+
+describe("a section edit leaves the other sections as they were (#114)", () => {
+  const body = `---
+id: machine/x
+type: machine
+title: X
+summary: S.
+status: active
+owner: person/guneet
+---
+
+intro
+
+## A
+
+a
+
+## B
+
+b
+`
+  const sectionText = (anchor: string | null) =>
+    readCatalog([body]).documents[0]?.body.sections.find((s) =>
+      anchor === null ? s.heading === null : s.anchor === anchor,
+    )?.text ?? ""
+  const anchors = (text: string) =>
+    readCatalog([text]).documents[0]?.body.sections.map((s) => s.anchor)
+
+  it("refuses new text that leaves a code block open over the sections after it", () => {
+    expect(
+      refused(
+        [body],
+        [
+          {
+            op: "edit-body",
+            document: "machine/x",
+            section: "a",
+            text: "## A\n\n```\ncode\n",
+            expect: { text: sectionText("a") },
+          },
+        ],
+      ),
+    ).toMatchObject([{ kind: "invalid", code: "result-invalid" }])
+    expect(
+      refused(
+        [body],
+        [
+          {
+            op: "edit-body",
+            document: "machine/x",
+            section: null,
+            text: "```\n",
+            expect: { text: sectionText(null) },
+          },
+        ],
+      ),
+    ).toMatchObject([{ kind: "invalid", code: "result-invalid" }])
+    // At the end of the body, an open fence swallows nothing.
+    const added = edit(body, {
+      op: "edit-body",
+      document: "machine/x",
+      section: "c",
+      text: "## C\n\n~~~\n",
+      expect: { absent: true },
+    })
+    expect(anchors(added)).toEqual([null, "a", "b", "c"])
+  })
+
+  it("still allows a closed code block, and removing a section", () => {
+    const fenced = edit(body, {
+      op: "edit-body",
+      document: "machine/x",
+      section: "a",
+      text: "## A\n\n```\n## not a heading\n```\n",
+      expect: { text: sectionText("a") },
+    })
+    expect(anchors(fenced)).toEqual([null, "a", "b"])
+    const removed = edit(body, {
+      op: "edit-body",
+      document: "machine/x",
+      section: "a",
+      text: "",
+      expect: { text: sectionText("a") },
+    })
+    expect(anchors(removed)).toEqual([null, "b"])
+  })
+})
+
+describe("a comment on a key's own line (#114)", () => {
+  it("stays there when the key gains a second value", () => {
+    const text = `---
+id: service/x
+type: service
+title: X
+summary: S.
+status: active
+owner: person/guneet
+facts:
+  - checked: 2026-11-14
+    by: ${by}
+    scope: s
+    source: s
+    observed:
+      endpoint: # on key
+        https://a
+---
+`
+    expect(
+      edit(text, {
+        op: "set-fact",
+        document: "service/x",
+        fact: { key: "endpoint", state: "observed", value: "https://b" },
+        check: { checked: "2026-11-14", scope: "s", source: "s" },
+        expect: { identity: "endpoint|observed|value=https://b", absent: true },
+      }),
+    ).toBe(
+      swap(
+        text,
+        "      endpoint: # on key\n        https://a\n",
+        "      endpoint: # on key\n        - https://a\n        - https://b\n",
+      ),
+    )
+  })
+})

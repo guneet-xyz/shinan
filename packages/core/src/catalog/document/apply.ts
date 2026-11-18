@@ -1,4 +1,5 @@
 import { comparableValue, discrepancies } from "./analysis.js"
+import type { Section } from "./body.js"
 import { readCatalog } from "./catalog.js"
 import type { Catalog } from "./catalog.js"
 import { parseCatalogTime } from "./dates.js"
@@ -1731,6 +1732,17 @@ function editBody(editor: Editor, operation: EditBody) {
             : eol + eol
     editor.apply(replaceRange({ start: at, end: at }, gap + text))
     sectionReads(editor, at + gap.length, text.length, name, label)
+    // Added at the end, the blank line before it joins the last section.
+    const last = body.sections[body.sections.length - 1]
+    otherSectionsUnchanged(
+      name !== null && last
+        ? [...body.sections.slice(0, -1), { ...last, text: last.text + gap }]
+        : body.sections,
+      null,
+      editor.document.body.sections,
+      at + gap.length,
+      text.length,
+    )
     return
   }
   if (!section) throw conflict("changed", `${label} is not there any more`)
@@ -1744,6 +1756,51 @@ function editBody(editor: Editor, operation: EditBody) {
   editor.apply(replaceRange(section.range, text))
   if (text !== "")
     sectionReads(editor, section.range.start, text.length, name, label)
+  otherSectionsUnchanged(
+    body.sections,
+    section,
+    editor.document.body.sections,
+    section.range.start,
+    text.length,
+  )
+}
+
+/**
+ * Checks that a section edit left every other section as it was: the same
+ * headings, levels and text, in the same order, and the same anchors. New
+ * text that leaves a block open (an unclosed code fence) would otherwise
+ * swallow the sections after it into the edited one, and the wiki, the
+ * index and later section edits would lose them. When a section is
+ * removed, a later section with the same heading may take its anchor, so
+ * anchors are compared only otherwise.
+ */
+function otherSectionsUnchanged(
+  before: readonly Section[],
+  edited: Section | null,
+  after: readonly Section[],
+  start: number,
+  length: number,
+) {
+  const removed = length === 0
+  const key = (s: Section) =>
+    JSON.stringify([s.heading, s.level, s.text, removed ? null : s.anchor])
+  // An empty body reads as one empty section before any heading; it is no
+  // section to keep.
+  const real = (s: Section) => s.heading !== null || s.text.trim() !== ""
+  const expected = before.filter((s) => s !== edited && real(s)).map(key)
+  const actual = after
+    .filter(
+      (s) =>
+        real(s) && !(s.range.start >= start && s.range.start < start + length),
+    )
+    .map(key)
+  if (
+    expected.length !== actual.length ||
+    expected.some((k, i) => k !== actual[i])
+  )
+    throw readsWrong(
+      "the sections around the edited one would change (is a code block or other block left open?)",
+    )
 }
 
 /**

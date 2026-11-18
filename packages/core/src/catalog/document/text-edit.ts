@@ -286,19 +286,28 @@ export function replaceEntryValue(
       text: (inFlow ? flowText(value) : inlineFirst(value)) + tail,
     }
   const colon = colonOf(text, entry)
-  if (!blockValue)
-    return {
-      start: colon + 1,
-      end: written(entry) ? old.range.end : colon + 1,
-      text: ` ${inFlow ? flowText(value) : inlineFirst(value)}${tail}`,
-    }
   const indent = column(text, entry.keyRange.start) + 2
-  const body = blockLines(value, indent)
-  return {
-    start: colon + 1,
-    end: written(entry) ? old.range.end : colon + 1,
-    text: eol + body.join(eol) + tail,
+  // A comment on the key's own line, before a value on the next line (or no
+  // value), stays there; the new value starts on the next line.
+  const comment = /^[ \t]+#[^\r\n]*/.exec(text.slice(colon + 1))?.[0]
+  const keep =
+    comment !== undefined &&
+    !inFlow &&
+    (!written(entry) || old.range.start > colon + 1 + comment.length)
+  const start = keep ? colon + 1 + comment.length : colon + 1
+  const end = written(entry) ? old.range.end : start
+  if (!blockValue) {
+    const inline = inFlow ? flowText(value) : inlineFirst(value)
+    return {
+      start,
+      end,
+      text: keep
+        ? `${eol}${" ".repeat(indent)}${inline}${tail}`
+        : ` ${inline}${tail}`,
+    }
   }
+  const body = blockLines(value, indent)
+  return { start, end, text: eol + body.join(eol) + tail }
 }
 
 /** Replaces a list item with a value that fits on one line. */
