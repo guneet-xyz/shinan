@@ -888,6 +888,16 @@ details of the page as built.
   exactly what changed, fields and facts included.
 - **Pending catalog proposals** and who approved a revision are added once
   catalog proposals exist ([M2-4](https://github.com/guneet-xyz/shinan/issues/86)).
+- **A page that could not be read in full** lists what could not be read.
+  For a workspace owner it links **Repair this page**; others are told a
+  workspace owner can repair it. **Proposed
+  ([#133](https://github.com/guneet-xyz/shinan/issues/133)):** the repair
+  page shows the problems and the page's whole stored text to correct, with
+  an explanation. Saving replaces the whole text at once, as the owner's
+  approval ([catalog §8.3](catalog.md#83-validation)). If it adds a problem,
+  or the page changed meanwhile, nothing is saved and the screen says why.
+  Reason: a fact the parser no longer reads can't be named by any other
+  change.
 
 **Secrets.** Secrets never go in the catalog; the catalog records only where a
 secret lives, for example a path in a secrets manager such as Obscuro or

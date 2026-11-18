@@ -458,6 +458,7 @@ member's role ([6.3](#63-what-an-agent-may-do)).
 | Read the workspace security log                                                                              | ✓               | own entries                                                                                        | ✗                                                                         |
 | Correct the credit on an event from their own git host account                                               | own             | own                                                                                                | ✗                                                                         |
 | Purge, export or delete the workspace; import an export into an empty workspace (all with re-authentication) | ✓               | ✗                                                                                                  | ✗                                                                         |
+| Repair a catalog document by replacing its whole text (with re-authentication, catalog §8.3)                 | ✓               | ✗                                                                                                  | ✗                                                                         |
 
 Notes:
 
@@ -1240,7 +1241,9 @@ kinds (**proposed**):
   `catalog.bulk-read` entry per call, with the list, the page offset, the
   number of items and the catalog revision; so is each page after the first
   of a listing of every entity (`search_catalog` with no words, list
-  `entities`).
+  `entities`). **Proposed (#133):** a workspace owner's repair of a catalog
+  document is recorded as their approval, `catalog-proposal.approved` with
+  `repair: true`, like any approval; the text is never in the entry.
 - **Decided (owner, O-47, N-8, N-13, [#25](https://github.com/guneet-xyz/shinan/issues/25)):**
   the security log is kept forever, and no security-log entry can ever be
   purged, by anyone: neither installation-level entries nor a workspace's

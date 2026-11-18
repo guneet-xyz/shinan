@@ -1311,7 +1311,7 @@ expects ([8.5](#85-conflicts)).
 | `set-schema-key`      | Adds, changes or removes one key of a type schema document.                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `create-start-here`   | The start-here document.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | `set-start-here-path` | Replaces the `people` or the `agents` path.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| `restore-document`    | Puts back a document's earlier text whole, expecting it to be exactly as the reverted proposal left it (by the SHA-256 of its text). Only a revert makes it (M2-4, below); agents and the API cannot send it.                                                                                                                                                                                                                                                                                                                 |
+| `restore-document`    | Replaces a document's whole text, expecting it to be exactly as it was read (by the SHA-256 of its text). Only a revert (M2-4, below) and a workspace owner's repair ([8.3](#83-validation)) make it; agents and the API cannot send it.                                                                                                                                                                                                                                                                                      |
 
 Lifecycle changes beyond `retire` have no operation: `set-field` never sets
 `retired`, never changes the status of a retired document, and never writes
@@ -1639,6 +1639,30 @@ how the rules are applied.
   value is never taken for an accepted one. A document the change does not
   write is compared with its earlier, identical text, so even a document
   that no longer reads is never charged to others.
+- **Repairing a document that reads with problems.** **Proposed
+  ([#133](https://github.com/guneet-xyz/shinan/issues/133)):**
+  - **The problem.** A stored document can hold something the parser no
+    longer reads, such as a reserved attribute name since parser version 4,
+    or an object-member key. The unreadable fact drops out of the parsed
+    model, so no operation can name it, and its blocking problem blocks
+    every later change to the document.
+  - **The repair.** A workspace owner, after re-authentication, replaces
+    the document's whole text, starting from the text at a revision they
+    read. It is a catalog proposal with one `restore-document` operation,
+    the one a revert uses. It takes the same turn, conflict check (the
+    document must still be at that revision), validation and records.
+  - **Validation charges the document only with problems it did not
+    already have.** So a repair may fix some and leave the rest, while
+    anything it newly breaks, in that document or another, blocks it. A
+    near-certain secret is charged even when the document already held it,
+    since the repair writes the whole text again.
+  - **It applies at once and is recorded as the owner's approval** in the
+    security log (`catalog-proposal.approved`, with `repair: true`),
+    whatever its approval classes.
+  - **Who:** agents and contributors can never repair; it is the
+    `catalog.repair` action (identity §5.1).
+  - Reason: parser versions keep tightening, and the trial's documents must
+    stay fixable without an operator editing the database.
 - **Type schema changes.** When a change to a type schema document adds a
   problem a schema can cause (an unknown or retired type, a key outside the
   schema, a list on a single-valued key, a relation to a type no longer
