@@ -20,7 +20,7 @@ import type {
 import { readDocumentId, splitFrontmatter } from "../document/parse.js"
 import { attributeSections } from "./attribution.js"
 import type { AttributedSection, RevisionAuthor } from "./attribution.js"
-import { deriveDocumentRows } from "./derive.js"
+import { deriveDocumentRows, indexRulesVersion } from "./derive.js"
 import type { DocumentRows } from "./derive.js"
 import { Provenance } from "./provenance.js"
 import {
@@ -53,7 +53,7 @@ export async function lockIndexState(
 ): Promise<IndexState> {
   await tx
     .insert(schema.catalogIndexState)
-    .values({ workspaceId, parserVersion })
+    .values({ workspaceId, parserVersion, rulesVersion: indexRulesVersion })
     .onConflictDoNothing()
   const [state] = await tx
     .select()
@@ -100,6 +100,7 @@ export async function indexRevision(
     kind: t.kind,
     type: t.type,
     parserVersion: t.parserVersion,
+    rulesVersion: t.rulesVersion,
   }
   const indexed = await tx
     .select(columns)
@@ -166,7 +167,13 @@ export async function indexRevision(
   const all = [...changed.keys(), ...unchanged.keys()]
   const stored = await storedCredits(
     tx,
-    all.filter((id) => indexed.get(id)?.parserVersion === parserVersion),
+    all.filter((id) => {
+      const row = indexed.get(id)
+      return (
+        row?.parserVersion === parserVersion &&
+        row.rulesVersion === indexRulesVersion
+      )
+    }),
   )
   // A document with no earlier revision starts with no credits.
   const earlier = await documentsWithEarlierText(
@@ -556,11 +563,50 @@ export async function rebuildWorkspaceIndex(
     .set({
       revision,
       parserVersion,
+      rulesVersion: indexRulesVersion,
       rebuildRequestedAt: null,
       rebuiltAt: sql`now()`,
     })
     .where(eq(schema.catalogIndexState.workspaceId, workspaceId))
   return { revision, documents }
+}
+
+/**
+ * Whether a workspace's index must be rebuilt before it can be trusted: its
+ * state says another parser or rules version built it, or a rebuild is
+ * asked for.
+ */
+export function stateBehind(state: IndexState | undefined): boolean {
+  return (
+    !state ||
+    state.parserVersion !== parserVersion ||
+    state.rulesVersion !== indexRulesVersion ||
+    state.rebuildRequestedAt !== null
+  )
+}
+
+/**
+ * Whether any of a workspace's index rows were built by another parser or
+ * rules version, as an older release running against the same database
+ * leaves them (a rollback, then a roll forward): the round-trip check then
+ * reports the index as behind, not as differing from its text.
+ */
+export async function hasStaleRows(
+  tx: Transaction,
+  workspaceId: string,
+): Promise<boolean> {
+  const t = schema.catalogIndexDocuments
+  const [row] = await tx
+    .select({ documentId: t.documentId })
+    .from(t)
+    .where(
+      and(
+        eq(t.workspaceId, workspaceId),
+        sql`(${t.parserVersion} <> ${parserVersion} or ${t.rulesVersion} <> ${indexRulesVersion})`,
+      ),
+    )
+    .limit(1)
+  return row !== undefined
 }
 
 /** The tables of the index, by the names the round-trip check reports. */

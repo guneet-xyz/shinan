@@ -1,5 +1,5 @@
 {
-  "id": "80e06ebc-3294-4db3-b984-2c81d4f50d40",
+  "id": "1d557ae2-43b9-4751-b073-5c8ce53271e6",
   "prevId": "1b2ab6d3-e4c5-48b2-afba-39ccba2fd19b",
   "version": "7",
   "dialect": "postgresql",
@@ -595,6 +595,13 @@
           "type": "integer",
           "primaryKey": false,
           "notNull": true
+        },
+        "rules_version": {
+          "name": "rules_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
         },
         "kind": {
           "name": "kind",
@@ -1574,6 +1581,13 @@
           "type": "integer",
           "primaryKey": false,
           "notNull": true
+        },
+        "rules_version": {
+          "name": "rules_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
         },
         "rebuild_requested_at": {
           "name": "rebuild_requested_at",

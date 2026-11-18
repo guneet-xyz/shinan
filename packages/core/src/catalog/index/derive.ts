@@ -20,6 +20,14 @@ import type { AttributedSection } from "./attribution.js"
 import { stepJson, typeSchemaJson } from "./format.js"
 import type { Provenance } from "./provenance.js"
 
+/**
+ * The version of the index's own rules, beside the parser's: how sections
+ * are credited (`attribution.ts`, `provenance.ts`) and anything else derived
+ * beyond reading the text. Raise it when they change: indexes built by
+ * another version are then behind and rebuilt, as for a parser change.
+ */
+export const indexRulesVersion = 1
+
 export type DocumentRow = typeof schema.catalogIndexDocuments.$inferInsert
 export type FactRow = typeof schema.catalogIndexFacts.$inferInsert
 export type RelationRow = typeof schema.catalogIndexRelations.$inferInsert
@@ -76,6 +84,7 @@ export function deriveDocumentRows(input: DeriveInput): DocumentRows {
   const row: DocumentRow = {
     ...base,
     revision: input.revision,
+    rulesVersion: indexRulesVersion,
     kind: document.kind,
     catalogId: document.id,
     type: null,

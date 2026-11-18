@@ -4,6 +4,7 @@ import type { Transaction } from "@shinan/db"
 import type { ResolvedActor } from "../actor.js"
 import { parserVersion } from "./document/index.js"
 import type { CatalogDocument } from "./document/index.js"
+import { indexRulesVersion } from "./index/derive.js"
 import { indexRevision, lockIndexState } from "./index/indexer.js"
 
 /** Who a revision is credited to: the columns events use (architecture §5.3). */
@@ -54,7 +55,11 @@ export async function appendCatalogRevision(
   // A process still running an older parser than the one that last built
   // the index (during a rolling deployment) would add rows of its older
   // version: answers say the index is behind until the next rebuild.
-  if (state.parserVersion > parserVersion && state.rebuildRequestedAt === null)
+  if (
+    (state.parserVersion > parserVersion ||
+      state.rulesVersion > indexRulesVersion) &&
+    state.rebuildRequestedAt === null
+  )
     await tx
       .update(schema.catalogIndexState)
       .set({ rebuildRequestedAt: sql`now()` })

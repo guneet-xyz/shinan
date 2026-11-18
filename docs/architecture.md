@@ -501,21 +501,27 @@ indexing (**Proposed**).
     hash of the text, so a rolled-back revision or a purge cannot bring back
     a stale schema), and, when a type schema document changes, the entities
     of the types it describes or described and every other type schema
-    document. Measured on Daedalus: about 20 to 40 ms per one-document
+    document. Measured on Daedalus: about 20 to 30 ms per one-document
     revision for catalogs of 500 to 5,000 entities.
   - **Section credits.** Each body section records the revision that last
     changed it and that revision's author, and the least-trusted author
     whose words may remain in it, for trust labels (catalog §12.4). The
-    second comes from each document's **word provenance**: hashed units of
-    its words, each with the least-trusted author who ever brought it into
-    the document (people's are not kept, since they never lower a credit),
-    stored as one row of 10 bytes per unit and compared by the round-trip
-    check. Applying a revision updates the stored credits and provenance; a
-    rebuild replays each document's history, reading only revisions whose
-    body changed. Tests replay random histories (edits, moves, renames,
-    reverts by people, agents and Shinan) both ways and find no difference.
-    A change to these rules marks every index for rebuild in its migration
-    ([#110](https://github.com/guneet-xyz/shinan/issues/110) did).
+    second comes from each document's **word provenance**: hashed word
+    3-grams, each with the least-trusted author who ever brought it into the
+    document (people's are not kept, since they never lower a credit),
+    stored as one row per document, 10 bytes per unit, and compared by the
+    round-trip check. Applying a revision updates the stored credits and
+    provenance; a rebuild replays each document's history, reading only
+    revisions whose body changed. Tests replay random histories (edits,
+    moves, renames, reverts by people, agents and Shinan) both ways and find
+    no difference.
+  - **Index rules version.** These rules have a version of their own
+    (`indexRulesVersion`), recorded like the parser version on the index
+    state and on each document's rows. An index built by another version is
+    behind and is rebuilt, as after a parser change; so are rows an older
+    release wrote after a rollback, which the round-trip check then reports
+    as behind rather than as differing. Changing the rules needs no
+    migration of data.
   - **Answers are read from one snapshot** (repeatable read, read only), so
     an answer's catalog revision and its rows agree.
   - **Rolling deployments.** A process still running an older parser after
@@ -528,15 +534,16 @@ indexing (**Proposed**).
   - **Rebuilds** delete a workspace's index rows and derive them again from
     the stored text in one transaction, so readers see the old rows, marked
     behind, until it commits. Measured on Daedalus (2 cores shared with
-    other work, load 5 to 8) with agent-written entities of about 300 words
-    of body each: 14 s to rebuild and 9.5 s to check 2,000 entities, 27 s
-    and 24 s for 5,000. The word provenance takes about 8.5 KB per such
-    entity (42 MB for 5,000, of 220 MB for the whole index). A rebuild reads
-    only the frontmatter of each document to find the type schema documents
-    before reading every document in full once. The
-    worker asks for one on start for every workspace whose index another
-    parser version built (or whose rebuild never finished), and an
-    installation operator can run one with `shinan catalog-index rebuild`.
+    other work, load 3 to 4) with agent-written entities of about 300 words
+    of body each: 10.5 s to rebuild and 7.3 s to check 2,000 entities, 25
+    to 29 s and 19 to 20 s for 5,000. The word provenance takes about
+    8.5 KB per such entity (17 MB for 2,000 and 42 MB for 5,000, of 97 MB
+    and 220 MB for the whole index). A rebuild reads only the frontmatter of
+    each document to find the type schema documents before reading every
+    document in full once. The worker asks for one on start for every
+    workspace whose index (or any of its rows) another parser or rules
+    version built, or whose rebuild never finished, and an installation
+    operator can run one with `shinan catalog-index rebuild`.
   - **The daily round-trip check** (rule 5) derives each workspace's index
     from its text in one snapshot and compares it, row by row, with the
     stored index. The result (documents that differ and in which tables, by

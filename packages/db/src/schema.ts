@@ -913,6 +913,11 @@ export const catalogIndexState = pgTable("catalog_index_state", {
   revision: integer("revision").notNull().default(0),
   /** The parser version of the last full build. */
   parserVersion: parserVersionColumn(),
+  /**
+   * The version of the index's own rules (such as how `written_by` is
+   * credited) of the last full build; 0 before the rules were versioned.
+   */
+  rulesVersion: integer("rules_version").notNull().default(0),
   /** Set while a rebuild is asked for or running: answers say the index is behind. */
   rebuildRequestedAt: timestamp("rebuild_requested_at", {
     withTimezone: true,
@@ -942,6 +947,8 @@ export const catalogIndexDocuments = pgTable(
     /** The catalog revision whose text these rows were built from. */
     revision: integer("revision").notNull(),
     parserVersion: parserVersionColumn(),
+    /** The index rules version these rows were built by (with all the document's rows); 0 before it was recorded. */
+    rulesVersion: integer("rules_version").notNull().default(0),
     /** `entity`, `schema` or `start-here` (catalog §2, §3.9, §11). */
     kind: text("kind").notNull(),
     /** The catalog ID, such as `machine/musashi`; null if the text has none. */
@@ -1185,7 +1192,7 @@ export const catalogIndexSections = pgTable(
 
 /**
  * Where a document's words came from (catalog §12.4, `written_by`): for each
- * unit of its words (a hashed, normalised word 5-gram) that anyone less
+ * unit of its words (a hashed, normalised word 3-gram) that anyone less
  * trusted than a person ever introduced into the document, the
  * least-trusted author who did. Derived from the document's history like
  * every index row, and compared by the round-trip check.

@@ -1718,36 +1718,62 @@ Choices the format implies, all **proposed**:
   - **A changed or new section** is credited as `changed_by` to the
     revision that changed it.
   - **`written_by`** compares words, not lines or bytes. A section's heading
-    line and the rest are each reduced to their words: NFKC, lower case,
-    with Markdown markers, punctuation and symbols dropped. Each part is
-    then cut into **units**, its word 5-grams, or the whole part if it has
-    fewer than five words; a heading of one or two words (`Notes`) gives no
-    unit. For every unit that anyone other than a person ever brought into
-    the document, in any revision, Shinan keeps the least-trusted author who
-    did. A changed or new section's `written_by` is the least trusted of
-    the revision's author and of the authors of every unit it contains (its
-    3- and 4-word runs are looked up too, so a short sentence written around
-    stays found). Trust runs outside, unknown, agent, Shinan, person.
+    line and the rest are each reduced to the words a reader sees:
+    invisible characters (Unicode's default-ignorable code points, such as
+    zero-width spaces, bidi marks, soft hyphens and variation selectors)
+    removed, NFKC, lower case, Markdown markers, punctuation and symbols
+    dropped, and nothing made only of combining marks. Each part is then
+    cut into **units**, its word 3-grams; a body of one or two words is one
+    unit, and a heading of one or two words (`Notes`) gives none. For every
+    unit that anyone other than a person ever brought into the document, in
+    any revision, Shinan keeps the least-trusted author who did; whether a
+    unit is new is decided by comparing words with the previous revision,
+    not hashes. A changed or new section's `written_by` is the least
+    trusted of the revision's author and of the authors of every unit it
+    contains (its two-word runs are looked up too, so a two-word body
+    written around stays found). Trust runs outside, unknown, agent,
+    Shinan, person.
   - **What this guarantees:** a person's edit lifts `written_by` to
-    `person` only when no unit of the section came from less-trusted text,
-    that is, when the person wrote its words themselves. Rewrapping,
-    merging or splitting lines, punctuation, whitespace, list markers,
-    emphasis, heading levels and names, moving text between sections,
-    splitting sections, and restoring earlier text (a revert, a re-added
-    section) all keep the less-trusted author. An agent's change to a
-    person's text is credited to the agent.
-  - **Known limits:** text moved from another document starts afresh in
-    its new document (provenance is kept per document); a section body of
-    one or two words, or a heading of one or two words, carries no
-    provenance of its own; a person who rewords an agent's text so that no
-    five words in a row (or a three- or four-word sentence) survive lifts
-    it, which is the intended outcome of a genuine rewrite.
+    `person` only when no run of three words from less-trusted text remains
+    in the section. Rewrapping, merging or splitting lines, punctuation,
+    whitespace, invisible characters, list markers, emphasis, heading levels
+    and names, copyedits that leave three words in a row (one word changed
+    in a short sentence, every fourth word of a long one), moving text
+    between sections, splitting sections, and restoring earlier text (a
+    revert, a re-added section) all keep the less-trusted author. An
+    agent's change to a person's text is credited to the agent. Units are
+    unkeyed hashes, but a hash collision can only make a credit more
+    cautious, never lift it: a unit whose hash matches earlier text with
+    other words is still recorded, and any recorded hash a section has
+    counts against it.
+  - **The label errs cautious:** text a person wrote can carry `agent` when
+    it shares a three-word phrase with an agent's text in the same
+    document. Read it as how far to trust the text, not as who wrote each
+    word.
+  - **Known limits:**
+    - text moved in from another document starts afresh in its new
+      document (provenance is kept per document);
+    - a heading of one or two words carries no provenance, so text an agent
+      spreads over many one- or two-word headings or sections, which a
+      person then merges, can lift;
+    - letters from another script that look the same (Cyrillic `о` for
+      Latin `o`) are different words; catching them would need Unicode's
+      confusable skeletons (UTS #39);
+    - words inside HTML comments and link destinations count as words, as
+      an agent reading the raw Markdown sees them;
+    - a person who rewords an agent's text so that no three words in a row
+      survive lifts it: the intended outcome of a genuine rewrite;
+    - provenance only grows: units are never forgotten, by design. If heavy
+      agent churn makes it large, it can be compacted without changing the
+      rule.
 
   Reason: trust labels ([agent integrations](agent-integrations.md#trust-labels))
   need the writer of each section from Shinan's records, and must not let a
   mechanical edit or a revert make an agent's words look like a person's;
   when unsure, the credit errs towards the less-trusted author. The rule
-  is part of the derived index, so changing it needs only a rebuild.
+  is part of the derived index, so changing it needs only a rebuild: its
+  version is recorded with the index rows, and an index built by another
+  version is behind until rebuilt.
 
 ## 13. Mapping from the `workspace` repository's catalog
 

@@ -45,11 +45,13 @@ export interface AttributedSection {
  *    sections with the same text, the earliest are paired first.
  * 3. Any other section was last changed by `change`. Its least-trusted
  *    author is the least trusted of `change` and of the authors of every
- *    unit of its words (`provenance.ts`) anyone introduced in any earlier
- *    revision of the document. So it is lifted to a more-trusted author
- *    only when none of its words came from less-trusted text: a person's
- *    own rewrite lifts it; rewrapping, punctuation, list markers, heading
- *    changes, moving, splitting and restoring earlier text do not.
+ *    unit of its words (`provenance.ts`: word 3-grams) anyone introduced
+ *    in any earlier revision of the document. So it is lifted to a
+ *    more-trusted author only when no run of three words from less-trusted
+ *    text remains: a person's own rewrite lifts it; rewrapping,
+ *    punctuation, list markers, invisible characters, heading changes,
+ *    copyedits that leave three words in a row, moving, splitting and
+ *    restoring earlier text do not.
  *
  * When unsure, this errs towards the less-trusted credit. Applied to every
  * revision of a document in order, starting from no sections and an empty
@@ -65,9 +67,16 @@ export function attributeSections(
 ): AttributedSection[] {
   const author = { kind: change.authorKind, author: change.author }
   const words = sections.map(sectionWords)
+  const before = new Map<number, Set<string>>()
+  for (const p of previous)
+    for (const unit of storedUnits(sectionWords(p))) {
+      const known = before.get(unit.hash)
+      if (known) known.add(unit.words)
+      else before.set(unit.hash, new Set([unit.words]))
+    }
   provenance.introduce(
-    new Set(previous.flatMap((p) => storedUnits(sectionWords(p)))),
-    new Set(words.flatMap((w) => storedUnits(w))),
+    before,
+    words.flatMap((w) => storedUnits(w)),
     author,
   )
 

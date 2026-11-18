@@ -4,8 +4,8 @@ import type { ActorKind } from "@shinan/db"
  * Where the words of a document came from, for the `written_by` credit of
  * its sections (catalog §12.4) and so for trust labels (agent integrations).
  *
- * A section's words are cut into units: normalised word 5-grams, or the
- * whole of a shorter part (`sectionWords`). For each unit that ever
+ * A section's words are cut into units: normalised word 3-grams, or the
+ * whole of a one- or two-word body (`sectionWords`). For each unit that ever
  * appeared in the document, the provenance keeps the least-trusted author
  * who introduced it, in any revision: a unit is introduced by a revision
  * whose body has it when the document's previous revision did not. Units
@@ -32,42 +32,51 @@ export interface Author {
   author: string
 }
 
-/** Units of five words; shorter text is one unit of its own. */
-const gram = 5
-/**
- * A unit of three or four words is also found inside longer text, so a
- * person cannot lift a short agent sentence by writing around it.
- */
-const shortestFound = 3
+/** Units of three words; a shorter body is one unit of its own. */
+const gram = 3
+
+/** Characters a reader never sees: zero-width spaces and joiners, bidi marks, soft hyphens, variation selectors. */
+const invisible = /\p{Default_Ignorable_Code_Point}/gu
 
 /**
- * Words with NFKC, lower case, and Markdown markers, punctuation and
- * symbols dropped, so rewrapping, merging or splitting lines, list
- * markers, emphasis, heading levels and punctuation change nothing.
+ * The words a reader sees: invisible characters removed, NFKC, lower case,
+ * Markdown markers, punctuation and symbols dropped, and nothing made only
+ * of combining marks. Rewrapping, merging or splitting lines, list markers,
+ * emphasis, heading levels, punctuation and invisible characters change
+ * nothing.
  */
 export function normalisedWords(text: string): string[] {
   return text
+    .replace(invisible, "")
     .normalize("NFKC")
+    .replace(invisible, "")
     .toLowerCase()
     .split(/[^\p{L}\p{N}\p{M}]+/u)
-    .filter((w) => w !== "")
+    .filter((w) => w !== "" && !/^\p{M}+$/u.test(w))
+}
+
+/** One part of a section: its words, and two 32-bit hashes of each. */
+export interface Part {
+  words: string[]
+  a: Uint32Array
+  b: Uint32Array
 }
 
 /**
  * A section's words in two parts, its heading line and the rest, each cut
- * into units on its own, as hashes of each word. A heading of one or two
- * words (`Notes`) gives no unit, so a shared heading alone carries no
- * credit; a longer one does, since a heading can carry an instruction too.
+ * into units on its own. A heading of one or two words (`Notes`) gives no
+ * unit, so a shared heading alone carries no credit; a longer one does,
+ * since a heading can carry an instruction too.
  */
 export interface SectionWords {
-  heading: WordHashes
-  body: WordHashes
+  heading: Part
+  body: Part
 }
 
-/** Two 32-bit hashes of each word, so units are hashed without reading words twice. */
-interface WordHashes {
-  a: Uint32Array
-  b: Uint32Array
+/** A unit: the hash that keys it, and its words, to tell a real match from a hash collision. */
+export interface Unit {
+  hash: number
+  words: string
 }
 
 export function sectionWords(section: {
@@ -75,18 +84,18 @@ export function sectionWords(section: {
   text: string
 }): SectionWords {
   if (section.anchor === null)
-    return { heading: hashes([]), body: hashes(normalisedWords(section.text)) }
+    return { heading: part([]), body: part(normalisedWords(section.text)) }
   const end = section.text.search(/\r\n|\r|\n/)
   return end < 0
-    ? { heading: hashes(normalisedWords(section.text)), body: hashes([]) }
+    ? { heading: part(normalisedWords(section.text)), body: part([]) }
     : {
-        heading: hashes(normalisedWords(section.text.slice(0, end))),
-        body: hashes(normalisedWords(section.text.slice(end))),
+        heading: part(normalisedWords(section.text.slice(0, end))),
+        body: part(normalisedWords(section.text.slice(end))),
       }
 }
 
 /** FNV-1a and a second, differently seeded hash of each word. */
-function hashes(words: readonly string[]): WordHashes {
+function part(words: string[]): Part {
   const a = new Uint32Array(words.length)
   const b = new Uint32Array(words.length)
   words.forEach((word, w) => {
@@ -101,49 +110,61 @@ function hashes(words: readonly string[]): WordHashes {
     a[w] = x
     b[w] = y
   })
-  return { a, b }
+  return { words, a, b }
 }
 
-/** The units a section introduces: 5-grams, or a shorter part whole. */
-export function storedUnits(words: SectionWords): number[] {
-  return [
-    ...partUnits(words.heading, shortestFound),
-    ...partUnits(words.body, 1),
-  ]
+/**
+ * The units a section brings: the word 3-grams of each part, or a body of
+ * one or two words whole.
+ */
+export function storedUnits(words: SectionWords): Unit[] {
+  return [...partUnits(words.heading, false), ...partUnits(words.body, true)]
 }
 
-/** The units a section is looked up by: its stored units, and the 3- and 4-grams of longer parts. */
+/**
+ * The hashes a section is looked up by: its units, and the 2-grams of
+ * longer parts, which find a one- or two-word body written around.
+ */
 export function foundUnits(words: SectionWords): number[] {
-  const units = storedUnits(words)
-  for (const part of [words.heading, words.body])
-    if (part.a.length > shortestFound)
-      for (let n = shortestFound; n < gram; n++)
-        for (let i = 0; i + n <= part.a.length; i++)
-          units.push(hashUnit(part, i, n))
-  return units
+  const hashes = storedUnits(words).map((u) => u.hash)
+  for (const p of [words.heading, words.body])
+    if (p.words.length > 2)
+      for (let i = 0; i + 2 <= p.words.length; i++)
+        hashes.push(hashUnit(p, i, 2))
+  return hashes
 }
 
-function partUnits(words: WordHashes, fewest: number): number[] {
-  const length = words.a.length
-  if (length < fewest || length === 0) return []
-  if (length < gram) return [hashUnit(words, 0, length)]
-  const units: number[] = []
-  for (let i = 0; i + gram <= length; i++) units.push(hashUnit(words, i, gram))
+function partUnits(p: Part, short: boolean): Unit[] {
+  const length = p.words.length
+  if (length === 0) return []
+  if (length < gram)
+    return short
+      ? [{ hash: hashUnit(p, 0, length), words: p.words.join(" ") }]
+      : []
+  const units: Unit[] = []
+  for (let i = 0; i + gram <= length; i++)
+    units.push({
+      hash: hashUnit(p, i, gram),
+      words: p.words.slice(i, i + gram).join(" "),
+    })
   return units
 }
 
 /**
  * A 53-bit hash of words `from` to `from + count`, as a JavaScript number
- * (so it can key a Map), combined from the words' two hashes. Collisions
- * inside one document are out of practical reach.
+ * (so it can key a Map), combined from the words' two hashes. It is not
+ * secret: a collision only ever makes a credit more cautious, since a
+ * revision's words are compared with the previous revision's as words, not
+ * hashes (`Provenance.introduce`), and any stored hash a section has counts
+ * against it.
  */
-function hashUnit(words: WordHashes, from: number, count: number): number {
+function hashUnit(p: Part, from: number, count: number): number {
   let a = 0x811c9dc5 ^ count
   let b = 0x01000193 ^ count
   for (let w = from; w < from + count; w++) {
-    a = Math.imul(a ^ words.a[w]!, 0x01000193)
+    a = Math.imul(a ^ p.a[w]!, 0x01000193)
     a ^= a >>> 13
-    b = Math.imul(b ^ words.b[w]!, 0x5bd1e995)
+    b = Math.imul(b ^ p.b[w]!, 0x5bd1e995)
     b ^= b >>> 15
   }
   return (a >>> 11) * 0x100000000 + (b >>> 0)
@@ -167,16 +188,21 @@ export class Provenance {
     return place
   }
 
-  /** Records the units `author` introduced: those in `current` and not in `previous`. */
+  /**
+   * Records the units `author` introduced: those in `current` whose words
+   * the previous revision did not have. Words, not hashes, decide what was
+   * there before, so a unit whose hash merely matches earlier text is
+   * still recorded.
+   */
   introduce(
-    previous: ReadonlySet<number>,
-    current: ReadonlySet<number>,
+    previous: ReadonlyMap<number, ReadonlySet<string>>,
+    current: readonly Unit[],
     author: Author,
   ): void {
     if (trust[author.kind] >= trust.person) return
     const place = this.place(author)
-    for (const unit of current) {
-      if (previous.has(unit)) continue
+    for (const { hash: unit, words } of current) {
+      if (previous.get(unit)?.has(words)) continue
       const known = this.units.get(unit)
       if (
         known === undefined ||
