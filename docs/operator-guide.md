@@ -324,8 +324,9 @@ time, every proposal there fails with `catalog-too-large` or
 impossible; if it happens, raise `SHINAN_CATALOG_WORKER_HEAP_MB` (and the
 container's memory) until proposals apply, have the workspace make room in
 its catalog as [catalog §8.2](catalog.md#82-when-catalog-approval-is-needed) says (shorten
-documents, remove facts no longer needed, fix what validation warns about; a
-change that does not grow the catalog always applies), then lower it again,
+documents, remove facts no longer needed, fix the warnings it holds, such as
+suspected secrets and keys outside their type's schema; a change that does not
+grow the catalog always applies), then lower it again,
 and report it.
 
 ## Stopping and removing

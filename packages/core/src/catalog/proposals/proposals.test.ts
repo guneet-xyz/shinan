@@ -36,6 +36,7 @@ import { CatalogWorkers, replaceCatalogWorkers } from "./pool.js"
 import type { Prepare } from "./pool.js"
 import {
   approveCatalogProposal,
+  catalogLimits,
   checkCatalogSize,
   getCatalogProposal,
   listCatalogProposals,
@@ -1036,7 +1037,7 @@ describe("the catalog size limit", () => {
       message = (error as RuleViolationError).message
     }
     expect(message).toMatch(
-      /^This change would take .* to 3 MiB in memory, past 1 MiB\./,
+      /^This change would take .* to 3\.0 MiB in memory, past 1 MiB\./,
     )
     expect(message).not.toMatch(/documents, past|of text, past/)
     expect(message).not.toMatch(/facts count most|Retire/)
@@ -1045,10 +1046,48 @@ describe("the catalog size limit", () => {
     for (const way of [
       "edit-body",
       "remove-fact",
-      "dead links",
+      "suspected secrets",
+      "keys outside their type's schema",
+      "task statuses",
+      "owners not linked",
+      "start-here steps",
       "catalog §8.2",
     ])
       expect(message).toContain(way)
+    // A link that resolves nowhere is blocking, so no stored catalog has one.
+    expect(message).not.toContain("dead links")
+  })
+
+  it("reads above the limit for a change just past it", () => {
+    const real = catalogLimits
+    const within = {
+      bytesBefore: real.bytes,
+      bytes: real.bytes,
+      documentsBefore: real.documents,
+      documents: real.documents,
+      estimatedBefore: real.estimatedBytes,
+      estimated: real.estimatedBytes,
+    }
+    const messageOf = (size: Parameters<typeof checkCatalogSize>[0]) => {
+      try {
+        checkCatalogSize(size)
+      } catch (error) {
+        return (error as RuleViolationError).message
+      }
+      throw new Error("Not refused")
+    }
+    expect(() => checkCatalogSize(within)).not.toThrow()
+    expect(messageOf({ ...within, documents: real.documents + 1 })).toMatch(
+      /^This change would take the workspace's catalog to 20001 documents, past 20000\./,
+    )
+    expect(messageOf({ ...within, bytes: real.bytes + 100 })).toMatch(
+      /^This change would take the workspace's catalog to 50\.1 MiB of text, past 50 MiB\./,
+    )
+    expect(
+      messageOf({ ...within, estimated: real.estimatedBytes + 4096 }),
+    ).toMatch(
+      /^This change would take the workspace's catalog to 320\.1 MiB in memory, past 320 MiB\./,
+    )
   })
 
   it("lets a change that shrinks or stays within it apply", () => {

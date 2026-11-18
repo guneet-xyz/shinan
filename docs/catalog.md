@@ -1499,9 +1499,13 @@ how proposals are applied and classed (`packages/core`, `catalog/proposals`).
   takes it past any of these and grows it is refused (`catalog-full`, which
   says which limit); one that does not grow it always applies. To make room:
   shorten documents (`edit-body`), remove facts no longer needed
-  (`remove-fact`), and fix what validation warns about, such as dead links,
-  keys outside their type's schema and suspected secrets. Retiring an entity
-  keeps its text, so it does not make room. Raised from 5,000 documents and
+  (`remove-fact`), and fix the warnings a stored catalog can hold, each of
+  which counts: suspected secrets, keys outside their type's schema, task
+  statuses written as facts, owners not linked to a current member, and
+  start-here steps to retired entities or entities with discrepancies
+  ([8.3](#83-validation)). Links count whether or not they resolve; one that
+  resolves nowhere is blocking, so a stored catalog holds none. Retiring an
+  entity keeps its text, so it does not make room. Raised from 5,000 documents and
   25 MiB when validation became incremental
   ([#116](https://github.com/guneet-xyz/shinan/issues/116), "Cost" in
   [8.3](#83-validation)): at the new limits a one-field change took 0.1 to
