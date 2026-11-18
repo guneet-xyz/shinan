@@ -130,16 +130,28 @@ lines, then a Markdown body.
   object member (`__proto__`, `constructor`). Reason: every reader (the
   index, the export, a person) then agrees on what the text says.
 - **Proposed (M2-1):** limits on what Shinan reads, checked before anything
-  else. A document is at most 64 KiB (65,536 bytes of UTF-8); the largest
-  `workspace` repository document is about 19 KB. In the body, a line may
-  start with at most 32 nested quote or list markers, at most 1,000 quotes or
-  list items may be opened inside others, and at most 500 lines may consist
-  of only `=` or `-` (setext heading underlines). Emphasis, inline HTML and
-  hard line breaks are not parsed in the body model, which uses only
-  headings and links. Longer or deeper documents are refused (`too-large`,
-  `body-invalid`). Reason: the Markdown parser's time grows with the square
-  of these on hostile input (a 64 KB body of nested lists took over a
-  minute), and every proposal, MCP write and index rebuild reads documents.
+  else. A document is at most 64 KiB of UTF-8 (65,536 bytes); the largest
+  `workspace` repository document is about 19 KB. In the body, counting lines
+  the way Markdown does (a line ends at `\n`, `\r\n` or a lone `\r`):
+  - a line may start with at most 32 nested quote or list markers;
+  - at most 1,000 quotes or list items may be opened inside others;
+  - at most 1,000 separate quotes or lists may be started;
+  - at most 1,000 lines may continue a quote or list paragraph without its
+    markers (lazy continuation lines);
+  - at most 500 lines may consist of only `=` or `-` (setext heading
+    underlines), counted also inside quotes and lists.
+
+  Emphasis, inline HTML and hard line breaks are not parsed in the body
+  model, which uses only headings and links. Longer or more complex
+  documents are refused (`too-large`, `body-invalid`). Reason: the Markdown
+  parser's time grows with the square of these on hostile input (a 64 KB
+  body of nested lists took over a minute), and every proposal, MCP write
+  and index rebuild reads documents. Real documents stay far below the
+  limits (the most quote or list blocks any `workspace` document opens is
+  72). These checks cannot be proven complete, so proposal and MCP text is
+  also read off the main event loop with a time limit
+  ([security checklist 10.8](security-checklist.md#10-features-not-built-yet);
+  M2-4, M2-6).
 
 ### 2.2 Export: the exit path
 
@@ -678,11 +690,23 @@ Reasons for the parts marked M2-1
 identity, writing a fact in a new state does not by itself replace the fact
 in the old one. A change of state (a `planned` fact becoming `intended` or
 `observed`, an `unknown` fact becoming known) is one operation that names the
-identity it supersedes, removes that fact and sets the new one. Writing a
-known (`intended` or `observed`) value also removes, in the same operation,
-an `unknown` fact of the same key (and, for a relation, the same target), since it is no longer unknown; it never happens by
-omission. Reason: replace-or-add stays a simple rule on identities, while
-plans and unknowns do not linger beside the facts that settled them.
+identity it supersedes, removes that fact and sets the new one. Reason:
+replace-or-add stays a simple rule on identities, while plans and unknowns
+do not linger beside the facts that settled them.
+
+**Known values and `unknown` facts** (**proposed**, M2-1; owner's direction
+on [#95](https://github.com/guneet-xyz/shinan/pull/95)). Writing a known
+(`intended` or `observed`) value removes, in the same operation, an `unknown`
+fact it settles:
+
+- for a single-valued key or relation, the `unknown` fact of the same key;
+- for a multi-valued relation, an `unknown` fact that names the same target.
+
+An `unknown` fact of a multi-valued key, or of a multi-valued relation with
+no target, means "there may be more", so writing one known value does not
+settle it; it stays until it is removed explicitly. Nothing is ever removed
+by omission. Reason: one known endpoint does not mean every endpoint is
+known.
 
 **The fact identity key** (**proposed**, M2-1): every fact gets one line of
 text naming its identity, derived when the document is read and never
@@ -794,8 +818,14 @@ Rules:
   source declares the change, a new `intended` fact replaces it; when the
   change is seen in the world, a new `observed` fact records it. Both come
   with fact checks, and the operation names the `planned` fact it replaces
-  ([4.2](#42-fact-identity-cardinality-and-current-facts), a change of state). **Proposed.** Reason: the `workspace` repository's rule
-  that "planned changes are proposals until implemented and verified".
+  ([4.2](#42-fact-identity-cardinality-and-current-facts), a change of
+  state). **Proposed.** Reason: the `workspace` repository's rule that
+  "planned changes are proposals until implemented and verified".
+- An `unknown` fact becomes known the same way, by an operation that names
+  it; a known value settles an `unknown` fact automatically only for a
+  single-valued key, or a relation naming the same target
+  ([4.2](#42-fact-identity-cardinality-and-current-facts)). **Proposed
+  (M2-1).**
 - A merged change that is not yet applied is `intended`; its absence in the
   world shows as a [discrepancy](#47-discrepancies) with the `observed` fact.
   **Proposed** (glossary test). Reason: drift between source and reality is
@@ -964,6 +994,12 @@ Two lists are generated, and kept apart (**proposed**):
 Missing required keys are not validation errors, so entities can be created
 from partial knowledge. **Proposed.** Reason: the `workspace` templates say to
 record `unknown` rather than invent information.
+
+A known unknown leaves the list when a known value settles it (a
+single-valued key, or a relation naming the same target) or when it is
+removed explicitly; an `unknown` fact of a multi-valued key stays until it is
+removed explicitly ([4.2](#42-fact-identity-cardinality-and-current-facts),
+known values and `unknown` facts). **Proposed (M2-1).**
 
 ## 5. Relations
 

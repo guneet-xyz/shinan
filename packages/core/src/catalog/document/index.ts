@@ -88,6 +88,16 @@ export type {
   TypeRegistry,
   TypeSchema,
 } from "./schemas.js"
+export {
+  bodyShape,
+  maxContainerBlocks,
+  maxLazyLines,
+  maxNestedContainers,
+  maxNesting,
+  maxUnderlines,
+  tooComplex,
+} from "./limits.js"
+export type { BodyShape } from "./limits.js"
 export { lineRange, positionAt, utf8Length } from "./source.js"
 export type { Position, Range } from "./source.js"
 export type {

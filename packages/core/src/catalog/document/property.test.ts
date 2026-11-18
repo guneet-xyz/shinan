@@ -1,12 +1,16 @@
 import fc from "fast-check"
 import { describe, expect, it } from "vitest"
 
+import { noReadFailure } from "../../../test/catalog-documents.js"
 import { readCatalog } from "./catalog.js"
 import { parseFactIdentityKey } from "./identity.js"
 import type { FactState } from "./model.js"
-import { parseCatalogDocument } from "./parse.js"
+import { parseCatalogDocument as readDocument } from "./parse.js"
 import { slice } from "./source.js"
 import { parseYaml } from "./yaml.js"
+
+/** Reads a document, failing the test on an unexpected read failure. */
+const parseCatalogDocument = (text: string) => noReadFailure(readDocument(text))
 
 /**
  * Property tests: random valid entity documents, written in the styles the

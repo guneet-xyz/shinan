@@ -166,3 +166,15 @@ agents:
 
 # Start here
 `
+
+/**
+ * Fails the test if reading hit the never-throws backstop (`read-failed`):
+ * that is a bug in Shinan or a dependency, not a refusal.
+ */
+export function noReadFailure<
+  T extends { problems: { code: string; message: string }[] },
+>(document: T): T {
+  const failed = document.problems.find((p) => p.code === "read-failed")
+  if (failed) throw new Error(`Reading failed unexpectedly: ${failed.message}`)
+  return document
+}

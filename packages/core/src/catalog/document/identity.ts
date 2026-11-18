@@ -92,9 +92,10 @@ export function parseFactIdentityKey(
 /**
  * The identity key without its fact state, for linking facts that differ only
  * in state: a planned removal and the fact it removes, or an intended and an
- * observed value of the same key.
+ * observed value of the same key. Null if `identity` is not an identity key.
  */
-export function identityWithoutState(identity: FactIdentityKey): string {
+export function identityWithoutState(identity: string): string | null {
+  if (parseFactIdentityKey(identity) === null) return null
   const parts = identity.split("|")
   parts.splice(1, 1)
   return parts.join("|")

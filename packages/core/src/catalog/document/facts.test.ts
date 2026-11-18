@@ -5,6 +5,7 @@ import {
   domainSchema,
   guneetDev,
   musashi,
+  noReadFailure,
 } from "../../../test/catalog-documents.js"
 import {
   discrepancies,
@@ -19,8 +20,11 @@ import {
   identityWithoutState,
   parseFactIdentityKey,
 } from "./identity.js"
-import { parseCatalogDocument } from "./parse.js"
+import { parseCatalogDocument as readDocument } from "./parse.js"
 import { buildTypeRegistry, builtInSchemas } from "./schemas.js"
+
+/** Reads a document, failing the test on an unexpected read failure. */
+const parseCatalogDocument = (text: string) => noReadFailure(readDocument(text))
 
 const builtIns = buildTypeRegistry([])
 
@@ -29,6 +33,7 @@ function resolve(written: string, schemas: string[] = []) {
   const text =
     (written.match(/^---$/gm) ?? []).length < 2 ? `${written}---\n` : written
   const catalog = readCatalog([...schemas, text])
+  for (const d of catalog.documents) noReadFailure(d)
   const id = parseCatalogDocument(text).id
   const entity = catalog.entities.get(id ?? "")
   if (!entity) throw new Error("expected an entity")
@@ -496,6 +501,7 @@ describe("facts and their checks", () => {
     expect(identityWithoutState(observed!.identity)).toBe(
       "on-network|to=service/tailscale",
     )
+    expect(identityWithoutState("weird")).toBeNull()
   })
 
   it("refuses an identifying attribute named like an object member", () => {

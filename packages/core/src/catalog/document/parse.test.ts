@@ -4,11 +4,18 @@ import {
   dockyard,
   domainSchema,
   musashi,
+  noReadFailure,
   startHere,
 } from "../../../test/catalog-documents.js"
-import { maxDocumentBytes, parseCatalogDocument } from "./parse.js"
+import {
+  maxDocumentBytes,
+  parseCatalogDocument as readDocument,
+} from "./parse.js"
 import type { ProblemCode } from "./problems.js"
 import { slice } from "./source.js"
+
+/** Reads a document, failing the test on an unexpected read failure. */
+const parseCatalogDocument = (text: string) => noReadFailure(readDocument(text))
 
 function entity(text: string) {
   const document = parseCatalogDocument(text)
@@ -545,6 +552,16 @@ describe("hostile input", () => {
       "setext headings just under the limit",
       ("a\n===\n".repeat(490) + fill("x\n\n", room)).slice(0, room),
     ],
+    [
+      "separate quotes just under the limit",
+      ("> b\n\n".repeat(990) + fill("x\n\n", room)).slice(0, room),
+    ],
+    [
+      "lazy lines just under the limit",
+      (`> a\n${"b\n".repeat(990)}\n` + fill("x\n\n", room)).slice(0, room),
+    ],
+    ["a long single quote", fill("> a\n", room)],
+    ["a long single list", fill("- a\n", room)],
   ])(
     "reads %s quickly",
     (_, body) => {
@@ -572,6 +589,58 @@ describe("hostile input", () => {
       "inside others",
     ],
     ["many setext headings", fill("a\n===\n", room), "lines of only"],
+    // Line breaks as micromark reads them: CR alone, and CR LF mixed with CR.
+    [
+      "quotes reopened inside quotes, CR line breaks",
+      fill("> > a\r> \r", room),
+      "inside others",
+    ],
+    [
+      "setext headings, CR line breaks",
+      fill("a\r===\r", room),
+      "lines of only",
+    ],
+    [
+      "two-level lists, CR line breaks",
+      fill("- a\r  - b\r", room),
+      "inside others",
+    ],
+    [
+      "two-level lists, mixed line breaks",
+      fill("- a\r\n  - b\r", room),
+      "inside others",
+    ],
+    [
+      "setext headings inside quotes",
+      fill("> a\n> ===\n", room),
+      "lines of only",
+    ],
+    [
+      "thematic breaks inside quotes",
+      fill("> a\n> ---\n", room),
+      "lines of only",
+    ],
+    ["many separate quotes", fill("> b\n\n", room), "separate quotes"],
+    [
+      "lists interrupted by paragraphs",
+      fill("- b\n\nc\n\n", room),
+      "separate quotes",
+    ],
+    [
+      "empty quotes between paragraphs",
+      fill(">\nb\n", room),
+      "separate quotes",
+    ],
+    [
+      "one quote with lazy lines",
+      `> a\n${fill("b\n", room - 4)}`,
+      "without its markers",
+    ],
+    [
+      "a deep quote with lazy lines",
+      `${"> ".repeat(32)}a\n${"b\n".repeat(20_000)}`,
+      "without its markers",
+    ],
   ])(
     "refuses %s quickly, without throwing",
     (_, body, reason) => {

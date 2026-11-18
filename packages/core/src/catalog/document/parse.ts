@@ -69,10 +69,11 @@ export function parseCatalogDocument(text: string): CatalogDocument {
   try {
     return read(text)
   } catch (error) {
-    // A backstop: nothing below should throw, but a dependency might.
+    // A backstop: nothing below should throw, but a dependency might. Its
+    // own code, so tests can tell a bug from a refusal.
     return unread(
       text,
-      "frontmatter-invalid",
+      "read-failed",
       `The document could not be read: ${error instanceof Error ? error.message : String(error)}`,
     )
   }
@@ -118,12 +119,13 @@ function read(text: string): CatalogDocument {
   try {
     body = parseBody(text.slice(split.bodyStart), split.bodyStart)
   } catch (error) {
-    reader.problem(
-      "body-invalid",
-      error instanceof BodyTooComplexError
-        ? error.message
-        : `The body could not be read: ${error instanceof Error ? error.message : String(error)}`,
-    )
+    if (error instanceof BodyTooComplexError)
+      reader.problem("body-invalid", error.message)
+    else
+      reader.problem(
+        "read-failed",
+        `The body could not be read: ${error instanceof Error ? error.message : String(error)}`,
+      )
     body = {
       range: { start: split.bodyStart, end: text.length },
       text: text.slice(split.bodyStart),

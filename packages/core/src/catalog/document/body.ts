@@ -2,6 +2,7 @@ import type { Nodes, Root } from "mdast"
 import { fromMarkdown } from "mdast-util-from-markdown"
 import { toString } from "mdast-util-to-string"
 
+import { bodyShape, tooComplex } from "./limits.js"
 import type { Range } from "./source.js"
 
 /**
@@ -68,37 +69,15 @@ const options = {
 }
 
 /**
- * Limits checked before micromark reads the body. Its time grows with the
- * square of the nesting depth of quotes and lists on a line, of the number
- * of quotes and lists opened inside others, and of the number of setext
- * headings (text underlined with `===` or `---`), so input past these
- * limits is refused. Real documents stay far below them.
- */
-export const maxNesting = 32
-export const maxNestedContainers = 1000
-export const maxUnderlines = 500
-
-/**
- * Thrown when a body goes past the limits above;
+ * Thrown when a body goes past the limits of `limits.ts`;
  * `parseCatalogDocument` reports it as a problem.
  */
 export class BodyTooComplexError extends Error {}
 
 /** Parses the body that starts at `offset` in the document. */
 export function parseBody(text: string, offset: number): Body {
-  const { deepest, nested, underlines } = nesting(text)
-  if (deepest > maxNesting)
-    throw new BodyTooComplexError(
-      `A line nests quotes or lists ${deepest} deep; at most ${maxNesting} are read`,
-    )
-  if (nested > maxNestedContainers)
-    throw new BodyTooComplexError(
-      `The body opens ${nested} quotes or list items inside others; at most ${maxNestedContainers} are read`,
-    )
-  if (underlines > maxUnderlines)
-    throw new BodyTooComplexError(
-      `The body has ${underlines} lines of only = or -; at most ${maxUnderlines} are read`,
-    )
+  const refusal = tooComplex(bodyShape(text))
+  if (refusal) throw new BodyTooComplexError(refusal)
   const tree = fromMarkdown(text, options)
   return {
     range: { start: offset, end: offset + text.length },
@@ -106,90 +85,6 @@ export function parseBody(text: string, offset: number): Body {
     sections: splitSections(tree, text, offset),
     links: collectLinks(tree, offset),
   }
-}
-
-/**
- * Scans the start of every line for quote markers (`>`) and list markers
- * (`-`, `*`, `+`, `1.`, `1)`) separated only by spaces and tabs. Returns the
- * most markers on one line, and how many markers probably open a quote or
- * list item inside another: after another marker on the same line, or a
- * list marker indented by two or more columns. Also counts lines of only `=`
- * or `-`, which may underline setext headings.
- */
-function nesting(text: string): {
-  deepest: number
-  nested: number
-  underlines: number
-} {
-  let deepest = 0
-  let nested = 0
-  let underlines = 0
-  let depth = 0
-  let indent = 0
-  let atStart = true
-  let lineStart = 0
-  for (let i = 0; i < text.length; i++) {
-    const c = text.charCodeAt(i)
-    if (c === 10) {
-      if (underline(text, lineStart, i)) underlines++
-      lineStart = i + 1
-      atStart = true
-      depth = 0
-      indent = 0
-      continue
-    }
-    if (!atStart) continue
-    if (c === 32 || c === 9 || c === 13) {
-      if (depth === 0) indent += c === 9 ? 4 : c === 32 ? 1 : 0
-      continue
-    }
-    let list = false
-    if (c === 62) {
-      if (depth > 0) nested++
-      depth++
-    } else if ((c === 45 || c === 42 || c === 43) && isSpace(text, i + 1)) {
-      list = true
-    } else if (isDigit(c)) {
-      let j = i
-      while (j < text.length && j - i < 9 && isDigit(text.charCodeAt(j))) j++
-      const mark = text.charCodeAt(j)
-      if ((mark === 46 || mark === 41) && isSpace(text, j + 1)) {
-        list = true
-        i = j
-      } else atStart = false
-    } else {
-      atStart = false
-    }
-    if (list) {
-      if (depth > 0 || indent >= 2) nested++
-      depth++
-    }
-    if (depth > deepest) deepest = depth
-  }
-  if (underline(text, lineStart, text.length)) underlines++
-  return { deepest, nested, underlines }
-}
-
-/** Whether `text[start, end)` is a line of only `=` or only `-`, with spaces around. */
-function underline(text: string, start: number, end: number): boolean {
-  let mark = 0
-  for (let i = start; i < end; i++) {
-    const c = text.charCodeAt(i)
-    if (c === 32 || c === 9 || c === 13) continue
-    if (c !== 61 && c !== 45) return false
-    if (mark !== 0 && c !== mark) return false
-    mark = c
-  }
-  return mark !== 0
-}
-
-function isSpace(text: string, i: number): boolean {
-  const c = text.charCodeAt(i)
-  return Number.isNaN(c) || c === 32 || c === 9 || c === 10 || c === 13
-}
-
-function isDigit(c: number): boolean {
-  return c >= 48 && c <= 57
 }
 
 function splitSections(tree: Root, text: string, offset: number): Section[] {

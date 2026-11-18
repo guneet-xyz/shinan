@@ -13,8 +13,13 @@ export type ProblemCode =
   | "too-large"
   /** The frontmatter is missing, is not YAML, or uses YAML outside the allowed subset (catalog §2.1). */
   | "frontmatter-invalid"
-  /** The body could not be read as Markdown. */
+  /** The body is past the limits on what Shinan reads (catalog §2.1). */
   | "body-invalid"
+  /**
+   * Reading failed unexpectedly: a bug in Shinan or a dependency, reported
+   * instead of thrown. Tests fail when they see it.
+   */
+  | "read-failed"
   /** A required document field is missing (catalog §2.3, §3.9, §11). */
   | "field-missing"
   /** A document field has the wrong form, or is not a field of this kind of document. */
