@@ -19,20 +19,22 @@ import type { Prepared, PrepareInput } from "./work.js"
 /**
  * Limits of the catalog workers. **Proposed (M2-4):** the numbers below,
  * sized so that a workspace at its catalog size limit (`catalogLimits`)
- * fits in one worker's cache and heap.
+ * fits in one worker's cache and heap with margin.
  */
 export interface CatalogWorkerOptions {
   /** How long one proposal may take to apply, validate and classify, once its documents are parsed. */
   timeLimitMs?: number
   /** How long one batch of stored texts may take to parse. */
   loadLimitMs?: number
-  /** Stored texts read and parsed per batch. */
-  loadBatch?: number
+  /** Stored texts read from the database at a time. */
+  readBatch?: number
+  /** Bytes of stored text parsed per batch, each batch with its own limit. */
+  loadBatchBytes?: number
   /** Each worker's parse cache, in estimated bytes (`estimatedBytes`). */
   cacheBytes?: number
   /** Each worker's heap limit (`resourceLimits.maxOldGenerationSizeMb`). */
   heapMb?: number
-  /** Workers kept at once, one per workspace; an idle one makes way for another workspace. */
+  /** Workers at once, each keeping one workspace's catalog. */
   workers?: number
   /** Requests one workspace may have running or waiting. */
   queuePerWorkspace?: number
@@ -42,19 +44,33 @@ export interface CatalogWorkerOptions {
 
 export const defaultWorkerOptions: Required<CatalogWorkerOptions> = {
   /**
-   * 20 s. A proposal on the trial's catalog takes milliseconds; the slowest
-   * one within the limits (a 100-fact recheck of a 54 KB document) took
-   * about 8 s on a busy Daedalus.
+   * 20 s. A one-field change on a catalog at its limits took 2 to 4.3 s on
+   * Daedalus under a load of 4 to 5 on 2 cores; the slowest proposal
+   * within the operation limits (a 100-fact recheck of a 54 KB document)
+   * about 8 s.
    */
   timeLimitMs: 20_000,
-  /** 60 s for 100 texts: about 2 s for 100 documents of 57 KB. */
+  /**
+   * 60 s per batch of 512 KiB: parsing took at most about 2 ms per KB
+   * (documents full of facts, or of links), so about 1 s a batch.
+   */
   loadLimitMs: 60_000,
-  loadBatch: 100,
-  /** 768 MiB: a workspace at its size limit, 100 MiB of text, estimates at most about 720 MiB. */
-  cacheBytes: 768 * 1024 * 1024,
-  /** 1.5 GiB: the cache, and one proposal's work on top. */
-  heapMb: 1536,
-  workers: 2,
+  readBatch: 100,
+  loadBatchBytes: 512 * 1024,
+  /** 384 MiB: a catalog at its limit estimates at most 320 MiB. */
+  cacheBytes: 384 * 1024 * 1024,
+  /**
+   * 768 MiB. Applying a one-field change to a catalog at its limits peaked
+   * at 413 MiB of heap (1,620 documents of 100 facts, the shape that takes
+   * the most), and at 109 to 344 MiB for other shapes. Operators set it
+   * with `SHINAN_CATALOG_WORKER_HEAP_MB`.
+   */
+  heapMb: 768,
+  /**
+   * One: the reference host shares 8 GiB with other services. Operators
+   * set it with `SHINAN_CATALOG_WORKERS`.
+   */
+  workers: 1,
   queuePerWorkspace: 8,
   queueTotal: 32,
 }
@@ -73,15 +89,28 @@ export type TextLoader = (
   documents: readonly LatestDocument[],
 ) => Promise<LoadedText[]>
 
+/** Applies a proposal to these documents in the workspace's worker. */
+export type Prepare = (
+  documents: readonly LatestDocument[],
+  load: TextLoader,
+  input: PrepareInput,
+) => Promise<Prepared>
+
 /**
- * The catalog workers (security checklist 10.8): one worker thread per
- * workspace with proposals, up to `workers` at once, each keeping that
- * workspace's catalog parsed.
+ * The catalog workers (security checklist 10.8): worker threads, `workers`
+ * of them, each keeping one workspace's catalog parsed.
  *
+ * - **One turn at a time per workspace, first come first served.** A turn
+ *   (`run`) is a whole proposal: reading the latest revision, applying in
+ *   the worker and storing. So within a process no proposal works on a
+ *   revision that another one replaces before it is stored.
+ * - **Workers are shared fairly.** A turn takes one of `workers` permits,
+ *   first come first served across workspaces. A workspace without a
+ *   worker then takes over the one least recently used.
  * - **Loading is not charged to a proposal.** Documents a worker has not
- *   parsed are read and parsed first, in batches of `loadBatch`, each with
- *   its own limit, and kept as they come; a proposal's time limit starts
- *   once every document it needs is parsed.
+ *   parsed are read and parsed first, in batches of `loadBatchBytes`, each
+ *   with its own limit, and kept as they come; a proposal's time limit
+ *   starts once every document it needs is parsed.
  * - **A proposal past its time limit** stops only its own workspace's
  *   worker; the next proposal there loads the catalog again.
  * - **Memory** is bounded by each cache's byte budget and each worker's
@@ -95,24 +124,26 @@ export type TextLoader = (
 export class CatalogWorkers {
   private readonly options: Required<CatalogWorkerOptions>
   private readonly slots = new Map<string, Slot>()
-  /** Requests waiting for a worker of their own, oldest first. */
-  private readonly waiting: (() => void)[] = []
+  private readonly permits: Permits
   private total = 0
 
   constructor(options: CatalogWorkerOptions = {}) {
     this.options = { ...defaultWorkerOptions, ...options }
+    this.permits = new Permits(this.options.workers)
   }
 
-  /** Applies a proposal to a workspace's documents, in that workspace's worker. */
-  async prepare(
+  /**
+   * Takes a turn in the workspace's queue: `work` runs when every earlier
+   * turn of the workspace has finished, with the workspace's worker.
+   * Throws `BusyError` at once when the queues are full.
+   */
+  async run<T>(
     workspaceId: string,
-    documents: readonly LatestDocument[],
-    load: TextLoader,
-    input: PrepareInput,
-  ): Promise<Prepared> {
-    const counted = this.slots.get(workspaceId)?.requests ?? 0
+    work: (prepare: Prepare) => Promise<T>,
+  ): Promise<T> {
+    const queued = this.slots.get(workspaceId)?.requests ?? 0
     if (
-      counted >= this.options.queuePerWorkspace ||
+      queued >= this.options.queuePerWorkspace ||
       this.total >= this.options.queueTotal
     )
       throw new BusyError(
@@ -125,18 +156,38 @@ export class CatalogWorkers {
     slot.requests++
     try {
       return await slot.run(async () => {
-        await this.claim(slot)
-        return slot.prepare(documents, load, input)
+        await this.permits.acquire()
+        slot.inTurn = true
+        try {
+          await this.claim(slot)
+          return await work((documents, load, input) =>
+            slot.prepare(documents, load, input),
+          )
+        } finally {
+          slot.inTurn = false
+          this.permits.release()
+        }
       })
     } finally {
       slot.requests--
       this.total--
-      if (slot.requests === 0) {
-        if (!slot.started && this.slots.get(workspaceId) === slot)
-          this.slots.delete(workspaceId)
-        this.release()
-      }
+      if (
+        slot.requests === 0 &&
+        !slot.started &&
+        this.slots.get(workspaceId) === slot
+      )
+        this.slots.delete(workspaceId)
     }
+  }
+
+  /** Applies a proposal to a workspace's documents, in a turn of its own. */
+  prepare(
+    workspaceId: string,
+    documents: readonly LatestDocument[],
+    load: TextLoader,
+    input: PrepareInput,
+  ): Promise<Prepared> {
+    return this.run(workspaceId, (prepare) => prepare(documents, load, input))
   }
 
   /** Stops every worker; the next request starts new ones. */
@@ -156,31 +207,43 @@ export class CatalogWorkers {
   }
 
   /**
-   * Waits until the slot may have a worker: it has one, or fewer than
-   * `workers` slots do, or an idle slot gives its worker up.
+   * Gives the slot a worker of its own, taking over the least recently
+   * used one that is not in a turn when all are taken. One always is:
+   * this turn holds one of the `workers` permits.
    */
   private async claim(slot: Slot): Promise<void> {
-    for (;;) {
-      if (slot.started) return
-      const started = [...this.slots.values()].filter((s) => s.started)
-      if (started.length < this.options.workers) {
-        slot.started = true
-        return
-      }
+    if (slot.started) return
+    const started = [...this.slots.values()].filter((s) => s.started)
+    if (started.length >= this.options.workers) {
       const idle = started
-        .filter((s) => s.requests === 0)
-        .sort((a, b) => a.lastUsed - b.lastUsed)[0]
-      if (idle) {
-        this.slots.delete(idle.workspaceId)
-        await idle.stop()
-        continue
-      }
-      await new Promise<void>((resolve) => this.waiting.push(resolve))
+        .filter((s) => !s.inTurn)
+        .sort((a, b) => a.lastUsed - b.lastUsed)[0]!
+      idle.started = false
+      if (idle.requests === 0) this.slots.delete(idle.workspaceId)
+      await idle.stop()
     }
+    slot.started = true
+  }
+}
+
+/** A first-come, first-served semaphore. */
+class Permits {
+  private readonly waiting: (() => void)[] = []
+
+  constructor(private free: number) {}
+
+  async acquire(): Promise<void> {
+    if (this.free > 0) {
+      this.free--
+      return
+    }
+    await new Promise<void>((resolve) => this.waiting.push(resolve))
   }
 
-  private release() {
-    for (const resolve of this.waiting.splice(0)) resolve()
+  release(): void {
+    const next = this.waiting.shift()
+    if (next) next()
+    else this.free++
   }
 }
 
@@ -189,7 +252,10 @@ class Slot {
   worker: Worker | null = null
   /** The worker, once it has started and said so. */
   private ready: Promise<Worker> | null = null
+  /** Whether the slot holds one of the workers. */
   started = false
+  /** Whether one of its turns is running. */
+  inTurn = false
   requests = 0
   lastUsed = 0
   /** Keys whose parsed text the current worker holds. */
@@ -255,24 +321,43 @@ class Slot {
     )
   }
 
-  /** Reads and parses stored texts in batches, keeping each as it comes. */
+  /**
+   * Reads stored texts in batches of `readBatch` and parses them in
+   * batches of at most `loadBatchBytes`, keeping each as it comes.
+   */
   private async load(
     documents: readonly LatestDocument[],
     load: TextLoader,
   ): Promise<void> {
-    for (let i = 0; i < documents.length; i += this.options.loadBatch) {
-      const texts = await load(documents.slice(i, i + this.options.loadBatch))
-      await this.post(
-        { id: this.nextId++, type: "load", texts },
-        this.options.loadLimitMs,
-        () =>
-          new RuleViolationError(
-            "catalog-unreadable",
-            "Shinan could not read this workspace's stored catalog in time",
-          ),
-      )
-      for (const text of texts)
-        this.known.add(cacheKey(text.documentId, text.revision))
+    for (let i = 0; i < documents.length; i += this.options.readBatch) {
+      const texts = await load(documents.slice(i, i + this.options.readBatch))
+      let batch: LoadedText[] = []
+      let bytes = 0
+      for (const text of [...texts, null]) {
+        const size = text ? Buffer.byteLength(text.text, "utf8") : 0
+        if (
+          batch.length > 0 &&
+          (text === null || bytes + size > this.options.loadBatchBytes)
+        ) {
+          await this.post(
+            { id: this.nextId++, type: "load", texts: batch },
+            this.options.loadLimitMs,
+            () =>
+              new RuleViolationError(
+                "catalog-unreadable",
+                "Shinan could not read this workspace's stored catalog in time",
+              ),
+          )
+          for (const loaded of batch)
+            this.known.add(cacheKey(loaded.documentId, loaded.revision))
+          batch = []
+          bytes = 0
+        }
+        if (text) {
+          batch.push(text)
+          bytes += size
+        }
+      }
     }
   }
 
@@ -382,6 +467,14 @@ class Slot {
 }
 
 let shared: CatalogWorkers | null = null
+
+/**
+ * Sets the limits of the process's catalog workers, when it starts: the
+ * server reads `SHINAN_CATALOG_WORKERS` and `SHINAN_CATALOG_WORKER_HEAP_MB`.
+ */
+export function configureCatalogWorkers(options: CatalogWorkerOptions): void {
+  shared = new CatalogWorkers(options)
+}
 
 /** The process's catalog workers. */
 export function catalogWorkers(): CatalogWorkers {

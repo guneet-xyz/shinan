@@ -29,7 +29,9 @@ import {
   rebuildWorkspaceIndex,
 } from "../index/indexer.js"
 import { getCatalogEntity } from "../index/queries.js"
+import { appendCatalogRevision } from "../revisions.js"
 import { CatalogWorkers, replaceCatalogWorkers } from "./pool.js"
+import type { Prepare } from "./pool.js"
 import {
   approveCatalogProposal,
   checkCatalogSize,
@@ -796,13 +798,181 @@ describe("approval, rejection and withdrawal", () => {
   })
 })
 
+describe("taking turns", () => {
+  /** Uses other catalog workers for the test, then puts the usual ones back. */
+  async function withWorkers<T>(
+    workers: CatalogWorkers,
+    test: () => Promise<T>,
+  ): Promise<T> {
+    const previous = replaceCatalogWorkers(workers)
+    try {
+      return await test()
+    } finally {
+      replaceCatalogWorkers(previous!)
+      await workers.close()
+    }
+  }
+
+  it("serves six agents proposing at once in turn, each on the latest revision", async () => {
+    await seed()
+    const agents = await Promise.all(
+      Array.from({ length: 6 }, () => asAgent(db, owner, workspaceId)),
+    )
+    stored(
+      await propose(
+        asOwner,
+        agents.map((_, i) => ({
+          op: "create-entity",
+          id: `machine/m${i}`,
+          title: `M${i} v0`,
+          summary: "A machine.",
+          owner: person,
+        })),
+      ),
+    )
+    const seconds = Number(process.env.SHINAN_FAIRNESS_SECONDS ?? 6)
+    const until = Date.now() + seconds * 1000
+    const applied = agents.map(() => 0)
+    const refused: unknown[] = []
+    await Promise.all(
+      agents.map(async (agent, i) => {
+        for (let v = 0; Date.now() < until; v++) {
+          const outcome = await propose(agent, [
+            {
+              op: "set-field",
+              document: `machine/m${i}`,
+              field: "title",
+              value: `M${i} v${v + 1}`,
+              expect: { value: `M${i} v${v}` },
+            },
+          ]).catch((error: unknown) => error)
+          if (
+            typeof outcome === "object" &&
+            outcome !== null &&
+            "outcome" in outcome &&
+            outcome.outcome === "applied"
+          )
+            applied[i]!++
+          else {
+            // The rate limit ends an agent's run (in long runs only).
+            if (
+              !(outcome instanceof BusyError) ||
+              outcome.rule !== "catalog-proposal-rate"
+            )
+              refused.push(outcome)
+            break
+          }
+        }
+      }),
+    )
+    console.log(`Six agents for ${seconds} s: applied ${applied.join(", ")}`)
+    expect(refused).toEqual([])
+    expect(Math.min(...applied)).toBeGreaterThan(0)
+    expect(Math.max(...applied) - Math.min(...applied)).toBeLessThanOrEqual(1)
+    // Each applied on the revision it read: no proposal was worked out
+    // again, because no other one was stored in between.
+    for (const proposal of await listCatalogProposals(asOwner, workspaceId, {
+      limit: 200,
+    }))
+      expect(proposal.appliedRevision).toBe(proposal.basedOnRevision + 1)
+  }, 120_000)
+
+  it("works a proposal out again when another process stored a revision first", async () => {
+    await seed()
+    let raced = false
+    class Racing extends CatalogWorkers {
+      override run<T>(
+        workspace: string,
+        work: (prepare: Prepare) => Promise<T>,
+      ): Promise<T> {
+        return super.run(workspace, (prepare) =>
+          work(async (...args) => {
+            const result = await prepare(...args)
+            if (!raced) {
+              raced = true
+              // As another process would: a revision stored meanwhile.
+              await db.transaction((tx) =>
+                appendCatalogRevision(
+                  tx,
+                  workspaceId,
+                  {
+                    kind: "person",
+                    personId: owner.id,
+                    agentId: null,
+                    agentSessionId: null,
+                    label: owner.handle,
+                    confidence: "recorded",
+                  },
+                  [
+                    {
+                      text: `---\nid: machine/other\ntype: machine\ntitle: Other\nsummary: Another.\nowner: ${person}\n---\n`,
+                    },
+                  ],
+                ),
+              )
+            }
+            return result
+          }),
+        )
+      }
+    }
+    const proposal = await withWorkers(new Racing(), async () =>
+      stored(await propose(asOwnersAgent, [recheck("hostname", "musashi")])),
+    )
+    expect(raced).toBe(true)
+    expect(proposal).toMatchObject({ basedOnRevision: 2, appliedRevision: 3 })
+  })
+
+  it("does not count a proposal refused as busy against the agent's rate limit", async () => {
+    await seed()
+    const error = await withWorkers(
+      new CatalogWorkers({ queuePerWorkspace: 0 }),
+      () =>
+        propose(asOwnersAgent, [recheck("hostname", "musashi")]).catch(
+          (e: unknown) => e,
+        ),
+    )
+    expect(error).toMatchObject({ rule: "catalog-busy" })
+    const actor = asOwnersAgent.actor as { agentId: string }
+    expect(
+      await db
+        .select()
+        .from(schema.rateLimits)
+        .where(eq(schema.rateLimits.key, `catalog-proposal:${actor.agentId}`)),
+    ).toEqual([])
+  })
+
+  it("records a catalog its worker cannot hold, once, for the operator and the owners", async () => {
+    await seed()
+    await withWorkers(
+      new CatalogWorkers({ cacheBytes: 1, loadBatchBytes: 1 }),
+      async () => {
+        for (let i = 0; i < 2; i++)
+          await expect(
+            propose(asOwnersAgent, [recheck("hostname", "musashi")]),
+          ).rejects.toMatchObject({ rule: "catalog-too-large" })
+      },
+    )
+    expect(await securityEntries("catalog-worker.failed")).toMatchObject([
+      { outcome: "failed", details: { reason: "catalog-too-large" } },
+    ])
+  })
+})
+
 describe("the catalog size limit", () => {
-  const limits = { bytes: 1000, documents: 3 }
-  const size = (bytes: number, documents: number, before = 900) => ({
+  const limits = { bytes: 1000, documents: 3, estimatedBytes: 5000 }
+  const size = (
+    bytes: number,
+    documents: number,
+    before = 900,
+    estimated = 4000,
+  ) => ({
     bytesBefore: before,
     bytes,
     documentsBefore: 3,
     documents,
+    estimatedBefore: 4000,
+    estimated,
   })
 
   it("refuses a change that takes the catalog past it and grows it", () => {
@@ -810,13 +980,22 @@ describe("the catalog size limit", () => {
       RuleViolationError,
     )
     expect(() => checkCatalogSize(size(900, 4), limits)).toThrow(
-      /at most .* and 3 documents/,
+      /at most 3 documents/,
+    )
+    expect(() => checkCatalogSize(size(900, 3, 900, 5001), limits)).toThrow(
+      RuleViolationError,
     )
   })
 
   it("lets a change that shrinks or stays within it apply", () => {
     expect(() => checkCatalogSize(size(1000, 3), limits)).not.toThrow()
     expect(() => checkCatalogSize(size(1500, 3, 2000), limits)).not.toThrow()
+    expect(() =>
+      checkCatalogSize(
+        { ...size(900, 3), estimatedBefore: 9000, estimated: 8000 },
+        limits,
+      ),
+    ).not.toThrow()
   })
 })
 

@@ -560,42 +560,59 @@ indexing (**Proposed**).
     was made against and, when it needed catalog approval, the approving
     person. These revision columns are nullable: revisions are never
     edited, so they could not be filled in for revisions stored before them.
-  - **Work first, then a short write.** Making or approving a proposal
-    reads the latest revision (its number and each document's revision) in
-    a short read, then applies, validates and classifies the operations in
-    the catalog worker with no transaction open. A second, short
-    transaction takes the workspace's index lock, then the proposal row,
-    checks that no other revision came first and stores the result. If
-    one did, the work is done again on the new revision (up to five times,
-    then the author is told to send it again). So a proposal never holds
-    a database connection or a lock while it waits for or runs in the
-    worker, and two proposals on one workspace still apply one after the
-    other; per-operation expectations decide conflicts (catalog §8.5).
+  - **Turns, then a short write.** Making or approving a proposal takes
+    a turn in its workspace's queue, first come first served. In its turn
+    it reads the latest revision (its number and each document's revision)
+    in a short read, the catalog worker applies, validates and classifies
+    the operations with no transaction open, and a short transaction takes
+    the workspace's index lock, then the proposal row, checks that no other
+    revision came first and stores the result. Within a process nothing
+    else stores a revision during a turn, so no proposal works on a
+    revision that is already out of date, and proposals are served in the
+    order they came (measured: six agents proposing as fast as they could
+    each had the same number applied, every one on the revision it read).
+    A revision stored by another process meanwhile makes the turn start
+    over, up to five times, then the author is told to send it again. A
+    proposal never holds a database connection or a lock while it waits
+    for or runs in the worker; per-operation expectations decide conflicts
+    (catalog §8.5).
   - **Catalog workers.** Parsing, applying (`applyOperations`),
     validation and approval classes run in worker threads (security
-    checklist 10.8): one per workspace with proposals, up to two at once
-    (an idle one gives way to another workspace), one proposal at a time
-    each. Each keeps its workspace's catalog parsed, by document and
-    revision. Numbers, all **proposed**:
+    checklist 10.8), one by default (`SHINAN_CATALOG_WORKERS`). Each keeps
+    one workspace's catalog parsed, by document and revision; turns take
+    the workers first come first served across workspaces, and a workspace
+    without a worker takes over the one least recently used. Numbers, all
+    **proposed**:
     - **Loading is not charged to a proposal.** Stored texts a worker has
-      not parsed (after a start, a restart or a change) are read in short
-      reads of 100 and parsed in batches, each with its own 60-second
-      limit, and kept as they come. A proposal's 20-second limit starts
-      once every document it needs is parsed. Measured on Daedalus: a new
-      worker took about 23 s to load 1,500 documents of 57 KB, and the first
-      proposal then applied.
+      not parsed (after a start, a restart, a switch of workspace or a
+      change) are read in short reads of 100 and parsed in batches of at
+      most 512 KiB of text, each with its own 60-second limit, and kept as
+      they come. A proposal's 20-second limit starts once every document it
+      needs is parsed.
     - **A proposal past its limit** stops only its own workspace's worker;
       the next proposal there loads that catalog again.
-    - **Memory.** Each worker's cache is limited to 768 MiB, estimated as
-      four times each text plus 16 KiB (measured: one to five times the
-      text), and its heap to 1.5 GiB (`resourceLimits`); a worker out of
-      memory is stopped like one out of time. A workspace's catalog is
-      limited to 100 MiB of text and 20,000 documents (catalog §8.2), which
-      fits.
+    - **Memory.** Each worker's cache is limited to 384 MiB as estimated by
+      `estimatedBytes`: 3 × text bytes + 1,792 × facts + 256 × body
+      sections + 128 × body links + 16 KiB per document, above the heap
+      measured for every shape tried (typical entities, 100 long-form or
+      365 short facts, 57 KB of prose, 2,000 links). The worker's heap is
+      limited to 768 MiB (`resourceLimits`, `SHINAN_CATALOG_WORKER_HEAP_MB`);
+      one out of memory is stopped like one out of time. A workspace's
+      catalog is limited to 5,000 documents, 25 MiB of text and an estimate
+      of 320 MiB (catalog §8.2), until validation is incremental
+      ([#116](https://github.com/guneet-xyz/shinan/issues/116)). Measured on
+      Daedalus under a load of 4 to 5 on 2 cores, a one-field change at
+      those limits took 2 to 4.3 s and its heap peaked at 109 to 413 MiB,
+      the most for 1,620 documents of 100 facts.
+    - **A catalog that no longer fits** (only if the estimate were wrong)
+      makes proposals there fail with `catalog-too-large`; the `web` log
+      and the workspace's security log say so, and the operator raises the
+      heap until the workspace shrinks its catalog (operator guide).
     - **Queues.** At most 8 requests per workspace and 32 in all may run
       or wait; beyond that a request is refused at once as busy, to send
       again in a few seconds. Agents also have a proposal rate limit
-      (60 in 10 minutes).
+      (60 in 10 minutes), counted when a proposal's turn comes, so a
+      refusal as busy does not count.
     - Results come back as the new texts, already parsed, which the indexer
       reuses.
 - **Fact checks.** A recheck that changes only the last-checked time is still a
@@ -1164,7 +1181,9 @@ From the `workspace` repository's catalog and `infra/musashi` (read 2026-11-16):
 - **Proposed:** names follow Musashi's rules; three fixed `/24` subnets from the
   unused `10.88.0.0/16` range, recorded in the machine entry at deployment.
 - **Proposed** starting memory limits: web 512 MiB, worker 384 MiB, PostgreSQL
-  512 MiB; estimates to be measured during the proof of concept.
+  512 MiB; estimates to be measured during the proof of concept. **M2-4:**
+  web 1,536 MiB, for its one catalog worker (heap up to 768 MiB, §5.3); the
+  `infra/musashi` stack needs the same change when M2 is deployed.
 - **Proposed:** containers hardened as in [10.1](#101-threats-and-controls); the
   same image and reference Compose layout self-hosters get, adapted to
   Musashi's rules. Reason: proves the self-hosting path by using it.

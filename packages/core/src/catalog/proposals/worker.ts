@@ -2,7 +2,8 @@ import { parentPort, workerData } from "node:worker_threads"
 
 import { parseCatalogDocument } from "../document/index.js"
 import type { CatalogDocument } from "../document/index.js"
-import { cacheKey, estimatedBytes } from "./protocol.js"
+import { estimatedBytes } from "./estimate.js"
+import { cacheKey } from "./protocol.js"
 import type {
   LoadedText,
   WorkerOptions,
@@ -65,12 +66,9 @@ function load(texts: readonly LoadedText[], evicted: string[]) {
     // A document's earlier revision is not needed again.
     const earlier = revisions.get(documentId)
     if (earlier !== undefined) drop(cacheKey(documentId, earlier), evicted)
-    const bytes = estimatedBytes(text)
-    cache.set(key, {
-      documentId,
-      document: parseCatalogDocument(text),
-      bytes,
-    })
+    const document = parseCatalogDocument(text)
+    const bytes = estimatedBytes(document)
+    cache.set(key, { documentId, document, bytes })
     revisions.set(documentId, revision)
     cachedBytes += bytes
   }

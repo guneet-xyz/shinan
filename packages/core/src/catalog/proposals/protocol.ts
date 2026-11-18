@@ -39,13 +39,3 @@ export interface WorkerOptions {
 
 export const cacheKey = (documentId: string, revision: number) =>
   `${documentId}@${revision}`
-
-/**
- * What a parsed document is estimated to take in memory: four times its
- * text, plus 16 KiB. **Proposed (M2-4):** measured on Daedalus at about
- * 1 to 3.5 times the text for documents of 57 KB, and 3 to 5 times for
- * documents of 5 KB; the fixed part covers the small ones.
- */
-export function estimatedBytes(text: string): number {
-  return 4 * Buffer.byteLength(text, "utf8") + 16 * 1024
-}

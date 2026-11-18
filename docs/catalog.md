@@ -1485,13 +1485,20 @@ how proposals are applied and classed (`packages/core`, `catalog/proposals`).
   within the limits, a 100-fact recheck of a 54 KB document, took about
   8 s on a busy development host); reading the stored catalog first is
   not counted ([architecture §5.3](architecture.md#53-how-sync-works)).
-- **A workspace's catalog** holds at most 100 MiB of text and 20,000
-  documents; a change that takes it past either and grows it is refused
-  (`catalog-full`). An agent sends at most 60 proposals in 10 minutes.
-  When the catalog workers are busy or an agent is over its limit, the
-  proposal is refused at once as busy (HTTP 429 with `Retry-After`) and
-  can be sent again. Reason: new entities from agents apply on their own,
-  so without these an agent could fill a workspace with large documents.
+- **A workspace's catalog** holds at most 5,000 documents, 25 MiB of text,
+  and 320 MiB as Shinan estimates the memory it takes to hold it (facts
+  count most: `estimatedBytes`, [architecture §5.3](architecture.md#53-how-sync-works)).
+  A change that takes it past any of these and grows it is refused
+  (`catalog-full`); one that shrinks it is always accepted. These limits
+  rise when validation becomes incremental
+  ([#116](https://github.com/guneet-xyz/shinan/issues/116)): until then
+  every proposal validates the whole catalog, which at these limits took
+  2 to 4.3 s on a busy Daedalus. An agent sends at most 60 proposals in
+  10 minutes, counted when Shinan starts on each. When the catalog workers
+  are busy or an agent is over its limit, the proposal is refused at once
+  as busy (HTTP 429 with `Retry-After`) and can be sent again. Reason: new
+  entities from agents apply on their own, so without these an agent
+  could fill a workspace with large documents.
 - **Retries.** A proposal may carry an idempotency key, kept per author;
   the same key with the same content (in any key order) returns the stored
   proposal, with other content it is refused.

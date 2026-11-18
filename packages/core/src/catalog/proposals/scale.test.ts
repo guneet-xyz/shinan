@@ -14,17 +14,23 @@ import type { Person } from "../../identity/people.js"
 import { createWorkspace } from "../../identity/workspaces.js"
 import type { CatalogOperation } from "../document/index.js"
 import { CatalogWorkers, replaceCatalogWorkers } from "./pool.js"
+import type { Prepare } from "./pool.js"
 import { listCatalogProposals, proposeCatalogChange } from "./proposals.js"
 import type { ProposalOutcome } from "./proposals.js"
 
 /**
- * The catalog workers with a large catalog (security checklist 10.8): a
- * worker that has just started parses every stored document before the
- * first proposal, which takes longer than a proposal's time limit, and
+ * The catalog workers after a restart (security checklist 10.8): a new
+ * worker reads and parses every stored document before the first
+ * proposal, which may take longer than a proposal's time limit, and
  * proposals waiting for it hold no database connection.
  *
- * 1,500 documents of about 57 KB by default; set
- * SHINAN_PROPOSAL_SCALE_DOCUMENTS to try other sizes.
+ * By default a small catalog whose reading is slowed down to take longer
+ * than a 1.5 s limit, so the run stays short. Set
+ * SHINAN_PROPOSAL_SCALE_DOCUMENTS (such as 1500) for that many documents
+ * of about 57 KB, read at full speed under the usual 20 s limit; with
+ * SHINAN_PROPOSAL_SCALE_SHAPE=facts, documents of 100 facts instead, the
+ * shape that takes the most memory (1,550 of them are at the catalog's
+ * limit).
  */
 
 const { db, pool } = testDatabase()
@@ -33,16 +39,28 @@ afterAll(async () => {
   await pool.end()
 })
 
-const count = Number(process.env.SHINAN_PROPOSAL_SCALE_DOCUMENTS ?? 1500)
+const large = process.env.SHINAN_PROPOSAL_SCALE_DOCUMENTS
+const count = Number(large ?? 60)
+/** The limit of the small run, and how long each batch of 10 texts takes to read. */
+const smallLimitMs = 1500
+const slowReadMs = 400
 
 let owner: Person
 let workspaceId: string
 let otherWorkspaceId: string
 let agent: Context
 
+const facts = process.env.SHINAN_PROPOSAL_SCALE_SHAPE === "facts"
+
 function machine(i: number, person: string): string {
+  if (facts) {
+    let written = ""
+    for (let k = 0; k < 100; k++)
+      written += `      x${k}: { value: v${k}, note: n }\n`
+    return `---\nid: machine/m${i}\ntype: machine\ntitle: Machine ${i}\nsummary: M.\nstatus: active\nowner: ${person}\nfacts:\n  - checked: 2026-11-14\n    by: ${owner.handle}\n    scope: All\n    source: ssh\n    observed:\n${written}---\n\n# M\n`
+  }
   let body = `# Machine ${i}\n\n`
-  for (let s = 0; body.length < 55_000; s++)
+  for (let s = 0; body.length < (large ? 55_000 : 2_000); s++)
     body += `## Section ${s}\n\nThis machine runs service ${s} for the fleet, next to [machine ${(i + 1) % count}](machine/m${(i + 1) % count}), with ordinary prose to fill the paragraph, number ${s}.\n\n- one ${s}\n- two ${s}\n\n`
   return `---
 id: machine/m${i}
@@ -119,10 +137,37 @@ const rename = (i: number): CatalogOperation => ({
   expect: { value: `Machine ${i}` },
 })
 
-describe("proposals on a large catalog", () => {
+/** Catalog workers whose reading of stored text takes `slowReadMs` a batch. */
+class SlowReading extends CatalogWorkers {
+  override run<T>(
+    workspace: string,
+    work: (prepare: Prepare) => Promise<T>,
+  ): Promise<T> {
+    return super.run(workspace, (prepare) =>
+      work((documents, load, input) =>
+        prepare(
+          documents,
+          async (wanted) => {
+            await new Promise((resolve) => setTimeout(resolve, slowReadMs))
+            return load(wanted)
+          },
+          input,
+        ),
+      ),
+    )
+  }
+}
+
+describe("proposals after a restart", () => {
   it("applies the first proposals after a restart, with nobody else waiting on them", async () => {
     // A new set of workers, as after a restart: nothing is parsed yet.
-    const workers = new CatalogWorkers({ queuePerWorkspace: 3 })
+    const workers = large
+      ? new CatalogWorkers({ queuePerWorkspace: 3 })
+      : new SlowReading({
+          queuePerWorkspace: 3,
+          readBatch: 10,
+          timeLimitMs: smallLimitMs,
+        })
     const previous = replaceCatalogWorkers(workers)
     try {
       const started = Date.now()
@@ -146,11 +191,13 @@ describe("proposals on a large catalog", () => {
       for (let i = 0; i < 12; i++)
         await listCatalogProposals(asPerson(db, owner), otherWorkspaceId)
       const readMs = Date.now() - read
-      if (count >= 1000) expect(firstDone).toBe(0)
+      if (!large) expect(firstDone).toBe(0)
       expect(readMs).toBeLessThan(2000)
 
       const results = await settled
       const coldMs = firstDone - started
+      // Reading took longer than a proposal's limit, so it was not counted.
+      if (!large) expect(coldMs).toBeGreaterThan(smallLimitMs)
       console.log(
         `${count} documents: first proposal after a restart took ${coldMs} ms; 13 reads elsewhere meanwhile took ${readMs} ms`,
       )

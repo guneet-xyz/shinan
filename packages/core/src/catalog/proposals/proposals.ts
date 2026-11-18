@@ -1,9 +1,21 @@
 import { createHash } from "node:crypto"
 
-import { and, asc, desc, eq, gt, isNull, lt, schema, sql } from "@shinan/db"
+import {
+  and,
+  asc,
+  createLimitedLog,
+  desc,
+  eq,
+  gt,
+  isNull,
+  lt,
+  schema,
+  sql,
+} from "@shinan/db"
 import type { Transaction } from "@shinan/db"
 
 import { shinan } from "../../actor.js"
+import type { ResolvedActor } from "../../actor.js"
 import { inWorkspace, mayAlso, snapshotRead } from "../../authorize.js"
 import type { Context } from "../../context.js"
 import {
@@ -30,9 +42,9 @@ import { isGated } from "./classify.js"
 import type { ApprovalClass } from "./classify.js"
 import { checkProposalInput } from "./input.js"
 import { catalogWorkers } from "./pool.js"
-import type { LatestDocument } from "./pool.js"
+import type { LatestDocument, Prepare } from "./pool.js"
 import type { LoadedText } from "./protocol.js"
-import type { Prepared, PrepareInput } from "./work.js"
+import type { CatalogSize, Prepared, PrepareInput } from "./work.js"
 
 type ProposalRow = typeof schema.catalogProposals.$inferSelect
 type CatalogProposalState = ProposalRow["state"]
@@ -94,22 +106,28 @@ export type NotApplied =
   | { outcome: "unchanged" }
 
 /**
- * The most a workspace's catalog may hold (**proposed**, M2-4): 100 MiB of
- * text (about 1,800 documents at the 64 KiB limit, or some 20,000 typical
- * ones) and 20,000 documents. A proposal that would take the catalog past
- * either, and grow it, is refused; one that shrinks it always applies.
- * Reason: each workspace's catalog is kept parsed in a catalog worker,
- * whose memory is bounded (`CatalogWorkerOptions`), and an agent's new
- * entities apply on their own (§8.2).
+ * The most a workspace's catalog may hold (**proposed**, M2-4), until
+ * validation is incremental (#116): 5,000 documents, 25 MiB of text, and
+ * 320 MiB as the catalog worker estimates its memory (`estimatedBytes`),
+ * which bounds documents full of facts. A proposal that would take the
+ * catalog past any of them, and grow it, is refused; one that shrinks it
+ * always applies. Reason: each workspace's catalog is kept parsed in a
+ * catalog worker with bounded memory (`CatalogWorkerOptions`), every
+ * proposal validates the whole catalog, and an agent's new entities apply
+ * on their own (§8.2). At these limits a one-field change took 2 to 4.3 s
+ * on Daedalus under load, against a 20 s limit, and peaked at 413 MiB of
+ * the worker's 1 GiB heap.
  */
 export const catalogLimits = {
-  bytes: 100 * 1024 * 1024,
-  documents: 20_000,
+  documents: 5000,
+  bytes: 25 * 1024 * 1024,
+  estimatedBytes: 320 * 1024 * 1024,
 } as const
 
 /**
- * How many times a proposal is applied again when another one applied
- * first, before the author is told to send it again.
+ * How many times a proposal is applied again when another process stored a
+ * revision first, before the author is told to send it again. Within a
+ * process, a workspace's proposals take turns, so they never do.
  */
 const attempts = 5
 
@@ -119,11 +137,14 @@ const attempts = 5
  * when it is in a gated class (§8.2). A person's own gated edit applies at
  * once, since they may approve it.
  *
- * The work runs against the latest revision with no transaction open: the
- * catalog worker applies the operations to it, then a short transaction
- * takes the index lock, checks no other revision came first (otherwise the
- * work is done again on the new one) and stores the result. So a slow
- * proposal holds no database connection and no lock (architecture §5.3).
+ * After a first check (permission, input, idempotency), the proposal takes
+ * its turn in the workspace's queue (`CatalogWorkers.run`): it reads the
+ * latest revision, the catalog worker applies the operations to it with no
+ * transaction open, then a short transaction takes the index lock, checks
+ * no other process stored a revision meanwhile (otherwise the turn starts
+ * over) and stores the result. So a slow proposal holds no database
+ * connection and no lock, and proposals are served in order (architecture
+ * §5.3).
  *
  * `input` is checked here (`checkProposalInput`), so callers pass the
  * request's JSON as it came. May throw `BusyError` (the catalog workers'
@@ -151,8 +172,7 @@ export async function proposeCatalogChange(
         replay: false as const,
         proposal,
         requestHash,
-        base: await readBase(scope),
-        by: scope.actor.label,
+        actor: scope.actor,
         // A person who may approve applies their own gated edit at once; for
         // anyone else, their person stands in for the approver until one
         // approves.
@@ -166,102 +186,117 @@ export async function proposeCatalogChange(
   )
   if (plan.replay)
     return { outcome: plan.row.state, proposal: proposalOf(plan.row) }
-  if (ctx.actor.kind === "agent") await throttle(ctx, ctx.actor.agentId)
-
   const { proposal, requestHash } = plan
-  let base = plan.base
-  for (let attempt = 1; ; attempt++) {
-    const prepared = await work(ctx, workspaceId, "catalog.propose", base, {
-      operations: proposal.operations,
-      by: plan.by,
-      explanation: proposal.explanation,
-      approver: plan.approver,
-    })
-    if (prepared.outcome !== "ready") return refusal(prepared)
-    checkSize(prepared)
 
-    const stored = await inWorkspace(
-      ctx,
-      workspaceId,
-      "catalog.propose",
-      async (scope): Promise<Stored<ProposalOutcome>> => {
-        // The index lock comes first on every path that applies, so two
-        // applies never wait on each other's proposal rows.
-        await lockIndexState(scope.tx, scope.workspaceId)
-        const existing = await byIdempotencyKey(
-          scope,
-          proposal.idempotencyKey,
-          requestHash,
-        )
-        if (existing)
-          return {
-            done: { outcome: existing.state, proposal: proposalOf(existing) },
-          }
-        if (
-          (await latestRevision(scope.tx, scope.workspaceId)) !== base.revision
-        )
-          return { moved: await readBase(scope) }
+  return inTurn(
+    ctx,
+    workspaceId,
+    "catalog.propose",
+    plan.actor,
+    async (base, prepare): Promise<Stored<ProposalOutcome>> => {
+      const prepared = await work(ctx, workspaceId, "catalog.propose", {
+        prepare,
+        base,
+        input: {
+          operations: proposal.operations,
+          by: plan.actor.label,
+          explanation: proposal.explanation,
+          approver: plan.approver,
+        },
+      })
+      if (prepared.outcome !== "ready") return { done: refusal(prepared) }
+      checkCatalogSize(prepared.size)
 
-        const gated = isGated(prepared.classes)
-        const appliesNow =
-          mayApprove(scope) && !plan.approver.preview
-            ? true
-            : !gated && prepared.accepts.length === 0
-        if (appliesNow) checkAccepts(prepared, plan.approver.handle)
-
-        const [{ next }] = (await scope.tx
-          .select({
-            next: sql<number>`coalesce(max(${schema.catalogProposals.number}), 0)::int + 1`,
-          })
-          .from(schema.catalogProposals)
-          .where(
-            eq(schema.catalogProposals.workspaceId, scope.workspaceId),
-          )) as [{ next: number }]
-        const [row] = await scope.tx
-          .insert(schema.catalogProposals)
-          .values({
-            workspaceId: scope.workspaceId,
-            number: next,
-            ...actorColumns(scope.actor),
-            explanation: proposal.explanation,
-            relatedTask: proposal.relatedTask ?? null,
-            operations: proposal.operations,
-            basedOnRevision: base.revision,
-            approvalClasses: prepared.classes,
-            approvalReasons: prepared.reasons,
-            touches: prepared.touches,
-            validation: prepared.warnings as unknown as Record<
-              string,
-              unknown
-            >[],
-            idempotencyKey: proposal.idempotencyKey ?? null,
+      return inWorkspace(
+        ctx,
+        workspaceId,
+        "catalog.propose",
+        async (scope): Promise<Stored<ProposalOutcome>> => {
+          // The index lock comes first on every path that applies, so two
+          // applies never wait on each other's proposal rows.
+          await lockIndexState(scope.tx, scope.workspaceId)
+          const existing = await byIdempotencyKey(
+            scope,
+            proposal.idempotencyKey,
             requestHash,
-          })
-          .returning()
-        if (!appliesNow) {
-          await appendEvent(scope, {
-            kind: "catalog.proposal-waiting",
-            subjects: subjectsOf(
-              row!,
-              prepared.documents.flatMap((d) =>
-                d.documentId ? [d.documentId] : [],
+          )
+          if (existing)
+            return {
+              done: {
+                outcome: existing.state,
+                proposal: proposalOf(existing),
+              },
+            }
+          if (
+            (await latestRevision(scope.tx, scope.workspaceId)) !==
+            base.revision
+          )
+            return { moved: true }
+
+          const gated = isGated(prepared.classes)
+          const appliesNow =
+            mayApprove(scope) && !plan.approver.preview
+              ? true
+              : !gated && prepared.accepts.length === 0
+          if (appliesNow) checkAccepts(prepared, plan.approver.handle)
+
+          const [{ next }] = (await scope.tx
+            .select({
+              next: sql<number>`coalesce(max(${schema.catalogProposals.number}), 0)::int + 1`,
+            })
+            .from(schema.catalogProposals)
+            .where(
+              eq(schema.catalogProposals.workspaceId, scope.workspaceId),
+            )) as [{ next: number }]
+          const [row] = await scope.tx
+            .insert(schema.catalogProposals)
+            .values({
+              workspaceId: scope.workspaceId,
+              number: next,
+              ...actorColumns(scope.actor),
+              explanation: proposal.explanation,
+              relatedTask: proposal.relatedTask ?? null,
+              operations: proposal.operations,
+              basedOnRevision: base.revision,
+              approvalClasses: prepared.classes,
+              approvalReasons: prepared.reasons,
+              touches: prepared.touches,
+              validation: prepared.warnings as unknown as Record<
+                string,
+                unknown
+              >[],
+              idempotencyKey: proposal.idempotencyKey ?? null,
+              requestHash,
+            })
+            .returning()
+          if (!appliesNow) {
+            await appendEvent(scope, {
+              kind: "catalog.proposal-waiting",
+              subjects: subjectsOf(
+                row!,
+                prepared.documents.flatMap((d) =>
+                  d.documentId ? [d.documentId] : [],
+                ),
               ),
-            ),
-            summary: `${scope.actor.label} proposed catalog change ${row!.number}, waiting for approval: ${headline(row!)}`,
-            data: eventData(row!),
+              summary: `${scope.actor.label} proposed catalog change ${row!.number}, waiting for approval: ${headline(row!)}`,
+              data: eventData(row!),
+            })
+            return {
+              done: { outcome: "pending", proposal: proposalOf(row!) },
+            }
+          }
+          const applied = await apply(scope, row!, prepared, {
+            approvedBy: gated ? scope.actor : null,
           })
-          return { done: { outcome: "pending", proposal: proposalOf(row!) } }
-        }
-        const applied = await apply(scope, row!, prepared, {
-          approvedBy: gated ? scope.actor : null,
-        })
-        return { done: { outcome: "applied", proposal: proposalOf(applied) } }
-      },
-    )
-    if ("done" in stored) return stored.done
-    if (attempt === attempts) throw changingTooFast()
-    base = stored.moved
-  }
+          return {
+            done: { outcome: "applied", proposal: proposalOf(applied) },
+          }
+        },
+      )
+    },
+    // Counted in the turn, so a proposal refused as busy is not.
+    ctx.actor.kind === "agent" ? ctx.actor.agentId : null,
+  )
 }
 
 export type ApprovalOutcome =
@@ -276,7 +311,7 @@ export type ApprovalOutcome =
  * member (D-024, O-46); otherwise another member approves. An
  * `accept-discrepancy` names the approver (catalog §4.7).
  *
- * Like `proposeCatalogChange`, the work runs with no transaction open.
+ * Like `proposeCatalogChange`, it takes a turn in the workspace's queue.
  */
 export async function approveCatalogProposal(
   ctx: Context,
@@ -290,45 +325,55 @@ export async function approveCatalogProposal(
     async (scope) => {
       const row = await pendingProposal(scope, proposalId, false)
       await checkNotOwnAgent(scope, row)
-      return { row, base: await readBase(scope), approver: scope.actor.label }
+      return { row, actor: scope.actor }
     },
     snapshotRead,
   )
   const { row } = plan
-  let base = plan.base
-  for (let attempt = 1; ; attempt++) {
-    const prepared = await work(ctx, workspaceId, "catalog.approve", base, {
-      operations: row.operations as CatalogOperation[],
-      by: row.actorLabel,
-      explanation: row.explanation,
-      approver: { handle: plan.approver, preview: false },
-    })
-    if (prepared.outcome !== "ready") return refusal(prepared)
-    checkSize(prepared)
+  return inTurn(
+    ctx,
+    workspaceId,
+    "catalog.approve",
+    plan.actor,
+    async (base, prepare): Promise<Stored<ApprovalOutcome>> => {
+      const prepared = await work(ctx, workspaceId, "catalog.approve", {
+        prepare,
+        base,
+        input: {
+          operations: row.operations as CatalogOperation[],
+          by: row.actorLabel,
+          explanation: row.explanation,
+          approver: { handle: plan.actor.label, preview: false },
+        },
+      })
+      if (prepared.outcome !== "ready") return { done: refusal(prepared) }
+      checkCatalogSize(prepared.size)
 
-    const stored = await inWorkspace(
-      ctx,
-      workspaceId,
-      "catalog.approve",
-      async (scope): Promise<Stored<ApprovalOutcome>> => {
-        await lockIndexState(scope.tx, scope.workspaceId)
-        const current = await pendingProposal(scope, proposalId, true)
-        await checkNotOwnAgent(scope, current)
-        if (
-          (await latestRevision(scope.tx, scope.workspaceId)) !== base.revision
-        )
-          return { moved: await readBase(scope) }
-        checkAccepts(prepared, scope.actor.label)
-        const applied = await apply(scope, current, prepared, {
-          approvedBy: scope.actor,
-        })
-        return { done: { outcome: "applied", proposal: proposalOf(applied) } }
-      },
-    )
-    if ("done" in stored) return stored.done
-    if (attempt === attempts) throw changingTooFast()
-    base = stored.moved
-  }
+      return inWorkspace(
+        ctx,
+        workspaceId,
+        "catalog.approve",
+        async (scope): Promise<Stored<ApprovalOutcome>> => {
+          await lockIndexState(scope.tx, scope.workspaceId)
+          const current = await pendingProposal(scope, proposalId, true)
+          await checkNotOwnAgent(scope, current)
+          if (
+            (await latestRevision(scope.tx, scope.workspaceId)) !==
+            base.revision
+          )
+            return { moved: true }
+          checkAccepts(prepared, scope.actor.label)
+          const applied = await apply(scope, current, prepared, {
+            approvedBy: scope.actor,
+          })
+          return {
+            done: { outcome: "applied", proposal: proposalOf(applied) },
+          }
+        },
+      )
+    },
+    null,
+  )
 }
 
 /** The longest rejection reason accepted. */
@@ -501,8 +546,8 @@ interface Base {
   memberHandles: string[]
 }
 
-/** What the storing transaction did: finished, or found a newer revision. */
-type Stored<T> = { done: T } | { moved: Base }
+/** What one attempt did: finished, or found that another process stored a revision first. */
+type Stored<T> = { done: T } | { moved: true }
 
 async function readBase(scope: ProposalScope): Promise<Base> {
   const d = schema.catalogDocuments
@@ -519,6 +564,83 @@ async function readBase(scope: ProposalScope): Promise<Base> {
 }
 
 /**
+ * Takes a turn in the workspace's queue of catalog work: reads the latest
+ * revision and runs `attempt` on it, again with a new one (up to
+ * `attempts` times) if another process stored a revision first. An
+ * agent's proposal counts against its rate limit when its turn comes.
+ */
+async function inTurn<T>(
+  ctx: Context,
+  workspaceId: string,
+  action: ProposalScope["action"],
+  actor: ResolvedActor,
+  attempt: (base: Base, prepare: Prepare) => Promise<Stored<T>>,
+  agentId: string | null,
+): Promise<T> {
+  try {
+    return await catalogWorkers().run(workspaceId, async (prepare) => {
+      if (agentId) await throttle(ctx, agentId)
+      for (let n = 1; ; n++) {
+        const base = await inWorkspace(
+          ctx,
+          workspaceId,
+          action,
+          readBase,
+          snapshotRead,
+        )
+        const stored = await attempt(base, prepare)
+        if ("done" in stored) return stored.done
+        if (n === attempts) throw changingTooFast()
+      }
+    })
+  } catch (error) {
+    if (
+      error instanceof RuleViolationError &&
+      workerFailures.includes(error.rule)
+    )
+      await reportWorkerFailure(ctx, workspaceId, actor, error.rule)
+    throw error
+  }
+}
+
+/** Why a catalog worker could not hold or read a workspace's catalog. */
+const workerFailures = ["catalog-too-large", "catalog-unreadable"]
+
+const failureLog = createLimitedLog({ intervalMs: 60 * 60 * 1000 })
+const failuresRecorded = new Map<string, number>()
+
+/**
+ * A catalog that does not fit in its worker, or cannot be read in time,
+ * stops every proposal in the workspace until an operator acts (operator
+ * guide): it is logged for the operator and recorded in the workspace's
+ * security log, at most once an hour per workspace and process.
+ */
+async function reportWorkerFailure(
+  ctx: Context,
+  workspaceId: string,
+  actor: ResolvedActor,
+  rule: string,
+) {
+  const key = `${workspaceId}:${rule}`
+  failureLog(
+    key,
+    `Catalog worker: workspace ${workspaceId}: ${rule}. Proposals there fail until it is fixed; see the operator guide, "Catalog workers".`,
+  )
+  const now = Date.now()
+  const last = failuresRecorded.get(key)
+  if (last !== undefined && now - last < 60 * 60 * 1000) return
+  failuresRecorded.set(key, now)
+  await recordSecurityEntry(ctx.db, {
+    workspaceId,
+    action: "catalog-worker.failed",
+    outcome: "failed",
+    actor,
+    request: ctx.request ?? {},
+    details: { reason: rule },
+  })
+}
+
+/**
  * Applies, validates and classifies operations against a base revision in
  * the workspace's catalog worker. Stored texts the worker lacks are read in
  * short read-only transactions of their own, each checked like any read.
@@ -527,12 +649,14 @@ async function work(
   ctx: Context,
   workspaceId: string,
   action: ProposalScope["action"],
-  base: Base,
-  input: Omit<PrepareInput, "now" | "memberHandles">,
+  turn: {
+    prepare: Prepare
+    base: Base
+    input: Omit<PrepareInput, "now" | "memberHandles">
+  },
 ): Promise<Prepared> {
-  return catalogWorkers().prepare(
-    workspaceId,
-    base.documents,
+  return turn.prepare(
+    turn.base.documents,
     (documents) =>
       inWorkspace(
         ctx,
@@ -541,7 +665,11 @@ async function work(
         (scope) => textsAt(scope.tx, scope.workspaceId, documents),
         snapshotRead,
       ),
-    { ...input, now: Date.now(), memberHandles: base.memberHandles },
+    {
+      ...turn.input,
+      now: Date.now(),
+      memberHandles: turn.base.memberHandles,
+    },
   )
 }
 
@@ -588,22 +716,29 @@ async function throttle(ctx: Context, agentId: string): Promise<void> {
     )
 }
 
-function checkSize(prepared: Extract<Prepared, { outcome: "ready" }>) {
-  checkCatalogSize(prepared.size)
-}
-
-/** Refuses a change that takes a catalog past its limits and grows it (`catalogLimits`). */
+/**
+ * Refuses a change that takes a catalog past any of its limits and grows
+ * it (`catalogLimits`); a change that shrinks it always applies.
+ */
 export function checkCatalogSize(
-  size: Extract<Prepared, { outcome: "ready" }>["size"],
-  limits: { bytes: number; documents: number } = catalogLimits,
+  size: CatalogSize,
+  limits: {
+    documents: number
+    bytes: number
+    estimatedBytes: number
+  } = catalogLimits,
 ): void {
-  if (
+  const mib = (n: number) => Math.round(n / 1024 / 1024)
+  const past =
+    (size.documents > limits.documents &&
+      size.documents > size.documentsBefore) ||
     (size.bytes > limits.bytes && size.bytes > size.bytesBefore) ||
-    (size.documents > limits.documents && size.documents > size.documentsBefore)
-  )
+    (size.estimated > limits.estimatedBytes &&
+      size.estimated > size.estimatedBefore)
+  if (past)
     throw new RuleViolationError(
       "catalog-full",
-      `A workspace's catalog holds at most ${limits.bytes / 1024 / 1024} MiB of text and ${limits.documents} documents, and this change would take it past that`,
+      `A workspace's catalog holds at most ${limits.documents} documents, ${mib(limits.bytes)} MiB of text and ${mib(limits.estimatedBytes)} MiB as Shinan holds it in memory (facts count most); this change would take it to ${size.documents} documents, ${mib(size.bytes)} MiB and ${mib(size.estimated)} MiB. Retire or shorten documents first.`,
     )
 }
 

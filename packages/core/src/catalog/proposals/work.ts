@@ -13,6 +13,7 @@ import type {
 } from "../document/index.js"
 import { classifyChange, touchedIds } from "./classify.js"
 import type { ApprovalClass } from "./classify.js"
+import { estimatedBytes } from "./estimate.js"
 
 /** The latest revision of one stored document, already parsed. */
 export interface StoredDocument {
@@ -47,6 +48,15 @@ export interface PreparedDocument {
   parsed: CatalogDocument
 }
 
+export interface CatalogSize {
+  bytesBefore: number
+  bytes: number
+  documentsBefore: number
+  documents: number
+  estimatedBefore: number
+  estimated: number
+}
+
 export type Prepared =
   /** An operation conflicts or cannot apply as written (catalog §8.5). */
   | { outcome: "problems"; problems: OperationProblem[] }
@@ -65,13 +75,11 @@ export type Prepared =
       accepts: { entityId: string; memberHandles: string[] }[]
       /** Catalog IDs the change touches. */
       touches: string[]
-      /** The catalog's size before and after, in bytes of UTF-8 and documents. */
-      size: {
-        bytesBefore: number
-        bytes: number
-        documentsBefore: number
-        documents: number
-      }
+      /**
+       * The catalog's size before and after: bytes of UTF-8 text, documents,
+       * and the catalog worker's estimate of its memory (`estimatedBytes`).
+       */
+      size: CatalogSize
     }
 
 /**
@@ -170,23 +178,31 @@ export function prepareChange(
 function sizeOf(
   stored: readonly StoredDocument[],
   changes: readonly DocumentChange[],
-) {
-  const bytesBefore = stored.reduce(
-    (n, s) => n + utf8Length(s.document.text),
-    0,
-  )
+): CatalogSize {
+  let bytesBefore = 0
+  let estimatedBefore = 0
+  for (const { document } of stored) {
+    bytesBefore += utf8Length(document.text)
+    estimatedBefore += estimatedBytes(document)
+  }
   let bytes = bytesBefore
+  let estimated = estimatedBefore
   let added = 0
   for (const change of changes) {
-    if (change.before) bytes -= utf8Length(change.before.text)
-    else added++
+    if (change.before) {
+      bytes -= utf8Length(change.before.text)
+      estimated -= estimatedBytes(change.before)
+    } else added++
     bytes += utf8Length(change.after.text)
+    estimated += estimatedBytes(change.after)
   }
   return {
     bytesBefore,
     bytes,
     documentsBefore: stored.length,
     documents: stored.length + added,
+    estimatedBefore,
+    estimated,
   }
 }
 

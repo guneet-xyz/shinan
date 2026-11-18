@@ -27,9 +27,10 @@ not apply to anyone else's installation.
   user's access key ([architecture §9](architecture.md#9-email-and-notifications)).
   Sign-in needs email, including the first start.
 - Optionally, a GitHub App for GitHub sign-in (see [below](#github-sign-in)).
-- Memory for the containers' limits: 1,408 MiB (about 1.4 GiB) while running
-  (PostgreSQL 512 MiB, `web` 512 MiB, `worker` 384 MiB), and 1,664 MiB (about
-  1.6 GiB) while `migrate` (256 MiB) runs at each start.
+- Memory for the containers' limits: 2,432 MiB (about 2.4 GiB) while running
+  (PostgreSQL 512 MiB, `web` 1,536 MiB with its [catalog worker](#catalog-workers),
+  `worker` 384 MiB), and 2,688 MiB (about 2.6 GiB) while `migrate` (256 MiB)
+  runs at each start.
 
 ## What runs
 
@@ -299,6 +300,31 @@ docker compose run --rm --no-deps web catalog-index check [<workspace-id>]
 
 While a rebuild runs, agents and the wiki keep reading the old index, marked
 as behind.
+
+## Catalog workers
+
+The `web` process applies catalog proposals in worker threads, each keeping
+one workspace's catalog parsed in memory
+([architecture §5.3](architecture.md#53-how-sync-works)). Two settings in
+`.env`:
+
+| Setting                         | Default | What it does                                                                                                                                          |
+| ------------------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SHINAN_CATALOG_WORKERS`        | `1`     | Worker threads. With one, workspaces take turns, and switching workspaces reads the other catalog again; set 2 or more if several teams propose a lot |
+| `SHINAN_CATALOG_WORKER_HEAP_MB` | `768`   | Each worker's heap limit in MiB, at least 512. A catalog at its size limits needs up to about 420 MiB                                                 |
+
+Raise the `web` container's memory with them: `SHINAN_WEB_MEMORY` (default
+`1536m`) should be at least 768 MiB more than workers × heap.
+
+If a workspace's catalog no longer fits in its worker, or cannot be read in
+time, every proposal there fails with `catalog-too-large` or
+`catalog-unreadable`. The `web` log says so once an hour
+(`Catalog worker: workspace …`), and the workspace's security log records
+`catalog-worker.failed`. Catalog size limits are meant to make this
+impossible; if it happens, raise `SHINAN_CATALOG_WORKER_HEAP_MB` (and the
+container's memory) until proposals apply, have the workspace shrink its
+catalog (retire or shorten documents; a change that shrinks the catalog is
+always accepted), then lower it again, and report it.
 
 ## Stopping and removing
 

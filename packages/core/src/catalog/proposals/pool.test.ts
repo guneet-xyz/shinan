@@ -3,9 +3,9 @@ import { afterEach, describe, expect, it } from "vitest"
 import * as fixtures from "../../../test/catalog-index-fixtures.js"
 import { BusyError } from "../../errors.js"
 import { parseCatalogDocument } from "../document/index.js"
+import { estimatedBytes } from "./estimate.js"
 import { CatalogWorkers } from "./pool.js"
 import type { CatalogWorkerOptions, LatestDocument } from "./pool.js"
-import { estimatedBytes } from "./protocol.js"
 import type { PrepareInput } from "./work.js"
 
 const texts: Record<string, string> = {
@@ -56,7 +56,7 @@ function setUp(options: CatalogWorkerOptions = {}) {
 
 describe("the catalog workers", () => {
   it("parse stored texts in batches before a proposal, and only those they lack", async () => {
-    const { workers, loaded, load } = setUp({ loadBatch: 1 })
+    const { workers, loaded, load } = setUp({ readBatch: 1 })
     const first = await workers.prepare("w1", documents, load, input)
     expect(first).toMatchObject({
       outcome: "ready",
@@ -81,8 +81,8 @@ describe("the catalog workers", () => {
 
   it("refuses a catalog larger than a worker's cache", async () => {
     const { workers, load } = setUp({
-      loadBatch: 1,
-      cacheBytes: estimatedBytes(texts.b!),
+      readBatch: 1,
+      cacheBytes: estimatedBytes(parseCatalogDocument(texts.b!)),
     })
     await expect(
       workers.prepare("w1", documents, load, input),
@@ -109,6 +109,45 @@ describe("the catalog workers", () => {
       ["a@1", "b@1"],
       ["a@1", "b@1"],
       ["a@1", "b@1"],
+    ])
+  })
+
+  it("parse stored text in batches of bytes", async () => {
+    const { workers, loaded, load } = setUp({ loadBatchBytes: 1 })
+    await workers.prepare("w1", documents, load, input)
+    // One read of both, parsed one by one: each batch holds at least one text.
+    expect(loaded).toEqual([["a@1", "b@1"]])
+  })
+
+  it("serve a workspace's turns in order, and share one worker fairly between workspaces", async () => {
+    const { workers, load } = setUp({ workers: 1 })
+    const order: string[] = []
+    const turn = (workspace: string, name: string) =>
+      workers.run(workspace, async (prepare) => {
+        order.push(`${name} start`)
+        await prepare(documents, load, input)
+        order.push(`${name} end`)
+      })
+    await Promise.all([
+      turn("w1", "a1"),
+      turn("w1", "a2"),
+      turn("w2", "b1"),
+      turn("w1", "a3"),
+      turn("w2", "b2"),
+    ])
+    // Turns never overlap; w2's first turn comes right after w1's first,
+    // not after all of w1's.
+    expect(order).toEqual([
+      "a1 start",
+      "a1 end",
+      "b1 start",
+      "b1 end",
+      "a2 start",
+      "a2 end",
+      "b2 start",
+      "b2 end",
+      "a3 start",
+      "a3 end",
     ])
   })
 
@@ -153,7 +192,11 @@ describe("the catalog workers", () => {
       revision: 1,
     }))
     const body = "Words of a long section about the machine.\n\n".repeat(1200)
-    workers = new CatalogWorkers({ heapMb: 24, loadBatch: 400 })
+    workers = new CatalogWorkers({
+      heapMb: 24,
+      readBatch: 400,
+      loadBatchBytes: 64 * 1024 * 1024,
+    })
     const load = (wanted: readonly LatestDocument[]) =>
       Promise.resolve(
         wanted.map((d) => ({

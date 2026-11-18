@@ -8,6 +8,7 @@ import {
 } from "../document/index.js"
 import type { CatalogOperation, CheckInput } from "../document/index.js"
 import { isGated } from "./classify.js"
+import { estimatedBytes } from "./estimate.js"
 import { prepareChange } from "./work.js"
 import type { Prepared } from "./work.js"
 
@@ -117,6 +118,10 @@ describe("preparing a proposal in the catalog worker", () => {
     expect(result.touches).toEqual(["machine/daedalus", "machine/kojiro"])
     const bytes = (text: string) => Buffer.byteLength(text, "utf8")
     const before = stored.reduce((n, d) => n + bytes(d.document.text), 0)
+    const estimatedBefore = stored.reduce(
+      (n, d) => n + estimatedBytes(d.document),
+      0,
+    )
     expect(result.size).toEqual({
       bytesBefore: before,
       bytes:
@@ -126,6 +131,12 @@ describe("preparing a proposal in the catalog worker", () => {
         bytes(result.documents[1]!.text),
       documentsBefore: stored.length,
       documents: stored.length + 1,
+      estimatedBefore: estimatedBefore,
+      estimated:
+        estimatedBefore -
+        estimatedBytes(daedalus.document) +
+        estimatedBytes(result.documents[0]!.parsed) +
+        estimatedBytes(result.documents[1]!.parsed),
     })
   })
 
