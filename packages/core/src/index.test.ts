@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import {
   agentTokenPrefix,
+  applyOperations,
   parseCatalogDocument,
   parserVersion,
   productName,
@@ -21,5 +22,6 @@ describe("core", () => {
     expect(parseCatalogDocument("---\nid: start-here\n---\n").kind).toBe(
       "start-here",
     )
+    expect(applyOperations([], [], { by: "guneet" }).applied).toBe(true)
   })
 })

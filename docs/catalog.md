@@ -1018,6 +1018,15 @@ Rules (**proposed**; reason: P5 and the `workspace` repository's practice):
   evidence; a routine recheck of an accepted difference (such as Musashi's
   lagging metadata) does not come back for approval every time, while new
   evidence is looked at again.
+  **Proposed (M2-2, [#84](https://github.com/guneet-xyz/shinan/issues/84),
+  reviewer's decision on [#108](https://github.com/guneet-xyz/shinan/pull/108)):**
+  `accepted` is never sent with a fact. Shinan writes it, as it writes `by`:
+  an `accept-discrepancy` operation names the discrepancy's facts and the
+  reason, and applies only when a person approves the proposal; `accepted`
+  then names that person's `person` entity. An operation that sends
+  `accepted` is refused. Reason: `accepted` records a person's decision, so
+  an agent (or anyone) must not be able to write it on someone else's
+  behalf.
 - A `planned` fact that differs from current facts is a plan, not a
   discrepancy.
 - **Open:** whether to flag gaps between the `intended` and `observed` values
@@ -1269,6 +1278,111 @@ One proposal may change several entities and is applied all or nothing.
 **Proposed.** Reason: retiring a machine and moving its checkouts must not
 half-happen.
 
+**Proposed (M2-2, [#84](https://github.com/guneet-xyz/shinan/issues/84)):**
+the operations as Shinan applies them (`packages/core`,
+`applyOperations`). Each names its document by ID and states what it
+expects ([8.5](#85-conflicts)).
+
+| Operation             | What it does                                                                                                                                                                                                                                                                                                                                                                                                               |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `create-entity`       | A new entity with its fields, facts (each with its fact check) and body. The type comes from the ID.                                                                                                                                                                                                                                                                                                                       |
+| `set-fact`            | Writes one fact: it replaces the current fact with the same identity, or is added beside the others ([4.2](#42-fact-identity-cardinality-and-current-facts)). A change of state names the fact it settles in `supersedes`: a `planned` or `unknown` fact of the same key, settled by an `intended` or `observed` one ([4.4](#44-fact-states)). Taking away an `intended` or `observed` fact is a `remove-fact` of its own. |
+| `remove-fact`         | Removes one fact, named by its identity.                                                                                                                                                                                                                                                                                                                                                                                   |
+| `recheck-facts`       | A new fact check for facts whose values did not change; they move to its group. When every fact of a group is rechecked, the group keeps its place and only its fact check is rewritten.                                                                                                                                                                                                                                   |
+| `accept-discrepancy`  | Accepts a discrepancy ([4.7](#47-discrepancies)): every fact of it gets the reason as its `note` and `accepted`, naming the person who approves the proposal. It applies only when a person approves it.                                                                                                                                                                                                                   |
+| `edit-body`           | The whole body, or one section named by its anchor (or the text before the first heading). A section's new text starts with its own heading (the text before the first heading has none); a section expected to be absent is added at the end of the body; empty text removes a section.                                                                                                                                   |
+| `set-field`           | An entity's `title`, `summary`, `status` (between `active` and `deprecated` only), `owner` and decision fields; a type schema document's `title`, `summary`, `status`, `owner`, `required` and `sections`; the start-here document's `title`, `summary` and `owner`. Null removes an optional field.                                                                                                                       |
+| `retire`              | Sets `status: retired` on an entity or type schema document, with an entity's `replaced_by`.                                                                                                                                                                                                                                                                                                                               |
+| `change-id`           | A new ID of the same type; the old ID is added to `aliases`. Changing back to a former ID puts the old one in its place in `aliases`.                                                                                                                                                                                                                                                                                      |
+| `create-schema`       | A new type schema document, `schema/<type>`.                                                                                                                                                                                                                                                                                                                                                                               |
+| `set-schema-key`      | Adds, changes or removes one key of a type schema document.                                                                                                                                                                                                                                                                                                                                                                |
+| `create-start-here`   | The start-here document.                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `set-start-here-path` | Replaces the `people` or the `agents` path.                                                                                                                                                                                                                                                                                                                                                                                |
+
+Lifecycle changes beyond `retire` have no operation: `set-field` never sets
+`retired`, never changes the status of a retired document, and never writes
+`replaced_by`. Bringing a retired entity back would need its own gated
+operation that also removes `replaced_by`; none is proposed, so a retired
+entity stays retired. Reason: lifecycle changes are a gated class
+([8.2](#82-when-catalog-approval-is-needed)), and an active entity with a
+`replaced_by` would contradict [2.3](#23-entity-fields).
+
+How they are applied (**proposed**, M2-2):
+
+- **As text edits** ([architecture §5.2](architecture.md#52-the-invariant),
+  rule 2). An operation changes only the YAML entries, list items or body
+  sections it targets; other text, including comments, quoting,
+  indentation, flow or block style and `\r\n` line breaks, stays as it was.
+  What is removed goes with its own lines, including comments on them. A
+  document whose frontmatter cannot be read is not edited.
+- **New content in one canonical style:** block maps and lists indented by
+  two spaces; one line per fact, in the short form or a flow map in the
+  order `to`, relation attributes, `value`, `via`, `note`, `task`,
+  `remove`, `accepted`; flow lists for lists of names (`aliases`,
+  `required`, `sections`) and flow maps for a key's options; a new field
+  in the order of [2.3](#23-entity-fields); a new group at the end of
+  `facts`. Text and keys are written plain when YAML's core schema reads
+  them back as the same text, and double-quoted otherwise, so anything
+  that would read as a number, a boolean or null is quoted (`"1.10"`,
+  `"true"`, `"null"`, `"~"`); numbers are written as JavaScript writes
+  them, which the parser always reads back. A value that replaces a block
+  scalar (`|`, `>`) is written on the key's line, keeping the line break
+  the block scalar ended with. New body text takes the document's line
+  breaks.
+- **Facts move, never copy.** A fact that moves to another group (a
+  recheck, or a new check of a fact) keeps its own text and the comment at
+  the end of its line, re-indented if it is a block map; only text that
+  cannot stand in its new place (a block scalar, or a plain value moving
+  into a flow collection) is written again. A multi-valued key that gains a
+  second value becomes a list, in the style of the map it is in. A fact
+  written in a group with a matching check replaces the old one where it
+  stands. The new place is written before the old one is removed; keys,
+  state maps and groups left empty are then removed, and so is `facts`
+  when no group is left. A group cannot hold two facts of one
+  single-valued key, so such a fact goes to another group even when the
+  checks match.
+- **`by` and `accepted`** are written by Shinan: `by` from the request's
+  actor (identity §8.7), `accepted` from the person who approves an
+  `accept-discrepancy` ([4.7](#47-discrepancies)). An operation that sends
+  either is refused.
+- **Settled unknowns and acceptance.** A known value removes the `unknown`
+  facts it settles ([4.2](#42-fact-identity-cardinality-and-current-facts)).
+  A fact that replaces one with the same value keeps its `accepted` (and
+  its `note`, if the operation gives none); when the facts or values of a
+  discrepancy change, `accepted` is removed from all its facts
+  ([4.7](#47-discrepancies)).
+- **Order:** operations on type schema documents apply first and those on
+  the start-here document last, otherwise in proposal order, so a proposal
+  can create a type and entities of it. Each operation sees the documents
+  as the earlier ones left them, and an entity operation's identities are
+  those of the type schema as the proposal changes it. One limit follows:
+  a proposal cannot remove an entity's extra values of a multi-valued key
+  and make the key single-valued, since the entity operation's
+  expectations would name identities the schema change has already
+  replaced. Do it in two proposals: remove the values, then change the
+  schema.
+- **Malformed operations** (a missing or unknown field, a value of the
+  wrong type) are refused before anything applies.
+- **Limits** (**proposed**): at most 50 operations in a proposal, naming
+  at most 100 facts in all (one per `set-fact` and `remove-fact`, and each
+  fact of a `create-entity`, `recheck-facts` or `accept-discrepancy`).
+  Reason: each operation reads its document again after every edit, so the
+  work grows with the facts written (on a busy machine, about a tenth of a
+  second per fact in a 40 KB document); the limits sit far above real use (a
+  full recheck of Musashi, the largest trial entity, names 22 facts), and
+  applying runs off the main event loop with a time limit
+  ([security checklist 10.8](security-checklist.md#10-features-not-built-yet)).
+- **Self-check:** each operation's result is read back. It is refused
+  instead of stored if it reads with a problem the document did not have
+  before, if what it wrote (a fact, a field, a schema key, a path) does not
+  read back as written, or if anything it does not touch (other fields,
+  other facts, the body, or the frontmatter for a body edit) reads
+  differently. Validation ([8.3](#83-validation)) then runs on the whole
+  result.
+
+Reason: the Markdown stays the source of truth people wrote, while what
+Shinan adds looks the same everywhere and always reads back as written.
+
 ### 8.2 When catalog approval is needed
 
 **Decided (owner, O-3, [#25]):** only high-risk (gated) changes need catalog
@@ -1424,6 +1538,33 @@ latest revision. **Proposed.**
 - Reason: the `workspace` repository's rule ("resolve competing claims from
   evidence and observation time, not merge order"); per-fact operations make
   real conflicts rare.
+
+**Proposed (M2-2, [#84](https://github.com/guneet-xyz/shinan/issues/84)):**
+what each operation expects.
+
+- A fact operation names the [fact identity key](#42-fact-identity-cardinality-and-current-facts)
+  and either `absent: true` or the whole current fact: its value, its fact
+  check and the rest of its long form. The value is compared as text: a
+  value as written (`128`, `true`), a relation's target, or an `unknown`
+  fact's note. `via`, `note`, `task`, `remove`, `accepted` and all relation
+  attributes are compared too, a field left out meaning the fact does not
+  have it, so a stale expectation conflicts when, for example, a plan to
+  add a value has become a plan to remove it. The check is compared by
+  `checked` as written (null for no fact check), plus any of `by`, `scope`,
+  `source` and `limits` the operation gives. A `set-fact` names the
+  identity of the fact it writes; if the type schema now gives that fact
+  another identity (for example a key made single-valued), it conflicts.
+  `supersedes` names the fact a change of state settles, in the same way;
+  an `accept-discrepancy` names every fact of the discrepancy.
+- Field, body, schema-key and start-here operations expect the current
+  value: the field's value (or null for none), the section's or body's
+  exact text (or that the section is absent), the key's options, the
+  path's steps. `retire` expects the status; creating a document and
+  `change-id` expect no document to have the ID or alias.
+- A conflict and an operation that cannot apply as written are reported
+  apart (`conflict` and `invalid`), with the operation's position, so the
+  author knows whether to refresh the proposal or fix it. An operation
+  naming an entity's former ID is told its current ID.
 
 ### 8.6 Who sees and reviews proposals
 
