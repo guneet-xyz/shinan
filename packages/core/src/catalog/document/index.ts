@@ -109,3 +109,7 @@ export type {
   YamlNode,
   YamlScalar,
 } from "./yaml.js"
+export { findSecrets, maxCheckedLength } from "./secrets.js"
+export type { SecretFinding } from "./secrets.js"
+export { validateCatalog, validateChange } from "./validate.js"
+export type { Change, ValidationContext, ValidationResult } from "./validate.js"
