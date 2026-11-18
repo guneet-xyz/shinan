@@ -752,7 +752,17 @@ no forced re-approval.
 - A token is shown once, if at all, and Shinan stores only a one-way hash of
   it. Reason: a copy of Shinan's database must not contain usable tokens.
 - Tokens start with a recognisable prefix. Reason: leak scanners, and later
-  Shinan itself, can then spot them in text.
+  Shinan itself, can then spot them in text. **Proposed (M2-5,
+  [#83](https://github.com/guneet-xyz/shinan/issues/83)):** an agent token is
+  exactly 56 characters: the prefix `shinan_agent_` followed by 43 random
+  letters and digits (`A`–`Z`, `a`–`z`, `0`–`9`, chosen uniformly, about 256
+  bits). Scanners can match it with `shinan_agent_[A-Za-z0-9]{43}`. Reason:
+  the product name makes the prefix unmistakable, `agent` leaves room for the
+  launcher token's own prefix later, and with only letters, digits and
+  underscores the whole token is one word, so double-click selection and
+  word-boundary matching take it whole. A short checksum at the end, as
+  GitHub's tokens have, could be added later so scanners can reject
+  look-alikes without asking Shinan; it is not part of the format now.
 - Tokens are sent in an `Authorization` header, never in a web address.
   Reason: web addresses end up in logs; the MCP specification also forbids
   tokens in query strings.
