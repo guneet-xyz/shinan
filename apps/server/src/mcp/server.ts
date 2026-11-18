@@ -18,6 +18,7 @@ import {
   NotFoundError,
   productName,
   RuleViolationError,
+  shinanLabel,
 } from "@shinan/core"
 import type { AgentActor, Context, RequestInfo } from "@shinan/core"
 import type { Database } from "@shinan/db"
@@ -117,8 +118,18 @@ export function createMcp(options: McpOptions) {
       onerror: (error) => log(`MCP request failed: ${errorSummary(error)}`),
     },
   )
-  mcp.all("/", (c) =>
-    handler.fetch(c.req.raw, {
+  mcp.all("/", async (c) => {
+    let parsedBody: unknown
+    if (c.req.method === "POST") {
+      const checked = checkMessage(
+        await c.req.text(),
+        c.req.header("mcp-protocol-version"),
+      )
+      if (checked instanceof Response) return checked
+      parsedBody = checked
+    }
+    return handler.fetch(c.req.raw, {
+      parsedBody,
       authInfo: {
         // The token itself is never handed on: core checks the agent by
         // its records on every operation.
@@ -130,12 +141,62 @@ export function createMcp(options: McpOptions) {
           request: options.requestInfo(c),
         } satisfies CallContext as unknown as Record<string, unknown>,
       },
-    }),
-  )
+    })
+  })
   return mcp
 }
 
 const log = createLimitedLog()
+
+/**
+ * Checks a POST body before the SDK sees it, and returns it parsed, or the
+ * refusal:
+ *
+ * - **No batches.** Neither revision Shinan serves allows a JSON array of
+ *   messages (2025-06-18 removed batching), and one HTTP request carrying a
+ *   hundred calls would slip past the request limits, which count requests.
+ * - **Only the revisions Shinan serves** in `MCP-Protocol-Version`
+ *   (architecture §8.1); `initialize` negotiates to 2025-11-25 in the SDK.
+ * - **No `subscriptions/listen`.** Shinan sends no change notifications, so
+ *   a listening stream would only hold a connection and memory open for as
+ *   long as the client liked; it is refused at once (proposed: until a
+ *   tool needs notifications, with a per-agent cap and a lifetime then).
+ */
+export function checkMessage(
+  body: string,
+  protocolVersion: string | undefined,
+): unknown {
+  let message: unknown
+  try {
+    message = JSON.parse(body)
+  } catch {
+    return jsonRpcError(400, -32700, "The body is not JSON")
+  }
+  if (Array.isArray(message))
+    return jsonRpcError(
+      400,
+      -32600,
+      "Batches are not supported: send one message per request",
+    )
+  if (
+    protocolVersion !== undefined &&
+    !(protocolVersions as readonly string[]).includes(protocolVersion)
+  )
+    return jsonRpcError(
+      400,
+      -32600,
+      `Unsupported protocol version; this server speaks ${protocolVersions.join(" and ")}`,
+    )
+  const { id, method } = (message ?? {}) as { id?: unknown; method?: unknown }
+  if (method === "subscriptions/listen")
+    return jsonRpcError(
+      200,
+      -32601,
+      "Shinan sends no change notifications, so it does not offer subscriptions/listen",
+      typeof id === "string" || typeof id === "number" ? id : null,
+    )
+  return message
+}
 
 /** What a tool call runs with. */
 interface CallContext {
@@ -143,9 +204,14 @@ interface CallContext {
   request: RequestInfo
 }
 
-function jsonRpcError(status: number, code: number, message: string) {
+function jsonRpcError(
+  status: number,
+  code: number,
+  message: string,
+  id: string | number | null = null,
+) {
   return new Response(
-    JSON.stringify({ jsonrpc: "2.0", id: null, error: { code, message } }),
+    JSON.stringify({ jsonrpc: "2.0", id, error: { code, message } }),
     { status, headers: { "content-type": "application/json" } },
   )
 }
@@ -167,7 +233,10 @@ export function serverInstructions(installationUrl: string | undefined) {
 function buildServer(options: McpOptions, call: CallContext): McpServer {
   const server = new McpServer(
     { name: "shinan", title: productName, version: "1" },
-    { instructions: serverInstructions(options.installationUrl) },
+    {
+      instructions: serverInstructions(options.installationUrl),
+      supportedProtocolVersions: [...protocolVersions],
+    },
   )
   const ctx: Context = {
     db: options.db,
@@ -336,7 +405,12 @@ function refusal(error: CoreError): { error: string; message: string } {
   return { error: "failed", message: error.message }
 }
 
-function toolError(body: { error: string; message: string }): CallToolResult {
+/** A tool error, in Shinan's own words (it never repeats the input), labelled as such. */
+function toolError(refused: {
+  error: string
+  message: string
+}): CallToolResult {
+  const body = { ...refused, label: shinanLabel }
   return {
     content: [{ type: "text", text: JSON.stringify(body) }],
     structuredContent: body,

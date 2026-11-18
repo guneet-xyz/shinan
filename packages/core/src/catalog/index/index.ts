@@ -81,4 +81,5 @@ export type {
   AgentSearchInput,
   AgentWorkspaceContext,
 } from "./agent.js"
+export { outsideLabel, shinanLabel } from "./labels.js"
 export type { TrustLabel } from "./labels.js"

@@ -1918,6 +1918,11 @@ Choices the format implies, all **proposed**:
       agent churn makes it large, it can be compacted without changing the
       rule.
 
+  A fact check's `by` names who checked a fact, not who wrote every part of
+  it (an acceptance note, a note kept through someone else's recheck), so
+  trust labels never rest on `by` alone
+  ([agent integrations](agent-integrations.md#trust-labels)).
+
   Reason: trust labels ([agent integrations](agent-integrations.md#trust-labels))
   need the writer of each section from Shinan's records, and must not let a
   mechanical edit or a revert make an agent's words look like a person's;

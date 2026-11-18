@@ -25,6 +25,7 @@ import {
   labelForActor,
   labelForWrittenActor,
   lessTrusted,
+  outsideLabel,
   shinanLabel,
 } from "./labels.js"
 import type { TrustLabel } from "./labels.js"
@@ -50,16 +51,20 @@ import {
  * A `label` on an object covers that object's own text fields; objects
  * inside it carry their own. Labels come from Shinan's records:
  *
- * - a fact: its fact check's `by`, which Shinan writes from the actor of
- *   the request that applied it; facts with no fact check, like entity
- *   fields, take the document's label;
+ * - a fact: the less trusted of its fact check's `by` (who checked it,
+ *   written by Shinan from the request's actor) and its document's label,
+ *   since `by` does not say who wrote every part of the fact (an
+ *   acceptance note, or a note kept through someone else's recheck);
  * - a body section: its `written_by`, the least-trusted author whose words
  *   may remain in it (catalog §12.4; owner, M2-Q6);
  * - an entity's own fields, start-here steps and a custom type schema: the
  *   least-trusted author of any revision of the document;
  * - a discrepancy: the least trusted of its facts;
- * - what Shinan computes (freshness, revision numbers, the change list):
- *   `shinan`.
+ * - what Shinan computes (freshness, revision numbers, the change list's
+ *   records): `shinan`; the IDs in the change list take their documents'
+ *   labels;
+ * - anything no rule covers: `outside`, the least trusted, so a gap errs
+ *   towards caution.
  */
 
 /** The agent's own workspace: tools never take one. */
@@ -140,7 +145,7 @@ export async function agentWorkspaceContext(
           "start-here",
           ...summaryIds(answer.start_here),
         ])
-        const label = labels.get("start-here") ?? shinanLabel
+        const label = labels.get("start-here") ?? outsideLabel
         context.start_here = labelSummaries(
           { ...answer.start_here, label },
           labels,
@@ -174,19 +179,21 @@ export async function agentSearchCatalog(
   input: AgentSearchInput,
 ): Promise<Record<string, unknown>> {
   const agent = agentOf(ctx)
-  return inWorkspace(
+  const listing = input.text === undefined && input.relatedTo === undefined
+  const { answer, actor } = await inWorkspace(
     ctx,
     agent.workspaceId,
     "catalog.read",
-    async ({ tx, workspaceId }) => {
-      let answer: Record<string, unknown>
+    async (scope) => {
+      const { tx, workspaceId } = scope
+      let read: Record<string, unknown>
       if (input.relatedTo !== undefined) {
         if (input.text !== undefined)
           throw new InvalidInputError(
             "relatedTo",
             "Search by text or by relation, not both",
           )
-        answer = {
+        read = {
           ...(await readCatalogNeighbours(tx, workspaceId, {
             id: input.relatedTo,
           })),
@@ -197,25 +204,45 @@ export async function agentSearchCatalog(
             "offset",
             "A text search returns its best results in one page",
           )
-        answer = {
+        read = {
           ...(await readCatalogSearch(tx, workspaceId, {
             text: input.text,
             ...optional(input),
           })),
         }
       } else {
-        answer = {
+        read = {
           ...(await readCatalogEntities(tx, workspaceId, {
             ...optional(input),
             ...(input.offset === undefined ? {} : { offset: input.offset }),
           })),
         }
       }
-      await addFreshness(tx, workspaceId, answer)
-      return labelAnswer(tx, workspaceId, answer)
+      await addFreshness(tx, workspaceId, read)
+      return {
+        answer: await labelAnswer(tx, workspaceId, read),
+        actor: scope.actor,
+      }
     },
     snapshotRead,
   )
+  // Paging on through every entity is a download of the index too: each
+  // page after the first is recorded, as for `catalog_lists`.
+  if (listing && (input.offset ?? 0) > 0)
+    await recordSecurityEntry(ctx.db, {
+      workspaceId: agent.workspaceId,
+      action: "catalog.bulk-read",
+      outcome: "succeeded",
+      actor,
+      request: ctx.request ?? {},
+      details: {
+        list: "entities",
+        offset: input.offset ?? 0,
+        items: Array.isArray(answer.items) ? answer.items.length : 0,
+        catalogRevision: answer.catalog_revision,
+      },
+    })
+  return answer
 }
 
 function optional(input: AgentSearchInput) {
@@ -408,12 +435,14 @@ async function labelAnswer(
   workspaceId: string,
   answer: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
-  const ids = summaryIds(answer)
-  for (const schemaDocument of schemaDocumentIds(answer))
-    ids.push(schemaDocument)
+  const ids = [
+    ...summaryIds(answer),
+    ...schemaDocumentIds(answer),
+    ...changedDocumentIds(answer),
+  ]
   const labels = await documentLabels(tx, workspaceId, ids)
   labelSummaries(answer, labels)
-  inheritLabels(answer, shinanLabel)
+  inheritLabels(answer, outsideLabel)
   return answer
 }
 
@@ -446,6 +475,25 @@ function walk(
     for (const [key, child] of Object.entries(value))
       if (key !== "label") walk(child, visit)
   }
+}
+
+function isChange(object: Record<string, unknown>): boolean {
+  return (
+    typeof object.revision === "number" &&
+    typeof object.changed_by === "string" &&
+    Array.isArray(object.documents)
+  )
+}
+
+/** The IDs of the documents a change list names. */
+function changedDocumentIds(value: unknown): string[] {
+  const ids: string[] = []
+  walk(value, (object) => {
+    if (isChange(object))
+      for (const d of object.documents as { id: string | null }[])
+        if (d.id !== null) ids.push(d.id)
+  })
+  return ids
 }
 
 function isSummary(
@@ -505,7 +553,7 @@ function isSection(
 function labelSummaries(
   value: unknown,
   labels: ReadonlyMap<string, TrustLabel>,
-  inherited: TrustLabel = shinanLabel,
+  inherited: TrustLabel = outsideLabel,
 ): unknown {
   if (Array.isArray(value)) {
     for (const item of value) labelSummaries(item, labels, inherited)
@@ -513,7 +561,7 @@ function labelSummaries(
   }
   if (value === null || typeof value !== "object") return value
   const object = value as Record<string, unknown>
-  const of = (id: string) => labels.get(id) ?? shinanLabel
+  const of = (id: string) => labels.get(id) ?? outsideLabel
   if (!("label" in object)) {
     const wrapped = (object.entity ?? object.from) as
       Record<string, unknown> | undefined
@@ -523,10 +571,23 @@ function labelSummaries(
     else if (isTypeSchema(object))
       object.label =
         object.document === null ? shinanLabel : of(object.document)
+    // A fact check's `by` records who checked the fact, not who wrote all
+    // of it (an agent's acceptance note, or a recheck keeping an earlier
+    // note): never more trusted than its document.
     else if (isFact(object))
       object.label = object.check
-        ? labelForWrittenActor((object.check as { by: string | null }).by)
+        ? lessTrusted(
+            labelForWrittenActor((object.check as { by: string | null }).by),
+            inherited,
+          )
         : inherited
+    // A change: Shinan's record of who changed what, with each document
+    // named by an ID its author chose.
+    else if (isChange(object)) {
+      object.label = shinanLabel
+      for (const d of object.documents as Record<string, unknown>[])
+        d.label = typeof d.id === "string" ? of(d.id) : outsideLabel
+    }
     // A relation or a start-here step names its target with `to`: its
     // text is the writer's, not the target's.
     else if ("to" in object) object.label = inherited

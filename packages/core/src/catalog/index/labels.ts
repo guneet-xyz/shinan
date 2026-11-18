@@ -28,6 +28,16 @@ export const shinanLabel: TrustLabel = Object.freeze({
   instruction: "no",
 })
 
+/**
+ * For text whose writer Shinan cannot tell: the least trusted label. Every
+ * fallback is this one, so a gap in the rules errs towards caution.
+ */
+export const outsideLabel: TrustLabel = Object.freeze({
+  author_kind: "outside",
+  author: null,
+  instruction: "no",
+})
+
 /** The less trusted of two labels; the first when they are as trusted. */
 export function lessTrusted(a: TrustLabel, b: TrustLabel): TrustLabel {
   return trust[b.author_kind] < trust[a.author_kind] ? b : a
