@@ -295,6 +295,34 @@ describe("decide", () => {
       ).toMatchObject({ allowed: false })
     })
 
+    it("lets every member propose, and agents with catalog:propose", () => {
+      expect(allowed("catalog.propose", owner)).toEqual({ allowed: true })
+      expect(allowed("catalog.propose", contributor)).toEqual({ allowed: true })
+      expect(
+        allowed("catalog.propose", {
+          ...ownersAgent,
+          scopes: ["catalog:propose"],
+        }),
+      ).toEqual({ allowed: true })
+      expect(
+        allowed("catalog.propose", {
+          ...ownersAgent,
+          scopes: ["catalog:read"],
+        }),
+      ).toEqual({ allowed: false, reason: "scope" })
+    })
+
+    it("reserves catalog approval for people", () => {
+      expect(allowed("catalog.approve", owner)).toEqual({ allowed: true })
+      expect(allowed("catalog.approve", contributor)).toEqual({ allowed: true })
+      expect(
+        allowed("catalog.approve", {
+          ...ownersAgent,
+          scopes: ["catalog:read", "catalog:propose"],
+        }),
+      ).toEqual({ allowed: false, reason: "people-only" })
+    })
+
     it("lets only Shinan keep the index in step", () => {
       expect(allowed("catalog-index.maintain", { kind: "shinan" })).toEqual({
         allowed: true,

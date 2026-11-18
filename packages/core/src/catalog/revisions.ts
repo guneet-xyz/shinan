@@ -22,6 +22,16 @@ export interface RevisionDocument {
   parsed?: CatalogDocument
 }
 
+/** What a revision came from, recorded with it (architecture §5.3). */
+export interface RevisionSource {
+  /** The catalog proposal it applies (M2-4). */
+  proposalId: string
+  /** The revision the proposal was made against. */
+  basedOnRevision: number
+  /** The person whose catalog approval applied it, if it needed one. */
+  approvedBy?: { personId: string; label: string }
+}
+
 export interface AppliedRevision {
   revision: number
   /** The stable IDs of the documents, in the order given. */
@@ -41,6 +51,7 @@ export async function appendCatalogRevision(
   workspaceId: string,
   actor: RevisionActor,
   documents: readonly RevisionDocument[],
+  source?: RevisionSource,
 ): Promise<AppliedRevision> {
   if (documents.length === 0)
     throw new Error("A catalog revision changes at least one document")
@@ -80,6 +91,10 @@ export async function appendCatalogRevision(
     actorAgentSessionId: actor.agentSessionId,
     actorLabel: actor.label,
     confidence: actor.confidence,
+    proposalId: source?.proposalId ?? null,
+    basedOnRevision: source?.basedOnRevision ?? null,
+    approvedByPersonId: source?.approvedBy?.personId ?? null,
+    approvedByLabel: source?.approvedBy?.label ?? null,
   })
 
   if (given.length > 0) {
