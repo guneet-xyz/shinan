@@ -2,10 +2,12 @@ import { serve } from "@hono/node-server"
 
 import {
   changeEmailOf,
+  checkCatalogIndexes,
   endSessionsOf,
   NotFoundError,
   prepareSetupLink,
   productName,
+  rebuildCatalogIndex,
   RuleViolationError,
   setUpInstallation,
   setupLinkHours,
@@ -44,7 +46,13 @@ Recovery, for installation operators (recorded in the security log):
                                          add it to the allowlist; remove the
                                          old address from the allowlist,
                                          withdraw invitations pending for it
-                                         and end their sign-in sessions`
+                                         and end their sign-in sessions
+
+The agent index, for installation operators:
+  catalog-index rebuild <workspace-id>...  Rebuild workspaces' agent indexes
+                                         from their catalog text now
+  catalog-index check [<workspace-id>...]  Run the round-trip check now (all
+                                         workspaces if none are named)`
 
 /** Runs one CLI command and resolves to the process exit code. */
 export async function runCommand(
@@ -53,6 +61,7 @@ export async function runCommand(
 ): Promise<number> {
   const [command, ...rest] = args
   if (command === "account") return runAccountCommand(rest, env)
+  if (command === "catalog-index") return runCatalogIndexCommand(rest, env)
   if (rest.length > 0) {
     console.error(`Unexpected arguments: ${rest.join(" ")}\n\n${usage}`)
     return 1
@@ -201,6 +210,61 @@ async function runAccountCommand(args: string[], env: Env): Promise<number> {
     }
     if (error instanceof NotFoundError) {
       console.error(`No person has the handle ${handle}`)
+      return 1
+    }
+    throw error
+  } finally {
+    await pool.end()
+  }
+}
+
+/**
+ * The agent index's upkeep, run at once (architecture §5.2, §5.3): the
+ * worker does the same on its own after releases and daily.
+ */
+async function runCatalogIndexCommand(
+  args: string[],
+  env: Env,
+): Promise<number> {
+  const [action, ...workspaceIds] = args
+  if (
+    !(action === "rebuild" && workspaceIds.length > 0) &&
+    action !== "check"
+  ) {
+    console.error(
+      `Unexpected arguments: catalog-index ${args.join(" ")}\n\n${usage}`,
+    )
+    return 1
+  }
+  const { db, pool } = createDatabase(readDatabaseUrl(env))
+  const ctx = { db, actor: shinan }
+  try {
+    if (action === "rebuild") {
+      for (const workspaceId of workspaceIds) {
+        const rebuilt = await rebuildCatalogIndex(ctx, { workspaceId })
+        console.info(
+          `Rebuilt the agent index of workspace ${workspaceId} at revision ${rebuilt.revision} (${rebuilt.documents} documents)`,
+        )
+      }
+      return 0
+    }
+    const results = await checkCatalogIndexes(
+      ctx,
+      workspaceIds.length > 0 ? { workspaceIds } : {},
+    )
+    for (const r of results) {
+      const detail =
+        r.outcome === "differs"
+          ? `: ${r.differenceCount} documents differ (${r.differences
+              .map((d) => `${d.documentId}: ${d.tables.join(", ")}`)
+              .join("; ")})`
+          : ""
+      console.info(`Workspace ${r.workspaceId}: ${r.outcome}${detail}`)
+    }
+    return results.some((r) => r.outcome !== "matched") ? 1 : 0
+  } catch (error) {
+    if (error instanceof NotFoundError) {
+      console.error("No workspace has that ID")
       return 1
     }
     throw error

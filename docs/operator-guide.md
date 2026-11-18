@@ -276,6 +276,26 @@ docker compose run --rm --no-deps web account end-sessions <handle>
 docker compose run --rm --no-deps web account change-email <handle> <new address>
 ```
 
+## The agent index
+
+The catalog's agent index is built from the stored catalog text and can be
+rebuilt from it at any time
+([architecture §5.2, §5.3](architecture.md#52-the-invariant)). The worker
+rebuilds it by itself after a release that changes how catalog text is read,
+and checks every night (03:40 UTC) that the stored index still matches the
+text. A mismatch is logged by the worker (`Catalog index check: workspace …`)
+by workspace and document IDs only. Operators see each workspace's index
+state at `/api/installation/catalog-index`. To rebuild a workspace's index,
+or to run the check now:
+
+```sh
+docker compose run --rm --no-deps web catalog-index rebuild <workspace-id>
+docker compose run --rm --no-deps web catalog-index check [<workspace-id>]
+```
+
+While a rebuild runs, agents and the wiki keep reading the old index, marked
+as behind.
+
 ## Stopping and removing
 
 `docker compose down` stops everything and keeps the data. `docker compose

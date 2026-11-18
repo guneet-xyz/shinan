@@ -222,12 +222,20 @@ a second PR, so M2-2 and M2-3 can start earlier.
   health (architecture §5.2 rule 5).
 - **Tests:** index from text equals stored index; rebuild after deleting all
   derived rows gives the same rows.
+- **As built ([#85](https://github.com/guneet-xyz/shinan/issues/85)):** the
+  index is built from stored text, so M2-3 also adds the tables that hold it:
+  catalog documents (a stable ID and the current revision), catalog revisions
+  (numbered per workspace, credited like events) and each revision's
+  document text, with `appendCatalogRevision` storing and indexing a
+  revision in the caller's transaction. M2-4 adds the proposal, approver and
+  based-on records and calls that function when it applies a proposal.
 
 ### 3.4 M2-4: Catalog storage, proposals and approval
 
 - **Tables:** catalog documents (current revision per document), catalog
   revisions (full text, author and attribution, approver, catalog proposal,
-  based-on revision, time), catalog proposals (author, explanation, related
+  based-on revision, time; M2-3 built the documents, revisions, text and
+  author, so M2-4 adds the rest), catalog proposals (author, explanation, related
   task ID as text until M3, operations, inline fact checks, validation
   results, approval class, state `pending`/`applied`/`rejected`/`withdrawn`,
   idempotency key), proposal comments.

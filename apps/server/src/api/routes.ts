@@ -19,6 +19,7 @@ import {
   endSignInSession,
   findInvitation,
   getAccount,
+  getCatalogIndexHealth,
   getConnectedAgent,
   getInstallation,
   getWorkspace,
@@ -396,6 +397,11 @@ export function createApi({
         addedAt: iso(e.addedAt),
       })) satisfies Api.AllowlistEntry[],
     )
+  })
+
+  signedIn.get("/installation/catalog-index", async (c) => {
+    const health = await getCatalogIndexHealth(ctx(c))
+    return c.json(health satisfies Api.CatalogIndexHealth)
   })
 
   signedIn.post("/installation/allowlist", async (c) => {

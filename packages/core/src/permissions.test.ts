@@ -266,6 +266,55 @@ describe("decide", () => {
     })
   })
 
+  describe("the catalog and its agent index", () => {
+    it("lets every member read the catalog, and agents with catalog:read", () => {
+      expect(allowed("catalog.read", owner)).toEqual({ allowed: true })
+      expect(allowed("catalog.read", contributor)).toEqual({ allowed: true })
+      expect(
+        allowed("catalog.read", { ...ownersAgent, scopes: ["catalog:read"] }),
+      ).toEqual({ allowed: true })
+      expect(
+        allowed("catalog.read", { ...ownersAgent, scopes: ["tasks:read"] }),
+      ).toEqual({ allowed: false, reason: "scope" })
+      expect(allowed("catalog.read", { kind: "shinan" })).toEqual({
+        allowed: false,
+        reason: "actor",
+      })
+    })
+
+    it("lets only Shinan keep the index in step", () => {
+      expect(allowed("catalog-index.maintain", { kind: "shinan" })).toEqual({
+        allowed: true,
+      })
+      expect(
+        allowed("catalog-index.maintain", {
+          kind: "person",
+          operator: true,
+          reauthenticated: true,
+        }),
+      ).toEqual({ allowed: false, reason: "actor" })
+    })
+
+    it("shows the index's health to operators, not other people or agents", () => {
+      expect(
+        allowed("catalog-index.read-health", {
+          kind: "person",
+          operator: true,
+        }),
+      ).toEqual({ allowed: true })
+      expect(allowed("catalog-index.read-health", { kind: "person" })).toEqual({
+        allowed: false,
+        reason: "role",
+      })
+      expect(
+        allowed("catalog-index.read-health", {
+          ...ownersAgent,
+          operator: true,
+        }),
+      ).toEqual({ allowed: false, reason: "actor" })
+    })
+  })
+
   describe("agents and tokens", () => {
     it("lets every member see, register and change their agents", () => {
       for (const person of [owner, contributor]) {
