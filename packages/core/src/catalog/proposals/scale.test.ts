@@ -30,9 +30,16 @@ import type { ProposalOutcome } from "./proposals.js"
  * of about 57 KB, read at full speed under the usual 20 s limit. With
  * SHINAN_PROPOSAL_SCALE_SHAPE, other shapes at their memory limit: `facts`
  * (100 facts in one check group; 1,600 documents), `groups` (100 facts
- * each in its own group; 770 documents) or `small` (two facts and a short
- * body; 20,000 documents). SHINAN_PROPOSAL_SCALE_HEAP_MB sets the worker's
+ * each in its own group; 770 documents), `small` (two facts and a short
+ * body; 20,000 documents), `plain` (49 KB of plain prose; 1,000 documents,
+ * 49 MiB) or `secrets` (1,000 suspected secrets each, the check's most per
+ * text; 480 documents). SHINAN_PROPOSAL_SCALE_HEAP_MB sets the worker's
  * heap, such as the 640 MiB floor.
+ *
+ * Then, after another restart, the owner extends the `machine` type, so
+ * every document is validated again (#116 review): the first proposal
+ * after a restart must not pay for validating the whole catalog, nor
+ * validating again its secret check.
  */
 
 const { db, pool } = testDatabase()
@@ -56,6 +63,8 @@ const shape = process.env.SHINAN_PROPOSAL_SCALE_SHAPE
 const facts = shape === "facts"
 const groups = shape === "groups"
 const small = shape === "small"
+const plain = shape === "plain"
+const secrets = shape === "secrets"
 const heapMb = process.env.SHINAN_PROPOSAL_SCALE_HEAP_MB
 
 function machine(i: number, person: string): string {
@@ -70,6 +79,14 @@ function machine(i: number, person: string): string {
     for (let k = 0; k < 100; k++)
       written += `      x${k}: { value: v${k}, note: n }\n`
     return `---\nid: machine/m${i}\ntype: machine\ntitle: Machine ${i}\nsummary: M.\nstatus: active\nowner: ${person}\nfacts:\n  - checked: 2026-11-14\n    by: ${owner.handle}\n    scope: All\n    source: ssh\n    observed:\n${written}---\n\n# M\n`
+  }
+  if (plain || secrets) {
+    let body = `# Machine ${i}\n\n`
+    if (secrets) for (let s = 0; s < 1000; s++) body += `pwd=Q${i}x${s}k\n`
+    else
+      for (let s = 0; body.length < 49_000; s++)
+        body += `Paragraph ${s} of machine ${i} says what it runs, who relies on it and what to be careful of, at the length a long page has.\n\n`
+    return `---\nid: machine/m${i}\ntype: machine\ntitle: Machine ${i}\nsummary: M.\nstatus: active\nowner: ${person}\n---\n\n${body}`
   }
   if (small)
     return `---\nid: machine/m${i}\ntype: machine\ntitle: Machine ${i}\nsummary: M.\nstatus: active\nowner: ${person}\nfacts:\n  - checked: 2026-11-14\n    by: ${owner.handle}\n    scope: All\n    source: ssh\n    observed:\n      role: Host ${i}\n      hostname: m${i}\n---\n\n# Machine ${i}\n\nNext to [machine ${(i + 1) % count}](machine/m${(i + 1) % count}).\n`
@@ -235,6 +252,38 @@ describe("proposals after a restart", () => {
           : [],
       )
       expect(revisions.sort()).toEqual([2, 3, 4])
+    } finally {
+      replaceCatalogWorkers(previous!)
+      await workers.close()
+    }
+  }, 600_000)
+
+  it("extends a type of every document after a restart", async () => {
+    const workers = new CatalogWorkers(heapMb ? { heapMb: Number(heapMb) } : {})
+    const previous = replaceCatalogWorkers(workers)
+    try {
+      const started = Date.now()
+      const outcome = await proposeCatalogChange(
+        asPerson(db, owner),
+        workspaceId,
+        {
+          explanation: "Machines record their rack.",
+          operations: [
+            {
+              op: "create-schema",
+              type: "machine",
+              title: "Machine",
+              summary: "Machines, with what this workspace adds.",
+              owner: `person/${owner.handle}`,
+              keys: { rack: {} },
+            },
+          ],
+        },
+      )
+      console.log(
+        `${count} documents: extending their type after a restart took ${Date.now() - started} ms`,
+      )
+      expect(outcome.outcome).toBe("applied")
     } finally {
       replaceCatalogWorkers(previous!)
       await workers.close()

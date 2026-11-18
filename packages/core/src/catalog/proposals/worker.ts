@@ -26,6 +26,12 @@ function handle(request: WorkerRequest): WorkerResponse {
       cache.load(request.texts, evicted)
       return { id: request.id, outcome: "loaded", evicted }
     }
+    if (request.type === "validate")
+      return {
+        id: request.id,
+        ...cache.validate(request.documents, request.input),
+        evicted,
+      }
     return {
       id: request.id,
       ...cache.prepare(request.documents, request.input),

@@ -1,47 +1,74 @@
 import { utf8Length } from "../document/index.js"
 import type { CatalogDocument } from "../document/index.js"
 
+/** What a document's validation keeps (`CatalogValidation.counts`). */
+export interface ValidationCounts {
+  problems: number
+  secrets: number
+  references: number
+}
+
 /**
- * What a parsed document is estimated to take in a catalog worker's
- * memory, with its share of the kept validation (#116), in bytes
- * (**proposed**, M2-4, recalibrated for #116):
+ * What a document is estimated to take in a catalog worker's memory, in
+ * bytes (**proposed**, M2-4, recalibrated for #116): the parsed document,
  *
  *     3 × text bytes + 1,792 × facts + 2,048 × fact check groups
- *       + 256 × body sections + 320 × body links + 8 KiB
+ *       + 256 × body sections + 128 × body links + 8 KiB,
  *
- * Calibrated on Daedalus (Node's heap after parsing 400 documents of each
- * shape, text included, then validating them, per document) so that it is
- * above every shape measured. The shapes are at their worst for the
- * validation: each fact is outside its type's schema and each link goes
- * nowhere, so each has a warning.
+ * and, given its counts (`CatalogValidation.counts`), what its kept
+ * validation holds,
  *
- * | Shape                                    | Text    | Parsed  | Validation | Estimate |
- * | ---------------------------------------- | ------- | ------- | ---------- | -------- |
- * | The least an entity holds                | 0.1 KB  | 5.2 KiB | 0.6 KiB    | 8.9 KiB  |
- * | Small entity: 5 facts, 2 sections        | 0.4 KB  | 12 KiB  | 0.9 KiB    | 21 KiB   |
- * | Typical entity: 6 facts, 43 sections     | 1.8 KB  | 23 KiB  | 1.2 KiB    | 37 KiB   |
- * | 100 long-form facts in one check group   | 3.7 KB  | 138 KiB | 20 KiB     | 196 KiB  |
- * | 100 facts, each in its own check group   | 11 KB   | 293 KiB | 20 KiB     | 414 KiB  |
- * | 365 short facts                          | 5.8 KB  | 230 KiB | 71 KiB     | 666 KiB  |
- * | Prose: 329 sections, 327 links           | 38 KB   | 131 KiB | 55 KiB     | 302 KiB  |
- * | A list of 2,004 links                    | 48 KB   | 279 KiB | 340 KiB    | 778 KiB  |
+ *     256 × problems + 384 × secrets found + 256 × names referenced.
  *
- * A link going nowhere costs about 170 bytes of validation, so links count
- * 320 bytes (128 before #116); the kept validation adds 1 to 20 KiB for
- * the other shapes. The fixed part is 8 KiB (16 KiB before #116): the
- * least an entity holds measured 5.8 KiB. The tightest shape is 100 facts
- * in one check group, at 1.24 times its heap. The kept validation holds
- * the documents and their problems, not the resolved catalog
- * (`CatalogValidation`); a proposal's own catalogs come and go within it.
+ * The parse cache's budget counts the first part; the catalog's limit
+ * (`catalogLimits`) both, from the validations a proposal makes, so any
+ * output validation keeps is counted, however many problems or secrets a
+ * document has. Messages quote at most the document's own text, which the
+ * first part counts.
+ *
+ * Calibrated on Daedalus: Node's heap after parsing 300 documents of each
+ * shape, text included, then validating them as the worker does, per
+ * document; the estimate is above every shape measured.
+ *
+ * | Shape                                      | Text    | Problems, secrets, names | Heap     | Estimate | Ratio |
+ * | ------------------------------------------ | ------- | ------------------------ | -------- | -------- | ----- |
+ * | The least an entity holds                  | 0.1 KB  | 0, 0, 1                  | 7.3 KiB  | 9.2 KiB  | 1.25  |
+ * | Small entity: 5 facts, 2 sections          | 0.4 KB  | 0, 0, 2                  | 15 KiB   | 21 KiB   | 1.40  |
+ * | Typical entity: 6 facts, 43 sections       | 1.8 KB  | 1, 0, 2                  | 27 KiB   | 38 KiB   | 1.37  |
+ * | 100 long-form facts in one check group     | 3.7 KB  | 100, 0, 1                | 163 KiB  | 221 KiB  | 1.35  |
+ * | 100 facts, each in its own check group     | 11 KB   | 100, 0, 1                | 324 KiB  | 439 KiB  | 1.35  |
+ * | 365 short facts                            | 5.8 KB  | 364, 0, 1                | 308 KiB  | 755 KiB  | 2.46  |
+ * | Prose: 328 sections, each a dead link      | 39 KB   | 327, 0, 328              | 278 KiB  | 409 KiB  | 1.47  |
+ * | Plain prose                                | 49 KB   | 0, 0, 1                  | 55 KiB   | 152 KiB  | 2.75  |
+ * | 2,004 dead links, each to its own name     | 55 KB   | 1,997, 0, 1,998          | 1.0 MiB  | 1.4 MiB  | 1.40  |
+ * | 2,004 dead links to one name               | 53 KB   | 1,997, 0, 2              | 605 KiB  | 913 KiB  | 1.51  |
+ * | 1,000 suspected secrets (`pwd=…` lines)    | 14 KB   | 997, 997, 1              | 524 KiB  | 672 KiB  | 1.28  |
+ *
+ * Problems took 140 to 205 bytes each, a secret found about 300 bytes
+ * beyond its problem, and a name referenced up to 210 bytes when no other
+ * document references it. The kept secret scans (`SecretScans`) share the
+ * validation's findings and problems.
  */
-export function estimatedBytes(document: CatalogDocument): number {
+export function estimatedBytes(
+  document: CatalogDocument,
+  validation?: ValidationCounts,
+): number {
   return (
     3 * utf8Length(document.text) +
     (document.kind === "entity"
       ? 1792 * document.facts.length + 2048 * document.groups.length
       : 0) +
     256 * document.body.sections.length +
-    320 * document.body.links.length +
-    8 * 1024
+    128 * document.body.links.length +
+    8 * 1024 +
+    (validation
+      ? problemBytes * validation.problems +
+        secretBytes * validation.secrets +
+        referenceBytes * validation.references
+      : 0)
   )
 }
+
+const problemBytes = 256
+const secretBytes = 384
+const referenceBytes = 256

@@ -1,9 +1,15 @@
-import { parseCatalogDocument } from "../document/index.js"
+import {
+  parseCatalogDocument,
+  prepareCatalogValidation,
+  readCatalog,
+  SecretScans,
+  updateCatalogValidation,
+} from "../document/index.js"
 import type { CatalogDocument, CatalogValidation } from "../document/index.js"
 import { estimatedBytes } from "./estimate.js"
 import { cacheKey } from "./protocol.js"
 import type { LoadedText } from "./protocol.js"
-import { prepareChangeIncrementally } from "./work.js"
+import { prepareChangeIncrementally, validationContext } from "./work.js"
 import type { Prepared, PrepareInput, StoredDocument } from "./work.js"
 
 interface Cached {
@@ -35,9 +41,17 @@ export type CacheResult =
  * validation of the latest revision (#116, catalog §8.3 "Cost"), which
  * `estimatedBytes` also counts.
  *
+ * - **Validated while loading.** Before each proposal, once its documents
+ *   are loaded, `validate` brings the kept validation up to the latest
+ *   revision: every document after a start, the documents another
+ *   process's revision can affect otherwise. That runs under the loading's
+ *   time limit, so a proposal's own limit pays only for what its change
+ *   can affect.
+ * - **Secret scans** are kept by text (`SecretScans`), for the documents of
+ *   the kept validations only, so a document validated again (an entity
+ *   of a type whose schema changed, a referrer) is not scanned again.
  * - **What is kept.** Each proposal validates the latest revision from the
- *   kept validation and keeps the result, so a revision stored by another
- *   process is caught up with on the next proposal. A proposal ready to
+ *   kept validation and keeps the result. A proposal ready to
  *   store leaves its parsed documents and the validation of the catalog it
  *   would make; they are kept only if the next proposal finds them stored.
  * - **How "stored" is told.** By the text, never by revision numbers: when
@@ -65,8 +79,13 @@ export class CatalogCache {
   private bytes = 0
   private latest: CatalogValidation | undefined
   private written: Written | undefined
-  /** Stored texts parsed, and those taken from the last proposal instead. */
-  readonly counts = { parsed: 0, reused: 0 }
+  /** Secret scans of the kept validations' texts. */
+  readonly scans = new SecretScans()
+  /**
+   * Stored texts parsed, those taken from the last proposal instead, and
+   * latest revisions validated while loading.
+   */
+  readonly counts = { parsed: 0, reused: 0, validated: 0 }
 
   constructor(private readonly budget: number) {}
 
@@ -117,8 +136,37 @@ export class CatalogCache {
     }
     // The kept validations would hold on to evicted documents, and the
     // catalog does not fit anyway.
-    if (over) this.latest = this.written = undefined
+    if (over) {
+      this.latest = this.written = undefined
+      this.scans.keepOnly([])
+    }
     return evicted
+  }
+
+  /**
+   * Validates the latest revision of these documents, which must all be
+   * loaded, unless the kept validation already covers them: after loading,
+   * under the loading's time limit rather than the proposal's, so the first
+   * proposal after a start or a revision from another process does not pay
+   * for validating every document.
+   */
+  validate(
+    documents: readonly { documentId: string; revision: number }[],
+    input: Pick<PrepareInput, "now" | "memberHandles">,
+  ): { outcome: "validated" } | { outcome: "missing"; missing: string[] } {
+    const stored = this.stored(documents)
+    if (!Array.isArray(stored)) return stored
+    const latest = stored.map((s) => s.document)
+    const context = validationContext(input, this.scans)
+    if (!this.latest?.covers(latest, context)) {
+      const catalog = readCatalog(latest)
+      this.latest = this.latest
+        ? updateCatalogValidation(this.latest, catalog, context)
+        : prepareCatalogValidation(catalog, context)
+      this.counts.validated++
+    }
+    this.scans.keepOnly(this.latest.documents)
+    return { outcome: "validated" }
   }
 
   /** Applies a proposal to these documents, which must all be loaded. */
@@ -126,24 +174,15 @@ export class CatalogCache {
     documents: readonly { documentId: string; revision: number }[],
     input: PrepareInput,
   ): CacheResult {
-    const keys = documents.map((d) => cacheKey(d.documentId, d.revision))
-    const missing = keys.filter((key) => !this.cache.has(key))
-    if (missing.length > 0) return { outcome: "missing", missing }
-    const stored: StoredDocument[] = keys.map((key) => {
-      const entry = this.cache.get(key)!
-      this.cache.delete(key)
-      this.cache.set(key, entry)
-      return { documentId: entry.documentId, document: entry.document }
-    })
-    if (this.written) {
-      if (holdsExactly(this.written.after, stored))
-        this.latest = this.written.after
-      this.written = undefined
-    }
+    const stored = this.stored(documents)
+    if (!Array.isArray(stored)) return stored
     const { prepared, before, after } = prepareChangeIncrementally(
       stored,
       input,
-      this.latest,
+      {
+        ...(this.latest ? { base: this.latest } : {}),
+        secretScans: this.scans,
+      },
     )
     if (before) this.latest = before
     if (after && prepared.outcome === "ready") {
@@ -158,7 +197,37 @@ export class CatalogCache {
       }
       this.written = { after, byText }
     }
+    // Scans of the latest revision and of the change, nothing older.
+    this.scans.keepOnly([
+      ...(this.latest?.documents ?? []),
+      ...(this.written?.after.documents ?? []),
+    ])
     return { outcome: "done", result: prepared }
+  }
+
+  /**
+   * The parsed documents, most recently used last, taking the last
+   * proposal's validation as the latest revision's when it holds exactly
+   * these documents, so the proposal was stored.
+   */
+  private stored(
+    documents: readonly { documentId: string; revision: number }[],
+  ): StoredDocument[] | { outcome: "missing"; missing: string[] } {
+    const keys = documents.map((d) => cacheKey(d.documentId, d.revision))
+    const missing = keys.filter((key) => !this.cache.has(key))
+    if (missing.length > 0) return { outcome: "missing", missing }
+    const stored: StoredDocument[] = keys.map((key) => {
+      const entry = this.cache.get(key)!
+      this.cache.delete(key)
+      this.cache.set(key, entry)
+      return { documentId: entry.documentId, document: entry.document }
+    })
+    if (this.written) {
+      if (holdsExactly(this.written.after, stored))
+        this.latest = this.written.after
+      this.written = undefined
+    }
+    return stored
   }
 
   /**

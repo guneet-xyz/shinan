@@ -8,6 +8,7 @@ import type { CatalogDocument } from "./model.js"
 import { parseCatalogDocument } from "./parse.js"
 import {
   prepareCatalogValidation,
+  SecretScans,
   updateCatalogValidation,
   validateChange,
   validateChangeFully,
@@ -349,6 +350,7 @@ describe("incremental validation agrees with full validation", () => {
             let context: ValidationContext = { now }
             let latest: CatalogValidation | undefined
             let older: CatalogValidation | undefined
+            const scans = new SecretScans()
             for (const r of rounds) {
               const next = apply(catalog.documents, r.steps)
               const after = readCatalog(next.documents)
@@ -382,9 +384,10 @@ describe("incremental validation agrees with full validation", () => {
                   : r.base === "older"
                     ? older
                     : undefined
+              // Secret scans kept across rounds, as the worker keeps them.
               const incremental = validateChangeIncrementally(
                 change,
-                context,
+                { ...context, secretScans: scans },
                 base,
               )
               expect(incremental.result).toEqual(expected)

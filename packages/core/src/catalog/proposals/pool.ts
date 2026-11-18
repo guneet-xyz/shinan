@@ -26,6 +26,8 @@ export interface CatalogWorkerOptions {
   timeLimitMs?: number
   /** How long one batch of stored texts may take to parse. */
   loadLimitMs?: number
+  /** How long validating the latest revision may take, once it is parsed. */
+  validateLimitMs?: number
   /** Stored texts read from the database at a time. */
   readBatch?: number
   /** Bytes of stored text parsed per batch, each batch with its own limit. */
@@ -44,11 +46,12 @@ export interface CatalogWorkerOptions {
 
 export const defaultWorkerOptions: Required<CatalogWorkerOptions> = {
   /**
-   * 20 s. On a catalog at its limits, on Daedalus under a load of 8 to 10
-   * on 2 cores, a one-field change took 0.1 to 2.8 s, and the first one
-   * after the catalog was loaded, which validates every document, 1.5 to
-   * 4.5 s; the slowest proposal within the operation limits (a 100-fact
-   * recheck of a 54 KB document) took about 8 s under a load of 4 to 5.
+   * 20 s. On a catalog at its limits, on Daedalus under a load of 6 to 10
+   * on 2 cores, a one-field change took 0.1 to 2 s, and extending the type
+   * of every document 0.1 to 1.3 s, the latest revision being validated
+   * while loading; the slowest proposal within the operation limits (a
+   * 100-fact recheck of a 54 KB document) took about 8 s under a load of 4
+   * to 5.
    */
   timeLimitMs: 20_000,
   /**
@@ -56,19 +59,26 @@ export const defaultWorkerOptions: Required<CatalogWorkerOptions> = {
    * (documents full of facts, or of links), so about 1 s a batch.
    */
   loadLimitMs: 60_000,
+  /**
+   * 60 s. Validating every document of a catalog at its limits, as after a
+   * start, took 1 to 6 s on Daedalus under a load of 6 to 9, and 14 s for
+   * 49 MiB of prose under a load of 9 to 18, most of it the secret check.
+   */
+  validateLimitMs: 60_000,
   readBatch: 100,
   loadBatchBytes: 512 * 1024,
   /**
-   * 384 MiB: a catalog at its limit estimates at most 320 MiB, its kept
-   * validation included.
+   * 384 MiB of parsed documents (`estimatedBytes` without the validation):
+   * a catalog at its limit estimates at most 320 MiB, its kept validation
+   * included.
    */
   cacheBytes: 384 * 1024 * 1024,
   /**
-   * 768 MiB. Loading a catalog at its limits and applying one-field
-   * changes to it ran within a 448 MiB heap for every shape measured, and
-   * within 384 MiB for all but 1,670 documents of 100 facts, the shape
-   * that takes the most (#116); 640 MiB is the least the server accepts.
-   * Operators set it with `SHINAN_CATALOG_WORKER_HEAP_MB`.
+   * 768 MiB. Loading a catalog at its limits, validating it and applying
+   * one-field changes to it ran within a 384 MiB heap for every shape
+   * measured, keeping 65 to 263 MiB after collection (#116); 640 MiB is
+   * the least the server accepts. Operators set it with
+   * `SHINAN_CATALOG_WORKER_HEAP_MB`.
    */
   heapMb: 768,
   /**
@@ -114,8 +124,9 @@ export type Prepare = (
  *   worker then takes over the one least recently used.
  * - **Loading is not charged to a proposal.** Documents a worker has not
  *   parsed are read and parsed first, in batches of `loadBatchBytes`, each
- *   with its own limit, and kept as they come; a proposal's time limit
- *   starts once every document it needs is parsed.
+ *   with its own limit, and kept as they come; then the latest revision is
+ *   validated, under `validateLimitMs` (`CatalogCache.validate`). A
+ *   proposal's time limit starts once that is done.
  * - **A proposal past its time limit** stops only its own workspace's
  *   worker; the next proposal there loads the catalog again.
  * - **Memory** is bounded by each cache's byte budget and each worker's
@@ -308,14 +319,37 @@ class Slot {
         ),
         load,
       )
+      const keys = documents.map((d) => ({
+        documentId: d.documentId,
+        revision: d.revision,
+      }))
+      // Validating the latest revision is part of loading it, with a
+      // limit of its own: after a start it validates every document.
+      const validated = await this.post(
+        {
+          id: this.nextId++,
+          type: "validate",
+          documents: keys,
+          input: { now: input.now, memberHandles: input.memberHandles },
+        },
+        this.options.validateLimitMs,
+        () =>
+          new RuleViolationError(
+            "catalog-unreadable",
+            "Shinan could not validate this workspace's stored catalog in time",
+          ),
+      )
+      if (validated.outcome === "failed")
+        throw new Error(`The catalog worker failed: ${validated.message}`)
+      if (validated.outcome === "missing") {
+        for (const key of validated.missing) this.known.delete(key)
+        continue
+      }
       const response = await this.post(
         {
           id: this.nextId++,
           type: "prepare",
-          documents: documents.map((d) => ({
-            documentId: d.documentId,
-            revision: d.revision,
-          })),
+          documents: keys,
           input,
         },
         this.options.timeLimitMs,

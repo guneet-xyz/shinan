@@ -13,6 +13,8 @@ import type {
   DocumentChange,
   OperationProblem,
   Problem,
+  SecretScans,
+  ValidationContext,
 } from "../document/index.js"
 import { classifyChange, touchedIds } from "./classify.js"
 import type { ApprovalClass } from "./classify.js"
@@ -101,7 +103,7 @@ export function prepareChange(
   input: PrepareInput,
   base?: CatalogValidation,
 ): Prepared {
-  return prepareChangeIncrementally(stored, input, base).prepared
+  return prepareChangeIncrementally(stored, input, { base }).prepared
 }
 
 /**
@@ -109,12 +111,13 @@ export function prepareChange(
  * worker to keep: `before`, of the latest revision, whenever the change
  * was validated; `after`, of the catalog the change would make, when it is
  * ready to store. `after` becomes the latest revision's validation only
- * once the change is stored.
+ * once the change is stored. `secretScans` keeps secret scans between
+ * proposals (`SecretScans`).
  */
 export function prepareChangeIncrementally(
   stored: readonly StoredDocument[],
   input: PrepareInput,
-  base?: CatalogValidation,
+  kept: { base?: CatalogValidation; secretScans?: SecretScans } = {},
 ): {
   prepared: Prepared
   before?: CatalogValidation
@@ -163,10 +166,8 @@ export function prepareChangeIncrementally(
     return { prepared: { outcome: "problems", problems: result.problems } }
   if (result.changes.length === 0) return { prepared: { outcome: "unchanged" } }
 
-  const context = {
-    now: input.now,
-    memberHandles: new Set(input.memberHandles),
-  }
+  const context = validationContext(input, kept.secretScans)
+  const base = kept.base
   // The latest revision's own validation, so it can be kept whatever the
   // outcome; from it, the change's validation reuses it as it is.
   const before = base
@@ -214,32 +215,49 @@ export function prepareChangeIncrementally(
       memberHandles: memberHandlesOf(result.after, entityId),
     })),
     touches: touchedIds(result.changes),
-    size: sizeOf(stored, result.changes),
+    size: sizeOf(stored, result.changes, before, after),
   }
   return { prepared, before, after }
 }
 
+/** The validation context of a proposal. */
+export function validationContext(
+  input: Pick<PrepareInput, "now" | "memberHandles">,
+  secretScans?: SecretScans,
+): ValidationContext {
+  return {
+    now: input.now,
+    memberHandles: new Set(input.memberHandles),
+    ...(secretScans ? { secretScans } : {}),
+  }
+}
+
+/**
+ * The catalog's size before and after: each document with what its
+ * validation keeps (`estimatedBytes`), from the validations of both.
+ */
 function sizeOf(
   stored: readonly StoredDocument[],
   changes: readonly DocumentChange[],
+  before: CatalogValidation,
+  after: CatalogValidation,
 ): CatalogSize {
   let bytesBefore = 0
   let estimatedBefore = 0
   for (const { document } of stored) {
     bytesBefore += utf8Length(document.text)
-    estimatedBefore += estimatedBytes(document)
+    estimatedBefore += estimatedBytes(document, before.counts(document))
   }
   let bytes = bytesBefore
-  let estimated = estimatedBefore
+  let estimated = 0
   let added = 0
   for (const change of changes) {
-    if (change.before) {
-      bytes -= utf8Length(change.before.text)
-      estimated -= estimatedBytes(change.before)
-    } else added++
+    if (change.before) bytes -= utf8Length(change.before.text)
+    else added++
     bytes += utf8Length(change.after.text)
-    estimated += estimatedBytes(change.after)
   }
+  for (const document of after.documents)
+    estimated += estimatedBytes(document, after.counts(document))
   return {
     bytesBefore,
     bytes,

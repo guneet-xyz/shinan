@@ -311,7 +311,7 @@ one workspace's catalog parsed and validated in memory
 | Setting                         | Default | What it does                                                                                                                                          |
 | ------------------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `SHINAN_CATALOG_WORKERS`        | `1`     | Worker threads. With one, workspaces take turns, and switching workspaces reads the other catalog again; set 2 or more if several teams propose a lot |
-| `SHINAN_CATALOG_WORKER_HEAP_MB` | `768`   | Each worker's heap limit in MiB, at least 640. A catalog at its size limits ran within 448 MiB in every shape measured                                |
+| `SHINAN_CATALOG_WORKER_HEAP_MB` | `768`   | Each worker's heap limit in MiB, at least 640. A catalog at its size limits ran within 384 MiB in every shape measured                                |
 
 Raise the `web` container's memory with them: `SHINAN_WEB_MEMORY` (default
 `1536m`) should be at least 768 MiB more than workers × heap.

@@ -1487,14 +1487,16 @@ how proposals are applied and classed (`packages/core`, `catalog/proposals`).
   not counted ([architecture §5.3](architecture.md#53-how-sync-works)).
 - **A workspace's catalog** holds at most 20,000 documents, 50 MiB of text,
   and 320 MiB as Shinan estimates the memory it takes to hold it and its
-  validation (facts and links count most: `estimatedBytes`,
+  validation (facts, links, problems and suspected secrets count most:
+  `estimatedBytes`,
   [architecture §5.3](architecture.md#53-how-sync-works)). A change that
   takes it past any of these and grows it is refused (`catalog-full`); one
   that shrinks it is always accepted. Raised from 5,000 documents and
   25 MiB when validation became incremental
   ([#116](https://github.com/guneet-xyz/shinan/issues/116), "Cost" in
   [8.3](#83-validation)): at the new limits a one-field change took 0.1 to
-  2.8 s on a busy Daedalus, against 2 to 4.3 s at the old ones. An agent sends at most 60 proposals in
+  2 s on a busy Daedalus, against 2 to 4.3 s at the old ones, and extending
+  the type of every document 0.1 to 1.3 s. An agent sends at most 60 proposals in
   10 minutes, counted when Shinan starts on each. When the catalog workers
   are busy or an agent is over its limit, the proposal is refused at once
   as busy (HTTP 429 with `Retry-After`) and can be sent again. Reason: new
@@ -1614,6 +1616,9 @@ how the rules are applied.
   - when time has passed, the documents whose fact checks were in the future.
 
   An earlier time or other member handles validate every document again.
+  The secret check's findings are kept for each document text, so a document
+  validated again is not scanned again. The catalog worker validates the
+  latest revision while it loads it, not in a proposal's time.
   The result is the same as validating every document. A property test checks
   this against full validation on random catalogs and changes. Reason: a
   one-field change on a 20,000-document catalog then validates in about

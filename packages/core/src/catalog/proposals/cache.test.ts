@@ -71,12 +71,17 @@ function fresh(latest: readonly LoadedText[], input: PrepareInput): Prepared {
   )
 }
 
+/** As the catalog worker does: validates the latest revision, then prepares. */
 function ready(cache: CatalogCache, latest: LoadedText[], input: PrepareInput) {
+  expect(cache.validate(keys(latest), input)).toEqual({
+    outcome: "validated",
+  })
   const done = cache.prepare(keys(latest), input)
   if (done.outcome !== "done") throw new Error(done.outcome)
   // A kept validation never changes the result.
   expect(done.result).toEqual(fresh(latest, input))
-  if (done.result.outcome !== "ready") throw new Error(done.result.outcome)
+  if (done.result.outcome !== "ready")
+    throw new Error(JSON.stringify(done.result))
   return done.result
 }
 
@@ -101,7 +106,11 @@ describe("a catalog worker's kept catalog and validation (#116)", () => {
       },
     ])
     cache.load([revision2.find((t) => t.revision === 2)!])
-    expect(cache.counts).toEqual({ parsed: texts.length, reused: 1 })
+    expect(cache.counts).toEqual({
+      parsed: texts.length,
+      reused: 1,
+      validated: 1,
+    })
     ready(cache, revision2, rename("Daedalus II", "Daedalus III"))
     // The same documents at the same time: the stored proposal's
     // validation is the latest revision's, as it was.
@@ -165,6 +174,55 @@ describe("a catalog worker's kept catalog and validation (#116)", () => {
     expect(cache.counts.reused).toBe(1)
     ready(cache, revision2, rename("Daedalus", "Daedalus II"))
     expect(cache.validation).toBe(after)
+  })
+
+  it("validates the latest revision while loading, so a proposal scans only what it writes", () => {
+    const cache = new CatalogCache(Infinity)
+    cache.load(revision1)
+    cache.validate(keys(revision1), rename("Daedalus", "Daedalus II"))
+    expect(cache.counts.validated).toBe(1)
+    expect(cache.scans.scanned).toBe(texts.length)
+    ready(cache, revision1, rename("Daedalus", "Daedalus II"))
+    // Already validated: the proposal scanned only the text it wrote.
+    expect(cache.counts.validated).toBe(1)
+    expect(cache.scans.scanned).toBe(texts.length + 1)
+  })
+
+  it("does not scan again the entities of a type whose schema changes", () => {
+    const withExtension: LoadedText[] = [
+      ...revision1,
+      { documentId: "x", revision: 1, text: fixtures.machineExtension },
+    ]
+    const cache = new CatalogCache(Infinity)
+    cache.load(withExtension)
+    ready(cache, withExtension, rename("Daedalus", "Daedalus II"))
+    const latest = cache.validation!
+    const scanned = cache.scans.scanned
+    const extended = ready(
+      cache,
+      withExtension,
+      proposal({
+        op: "set-schema-key",
+        document: "schema/machine",
+        key: "rack",
+        options: {},
+        expect: { absent: true },
+      }),
+    )
+    expect(extended.documents.map((d) => d.parsed.id)).toEqual([
+      "schema/machine",
+    ])
+    // Every machine was validated again, from the scans kept.
+    const after = cache.waiting!
+    const machines = latest.documents.filter(
+      (d) => d.kind === "entity" && d.type === "machine",
+    )
+    expect(machines.length).toBeGreaterThan(1)
+    for (const machine of machines)
+      expect(after.entries.get(machine)).not.toBe(latest.entries.get(machine))
+    expect(cache.scans.scanned).toBe(scanned + 1)
+    // Only the scans of the kept validations' texts stay.
+    expect(cache.scans.size).toBe(withExtension.length + 1)
   })
 
   it("drops its validations when documents are evicted for its budget", () => {

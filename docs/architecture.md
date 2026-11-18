@@ -587,47 +587,56 @@ indexing (**Proposed**).
       not parsed (after a start, a restart, a switch of workspace or a
       change) are read in short reads of 100 and parsed in batches of at
       most 512 KiB of text, each with its own 60-second limit, and kept as
-      they come. A proposal's 20-second limit starts once every document it
-      needs is parsed.
+      they come. Then the latest revision is validated, with a 60-second
+      limit of its own: every document after a start, only what another
+      process's revision can affect otherwise. A proposal's 20-second limit
+      starts after that.
     - **A proposal past its limit** stops only its own workspace's worker;
       the next proposal there loads that catalog again.
     - **Kept validation** ([#116](https://github.com/guneet-xyz/shinan/issues/116)).
       Each worker also keeps the validation of its workspace's latest
       revision, so a proposal validates only the documents it can affect
-      (catalog §8.3, "Cost"). A proposal ready to store leaves its parsed
-      documents and the validation of the catalog it would make; the next
-      proposal keeps them if it finds them stored, telling so by the stored
-      text, never by revision numbers, and drops them otherwise (the
-      proposal waits for approval, its transaction rolled back, or another
-      process stored a revision first and the turn starts over). Any
-      revision's validation gives the same result, so keeping the latest
-      only saves work. Both are dropped with the worker (a time limit, out
-      of memory, a new workspace taking it over), when documents are
-      evicted for the cache's budget, and by `CatalogWorkers.forget`,
+      (catalog §8.3, "Cost"), and the secret check's findings for each
+      document text, by its SHA-256, so a document validated again (an
+      entity of a type whose schema changed, a referrer) is not scanned
+      again; scanning is most of validating long prose. A proposal ready to
+      store leaves its parsed documents and the validation of the catalog
+      it would make; the next proposal keeps them if it finds them stored,
+      telling so by the stored text, never by revision numbers, and drops
+      them otherwise (the proposal waits for approval, its transaction
+      rolled back, or another process stored a revision first and the turn
+      starts over). Any revision's validation gives the same result, so
+      keeping the latest only saves work. Scans are kept only for the texts
+      of the kept validations. All of it is dropped with the worker (a time
+      limit, out of memory, a new workspace taking it over), when documents
+      are evicted for the cache's budget, and by `CatalogWorkers.forget`,
       which purge needs because it rewrites stored text in place (to call
-      within the workspace's turn). A new parser or rules version comes
-      with new code, so with new processes and empty workers.
-    - **Memory.** Each worker's cache is limited to 384 MiB as estimated by
-      `estimatedBytes`, which counts each document's share of the kept
-      validation: 3 × text bytes + 1,792 × facts + 2,048 × fact check
-      groups + 256 × body sections + 320 × body links + 8 KiB per
-      document, above the heap measured for every shape tried (the least an
-      entity holds, small and typical entities, 100 long-form facts in one
-      check group or each in its own, 365 short facts, 38 KB of prose,
-      2,000 links), with a warning for every fact and link. The worker's
-      heap is limited to 768 MiB (`resourceLimits`,
-      `SHINAN_CATALOG_WORKER_HEAP_MB`, at least 640 MiB); one out of memory
-      is stopped like one out of time. A workspace's catalog is limited to
-      20,000 documents, 50 MiB of text and an estimate of 320 MiB (catalog
-      §8.2). Measured on Daedalus under a load of 8 to 10 on 2 cores, at
-      those limits: a one-field change took 0.1 to 2.8 s, most of it
-      applying the operations, which reads the catalog's entities twice;
-      the first proposal after loading, which validates every document,
-      took 1.5 to 4.5 s; and every shape ran within a 448 MiB heap, all but
-      the heaviest (1,670 documents of 100 facts) within 384 MiB. Through
-      the database, the first proposal after a restart on 20,000 small
-      documents took 27 s, almost all of it reading and parsing, and the
-      next ones 1.2 to 1.8 s.
+      within the workspace's turn). A new parser or rules version comes with
+      new code, so with new processes and empty workers.
+    - **Memory.** `estimatedBytes` estimates each document: parsed, 3 ×
+      text bytes + 1,792 × facts + 2,048 × fact check groups + 256 × body
+      sections + 128 × body links + 8 KiB; and what its validation keeps,
+      256 × problems + 384 × secrets found + 256 × names referenced, from
+      the counts of the validations a proposal makes. Both are above the
+      heap measured for every shape tried (the least an entity holds, small
+      and typical entities, 100 long-form facts in one check group or each
+      in its own, 365 short facts, prose with and without dead links, 2,000
+      dead links to one name or each to its own, 1,000 suspected secrets),
+      by 1.25 to 2.75 times. Each worker's parse cache is limited to
+      384 MiB of parsed documents. The worker's heap is limited to 768 MiB
+      (`resourceLimits`, `SHINAN_CATALOG_WORKER_HEAP_MB`, at least 640 MiB);
+      one out of memory is stopped like one out of time. A workspace's
+      catalog is limited to 20,000 documents, 50 MiB of text and an
+      estimate of 320 MiB with its validation (catalog §8.2). Measured on
+      Daedalus under a load of 6 to 10 on 2 cores, at those limits:
+      validating the latest revision while loading took 1 to 6 s; a
+      one-field change 0.1 to 2 s, most of it applying the operations, which
+      reads the catalog's entities twice; extending the type of every
+      document 0.1 to 1.3 s; and every shape ran within a 384 MiB heap,
+      keeping 65 to 263 MiB. Through the database, after a restart, 20,000
+      small documents took 27 s to the first proposal, almost all of it
+      reading and parsing, and 1,000 documents of 49 KB of prose 7 s to
+      extend their type.
     - **A catalog that no longer fits** (only if the estimate were wrong)
       makes proposals there fail with `catalog-too-large`; the `web` log
       and the workspace's security log say so, and the operator raises the
