@@ -32,7 +32,9 @@ phase**. Read these before doing anything else:
   its own connection, such as `takeRateLimit` or another `inWorkspace`, runs
   before the transaction opens or after it ends: otherwise as many requests
   as the pool has connections hang the process. Tests use a database that
-  refuses this (`refuseNestedConnections` in `packages/db`).
+  refuses this (`refuseNestedConnections` in `packages/db`), through `db`
+  and its pool, and fails any test that leaves a refusal behind, even one
+  the code caught.
 - Every PR has tests. Keep CI green: run `pnpm format:write`, `pnpm lint`,
   `pnpm typecheck` and `pnpm test` before pushing (the
   [README](README.md#developing-locally) explains the setup).

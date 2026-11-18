@@ -10,6 +10,10 @@ const sourceCondition = "@shinan/source"
 const databaseSetup = fileURLToPath(
   new URL("./packages/db/test/global-setup.ts", import.meta.url),
 )
+// Fails a test that leaves a refused nested connection behind (#142).
+const nestingCheck = fileURLToPath(
+  new URL("./packages/db/test/nesting-check.ts", import.meta.url),
+)
 
 // Server-side tests resolve packages the way Node.js does in production. Vite's
 // default server conditions include "module", a bundler convention that picks
@@ -44,6 +48,7 @@ export default defineConfig({
           name: "server",
           root: "apps/server",
           globalSetup: [databaseSetup],
+          setupFiles: [nestingCheck],
         },
       },
       {
@@ -66,6 +71,7 @@ export default defineConfig({
           name: "core",
           root: "packages/core",
           globalSetup: [databaseSetup],
+          setupFiles: [nestingCheck],
         },
       },
       {
@@ -84,6 +90,7 @@ export default defineConfig({
           name: "db",
           root: "packages/db",
           globalSetup: [databaseSetup],
+          setupFiles: [nestingCheck],
         },
       },
     ],

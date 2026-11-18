@@ -1,7 +1,10 @@
 import { sql } from "drizzle-orm"
 import { afterAll, describe, expect, it } from "vitest"
 
-import { NestedConnectionError } from "./nesting.js"
+import {
+  NestedConnectionError,
+  takeNestedConnectionRefusals,
+} from "./nesting.js"
 import * as schema from "./schema.js"
 import { connectTestDatabase } from "./testing.js"
 
@@ -27,7 +30,46 @@ describe("a query on db while the same work holds a transaction", () => {
     ).rejects.toBeInstanceOf(NestedConnectionError)
     await expect(
       db.transaction(() => db.transaction(() => Promise.resolve())),
-    ).rejects.toBeInstanceOf(NestedConnectionError)
+    ).rejects.toBeInstanceOf(NestedConnectionError) // Each refusal is recorded; taken here, since they are on purpose.
+    expect(takeNestedConnectionRefusals()).toHaveLength(3)
+  })
+
+  it("records a refusal even when the code swallows the error", async () => {
+    await db.transaction(async (tx) => {
+      try {
+        await db.execute(sql`select 1`)
+      } catch {
+        // Carrying on, as careless code might.
+      }
+      await tx.execute(sql`select 1`)
+    })
+    const [refusal] = takeNestedConnectionRefusals()
+    expect(refusal).toMatch(
+      /db\.execute\(\) was called while this work holds a transaction/,
+    )
+    // Taking them empties the record, which the test setup then finds clean.
+    expect(takeNestedConnectionRefusals()).toEqual([])
+  })
+
+  it("guards the raw pool too, through db.$client and as returned", async () => {
+    for (const client of [db.$client, pool]) {
+      await expect(
+        db.transaction(async () => {
+          await client.query("select 1")
+        }),
+      ).rejects.toBeInstanceOf(NestedConnectionError)
+      await expect(
+        db.transaction(async () => {
+          const connection = await client.connect()
+          connection.release()
+        }),
+      ).rejects.toBeInstanceOf(NestedConnectionError)
+    }
+    expect(takeNestedConnectionRefusals()).toHaveLength(4)
+    // Outside a transaction, the pool works as usual.
+    expect((await db.$client.query("select 1 as one")).rows).toEqual([
+      { one: 1 },
+    ])
   })
 
   it("is fine through the transaction, and before or after it", async () => {
