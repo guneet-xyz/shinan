@@ -46,7 +46,8 @@ types between server, web app, plugin and CLI, one CI.
 - **Prettier** exactly as the owner's
   [Prettier decision](https://git.guneet.dev/guneet/workspace/src/branch/main/decisions/prettier-configuration.md)
   sets out; **ESLint** for code rules.
-- **TypeScript 7** (`tsc`) type-checks and builds. typescript-eslint needs
+- **Decided (owner, 2026-11-18, [#97](https://github.com/guneet-xyz/shinan/issues/97)):**
+  **TypeScript 7** (`tsc`) type-checks and builds. typescript-eslint needs
   TypeScript's programmatic API, which TypeScript 7.0 does not have, so
   `typescript` is an alias for `@typescript/typescript6` and TypeScript 7 is
   installed as `@typescript/native`, as the
