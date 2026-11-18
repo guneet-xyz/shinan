@@ -25,12 +25,14 @@ COPY package.json ./
 RUN npm install --global corepack@0.36.0 && corepack enable && pnpm --version
 
 # Everything, built: the server, the packages it uses and the web app.
+# BuildKit runs this stage and `production` at the same time; the store's
+# cache mount is locked so that only one pnpm writes it at a time.
 FROM pnpm AS build
 COPY pnpm-lock.yaml pnpm-workspace.yaml ./
-RUN --mount=type=cache,id=shinan-pnpm,target=/pnpm/store \
+RUN --mount=type=cache,id=shinan-pnpm,target=/pnpm/store,sharing=locked \
     pnpm fetch --store-dir /pnpm/store
 COPY . .
-RUN --mount=type=cache,id=shinan-pnpm,target=/pnpm/store \
+RUN --mount=type=cache,id=shinan-pnpm,target=/pnpm/store,sharing=locked \
     pnpm install --offline --frozen-lockfile --store-dir /pnpm/store
 RUN pnpm build
 
@@ -49,7 +51,7 @@ COPY packages/api-client/package.json packages/api-client/
 COPY packages/core/package.json packages/core/
 COPY packages/db/package.json packages/db/
 COPY packages/email/package.json packages/email/
-RUN --mount=type=cache,id=shinan-pnpm,target=/pnpm/store \
+RUN --mount=type=cache,id=shinan-pnpm,target=/pnpm/store,sharing=locked \
     pnpm install --frozen-lockfile --prod --no-optional \
       --filter "@shinan/server..." --store-dir /pnpm/store
 # Native code built here would be for the build machine, not the target.
@@ -66,13 +68,20 @@ COPY --from=build /src/packages/core/dist packages/core/dist
 COPY --from=build /src/packages/db/dist packages/db/dist
 COPY --from=build /src/packages/db/migrations packages/db/migrations
 COPY --from=build /src/packages/email/dist packages/email/dist
+# Every owner and mode set here rather than kept from whatever pnpm, the
+# build context's checkout or a cached layer left: root, directories 755,
+# files 644 or 755 if executable. Done here because the runtime stage has
+# no shell, and not with `COPY --chmod`, whose `X` older builders (BuildKit
+# before v0.21, as in Docker Engine before 28.1) ignore without an error.
+RUN chown -R 0:0 /src && chmod -R u=rwX,go=rX /src
 
 # Distroless: Node.js and nothing else, no shell or package manager. Runs as
 # the unprivileged `nonroot` user (65532). /app and everything in it is owned
 # by root and not writable by that user, so the server cannot change its own
 # code even where the root file system is writable. The base image already
 # runs as `nonroot`, and WORKDIR would create /app as that user, so COPY
-# creates it first (as root). The first-start test checks this.
+# creates it first (as root) and keeps the owners and modes the `production`
+# stage set. The first-start test checks this.
 FROM gcr.io/distroless/nodejs26-debian13:nonroot@sha256:1d736cf8b5716c07a245301f92717143215d248fd55771ee1936ef4b3302e531
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \

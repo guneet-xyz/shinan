@@ -153,22 +153,33 @@ async function request(path, init = {}) {
 
 /**
  * Walks /app inside the image as its own user, on a writable root file
- * system and without a network, and lists what that user could write.
+ * system and without a network, and lists what that user could write and
+ * what is not owned by root or is writable by its group or everyone. What
+ * it cannot read is listed too, so a broken image fails a check.
  */
 function writableAppFiles() {
   const walk = `
     const fs = require("node:fs"), path = require("node:path")
     let checked = 0
-    const writable = []
+    const writable = [], loose = [], unreadable = []
     const visit = (p) => {
-      const stat = fs.lstatSync(p)
-      if (stat.isSymbolicLink()) return
+      let stat, entries = []
+      try {
+        stat = fs.lstatSync(p)
+        if (stat.isSymbolicLink()) return
+        if (stat.isDirectory()) entries = fs.readdirSync(p)
+      } catch (e) {
+        unreadable.push(p + " " + e.code)
+        if (!stat) return
+      }
       checked++
       try { fs.accessSync(p, fs.constants.W_OK); writable.push(p) } catch {}
-      if (stat.isDirectory()) for (const e of fs.readdirSync(p)) visit(path.join(p, e))
+      if (stat.uid !== 0 || stat.gid !== 0 || stat.mode & 0o022)
+        loose.push(p + " " + stat.uid + ":" + stat.gid + " " + (stat.mode & 0o7777).toString(8))
+      for (const e of entries) visit(path.join(p, e))
     }
     visit("/app")
-    console.log(JSON.stringify({ uid: process.getuid(), checked, writable }))`
+    console.log(JSON.stringify({ uid: process.getuid(), checked, writable, loose, unreadable }))`
   return JSON.parse(
     execFileSync(
       "docker",
@@ -195,10 +206,24 @@ async function healthy() {
 async function run() {
   const files = writableAppFiles()
   check(
+    files.unreadable.length === 0,
+    "the image's user can read every directory under /app" +
+      (files.unreadable.length
+        ? ` (not: ${files.unreadable.slice(0, 5).join(", ")})`
+        : ""),
+  )
+  check(
     files.uid === 65532 && files.checked > 1000 && files.writable.length === 0,
     `the image's ${files.checked} files and directories under /app are not writable by its user` +
       (files.writable.length
         ? ` (writable: ${files.writable.slice(0, 5).join(", ")})`
+        : ""),
+  )
+  check(
+    files.loose.length === 0,
+    "they are owned by root and not writable by their group or everyone" +
+      (files.loose.length
+        ? ` (not: ${files.loose.slice(0, 5).join(", ")})`
         : ""),
   )
 
