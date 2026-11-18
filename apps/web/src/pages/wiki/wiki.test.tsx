@@ -210,6 +210,7 @@ const history: CatalogHistoryAnswer = {
       changed_by: "guneet",
       changed_by_kind: "person",
       confidence: "recorded",
+      purge: 2,
     },
     {
       revision: 3,
@@ -217,6 +218,7 @@ const history: CatalogHistoryAnswer = {
       changed_by: "guneet via opencode-daedalus",
       changed_by_kind: "agent",
       confidence: "recorded",
+      purge: null,
     },
   ],
   next_before: null,

@@ -242,4 +242,46 @@ describe("the catalog workers", { timeout: 120_000 }, () => {
       ),
     ).resolves.toMatchObject({ outcome: "ready" })
   })
+
+  it("forget text parsed before a purge (catalog §9), seen from a turn or from outside", async () => {
+    const { workers, loaded, load } = setUp()
+    const turn = (purges: number) =>
+      workers.run("w1", async (prepare, turn) => {
+        await turn.purged(purges)
+        return prepare(documents, load, input)
+      })
+    await turn(0)
+    await turn(0)
+    expect(loaded).toEqual([["a@1", "b@1"]])
+    // A purge rewrote stored text in place: the same revisions are read again.
+    await turn(1)
+    expect(loaded).toEqual([
+      ["a@1", "b@1"],
+      ["a@1", "b@1"],
+    ])
+
+    // Seen from outside while idle: the worker stops at once.
+    await workers.forgetPurged(new Map([["w1", 2]]))
+    await turn(2)
+    expect(loaded).toHaveLength(3)
+    // Another workspace's purge, or the same number again, changes nothing.
+    await workers.forgetPurged(
+      new Map([
+        ["w1", 2],
+        ["w2", 5],
+      ]),
+    )
+    await turn(2)
+    expect(loaded).toHaveLength(3)
+
+    // Seen from outside during a turn: the worker stops when the turn ends.
+    await workers.run("w1", async (prepare) => {
+      await prepare(documents, load, input)
+      await workers.forgetPurged(new Map([["w1", 3]]))
+      await prepare(documents, load, input)
+    })
+    expect(loaded).toHaveLength(3)
+    await turn(3)
+    expect(loaded).toHaveLength(4)
+  })
 })

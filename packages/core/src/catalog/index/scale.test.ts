@@ -8,6 +8,7 @@ import {
 } from "../../../test/helpers.js"
 import type { Person } from "../../identity/people.js"
 import { createWorkspace } from "../../identity/workspaces.js"
+import { purgeCatalogText } from "../purge/purge.js"
 import { appendCatalogRevision } from "../revisions.js"
 import type { RevisionActor } from "../revisions.js"
 import { compareWorkspaceIndex, rebuildWorkspaceIndex } from "./indexer.js"
@@ -184,4 +185,39 @@ describe("a catalog of a few thousand entities", () => {
     expect(rebuilt.documents).toBe(entities)
     expect(compared.differences).toEqual([])
   }, 300_000)
+
+  it("purges a text from one page or from every page", async () => {
+    const ctx = asPerson(db, owner)
+    const [{ id }] = await db
+      .execute<{ id: string }>(
+        `select document_id as id from catalog_index_documents where catalog_id = 'machine/m11'`,
+      )
+      .then((r) => r.rows as [{ id: string }])
+    await db.transaction((tx) =>
+      appendCatalogRevision(tx, workspaceId, actor(), [
+        { documentId: id, text: machine(11, " The key is plum-otter-11.") },
+      ]),
+    )
+    let started = performance.now()
+    const one = await purgeCatalogText(ctx, workspaceId, {
+      text: "plum-otter-11",
+      reason: "A test of one page.",
+    })
+    const page = performance.now() - started
+    started = performance.now()
+    const all = await purgeCatalogText(ctx, workspaceId, {
+      text: "Drain it before a restart.",
+      reason: "A test of every page.",
+    })
+    const every = performance.now() - started
+    console.info(
+      `Purge: ${page.toFixed(0)} ms from one page, ${every.toFixed(0)} ms from every page, for ${entities} entities`,
+    )
+    expect(one.counts).toMatchObject({ documents: 1, latestDocuments: 1 })
+    expect(all.counts).toMatchObject({ latestDocuments: entities })
+    const compared = await db.transaction((tx) =>
+      compareWorkspaceIndex(tx, workspaceId),
+    )
+    expect(compared.differences).toEqual([])
+  }, 600_000)
 })

@@ -16,6 +16,7 @@ import { Setup } from "./pages/Setup"
 import { SignIn } from "./pages/SignIn"
 import { SignInLink } from "./pages/SignInLink"
 import { Agents } from "./pages/workspace/Agents"
+import { Data } from "./pages/workspace/Data"
 import { General } from "./pages/workspace/General"
 import { Invitations } from "./pages/workspace/Invitations"
 import { Members } from "./pages/workspace/Members"
@@ -72,6 +73,7 @@ export function App() {
                 <Route path="invitations" element={<Invitations />} />
                 <Route path="agents" element={<Agents />} />
                 <Route path="security-log" element={<SecurityLog />} />
+                <Route path="data" element={<Data />} />
               </Route>
             </Route>
             <Route path="*" element={<NotFound />} />

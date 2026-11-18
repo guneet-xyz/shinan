@@ -217,3 +217,4 @@ export type {
   TypeIndexItemJson,
 } from "./catalog/wiki.js"
 export * from "./catalog/proposals/index.js"
+export * from "./catalog/purge/index.js"

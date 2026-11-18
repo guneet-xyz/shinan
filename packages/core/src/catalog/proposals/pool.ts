@@ -155,7 +155,7 @@ export class CatalogWorkers {
    */
   async run<T>(
     workspaceId: string,
-    work: (prepare: Prepare) => Promise<T>,
+    work: (prepare: Prepare, turn: Turn) => Promise<T>,
   ): Promise<T> {
     const queued = this.slots.get(workspaceId)?.requests ?? 0
     if (
@@ -176,11 +176,16 @@ export class CatalogWorkers {
         slot.inTurn = true
         try {
           await this.claim(slot)
-          return await work((documents, load, input) =>
-            slot.prepare(documents, load, input),
+          return await work(
+            (documents, load, input) => slot.prepare(documents, load, input),
+            { purged: (count) => slot.purged(count) },
           )
         } finally {
           slot.inTurn = false
+          if (slot.forgetAfterTurn) {
+            slot.forgetAfterTurn = false
+            await slot.stop()
+          }
           this.permits.release()
         }
       })
@@ -215,6 +220,17 @@ export class CatalogWorkers {
    */
   async forget(workspaceId: string): Promise<void> {
     await this.slots.get(workspaceId)?.stop()
+  }
+
+  /**
+   * Forgets the parsed text of workspaces that have had a purge since their
+   * worker last looked (catalog §9): `purges` holds workspaces' numbers of
+   * purges. Their workers are stopped, at once or when their turn ends, so
+   * no text parsed before a purge stays in memory.
+   */
+  async forgetPurged(purges: ReadonlyMap<string, number>): Promise<void> {
+    for (const [workspaceId, count] of purges)
+      await this.slots.get(workspaceId)?.purged(count, false)
   }
 
   /** Stops every worker; the next request starts new ones. */
@@ -253,6 +269,16 @@ export class CatalogWorkers {
   }
 }
 
+/** What a turn may tell its workspace's worker. */
+export interface Turn {
+  /**
+   * Says how many purges the workspace has had, as the turn read it with
+   * the latest revision. When the worker last saw another number, it is
+   * stopped first, so text parsed before a purge is never used or kept.
+   */
+  purged(count: number): Promise<void>
+}
+
 /** A first-come, first-served semaphore. */
 class Permits {
   private readonly waiting: (() => void)[] = []
@@ -285,6 +311,10 @@ class Slot {
   inTurn = false
   requests = 0
   lastUsed = 0
+  /** How many purges the workspace had when its worker last looked; null before. */
+  private purges: number | null = null
+  /** Stop the worker when the current turn ends: it saw a purge mid-turn. */
+  forgetAfterTurn = false
   /** Keys whose parsed text the current worker holds. */
   private readonly known = new Set<string>()
   private queue: Promise<unknown> = Promise.resolve()
@@ -304,6 +334,25 @@ class Slot {
     const result = this.queue.then(work)
     this.queue = result.catch(() => undefined)
     return result
+  }
+
+  /**
+   * Notes the workspace's number of purges, stopping the worker if it has
+   * changed since the worker last looked: at once from inside a turn
+   * (between requests) or while idle; from outside a running turn, when
+   * the turn ends.
+   */
+  async purged(count: number, inTurn = true): Promise<void> {
+    const seen = this.purges
+    if (seen === count) return
+    if (seen !== null && !inTurn && this.inTurn) {
+      // The turn sees the new number itself when it reads the catalog
+      // again; until then, stop the worker when the turn ends.
+      this.forgetAfterTurn = true
+      return
+    }
+    this.purges = count
+    if (seen !== null) await this.stop()
   }
 
   async prepare(
