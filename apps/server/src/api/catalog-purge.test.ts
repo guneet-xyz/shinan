@@ -145,7 +145,9 @@ describe("catalog purge over the API", () => {
       proposals: 0,
       waitingProposals: 0,
       events: 0,
-      writtenDifferently: 0,
+      writtenDifferently: [],
+      alsoWrittenAs: [],
+      structure: [],
     })
 
     const purged = await call<Api.CatalogPurge>("POST", ws("/purge"), {
@@ -173,7 +175,9 @@ describe("catalog purge over the API", () => {
     const purges = await call<Api.CatalogPurge[]>("GET", ws("/purges"), {
       who: contributor,
     })
-    expect(purges.body).toEqual([purged.body])
+    const { newProblems, ...listed } = purged.body
+    expect(newProblems).toEqual([])
+    expect(purges.body).toEqual([listed])
 
     const again = await call<Api.ErrorBody>("POST", ws("/purge"), {
       body: { text: secret, reason: "Again." },

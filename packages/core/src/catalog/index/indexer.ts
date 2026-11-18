@@ -598,9 +598,12 @@ export async function rebuildWorkspaceIndex(
 /**
  * Derives again, from their stored history, the index rows of documents
  * whose stored text was rewritten in place by a purge (catalog §9): the
- * replay a rebuild does, for those documents only. A document's rows
- * depend only on its own history and the type schemas, so when a type
- * schema document is among them the whole workspace is rebuilt instead.
+ * replay a rebuild does, for those documents only, and the index's
+ * revision brought up to the latest. A document's rows depend only on its
+ * own history and the type schemas, so when a type schema document is
+ * among them the whole workspace is rebuilt instead; so it is when they
+ * are more than a quarter of the catalog (and over 50), where a rebuild is
+ * quicker.
  * Holds the index lock.
  */
 export async function reindexDocuments(
@@ -617,7 +620,16 @@ export async function reindexDocuments(
     .from(t)
     .where(and(eq(t.workspaceId, workspaceId), eq(t.kind, "schema")))
   const ids = new Set(documentIds)
-  if (schemas.some((s) => ids.has(s.documentId))) {
+  const [{ total }] = (await tx
+    .select({ total: sql<number>`count(*)::int` })
+    .from(schema.catalogDocuments)
+    .where(eq(schema.catalogDocuments.workspaceId, workspaceId))) as [
+    { total: number },
+  ]
+  if (
+    schemas.some((s) => ids.has(s.documentId)) ||
+    ids.size > Math.max(total / 4, 50)
+  ) {
     await rebuildWorkspaceIndex(tx, workspaceId)
     return
   }
@@ -667,6 +679,10 @@ export async function reindexDocuments(
     }
     await replaceRows(tx, workspaceId, rows)
   }
+  await tx
+    .update(schema.catalogIndexState)
+    .set({ revision: await latestRevision(tx, workspaceId) })
+    .where(eq(schema.catalogIndexState.workspaceId, workspaceId))
 }
 
 /**

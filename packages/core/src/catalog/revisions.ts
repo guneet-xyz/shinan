@@ -64,6 +64,13 @@ export async function appendCatalogRevision(
   actor: RevisionActor,
   documents: readonly RevisionDocument[],
   source?: RevisionSource,
+  options: {
+    /**
+     * False when the caller derives the documents' index rows itself in
+     * the same transaction, as a purge does (`reindexDocuments`).
+     */
+    index?: boolean
+  } = {},
 ): Promise<AppliedRevision> {
   if (documents.length === 0)
     throw new Error("A catalog revision changes at least one document")
@@ -150,6 +157,7 @@ export async function appendCatalogRevision(
     })),
   )
 
+  if (options.index === false) return { revision, documentIds }
   await indexRevision(
     tx,
     workspaceId,

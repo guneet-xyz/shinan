@@ -321,8 +321,18 @@ export interface CatalogPurgePreview {
   /** Waiting catalog proposals that hold it: the purge rejects them. */
   waitingProposals: number
   events: number
-  /** Documents whose index holds it while their text writes it differently. */
-  writtenDifferently: number
+  /** Catalog IDs of documents whose index holds it while their text writes it differently. */
+  writtenDifferently: string[]
+  /** Copies in encoded forms the purge does not reach; `text` is the form to purge. */
+  alsoWrittenAs: {
+    form: "url" | "percent" | "html" | "escaped"
+    text: string
+    revisionTexts: number
+    proposals: number
+    events: number
+  }[]
+  /** Where purging would change a document's structure. */
+  structure: { id: string; where: "id" | "alias" | "key" | "frontmatter" }[]
 }
 
 /** A catalog purge: who, when, why and how much, never the purged text. */
@@ -335,6 +345,8 @@ export interface CatalogPurge {
   /** The catalog revision that stored the cleaned latest text, if any. */
   revision: number | null
   counts: CatalogPurgeCounts
+  /** Documents the purge left reading with new problems: only in the purge's own answer. */
+  newProblems?: { id: string; problems: string[] }[]
 }
 
 export type InvitationState =

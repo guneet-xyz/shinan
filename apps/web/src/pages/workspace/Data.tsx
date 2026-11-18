@@ -1,6 +1,7 @@
 import { TriangleAlertIcon } from "lucide-react"
 import { useState } from "react"
 import type { FormEvent } from "react"
+import { Link } from "react-router"
 
 import type { CatalogPurge, CatalogPurgePreview } from "@shinan/api-client"
 
@@ -22,6 +23,7 @@ import {
   Confirm,
   Facts,
   OrderedRows,
+  Rows,
   Section,
 } from "../../components/page"
 import { ErrorMessage, Loading, Notice } from "../../components/status"
@@ -84,16 +86,18 @@ function PurgeText(props: { onPurged: () => void }) {
   const find = useAction()
   const purge = useAction()
 
-  const search = (event: FormEvent) => {
-    event.preventDefault()
+  const look = (wanted: string) => {
     setDone(undefined)
     purge.clear()
-    const wanted = text
     find.run(() =>
       api
         .previewCatalogPurge(workspace.id, wanted)
         .then((preview) => setFound({ text: wanted, preview })),
     )
+  }
+  const search = (event: FormEvent) => {
+    event.preventDefault()
+    look(text)
   }
 
   const confirm = (event: FormEvent) => {
@@ -135,6 +139,11 @@ function PurgeText(props: { onPurged: () => void }) {
             it. If it is a secret, rotate it where it was issued: purging does
             not make it safe again.
           </p>
+          <p>
+            A change being made while you purge, or sent again afterwards, can
+            bring the text back: press Find it again a minute after purging, and
+            purge again if it is found.
+          </p>
           <p>Security-log entries are never purged.</p>
         </AlertDescription>
       </Alert>
@@ -155,8 +164,9 @@ function PurgeText(props: { onPurged: () => void }) {
               }}
             />
             <FieldDescription>
-              Exactly as the catalog writes it, at least 4 characters. Shinan
-              shows where it is before anything changes.
+              As the catalog writes it, at least 4 characters. Spaces and line
+              breaks need not match, so wrapped text is found too. Shinan shows
+              where it is before anything changes.
             </FieldDescription>
           </Field>
           <div>
@@ -169,10 +179,45 @@ function PurgeText(props: { onPurged: () => void }) {
       {find.error !== undefined && <ErrorMessage error={find.error} />}
       {preview && !anywhere && (
         <Notice>
-          {preview.writtenDifferently > 0
-            ? `The agent index holds this text for ${plural(preview.writtenDifferently, "document")}, but the stored text writes it differently, for example with YAML escapes or folded across lines. Purge it as the stored text writes it.`
-            : "This text is not in the catalog, its proposals or the timeline, written exactly so."}
+          {preview.writtenDifferently.length > 0
+            ? `The agent index holds this text for ${preview.writtenDifferently.join(", ")}, but the stored text writes it differently, for example with YAML escapes. Purge it as the stored text writes it.`
+            : "This text is not in the catalog, its proposals or the timeline."}
         </Notice>
+      )}
+      {preview && preview.alsoWrittenAs.length > 0 && (
+        <div className="flex flex-col gap-2 text-sm">
+          <p>
+            Also found written in other forms, which this purge does not reach.
+            Purge each one too:
+          </p>
+          <Rows>
+            {preview.alsoWrittenAs.map((form) => (
+              <li key={form.form}>
+                <p>
+                  <span className="font-medium">{formNames[form.form]}</span>{" "}
+                  <span className="text-muted-foreground">
+                    · {plural(form.revisionTexts, "stored text")},{" "}
+                    {plural(form.proposals, "proposal")},{" "}
+                    {plural(form.events, "event")}
+                  </span>
+                </p>
+                <Actions>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setText(form.text)
+                      look(form.text)
+                    }}
+                  >
+                    Find this form
+                  </Button>
+                </Actions>
+              </li>
+            ))}
+          </Rows>
+        </div>
       )}
       {preview && anywhere && (
         <Confirm>
@@ -199,6 +244,20 @@ function PurgeText(props: { onPurged: () => void }) {
             <dt>Timeline</dt>
             <dd>{plural(preview.events, "event")}</dd>
           </Facts>
+          {preview.structure.length > 0 && (
+            <div className="flex flex-col gap-1">
+              <p className="font-medium">
+                Purging changes how these pages read; repair them afterwards:
+              </p>
+              <ul className="list-disc pl-5">
+                {preview.structure.map((s) => (
+                  <li key={`${s.id} ${s.where}`}>
+                    {s.id}: {structureNames[s.where]}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           <form onSubmit={confirm}>
             <FieldGroup>
               <Field>
@@ -245,12 +304,36 @@ function PurgeText(props: { onPurged: () => void }) {
       )}
       {purge.error !== undefined && <ErrorMessage error={purge.error} />}
       {done && (
-        <Notice>
-          Purged (purge {done.number}).{" "}
-          {done.revision !== null &&
-            `Revision ${done.revision} stores the cleaned pages. `}
-          Remember to rotate a purged secret where it was issued.
-        </Notice>
+        <div className="flex flex-col gap-2">
+          <Notice>
+            Purged (purge {done.number}).{" "}
+            {done.revision !== null &&
+              `Revision ${done.revision} stores the cleaned pages. `}
+            Press Find it again in a minute, in case a change in progress
+            brought the text back, and rotate a purged secret where it was
+            issued.
+          </Notice>
+          {done.newProblems && done.newProblems.length > 0 && (
+            <div className="flex flex-col gap-1 text-sm">
+              <p className="font-medium">
+                These pages now read with problems; repair them:
+              </p>
+              <ul className="list-disc pl-5">
+                {done.newProblems.map((page) => (
+                  <li key={page.id}>
+                    <Link
+                      to={`/w/${workspace.id}/wiki/e/${page.id.split("/").map(encodeURIComponent).join("/")}`}
+                      className="rounded-sm font-medium text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring"
+                    >
+                      {page.id}
+                    </Link>
+                    : {page.problems.join(" ")}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
       )}
     </Section>
   )
@@ -284,6 +367,26 @@ function PurgeList(props: { purges: CatalogPurge[] }) {
       ))}
     </OrderedRows>
   )
+}
+
+const formNames: Record<
+  CatalogPurgePreview["alsoWrittenAs"][number]["form"],
+  string
+> = {
+  url: "URL-encoded",
+  percent: "Percent-encoded",
+  html: "With HTML entities",
+  escaped: "With JSON or YAML escapes",
+}
+
+const structureNames: Record<
+  CatalogPurgePreview["structure"][number]["where"],
+  string
+> = {
+  id: "the text is in its ID",
+  alias: "the text is in an alias",
+  key: "the text ends at a frontmatter key",
+  frontmatter: "the text spans lines of its frontmatter",
 }
 
 function plural(n: number, word: string): string {

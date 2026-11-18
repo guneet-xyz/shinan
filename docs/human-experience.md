@@ -1202,11 +1202,17 @@ the Data tab has **Purge catalog text** for workspace owners
 cleans Shinan, not copies that left it (exports, the host's backups, agents'
 model providers), that a secret must be rotated where it was issued, and
 that security-log entries are never purged. The owner types the text and
-chooses **Find it**; Shinan shows where it is (revision texts and documents,
-the current pages it will store again, proposals and the waiting ones it
-will reject, timeline events). Purging takes a reason, which must not repeat
-the text, and typing "purge". The text stays only in the page's memory and
-is cleared once purged. Below, every member sees the list of purges: who,
+chooses **Find it**; spaces and line breaks need not match. Shinan shows
+where it is (revision texts and documents, the current pages it will store
+again, proposals and the waiting ones it will reject, timeline events),
+copies in other forms (URL- or percent-encoded, HTML entities, escapes),
+each with **Find this form**, and pages whose structure the purge changes
+(the text in an ID or alias, or across frontmatter lines). Purging takes a
+reason, which must not repeat the text, and typing "purge". Afterwards the
+screen lists pages that now read with problems, to repair, and asks the
+owner to press **Find it** again in a minute, since a change in progress
+can bring the text back. The text stays only in the page's memory and is
+cleared once purged. Below, every member sees the list of purges: who,
 when, why and how much, never the text. A purge revision shows "purge N" in
 an entity page's history. Exports come with a later milestone.
 

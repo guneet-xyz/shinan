@@ -430,16 +430,26 @@ How:
   `data`, and an update of `catalog_revision_documents` only `text`, and
   only in the transaction that recorded a purge of the row's workspace in
   `catalog_purges` (matched by transaction ID). Deletes, truncation and
-  updates of `catalog_revisions` stay refused. The security log's triggers
-  are untouched (D-049).
+  updates of `catalog_revisions` stay refused. `catalog_purges` is
+  append-only itself: no row is ever deleted, and the only update is the
+  purge filling in its own counts, in its own transaction, so every
+  transaction that rewrote history leaves its record. The security log's
+  triggers are untouched (D-049).
+- **Matching:** whitespace-insensitive ([catalog §9](catalog.md#9-history-and-purge)).
+  Candidates are found in SQL by the text with all whitespace taken out
+  (and JSON's escapes of whitespace, in JSON columns), a superset; each is
+  then matched and rewritten in the application, by one pattern used for
+  the preview, the purge and its check afterwards.
 - **Derived data:** each document with purged text has its index rows
   derived again from its purged history, as a rebuild does (section credits
-  and word provenance replayed); when a type schema document held the text,
-  the whole index is rebuilt. The purge then checks that the text is
+  and word provenance replayed); the purge revision is not indexed first.
+  When a type schema document held the text, or the documents are more than
+  a quarter of the catalog (and over 50), the whole index is rebuilt
+  instead, which is then quicker. The purge then checks that the text is
   nowhere left, in stored records or the index, and otherwise rolls back.
   D-006 holds afterwards (`purge.test.ts` compares with a rebuild). Measured
-  on Daedalus with 5,000 entities: about 4 s for a text on one page, 2
-  minutes for one on every page.
+  on Daedalus with 5,000 entities: a few seconds for a text on one page; a
+  text on every page takes about as long as a rebuild.
 - **Text kept in memory:** catalog workers and the type schema cache keep
   parsed text. The purging process forgets the workspace's at once; every
   `web` and `worker` process checks for new purges each minute and stops

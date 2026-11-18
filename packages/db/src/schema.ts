@@ -975,7 +975,9 @@ const xid8 = customType<{ data: string }>({ dataType: () => "xid8" })
 /**
  * A purge of catalog content (catalog §9; architecture §4.4): who replaced
  * a text with a marker wherever the catalog stored it, when and why, never
- * the text itself. Numbered from 1 within the workspace.
+ * the text itself. Numbered from 1 within the workspace. Append-only: a
+ * trigger refuses deletes, and updates other than its counts in the
+ * transaction that made it.
  */
 export const catalogPurges = pgTable(
   "catalog_purges",

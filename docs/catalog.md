@@ -1863,8 +1863,8 @@ approval and history mean nothing.
     copies that already left it.
   - **As built (M2-10, [#91](https://github.com/guneet-xyz/shinan/issues/91)), proposed:**
     - **What is purged: a text, everywhere.** A workspace owner types the
-      exact text (4 to 10,000 characters, case-sensitive) and a reason.
-      Every occurrence is replaced by `(purged)` in every revision of every
+      text (4 to 10,000 characters, case-sensitive) and a reason. Every
+      occurrence is replaced by `(purged)` in every revision of every
       document, in catalog proposals (their explanation, operations, related
       task, validation findings, approval reasons, touched IDs and rejection
       reason) and in timeline events. Reason: a leaked secret or a person's
@@ -1872,6 +1872,12 @@ approval and history mean nothing.
       keeps every document readable and every record in its shape, and it
       keeps section credits (only the purged words change). The marker is
       plain words in brackets, so YAML still reads it as text.
+    - **Whitespace does not have to match.** Any run of whitespace in the
+      text matches any run of whitespace, and a line break may stand between
+      any two of its other characters. Reason: an address or a name in a
+      Markdown paragraph is wrapped across lines, indented, or written with
+      other line endings, and a long secret can be split by a line break;
+      the purge must find them as the owner knows them.
     - **The latest text.** When a document's latest text held it, the purge
       stores the cleaned text as a new catalog revision, credited to the
       workspace owner and marked as the purge's (it has no proposal and
@@ -1881,10 +1887,21 @@ approval and history mean nothing.
       purge: their operations no longer say what their author meant.
     - **Shown first.** Before purging, the owner sees where the text is: how
       many revision texts of how many documents, which current pages, how
-      many proposals (and waiting ones), how many events. If the agent index
-      holds it but no stored text does as written (YAML escapes, folded
-      lines), the owner is told to purge it as the text writes it, and
-      nothing is purged.
+      many proposals (and waiting ones), how many events. Also shown:
+      - copies in other forms the purge does not reach: URL-encoded,
+        percent-encoded character by character, with HTML entities, or with
+        JSON or YAML escapes, each to purge in its turn;
+      - pages whose structure the purge changes: the text is in the page's
+        ID or an alias, ends at a frontmatter key, or spans lines of the
+        frontmatter. Removing the text comes first; the page may then read
+        with problems, to repair;
+      - pages whose agent index holds the text while their stored text
+        writes it differently (YAML escapes): the purge refuses, naming
+        them, until it is purged as the stored text writes it.
+    - **Afterwards** the owner is told which pages now read with problems
+      they did not have, to repair, and to look again a minute later: a
+      proposal being worked out during the purge, or sent again afterwards
+      by an agent, carries its own copy of the text and can bring it back.
     - **Recorded:** a `catalog.purged` event with who, why, the counts and
       the documents and proposals it touched; a security-log entry with the
       counts. Neither holds the text, and the reason may not repeat it.

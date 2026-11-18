@@ -22,7 +22,9 @@ const preview: CatalogPurgePreview = {
   proposals: 2,
   waitingProposals: 1,
   events: 1,
-  writtenDifferently: 0,
+  writtenDifferently: [],
+  alsoWrittenAs: [],
+  structure: [{ id: "machine/daedalus", where: "alias" }],
 }
 
 const purge: CatalogPurge = {
@@ -47,7 +49,16 @@ describe("the data screen", () => {
     const api = fakeApi({
       catalogPurges: () => Promise.resolve([]),
       previewCatalogPurge: () => Promise.resolve(preview),
-      purgeCatalogText: () => Promise.resolve(purge),
+      purgeCatalogText: () =>
+        Promise.resolve({
+          ...purge,
+          newProblems: [
+            {
+              id: "machine/daedalus",
+              problems: ['The alias "machine/(purged)" is not an ID'],
+            },
+          ],
+        }),
     })
     renderApp(path, api)
 
@@ -66,6 +77,9 @@ describe("the data screen", () => {
       ),
     ).toBeTruthy()
     expect(screen.getByText(/1 waiting proposal will be rejected/)).toBeTruthy()
+    expect(
+      screen.getByText("machine/daedalus: the text is in an alias"),
+    ).toBeTruthy()
 
     const button = screen.getByRole("button", { name: "Purge everywhere" })
     await userEvent.type(
@@ -83,6 +97,12 @@ describe("the data screen", () => {
       reason: "A passphrase was written into the catalog.",
     })
     expect(await screen.findByText(/Purged \(purge 1\)/)).toBeTruthy()
+    expect(screen.getByText(/Press Find it again in a minute/)).toBeTruthy()
+    expect(
+      screen
+        .getByRole("link", { name: "machine/daedalus" })
+        .getAttribute("href"),
+    ).toBe(`/w/${workspaceId}/wiki/e/machine/daedalus`)
     // The text is gone from the form.
     expect(
       screen.getByLabelText<HTMLTextAreaElement>("Text to purge").value,
@@ -115,18 +135,36 @@ describe("the data screen", () => {
           proposals: 0,
           waitingProposals: 0,
           events: 0,
-          writtenDifferently: 1,
+          writtenDifferently: ["machine/escaped"],
+          alsoWrittenAs: [
+            {
+              form: "percent",
+              text: "plum%2Dotter%2D1234%2Dlantern",
+              revisionTexts: 1,
+              proposals: 0,
+              events: 0,
+            },
+          ],
         }),
     })
     renderApp(path, api)
     await userEvent.type(await screen.findByLabelText("Text to purge"), secret)
     await userEvent.click(screen.getByRole("button", { name: "Find it" }))
     expect(
-      await screen.findByText(/the stored text writes it differently/),
+      await screen.findByText(/holds this text for machine\/escaped/),
     ).toBeTruthy()
     expect(
       screen.queryByRole("button", { name: "Purge everywhere" }),
     ).toBeNull()
+    // Another form, found in one click.
+    expect(screen.getByText("Percent-encoded")).toBeTruthy()
+    await userEvent.click(
+      screen.getByRole("button", { name: "Find this form" }),
+    )
+    expect(api.previewCatalogPurge).toHaveBeenLastCalledWith(
+      workspaceId,
+      "plum%2Dotter%2D1234%2Dlantern",
+    )
   })
 
   it("lists past purges to contributors, without the purge form", async () => {
