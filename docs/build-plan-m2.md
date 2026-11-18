@@ -573,6 +573,16 @@ People type secrets; agents never handle them. Agents prepare every step.
    approval).
 7. **M2 milestone review:** a short demo note, what was built against the
    roadmap, anything cut, and decisions that came up, as for M1.
+   Proposed choices made during the build that the owner confirms or
+   changes there:
+   - accepting a discrepancy only through `accept-discrepancy`, with
+     `accepted` written from the approving person, never sent with a fact
+     ([catalog §4.7](catalog.md#47-discrepancies), raised in review of
+     [#108](https://github.com/guneet-xyz/shinan/pull/108));
+   - the limits on one catalog proposal, 50 operations naming 100 facts
+     ([catalog §8.1](catalog.md#81-catalog-proposals));
+   - no operation that brings a retired entity back
+     ([catalog §8.1](catalog.md#81-catalog-proposals)).
 
 ## 7. Owner answers
 

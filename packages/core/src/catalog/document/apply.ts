@@ -21,9 +21,9 @@ import {
 import type { CheckFields, FactToWrite } from "./fact-edits.js"
 import { factIdentityKey, parseFactIdentityKey } from "./identity.js"
 import {
-  factKeyPattern,
   isAttributeName,
   isEntityId,
+  isFactKey,
   parseEntityId,
   schemaId,
   startHereId,
@@ -842,9 +842,9 @@ function checkFact(fact: FactInput, key: KeySchema) {
     throw invalid(
       "`accepted` is not sent with a fact: Shinan writes it, naming the person who approves an `accept-discrepancy` operation",
     )
-  if (!factKeyPattern.test(fact.key))
+  if (!isFactKey(fact.key))
     throw invalid(
-      `"${fact.key}" is not a fact key: lowercase words joined by ".", "-" or "_"`,
+      `"${fact.key}" is not a fact key: lowercase words joined by ".", "-" or "_", and not a name such as "constructor"`,
     )
   if (!factStates.includes(fact.state))
     throw invalid(`"${fact.state}" is not a fact state`)
@@ -1730,7 +1730,7 @@ function editBody(editor: Editor, operation: EditBody) {
             ? eol
             : eol + eol
     editor.apply(replaceRange({ start: at, end: at }, gap + text))
-    sectionReads(editor, at + gap.length, name, label)
+    sectionReads(editor, at + gap.length, text.length, name, label)
     return
   }
   if (!section) throw conflict("changed", `${label} is not there any more`)
@@ -1742,24 +1742,27 @@ function editBody(editor: Editor, operation: EditBody) {
   const text =
     given !== "" && section.text.endsWith("\n") ? withBreak(given, eol) : given
   editor.apply(replaceRange(section.range, text))
-  if (text !== "") sectionReads(editor, section.range.start, name, label)
+  if (text !== "")
+    sectionReads(editor, section.range.start, text.length, name, label)
 }
 
 /**
- * Checks that the text written at `start` reads as the section it is for:
- * starting with that section's heading, or for the text before the first
- * heading, with no heading. Otherwise the edit would quietly join it to the
- * section before or make it another section.
+ * Checks that the text written at `start` reads as the one section it is
+ * for: starting with that section's heading (or, for the text before the
+ * first heading, with no heading), and holding no other heading. Otherwise
+ * the edit would quietly join it to the section before, or add sections
+ * (even a second one with a heading already used); adding sections is an
+ * edit of the whole body.
  */
 function sectionReads(
   editor: Editor,
   start: number,
+  length: number,
   name: string | null,
   label: string,
 ) {
-  const section = editor.document.body.sections.find(
-    (s) => s.range.start === start,
-  )
+  const sections = editor.document.body.sections
+  const section = sections.find((s) => s.range.start === start)
   const ok =
     name === null
       ? section?.heading === null
@@ -1769,6 +1772,14 @@ function sectionReads(
       name === null
         ? `${label} cannot start with a heading`
         : `${label}'s new text starts with its own heading`,
+    )
+  if (
+    sections.some(
+      (s) => s.range.start > start && s.range.start < start + length,
+    )
+  )
+    throw invalid(
+      `${label}'s new text holds another heading; one section edit writes one section, so add sections by editing the whole body`,
     )
 }
 
@@ -1803,9 +1814,9 @@ function schemaText(operation: CreateSchema): Written {
   ]
   const keys = Object.entries(operation.keys ?? {})
   for (const [key] of keys)
-    if (!factKeyPattern.test(key))
+    if (!isFactKey(key))
       throw invalid(
-        `"${key}" is not a fact key: lowercase words joined by ".", "-" or "_"`,
+        `"${key}" is not a fact key: lowercase words joined by ".", "-" or "_", and not a name such as "constructor"`,
       )
   if (keys.length > 0)
     entries.push([
@@ -1848,9 +1859,9 @@ function sameOptions(
 function setSchemaKey(editor: Editor, operation: SetSchemaKey) {
   const document = editor.document
   if (document.kind !== "schema") throw invalid("Not a type schema document")
-  if (!factKeyPattern.test(operation.key))
+  if (!isFactKey(operation.key))
     throw invalid(
-      `"${operation.key}" is not a fact key: lowercase words joined by ".", "-" or "_"`,
+      `"${operation.key}" is not a fact key: lowercase words joined by ".", "-" or "_", and not a name such as "constructor"`,
     )
   const keysEntry = document.fields.get("keys")
   const keysMap = keysEntry?.value.kind === "map" ? keysEntry.value : null

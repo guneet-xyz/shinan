@@ -465,6 +465,9 @@ function write(e: GeneratedEntity): string {
           }
         }
       }
+      // A comment on its own line before a state map, now and then; on the
+      // dash line when the state map comes first (`- # about observed`).
+      if (s.comments && counter++ % 2 === 0) block.unshift(`# about ${state}`)
       stateFields.push(block)
     }
     fields.push(

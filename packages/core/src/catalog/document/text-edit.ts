@@ -56,13 +56,25 @@ function firstOnLine(text: string, offset: number): boolean {
   return /^[ \t]*$/.test(text.slice(lineStart(text, offset), offset))
 }
 
-/** The dash of a block list item. */
+/**
+ * The dash of a block list item: before the item on its line, or on an
+ * earlier line with only a comment after it (`- # note`), with blank or
+ * comment lines between.
+ */
 function dashOf(text: string, item: YamlNode): number {
   let i = item.range.start - 1
   while (i >= 0 && (text[i] === " " || text[i] === "\t")) i--
-  if (text[i] !== "-")
-    throw new UnsupportedLayoutError("A list item has no dash before it")
-  return i
+  if (text[i] === "-") return i
+  let end = lineStart(text, item.range.start)
+  while (end > 0) {
+    const start = lineStart(text, end - 1)
+    const line = text.slice(start, end).replace(/\r?\n$/, "")
+    const dash = /^([ \t]*)-(?:[ \t]+#.*|[ \t]*)$/.exec(line)
+    if (dash) return start + (dash[1]?.length ?? 0)
+    if (!/^[ \t]*(?:#.*)?$/.test(line)) break
+    end = start
+  }
+  throw new UnsupportedLayoutError("A list item has no dash before it")
 }
 
 /** The `:` after an entry's key. */
@@ -105,9 +117,17 @@ export function removeMapEntry(
       text: "",
     }
   // The first entry of a list item shares its line with the dash: the next
-  // entry moves up to the dash, at the same column.
-  if (next)
-    return { start: entry.keyRange.start, end: next.keyRange.start, text: "" }
+  // entry moves up to the dash, at the same column. Comment lines between
+  // them belong to the next entry and stay: the first moves up to the dash
+  // instead (`- # note`), and the next entry keeps its own line.
+  if (next) {
+    const after = lineEnd(text, entry.range.end)
+    const between = text.slice(after, next.keyRange.start)
+    const end = between.includes("#")
+      ? after + between.length - between.trimStart().length
+      : next.keyRange.start
+    return { start: entry.keyRange.start, end, text: "" }
+  }
   throw new UnsupportedLayoutError("Cannot remove the only entry of a map")
 }
 
