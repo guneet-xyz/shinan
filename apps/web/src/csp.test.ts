@@ -46,3 +46,95 @@ describe("the web app under the Content Security Policy", () => {
     }
   })
 })
+
+/**
+ * Catalog Markdown is written by people and agents, and agents may have
+ * read outside text, so it is hostile input (security checklist 10.3). The
+ * wiki renders it into React elements: nothing in it can add a script, an
+ * inline style or event handler, an image from elsewhere, or a link that
+ * runs code.
+ */
+describe("catalog Markdown in the wiki", () => {
+  const hostile = [
+    "<script>alert(1)</script>",
+    '<img src="https://evil.example/x.png" onerror="alert(1)">',
+    '<p style="color: red" onclick="alert(1)">styled</p>',
+    '<a href="javascript:alert(1)">html link</a>',
+    "[js](javascript:alert(1))",
+    "[JS](JAVASCRIPT:alert(1))",
+    "[spaced]( javascript:alert(1) )",
+    "[vb](vbscript:msgbox)",
+    "[file](file:///etc/passwd)",
+    "[data](data:text/html;base64,PHNjcmlwdD4=)",
+    "![tracker](https://evil.example/pixel.png)",
+    "![data image](data:image/png;base64,iVBORw0KGgo=)",
+    "[relative](../../etc)",
+    "[root](/api/workspaces)",
+    "<javascript:alert(1)>",
+    "<https://example.com>",
+    '[titled](https://example.com "x\\" onmouseover=\\"alert(1)")',
+    "| a | b |\n|:-:|--:|\n| 1 | 2 |",
+    "<style>body{display:none}</style>",
+    "<iframe src=https://evil.example></iframe>",
+    "[entity](machine/musashi#cautions) and [section](#cautions)",
+    "[mail](mailto:guneet@example.com)",
+  ].join("\n\n")
+
+  async function render() {
+    const { render: renderReact } = await import("@testing-library/react")
+    const { MemoryRouter } = await import("react-router")
+    const { Markdown } = await import("./pages/wiki/markdown")
+    const { createElement } = await import("react")
+    return renderReact(
+      createElement(
+        MemoryRouter,
+        null,
+        createElement(Markdown, {
+          text: hostile,
+          entityPath: (id: string) => `/w/1/wiki/e/${id}`,
+        }),
+      ),
+    ).container
+  }
+
+  it("renders no script, style, event handler, frame or image", async () => {
+    const container = await render()
+    expect(
+      container.querySelectorAll("script, style, iframe, img, object, embed"),
+    ).toHaveLength(0)
+    for (const element of container.querySelectorAll("*")) {
+      for (const attribute of element.attributes) {
+        expect(attribute.name, element.outerHTML).not.toMatch(/^on|^style$/i)
+      }
+    }
+    // Raw HTML is shown as text.
+    expect(container.textContent).toContain("<script>alert(1)</script>")
+  })
+
+  it("links only to web and mail addresses, entity pages and sections", async () => {
+    const container = await render()
+    const hrefs = [...container.querySelectorAll("a")].map((a) =>
+      a.getAttribute("href"),
+    )
+    for (const href of hrefs)
+      expect(href).toMatch(/^(https?:|mailto:|\/w\/1\/wiki\/e\/|#section-)/)
+    expect(hrefs).toContain("/w/1/wiki/e/machine/musashi#section-cautions")
+    expect(hrefs).toContain("#section-cautions")
+    expect(hrefs).toContain("mailto:guneet@example.com")
+    // An image is a link to it, never an image.
+    expect(hrefs).toContain("https://evil.example/pixel.png")
+    for (const text of ["js", "JS", "vb", "file", "data", "relative", "root"])
+      expect(container.textContent).toContain(text)
+    expect(hrefs.some((h) => /javascript|vbscript|data:|file:/i.test(h!))).toBe(
+      false,
+    )
+  })
+
+  it("aligns table cells with classes, not styles", async () => {
+    const container = await render()
+    const cells = [...container.querySelectorAll("th, td")]
+    expect(cells.map((c) => c.getAttribute("class") ?? "").join(" ")).toMatch(
+      /align-center[\s\S]*align-right/,
+    )
+  })
+})

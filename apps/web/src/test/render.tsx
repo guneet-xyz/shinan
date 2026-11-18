@@ -134,6 +134,10 @@ export function fakeApi(overrides: Partial<ApiClient> = {}): Fake {
     invitationsForYou: () => Promise.resolve([]),
     workspace: () => Promise.resolve(workspace),
     members: () => Promise.resolve([ownerMember, contributorMember]),
+    // A workspace opens on the wiki's home page.
+    catalogTypes: () =>
+      Promise.resolve({ catalog_revision: 0, index_behind: false, items: [] }),
+    markCatalogPageOpened: () => Promise.resolve(),
   }
   const names: (keyof ApiClient)[] = [
     "status",
@@ -180,6 +184,18 @@ export function fakeApi(overrides: Partial<ApiClient> = {}): Fake {
     "renameAgent",
     "disableAgent",
     "enableAgent",
+    "catalogEntity",
+    "catalogTypes",
+    "catalogType",
+    "catalogTypeIndex",
+    "catalogSearch",
+    "catalogList",
+    "catalogChanges",
+    "catalogStartHere",
+    "catalogHistory",
+    "catalogText",
+    "catalogPagesOpened",
+    "markCatalogPageOpened",
   ]
   const fake = {} as Record<string, unknown>
   for (const name of names) {

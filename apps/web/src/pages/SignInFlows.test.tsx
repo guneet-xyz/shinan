@@ -137,9 +137,7 @@ describe("creating a workspace", () => {
       screen.getByRole("button", { name: "Create workspace" }),
     )
     expect(api.createWorkspace).toHaveBeenCalledWith("Team")
-    await waitFor(() =>
-      expect(currentPath()).toBe(`/w/${workspaceId}/settings/general`),
-    )
+    await waitFor(() => expect(currentPath()).toBe(`/w/${workspaceId}/wiki`))
   })
 })
 

@@ -56,7 +56,7 @@ export function catalogRoutes(
     const answer: Api.CatalogTypeSchemaAnswer = await getCatalogTypeSchema(
       ctx(c),
       workspaceId(c),
-      { type: c.req.param("type")! },
+      { type: c.req.param("type") },
     )
     return c.json(answer)
   })
@@ -66,7 +66,7 @@ export function catalogRoutes(
       ctx(c),
       workspaceId(c),
       {
-        type: c.req.param("type")!,
+        type: c.req.param("type"),
         ...statusQuery(c),
       },
     )
@@ -90,7 +90,7 @@ export function catalogRoutes(
   })
 
   app.get(`${base}/lists/:list`, async (c) => {
-    const list = c.req.param("list")!
+    const list = c.req.param("list")
     if (!catalogLists.some((l) => l === list))
       throw new BadRequestError(`The list is one of ${catalogLists.join(", ")}`)
     const offset = integerQuery(c, "offset")
