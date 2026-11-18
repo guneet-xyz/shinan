@@ -187,7 +187,8 @@ container environments, which hold secrets.
 
 M2-12 ([#92](https://github.com/guneet-xyz/shinan/issues/92)) ran the list
 again for the M2 release, against `main` at `0d6566e` (after #122, #125,
-#127, #129, #130 and #138) with the caps on requests in flight that came with
+#127, #129, #130 and #138), and its tests again at `f1ec39c` (after #124,
+#139 and #140), with the caps on requests in flight that came with
 the rerun (1.11), before the catalog moves over. Every item above was read against the
 code on `main`; the M1 items whose code M2 did not change keep their results.
 
@@ -195,8 +196,8 @@ code on `main`; the M1 items whose code M2 did not change keep their results.
 
 - **Tests:** every test the tables name exists under that title (55 titles,
   checked with `grep`), and the full `pnpm test` ran on `main` with
-  PostgreSQL and Mailpit from the development Compose file: 1,534 tests in
-  85 files, all passing.
+  PostgreSQL and Mailpit from the development Compose file: 1,570 tests in
+  89 files, all passing.
   CI runs the same suite on every pull request.
 - **Commands:** `pnpm audit --audit-level high` (8.2); the repository's
   Dependabot settings through the GitHub API (8.3).
