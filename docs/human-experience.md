@@ -865,6 +865,30 @@ An entity page shows, in order of importance:
     opened and compared with the current one. **Proposed.** Reason: with no
     Git mirror (N-5), the wiki is where people read a page's history.
 
+**Proposed (M2-7, [#88](https://github.com/guneet-xyz/shinan/issues/88)):**
+details of the page as built.
+
+- **Owning sources** are the entity's repository, issue tracker and
+  documentation links (`repository`, `issue_tracker`, `docs.*`), what
+  configures it (`configured-by`), and the pinned web sources of its
+  `intended` facts. Reason: these are the places the catalog links to rather
+  than copies; other facts are the catalog's own observations.
+- **Facts** are grouped by key. A retired or deprecated entity says so above
+  its title, with the replacement when it names one. An old ID opens the
+  current page and says it moved.
+- **The body** is rendered in the browser from its Markdown, with the same
+  Markdown reader the index uses, so headings and links agree; its
+  headings carry the sections' anchors. Raw HTML is shown as text; only web
+  and mail addresses, entity references and links to a section of the page
+  are links ([security checklist 10.3](security-checklist.md#10-features-not-built-yet)).
+- **History** lists the catalog revisions that changed the page (when, and
+  who they are credited to). Opening one shows the document's stored text at
+  that revision compared line by line with the current text. Reason: the
+  stored text is the source of truth (D-006), so the comparison shows
+  exactly what changed, fields and facts included.
+- **Pending catalog proposals** and who approved a revision are added once
+  catalog proposals exist ([M2-4](https://github.com/guneet-xyz/shinan/issues/86)).
+
 **Secrets.** Secrets never go in the catalog; the catalog records only where a
 secret lives, for example a path in a secrets manager such as Obscuro or
 Infisical. **Decided** (owner, O-2, [#25]). The wiki shows such a fact as a
@@ -894,6 +918,11 @@ where a recheck interval is set for its key in the type's schema. **Decided**
 - The same freshness display is used wherever a fact appears outside its page,
   for example in search results or a task's related entities. **Proposed.**
   Reason: a fact quoted without its age loses the trust signal.
+- **Proposed (M2-7):** the exact check (when, by whom, scope, source and
+  what was not checked) is one step away, behind "How it was checked" on
+  each fact. The one-line freshness summary is the same on the page and in
+  the type index: facts, the oldest check, how many are due, never checked
+  and unknown.
 
 ### Moving around the wiki
 
@@ -920,6 +949,12 @@ where a recheck interval is set for its key in the type's schema. **Decided**
 
 **Proposed.** Reason: the `workspace` repository's catalog is navigated the
 same way (per-type indexes and links) and that works.
+
+**Proposed (M2-7):** until the Now screen exists (M3), opening a workspace
+opens its wiki home: Start here, search, the types, the workspace-wide
+lists and recent changes. A type's index lists at most 1,000 entities, the
+first by ID, and says when there are more and that sorting then orders only
+those. Search leaves retired entities out unless asked.
 
 ### Changing the catalog from the wiki
 
@@ -982,6 +1017,10 @@ owned by the [Catalog](catalog.md) document; this section is how it is shown.
   whether the person has opened it, and whether it changed since they did.
   **Proposed.** Reason: the catalog keeps changing; a returning person should
   see what is new without rereading everything.
+- **Proposed (M2-7):** "opened" is recorded when a person opens a page, with
+  the catalog revision the page stood at; a step "changed since you opened
+  it" when the page has a later revision. These records are personal, kept
+  in a small table, never catalog content and never events.
 - Changing the path is done with **Suggest a change** on the start-here
   document, which needs catalog approval. **Decided** (owner, O-18, [#25]).
 - A new member lands on the path after accepting an invitation (see
@@ -1002,6 +1041,11 @@ owned by the [Catalog](catalog.md) document; this section is how it is shown.
   are told.
 - The page shows the total size of the agents' path and warns when it grows
   large. **Proposed.** Reason: every agent session reads all of it.
+  **Proposed (M2-7):** the preview is the agents' path exactly as an agent
+  receives it in MCP's `workspace_context`: its steps, notes and the
+  entities they name, with their trust labels, as the compact JSON the same
+  code writes. Its size is that text's size in UTF-8, and the warning shows
+  above 8 KB, about 2,000 words of an agent's context.
 
 ### First run for a new workspace
 

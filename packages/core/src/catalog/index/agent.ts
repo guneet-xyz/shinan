@@ -97,6 +97,38 @@ export interface AgentWorkspaceContext {
 }
 
 /**
+ * The agents' start-here path as `workspace_context` gives it: with a trust
+ * label on the document and on every object that holds text.
+ */
+export async function labelledStartHere(
+  tx: Transaction,
+  workspaceId: string,
+  startHere: object | null,
+): Promise<Record<string, unknown> | null> {
+  if (!startHere) return null
+  const labels = await documentLabels(tx, workspaceId, [
+    "start-here",
+    ...summaryIds(startHere),
+  ])
+  const label = labels.get("start-here") ?? outsideLabel
+  const labelled = labelSummaries({ ...startHere, label }, labels) as Record<
+    string,
+    unknown
+  >
+  inheritLabels(labelled, label)
+  return labelled
+}
+
+/**
+ * How every agent answer is written out: compact JSON. MCP sends this text
+ * (and the same object as structured content); the wiki's "Preview as
+ * agent" shows it and measures its size.
+ */
+export function agentAnswerText(answer: object): string {
+  return JSON.stringify(answer)
+}
+
+/**
  * The `workspace_context` tool: the agent, its member, the workspace, what
  * the token allows, and, with `catalog:read`, the catalog revision and the
  * agents' start-here path.
@@ -140,18 +172,11 @@ export async function agentWorkspaceContext(
         index_behind: answer.index_behind,
         label: shinanLabel,
       }
-      if (answer.start_here) {
-        const labels = await documentLabels(scope.tx, scope.workspaceId, [
-          "start-here",
-          ...summaryIds(answer.start_here),
-        ])
-        const label = labels.get("start-here") ?? outsideLabel
-        context.start_here = labelSummaries(
-          { ...answer.start_here, label },
-          labels,
-        ) as Record<string, unknown>
-        inheritLabels(context.start_here, label)
-      }
+      context.start_here = await labelledStartHere(
+        scope.tx,
+        scope.workspaceId,
+        answer.start_here,
+      )
       return context
     },
     snapshotRead,

@@ -8,6 +8,9 @@
       "@shinan/source": "./src/index.ts",
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./testing": {
+      "@shinan/source": "./src/testing.ts"
     }
   },
   "scripts": {

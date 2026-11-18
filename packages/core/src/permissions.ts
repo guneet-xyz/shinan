@@ -198,6 +198,19 @@ export const rules = deepFreeze({
     reauthentication: false,
   },
   /**
+   * Record that a person opened a catalog page in the wiki, for the
+   * start-here path's "opened" and "changed since you opened it" markers
+   * (human experience, start here for people). A personal record, not
+   * catalog content; agents do not read the wiki.
+   */
+  "catalog.mark-opened": {
+    level: "workspace",
+    access: "write",
+    roles: ["owner", "contributor"],
+    agents: "people",
+    reauthentication: false,
+  },
+  /**
    * Keep the agent index in step with the stored text: rebuild it, run the
    * daily round-trip check, and ask for rebuilds after the parser changed
    * (architecture §5.2, §5.3, §7). The worker and the operator's server

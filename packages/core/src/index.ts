@@ -184,3 +184,22 @@ export type {
 // bypasses no check. Catalog operations with permissions are built on it.
 export * from "./catalog/document/index.js"
 export * from "./catalog/index/index.js"
+export {
+  getAgentStartHerePreview,
+  getCatalogDocumentText,
+  listCatalogHistory,
+  listCatalogPagesOpened,
+  listCatalogTypeIndex,
+  recordCatalogPageOpened,
+  typeIndexLimit,
+} from "./catalog/wiki.js"
+export type {
+  AgentStartHerePreviewAnswer,
+  CatalogDocumentTextAnswer,
+  CatalogHistoryAnswer,
+  CatalogHistoryItemJson,
+  CatalogPageOpenedJson,
+  FreshnessSummaryJson,
+  TypeIndexAnswer,
+  TypeIndexItemJson,
+} from "./catalog/wiki.js"

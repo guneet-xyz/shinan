@@ -68,6 +68,7 @@ export type {
   WorkspaceIndexCheck,
 } from "./maintain.js"
 export {
+  agentAnswerText,
   agentCatalogList,
   agentCatalogLists,
   agentGetEntity,

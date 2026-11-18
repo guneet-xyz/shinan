@@ -37,10 +37,9 @@ describe("the app shell", () => {
   it("opens the person's first workspace", async () => {
     renderApp("/")
 
-    expect(await screen.findByRole("heading", { name: "Team" })).toBeTruthy()
-    await waitFor(() =>
-      expect(currentPath()).toBe(`/w/${workspaceId}/settings/general`),
-    )
+    // The wiki opens a workspace until the Now screen exists.
+    expect(await screen.findByRole("heading", { name: "Wiki" })).toBeTruthy()
+    await waitFor(() => expect(currentPath()).toBe(`/w/${workspaceId}/wiki`))
   })
 
   it("welcomes someone with no workspace", async () => {
@@ -100,7 +99,7 @@ describe("the app shell", () => {
     await userEvent.click(items[1]!)
     await waitFor(() =>
       expect(currentPath()).toBe(
-        "/w/66666666-6666-4666-8666-666666666666/settings/general",
+        "/w/66666666-6666-4666-8666-666666666666/wiki",
       ),
     )
     expect(screen.queryByRole("menu")).toBeNull()

@@ -1,4 +1,22 @@
+import type {
+  AgentStartHerePreviewAnswer,
+  CatalogChangesAnswer,
+  CatalogDocumentTextAnswer,
+  CatalogEntityAnswer,
+  CatalogHistoryAnswer,
+  CatalogList,
+  CatalogListAnswer,
+  CatalogPageOpened,
+  CatalogSearchAnswer,
+  CatalogTypeIndexAnswer,
+  CatalogTypeSchemaAnswer,
+  CatalogTypeSchemasAnswer,
+  EntityStatus,
+  StartHereAnswer,
+} from "./catalog.js"
+
 export { sameSitePath } from "./paths.js"
+export * from "./catalog.js"
 
 // The REST API's contract, shared by the web app, CLI and plugin. Times are
 // ISO 8601 strings; IDs of records are UUIDs, except event and security-log
@@ -395,6 +413,7 @@ export function createApiClient(options: ApiClientOptions = {}) {
   }
 
   const workspace = (id: string) => `/api/workspaces/${encodeURIComponent(id)}`
+  const catalog = (id: string) => `${workspace(id)}/catalog`
   const agentPath = (workspaceId: string, agentId: string) =>
     `${workspace(workspaceId)}/agents/${encodeURIComponent(agentId)}`
 
@@ -551,7 +570,130 @@ export function createApiClient(options: ApiClientOptions = {}) {
         "GET",
         `${workspace(workspaceId)}/security-log${query(page)}`,
       ),
+
+    // The catalog, read for the wiki (M2-7).
+    catalogEntity: (workspaceId: string, id: string) =>
+      request<CatalogEntityAnswer>(
+        "GET",
+        `${catalog(workspaceId)}/entity${search({ id })}`,
+      ),
+    catalogTypes: (workspaceId: string) =>
+      request<CatalogTypeSchemasAnswer>("GET", `${catalog(workspaceId)}/types`),
+    catalogType: (workspaceId: string, type: string) =>
+      request<CatalogTypeSchemaAnswer>(
+        "GET",
+        `${catalog(workspaceId)}/types/${encodeURIComponent(type)}`,
+      ),
+    catalogTypeIndex: (
+      workspaceId: string,
+      type: string,
+      options: { status?: EntityStatus; includeRetired?: boolean } = {},
+    ) =>
+      request<CatalogTypeIndexAnswer>(
+        "GET",
+        `${catalog(workspaceId)}/types/${encodeURIComponent(type)}/entities${search(
+          {
+            status: options.status,
+            include_retired: options.includeRetired ? "true" : undefined,
+          },
+        )}`,
+      ),
+    catalogSearch: (
+      workspaceId: string,
+      input: {
+        text: string
+        type?: string
+        includeRetired?: boolean
+        limit?: number
+      },
+    ) =>
+      request<CatalogSearchAnswer>(
+        "GET",
+        `${catalog(workspaceId)}/search${search({
+          text: input.text,
+          type: input.type,
+          include_retired: input.includeRetired ? "true" : undefined,
+          limit: input.limit?.toString(),
+        })}`,
+      ),
+    catalogList: (
+      workspaceId: string,
+      list: CatalogList,
+      options: {
+        offset?: number
+        limit?: number
+        includeRetired?: boolean
+      } = {},
+    ) =>
+      request<CatalogListAnswer>(
+        "GET",
+        `${catalog(workspaceId)}/lists/${encodeURIComponent(list)}${search({
+          offset: options.offset?.toString(),
+          limit: options.limit?.toString(),
+          include_retired: options.includeRetired ? "true" : undefined,
+        })}`,
+      ),
+    catalogChanges: (
+      workspaceId: string,
+      options: { since?: number; limit?: number } = {},
+    ) =>
+      request<CatalogChangesAnswer>(
+        "GET",
+        `${catalog(workspaceId)}/changes${search({
+          since: options.since?.toString(),
+          limit: options.limit?.toString(),
+        })}`,
+      ),
+    catalogStartHere: (workspaceId: string, path: "people" | "agents") =>
+      request<StartHereAnswer>(
+        "GET",
+        `${catalog(workspaceId)}/start-here${search({ path })}`,
+      ),
+    catalogAgentPreview: (workspaceId: string) =>
+      request<AgentStartHerePreviewAnswer>(
+        "GET",
+        `${catalog(workspaceId)}/start-here/agent-preview`,
+      ),
+    catalogHistory: (
+      workspaceId: string,
+      id: string,
+      options: { before?: number; limit?: number } = {},
+    ) =>
+      request<CatalogHistoryAnswer>(
+        "GET",
+        `${catalog(workspaceId)}/history${search({
+          id,
+          before: options.before?.toString(),
+          limit: options.limit?.toString(),
+        })}`,
+      ),
+    catalogText: (workspaceId: string, id: string, revision?: number) =>
+      request<CatalogDocumentTextAnswer>(
+        "GET",
+        `${catalog(workspaceId)}/text${search({
+          id,
+          revision: revision?.toString(),
+        })}`,
+      ),
+    catalogPagesOpened: (workspaceId: string, ids: readonly string[]) =>
+      request<{ items: CatalogPageOpened[] }>(
+        "GET",
+        `${catalog(workspaceId)}/opened?${new URLSearchParams(
+          ids.map((id) => ["id", id]),
+        ).toString()}`,
+      ),
+    markCatalogPageOpened: (workspaceId: string, id: string) =>
+      request<void>("POST", `${catalog(workspaceId)}/opened`, { id }),
   }
+}
+
+/** A query string from the values that are set, or nothing. */
+function search(values: Record<string, string | undefined>): string {
+  const params = new URLSearchParams()
+  for (const [name, value] of Object.entries(values))
+    if (value !== undefined) params.set(name, value)
+  const text = params.toString()
+  return text === "" ? "" : `?${text}`
 }
 
 export type ApiClient = ReturnType<typeof createApiClient>

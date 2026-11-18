@@ -1,7 +1,9 @@
+import { lazy, Suspense } from "react"
 import { Navigate, Route, Routes } from "react-router"
 
 import { ErrorBoundary } from "./components/ErrorBoundary"
 import { AppShell } from "./components/Layout"
+import { Loading } from "./components/status"
 import { Account } from "./pages/Account"
 import { GitHubEmail } from "./pages/GitHubEmail"
 import { Home } from "./pages/Home"
@@ -22,6 +24,9 @@ import {
 } from "./pages/workspace/WorkspaceLayout"
 import { YourAgents } from "./pages/YourAgents"
 import { RequireSignIn } from "./session"
+
+// The wiki, with its Markdown renderer, loads only on wiki pages.
+const WikiRoutes = lazy(() => import("./pages/wiki/WikiRoutes"))
 
 /**
  * The app's pages. Only the sign-in pages (including the confirm page of an
@@ -46,7 +51,16 @@ export function App() {
             <Route path="account/agents" element={<YourAgents />} />
             <Route path="installation" element={<Installation />} />
             <Route path="w/:workspaceId" element={<WorkspaceLayout />}>
-              <Route index element={<Navigate to="settings" replace />} />
+              {/* The wiki opens a workspace until the Now screen exists (M3). */}
+              <Route index element={<Navigate to="wiki" replace />} />
+              <Route
+                path="wiki/*"
+                element={
+                  <Suspense fallback={<Loading />}>
+                    <WikiRoutes />
+                  </Suspense>
+                }
+              />
               <Route path="settings" element={<SettingsLayout />}>
                 <Route index element={<Navigate to="general" replace />} />
                 <Route path="general" element={<General />} />

@@ -269,6 +269,9 @@ importers:
       '@shinan/api-client':
         specifier: workspace:*
         version: link:../../packages/api-client
+      '@shinan/markdown':
+        specifier: workspace:*
+        version: link:../../packages/markdown
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
