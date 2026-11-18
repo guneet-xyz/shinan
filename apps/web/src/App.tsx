@@ -6,6 +6,7 @@ import { AppShell } from "./components/Layout"
 import { Loading } from "./components/status"
 import { Account } from "./pages/Account"
 import { AgentSetup } from "./pages/AgentSetup"
+import { EmailChangePage } from "./pages/EmailChange"
 import { GitHubEmail } from "./pages/GitHubEmail"
 import { Home } from "./pages/Home"
 import { Installation } from "./pages/Installation"
@@ -45,6 +46,7 @@ export function App() {
         <Route path="sign-in/link" element={<SignInLink />} />
         <Route path="setup" element={<Setup />} />
         <Route path="invitation" element={<InvitationPage />} />
+        <Route path="email-change" element={<EmailChangePage />} />
         <Route element={<RequireSignIn />}>
           <Route element={<AppShell />}>
             <Route index element={<Home />} />

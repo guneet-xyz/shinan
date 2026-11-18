@@ -48,6 +48,7 @@ export const emailLimits = {
     magic_link: 5,
     invitation: 5,
     security_alert: 20,
+    email_change: 5,
   } satisfies Record<EmailKind, number>,
   magicLinksPerNetworkAddress: 20,
 } as const

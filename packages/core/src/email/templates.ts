@@ -29,6 +29,27 @@ export function magicLinkEmail(input: MagicLinkEmail): EmailContent {
   ])
 }
 
+export interface EmailChangeEmail {
+  installationName: string
+  /** The confirmation link (identity §3.4). */
+  link: string
+  expiresInMinutes: number
+}
+
+/**
+ * The link that confirms a new email address (identity §3.4), sent to that
+ * address. It works only for the person who asked, signed in.
+ */
+export function emailChangeEmail(input: EmailChangeEmail): EmailContent {
+  const installation = short(input.installationName)
+  const minutes = Math.max(1, Math.round(input.expiresInMinutes))
+  return render(`Confirm your new email address for ${installation}`, [
+    `Someone signed in to ${installation} asked to use this address for their account. To confirm it is yours, open the link while signed in to that account. It works once and expires in ${minutes} ${minutes === 1 ? "minute" : "minutes"}.`,
+    { link: checkLink(input.link), label: "Confirm this email address" },
+    "If you did not ask for this, ignore this email: nothing changes without the link.",
+  ])
+}
+
 export interface InvitationEmail {
   installationName: string
   workspaceName: string
@@ -65,6 +86,18 @@ export type SecurityAlert =
   | { kind: "github-added"; githubLogin: string; at: Date }
   | { kind: "github-removed"; githubLogin: string; at: Date }
   | {
+      kind: "email-change-requested"
+      /** The address the change would move the account to. */
+      newEmail: string
+      at: Date
+    }
+  | {
+      kind: "email-changed"
+      from: string
+      to: string
+      at: Date
+    }
+  | {
       kind: "agent-token-approved"
       /** The agent's handle, such as `opencode-daedalus`. */
       agentHandle: string
@@ -98,6 +131,14 @@ export function securityAlertEmail(input: SecurityAlertEmail): EmailContent {
     case "github-removed":
       subject = `GitHub sign-in removed from your ${installation} account`
       what = `The GitHub account @${short(alert.githubLogin)} was removed as a way to sign in to your ${installation} account on ${when}.`
+      break
+    case "email-change-requested":
+      subject = `Email address change requested for your ${installation} account`
+      what = `A change of your ${installation} account's email address to ${short(alert.newEmail, 200)} was requested on ${when}. It takes effect only when the link sent to that address is opened.`
+      break
+    case "email-changed":
+      subject = `Your ${installation} account's email address changed`
+      what = `The email address of your ${installation} account changed from ${short(alert.from, 200)} to ${short(alert.to, 200)} on ${when}. Sign-in links now go to the new address, and other sign-in sessions were ended.`
       break
     case "agent-token-approved":
       subject = `Agent token approved for ${short(alert.agentHandle)}`

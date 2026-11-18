@@ -69,6 +69,14 @@ export interface Account {
   }
   /** Whether the person is an installation operator. */
   operator: boolean
+  /** A change of address waiting for its link (identity §3.4), if any. */
+  pendingEmailChange: PendingEmailChange | null
+}
+
+/** A change of email address waiting for the link sent to the new address. */
+export interface PendingEmailChange {
+  email: string
+  expiresAt: string
 }
 
 /** One of the person's sign-in sessions (identity §3.3). */
@@ -473,6 +481,16 @@ export function createApiClient(options: ApiClientOptions = {}) {
     addGitHub: (input: { callbackURL: string }) =>
       request<Redirect>("POST", "/api/account/github", input),
     removeGitHub: () => request<void>("DELETE", "/api/account/github"),
+    requestEmailChange: (email: string) =>
+      request<PendingEmailChange>("POST", "/api/account/email-change", {
+        email,
+      }),
+    cancelEmailChange: () =>
+      request<void>("DELETE", "/api/account/email-change"),
+    confirmEmailChange: (token: string) =>
+      request<{ email: string }>("POST", "/api/account/email-change/confirm", {
+        token,
+      }),
     invitationsForYou: () =>
       request<InvitationForYou[]>("GET", "/api/account/invitations"),
     acceptInvitationById: (invitationId: string) =>

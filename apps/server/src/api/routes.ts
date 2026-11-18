@@ -6,9 +6,11 @@ import type * as Api from "@shinan/api-client"
 import {
   acceptInvitation,
   addToAllowlist,
+  cancelEmailChange,
   changeRole,
   checkAddGitHub,
   clientDescription,
+  confirmEmailChange,
   createAgentToken,
   createInvitation,
   createWorkspace,
@@ -21,6 +23,7 @@ import {
   getAccount,
   getCatalogIndexHealth,
   getConnectedAgent,
+  getEmailChange,
   getInstallation,
   getWorkspace,
   issueAgentToken,
@@ -41,6 +44,7 @@ import {
   removeMember,
   renameAgent,
   renameWorkspace,
+  requestEmailChange,
   resendInvitation,
   revokeAgentToken,
   shinan,
@@ -207,6 +211,7 @@ export function createApi({
     limit("/invitations/find", "invitation-token")
     limit("/invitations/accept", "invitation-token")
     limit("/invitations/decline", "invitation-token")
+    limit("/account/email-change/confirm", "sign-in-link-open")
   }
   api.use("*", limitBody)
 
@@ -298,6 +303,7 @@ export function createApi({
 
   signedIn.get("/account", async (c) => {
     const account = await getAccount(ctx(c))
+    const pendingEmailChange = await getEmailChange(ctx(c))
     const github = account.signInMethods.github
     return c.json({
       person: { ...account.person, createdAt: iso(account.person.createdAt) },
@@ -311,7 +317,33 @@ export function createApi({
         githubAvailable: signIn.methods.github,
       },
       operator: account.operator,
+      pendingEmailChange: pendingEmailChange && {
+        email: pendingEmailChange.email,
+        expiresAt: iso(pendingEmailChange.expiresAt),
+      },
     } satisfies Api.Account)
+  })
+
+  // Changing one's email address (identity §3.4): asked for with
+  // re-authentication, confirmed from the link sent to the new address,
+  // whose token comes in the body, never in an address.
+  signedIn.post("/account/email-change", async (c) => {
+    const email = stringField(await readBody(c), "email")
+    const pending = await requestEmailChange(ctx(c), { email })
+    return c.json({
+      email: pending.email,
+      expiresAt: iso(pending.expiresAt),
+    } satisfies Api.PendingEmailChange)
+  })
+
+  signedIn.delete("/account/email-change", async (c) => {
+    await cancelEmailChange(ctx(c))
+    return c.body(null, 204)
+  })
+
+  signedIn.post("/account/email-change/confirm", async (c) => {
+    const token = stringField(await readBody(c), "token")
+    return c.json(await confirmEmailChange(ctx(c), { token }))
   })
 
   signedIn.get("/account/sessions", async (c) => {

@@ -1,4 +1,5 @@
 import { useState } from "react"
+import type { FormEvent } from "react"
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router"
 
 import type { InvitationForYou, SignInSession } from "@shinan/api-client"
@@ -6,6 +7,13 @@ import type { InvitationForYou, SignInSession } from "@shinan/api-client"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
+import {
+  Field,
+  FieldDescription,
+  FieldGroup,
+  FieldLabel,
+} from "@/components/ui/field"
+import { Input } from "@/components/ui/input"
 
 import { useAccount } from "../account"
 import { useAction } from "../action"
@@ -259,7 +267,111 @@ function SignInMethods() {
       )}
       {add.error !== undefined && <ErrorMessage error={add.error} />}
       {remove.error !== undefined && <ErrorMessage error={remove.error} />}
+      <ChangeEmail />
     </Section>
+  )
+}
+
+/**
+ * Changing the account's email address (identity §3.4): asked for with a
+ * recent sign-in, then confirmed from a link sent to the new address, opened
+ * while signed in here. A change waiting for its link can be cancelled.
+ */
+function ChangeEmail() {
+  const api = useApi()
+  const { account, reload } = useAccount()
+  const pending = account.pendingEmailChange
+  const [open, setOpen] = useState(false)
+  const [email, setEmail] = useState("")
+  const ask = useAction()
+  const cancel = useAction()
+
+  if (pending) {
+    return (
+      <div className="flex flex-col gap-3 rounded-lg border p-3 text-sm sm:p-4">
+        <p role="status">
+          Waiting for confirmation: we sent a link to{" "}
+          <strong className="font-medium break-all">{pending.email}</strong>.
+          Open it while signed in here before {formatTime(pending.expiresAt)}.
+          Until then, your address stays {account.person.email}.
+        </p>
+        <Actions>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={cancel.pending}
+            onClick={() => cancel.run(() => api.cancelEmailChange(), reload)}
+          >
+            Cancel the change
+          </Button>
+        </Actions>
+        {cancel.error !== undefined && <ErrorMessage error={cancel.error} />}
+      </div>
+    )
+  }
+
+  if (!open) {
+    return (
+      <Actions>
+        <Button type="button" variant="outline" onClick={() => setOpen(true)}>
+          Change email address
+        </Button>
+      </Actions>
+    )
+  }
+
+  const submit = (event: FormEvent) => {
+    event.preventDefault()
+    ask.run(
+      () => api.requestEmailChange(email),
+      () => {
+        setOpen(false)
+        setEmail("")
+        reload()
+      },
+    )
+  }
+
+  return (
+    <form onSubmit={submit} className="flex flex-col gap-3">
+      <FieldGroup>
+        <Field>
+          <FieldLabel htmlFor="new-email">New email address</FieldLabel>
+          <Input
+            id="new-email"
+            type="email"
+            autoComplete="email"
+            required
+            className="w-full sm:w-80"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+          />
+          <FieldDescription>
+            It must be on this installation's email allowlist: ask an
+            installation operator to add it first. We send a link there to
+            confirm it. Once confirmed, sign-in links go only to the new
+            address, invitations still waiting for the old one are withdrawn,
+            and your other sign-in sessions end.
+          </FieldDescription>
+        </Field>
+      </FieldGroup>
+      <Actions>
+        <Button type="submit" disabled={ask.pending}>
+          Send confirmation link
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={() => {
+            setOpen(false)
+            ask.clear()
+          }}
+        >
+          Cancel
+        </Button>
+      </Actions>
+      {ask.error !== undefined && <ErrorMessage error={ask.error} />}
+    </form>
   )
 }
 

@@ -265,7 +265,8 @@ different from an [agent session](domain-model.md#agent-session).
   inside it (open question 1). Sensitive actions: approving an agent token
   or making one by hand, giving a deployment approval, inviting, changing
   roles, removing members, adding or changing git host connections, changing
-  workspace settings, adding or removing a sign-in method, purging, exporting,
+  workspace settings, adding or removing a sign-in method, asking to change
+  one's email address (3.4), purging, exporting,
   importing and deleting a workspace. Reason: a sign-in
   session left open or stolen from a browser should not be enough for actions
   that change who can do what or approve a live change. It does not stop someone who controls the
@@ -273,8 +274,9 @@ different from an [agent session](domain-model.md#agent-session).
 - A person can see their active sign-in sessions and end any or all of them
   ("sign out everywhere").
 - Shinan emails the person when they sign in from a browser it has not seen
-  before, when GitHub is added or removed as a sign-in method, and when an
-  agent token is approved. **Proposed (M1-4):** a browser is recognised by a
+  before, when GitHub is added or removed as a sign-in method, when an
+  agent token is approved, and when a change of their email address is
+  asked for (to the old address) or made (to both, 3.4). **Proposed (M1-4):** a browser is recognised by a
   long-lived cookie of its own, of which Shinan keeps only a hash per person;
   the sign-in that creates an account sends no alert. Reason: a quick alert is the main way a person
   learns that someone else is using their account. The alert goes to the same
@@ -302,6 +304,39 @@ to the new address; a workspace owner invites it again. Reason: the lost
 mailbox may be in someone else's hands, and otherwise they could open a link
 to the old address, get a new account with it, and accept the person's
 invitations.
+
+**Proposed ([#66](https://github.com/guneet-xyz/shinan/issues/66)):** the
+self-service change, from Your account, for anyone signed in (usually by
+GitHub, when the old mailbox is lost):
+
+- **Asking** needs a recent sign-in (3.3), like changing a sign-in method,
+  since the address is how the person signs in. The new address must be on
+  the email allowlist (an operator adds it, as above) and belong to no other
+  account; an operator's address, old or new, is changed in the
+  configuration and with the command above instead, since operator rights
+  come from the address. Shinan emails a link to the new address and a
+  security alert to the old one. Asking again replaces the earlier request
+  and its link; a person may ask 5 times an hour. Reason: each request
+  emails both addresses, and a session left open should not be able to
+  flood either.
+- **Confirming** needs the link, which works once, for an hour, and **only
+  for the person who asked, signed in**. Reason: proof of the new mailbox
+  alone is not enough. Otherwise someone could ask for another person's
+  allowlisted address and get it confirmed by that person opening the link,
+  then receive their invitations; the link's email says to ignore it if the
+  reader did not ask. An hour, not a sign-in link's 15 minutes, because the
+  person may have to reach a mailbox they do not use every day; the window
+  gives no one else anything.
+- **Then**, in one step and as the operator's command does: the address
+  changes; the old one leaves the allowlist and its pending invitations are
+  withdrawn (not moved); a GitHub sign-in waiting for it is dropped, and
+  other people's requests for the new address lapse. Every other sign-in
+  session of the person ends; the one they confirmed from stays. Agent
+  tokens stay, because the person and their agents are the same; the alert
+  says to revoke any they do not recognise. Both addresses get a security
+  alert. Each step is recorded in the security log (by `self`).
+- A waiting change can be cancelled; its link then stops working. Links
+  that expire unopened are deleted by the hourly sign-in clean-up.
 
 ### 3.5 Linking git host accounts
 

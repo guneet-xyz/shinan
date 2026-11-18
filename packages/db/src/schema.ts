@@ -303,6 +303,27 @@ export const knownBrowsers = pgTable(
   (t) => [primaryKey({ columns: [t.personId, t.browserHash] })],
 )
 
+/**
+ * A change of a person's email address they asked for, waiting for the link
+ * sent to the new address (identity §3.4). One per person: asking again
+ * replaces it. Only the link token's hash is kept.
+ */
+export const emailChanges = pgTable(
+  "email_changes",
+  {
+    personId: uuid("person_id")
+      .primaryKey()
+      .references(() => people.id, { onDelete: "cascade" }),
+    /** The new address, in lower case. */
+    email: text("email").notNull(),
+    /** SHA-256 of the token in the link sent to the new address. */
+    tokenHash: text("token_hash").notNull().unique(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [lowerCaseEmail("email_changes_email_lower_case", t.email)],
+)
+
 export const workspaces = pgTable(
   "workspaces",
   {
@@ -703,6 +724,8 @@ export const emailKinds = [
   "magic_link",
   "invitation",
   "security_alert",
+  /** The link that confirms a new email address (identity §3.4). */
+  "email_change",
 ] as const
 export type EmailKind = (typeof emailKinds)[number]
 export const emailKindEnum = pgEnum("email_kind", emailKinds)

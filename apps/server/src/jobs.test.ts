@@ -281,6 +281,7 @@ describe("worker", () => {
         expect(job?.output).toEqual({
           pendingGitHubSignIns: expect.any(Number) as number,
           signInSessions: expect.any(Number) as number,
+          emailChanges: expect.any(Number) as number,
         })
       },
       { timeout: 10_000, interval: 200 },
