@@ -509,6 +509,9 @@ After the owner approves the M2 deployment and it is verified:
    the start-here document, both gated: the owner writes them or approves an
    agent's proposal. The agents' path links to the `workspace` repository's
    policies by URL, because policies stay there during the trial (D-018).
+   The [trial guide](trial.md#3-starting-the-catalog-part-step-by-step)
+   proposes writing the start-here document after seeding (step 4), so its
+   steps can point to the trial entities with one approval.
 4. **Seeding.** One task-scoped agent session per entity group creates the
    trial entities listed in [roadmap 4.3](roadmap.md#43-the-catalog-during-the-trial)
    through MCP: `project/shinan`, `project/mon`, `project/easyshell`;

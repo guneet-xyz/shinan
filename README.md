@@ -14,6 +14,7 @@ now in its build phase.
 - [Architecture](docs/architecture.md) and the [roadmap](docs/roadmap.md)
 - [Domain model and glossary](docs/domain-model.md)
 - [Operator guide](docs/operator-guide.md): running Shinan yourself
+- [Trial guide](docs/trial.md): starting and running the trial on Shinan's own projects
 - [Decision log](docs/decisions/README.md)
 - [Agent instructions](AGENTS.md)
 
