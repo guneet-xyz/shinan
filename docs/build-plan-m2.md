@@ -43,18 +43,18 @@ packages is **proposed**):
 
 ### What M2 does not deliver
 
-| Not in M2                                                                                                             | When                                                    | Reason                                                                                                                                                                                                                                                                                                                                                 |
-| --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Tasks, related tasks on entity pages, `from-task` resolution, the workspace timeline screen, the readiness report     | M3                                                      | [Roadmap 3.3](roadmap.md#33-build-milestones).                                                                                                                                                                                                                                                                                                         |
-| Agent sessions, presence, the OpenCode plugin, the "start agent session" and "check in" tools                         | M4                                                      | Roadmap 3.3. In M2 every MCP call is credited to the agent with no agent session, which the [glossary](domain-model.md#agent-session) allows; the written actor form names the agent anyway ([identity §8.7](identity.md#87-how-an-actor-is-written-in-text)).                                                                                         |
-| Browser approval of agents (device flow with a short code), formerly package M2-11                                    | **Decided (owner, M2-Q1):** M4, with the plugin         | Only the plugin or the CLI can start it, and neither exists in M2. Hand-made tokens are the decided fallback ([D-050](decisions/D-050-agent-token-browser-approval.md)). The M4 plan picks up the content in [section 3.11](#311-moved-to-m4-browser-approval).                                                                                        |
-| The CLI, including its local MCP bridge                                                                               | **Proposed:** after M4, before G2                       | On the cut line ([roadmap 3.2](roadmap.md#32-cut-line)). Every trial agent is OpenCode, which reaches a remote MCP server with a header.                                                                                                                                                                                                               |
-| Workspace export and import                                                                                           | Before G2                                               | On the cut line. The wiki's export link for owners waits for it.                                                                                                                                                                                                                                                                                       |
-| The migration importer and the rollback converter                                                                     | Before the rehearsal (R14), before G2                   | The trial checks every fact, pointers included, at its source and copies nothing ([O-71](roadmap.md#43-the-catalog-during-the-trial), M2-Q7); a bulk importer is not needed for it ([architecture §5.4](architecture.md#54-importing-the-workspace-repositorys-catalog), [catalog §13](catalog.md#13-mapping-from-the-workspace-repositorys-catalog)). |
-| Automatic fact checks by Shinan                                                                                       | Phase 2a                                                | Cut line; they need git host connections (M3) anyway ([catalog §12.3](catalog.md#123-automatic-fact-checks-by-shinan)).                                                                                                                                                                                                                                |
-| Nudges and the `messages` field in MCP answers                                                                        | Phase 2 (field added when nudges or task notices exist) | [Agent integrations, design rule 4](agent-integrations.md#design-rules).                                                                                                                                                                                                                                                                               |
-| Git mirror, MCP-specific OAuth, MCP resources, agent signing keys, external link checking, body embeds of fact values | Later or not planned                                    | [D-043](decisions/D-043-no-git-mirror-for-now.md), [D-050](decisions/D-050-agent-token-browser-approval.md); the defaults in [section 7.2](#72-defaults-for-open-questions-in-the-documents).                                                                                                                                                          |
-| Screens for a second member (contributor role in catalog screens, nudges from others)                                 | Before a second member joins                            | [Identity §13](identity.md#13-first-version-scope). Core still enforces the role rules, as M1 does.                                                                                                                                                                                                                                                    |
+| Not in M2                                                                                                             | When                                                    | Reason                                                                                                                                                                                                                                                                                                                                                  |
+| --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Tasks, related tasks on entity pages, `from-task` resolution, the workspace timeline screen, the readiness report     | M3                                                      | [Roadmap 3.3](roadmap.md#33-build-milestones).                                                                                                                                                                                                                                                                                                          |
+| Agent sessions, presence, the OpenCode plugin, the "start agent session" and "check in" tools                         | M4                                                      | Roadmap 3.3. In M2 every MCP call is credited to the agent with no agent session, which the [glossary](domain-model.md#agent-session) allows; the written actor form names the agent anyway ([identity §8.7](identity.md#87-how-an-actor-is-written-in-text)).                                                                                          |
+| Browser approval of agents (device flow with a short code), formerly package M2-11                                    | **Decided (owner, M2-Q1):** M4, with the plugin         | Only the plugin or the CLI can start it, and neither exists in M2. Hand-made tokens are the decided fallback ([D-050](decisions/D-050-agent-token-browser-approval.md)). The M4 plan picks up the content in [section 3.11](#311-moved-to-m4-browser-approval).                                                                                         |
+| The CLI, including its local MCP bridge                                                                               | **Proposed:** after M4, before G2                       | On the cut line ([roadmap 3.2](roadmap.md#32-cut-line)). Every trial agent is OpenCode, which reaches a remote MCP server with a header.                                                                                                                                                                                                                |
+| Workspace export and import                                                                                           | Before G2                                               | On the cut line. The wiki's export link for owners waits for it.                                                                                                                                                                                                                                                                                        |
+| The migration importer and the rollback converter                                                                     | Before the rehearsal (R14), before G2                   | The trial checks every fact, pointers included, at its source and copies nothing ([O-71](roadmap.md#43-the-catalog-during-the-trial), M2-Q10); a bulk importer is not needed for it ([architecture §5.4](architecture.md#54-importing-the-workspace-repositorys-catalog), [catalog §13](catalog.md#13-mapping-from-the-workspace-repositorys-catalog)). |
+| Automatic fact checks by Shinan                                                                                       | Phase 2a                                                | Cut line; they need git host connections (M3) anyway ([catalog §12.3](catalog.md#123-automatic-fact-checks-by-shinan)).                                                                                                                                                                                                                                 |
+| Nudges and the `messages` field in MCP answers                                                                        | Phase 2 (field added when nudges or task notices exist) | [Agent integrations, design rule 4](agent-integrations.md#design-rules).                                                                                                                                                                                                                                                                                |
+| Git mirror, MCP-specific OAuth, MCP resources, agent signing keys, external link checking, body embeds of fact values | Later or not planned                                    | [D-043](decisions/D-043-no-git-mirror-for-now.md), [D-050](decisions/D-050-agent-token-browser-approval.md); the defaults in [section 7.2](#72-defaults-for-open-questions-in-the-documents).                                                                                                                                                           |
+| Screens for a second member (contributor role in catalog screens, nudges from others)                                 | Before a second member joins                            | [Identity §13](identity.md#13-first-version-scope). Core still enforces the role rules, as M1 does.                                                                                                                                                                                                                                                     |
 
 ## 2. Code layout additions (proposed)
 
@@ -515,21 +515,21 @@ After the owner approves the M2 deployment and it is verified:
    `service/container-registry`, `service/cloudflare-dns`, `service/obscuro`,
    `service/email`, `service/forgejo`, `service/monitoring`; and the trial
    projects' deployments `service/shinan`, `service/mon-private`,
-   `service/mon-public`, `service/easyshell` (owner, M2-Q6). Rules
-   ([O-71](roadmap.md#43-the-catalog-during-the-trial) as amended by M2-Q7,
+   `service/mon-public`, `service/easyshell` (owner, M2-Q9). Rules
+   ([O-71](roadmap.md#43-the-catalog-during-the-trial) as amended by M2-Q10,
    catalog §13):
    - each `workspace` repository entry is a map, not a source: facts are
      checked at their owning sources and recorded with real check times;
    - pointers (repository URLs, IDs, documentation links) are checked too, by
      opening them, and become ordinary `observed` facts; nothing is copied
-     from the entries (owner, M2-Q7);
+     from the entries (owner, M2-Q10);
    - a fact or pointer that cannot be checked within the agent's existing
      access is `unknown`; seeding never widens access (P6), so no new SSH or
      scanning;
    - no secrets; `secrets-in` records only where a secret lives;
    - trial entities are not imports, so they carry no `imported_from`.
 5. **Start-here document,** after seeding, so its steps can point to the
-   trial entities (owner, M2-Q8): gated, one approval. The agents' path links
+   trial entities (owner, M2-Q11): gated, one approval. The agents' path links
    to the `workspace` repository's policies by URL, because policies stay
    there during the trial (D-018).
 6. **Owner check.** The owner reads the start-here path and a few entities in
@@ -681,9 +681,9 @@ in the same PR.
 
 Decided by the owner on 2026-11-18, on the questions the
 [trial guide](trial.md) asked in [PR #101](https://github.com/guneet-xyz/shinan/pull/101)
-(M2-Q6 to M2-Q8):
+(M2-Q9 to M2-Q11):
 
-1. **M2-Q6, deployments of the trial projects:** the trial catalog also gets
+1. **M2-Q9, deployments of the trial projects:** the trial catalog also gets
    `service/shinan`, `service/mon-private`, `service/mon-public` and
    `service/easyshell`, making 17 trial entities. This widens O-71's list
    ([roadmap 4.3](roadmap.md#43-the-catalog-during-the-trial)). Reason:
@@ -691,14 +691,14 @@ Decided by the owner on 2026-11-18, on the questions the
    R12's "where and how a trial project is deployed" could not be answered
    from Shinan; rollouts are also the trial facts that change most often, so
    they test R6 and R7 best.
-2. **M2-Q7, pointers:** every pointer is checked at its source like any other
+2. **M2-Q10, pointers:** every pointer is checked at its source like any other
    fact; a pointer an agent cannot open is recorded as `unknown`. Nothing is
    copied from `workspace` repository entries, and validation is unchanged
    (`checked: null` and `by: unknown` stay for imports only). This narrows
    O-71, which allowed copying pure pointers. Reason: every trial pointer is a
    link an agent can open, so checking costs little and gives real check
    times.
-3. **M2-Q8, the start-here document:** written after seeding, with one
+3. **M2-Q11, the start-here document:** written after seeding, with one
    approval, so its steps can point to the trial entities
    ([section 4](#4-starting-the-catalog-part-of-the-trial)).
 

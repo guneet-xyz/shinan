@@ -121,7 +121,7 @@ deployment request in `infra/musashi` is ready.
      machines, the services the projects depend on, and the owner, as entity
      steps.
 
-   Decided (owner, M2-Q8, [build plan §7.3](build-plan-m2.md#73-answers-on-the-trial-start-kit)):
+   Decided (owner, M2-Q11, [build plan §7.3](build-plan-m2.md#73-answers-on-the-trial-start-kit)):
    the start-here document is written after seeding, with one approval.
    Reason: its steps point to the trial entities, which must exist for
    validation to pass.
@@ -223,18 +223,28 @@ The same content in all three files:
   under `mcp` ([MCP servers](https://opencode.ai/docs/mcp-servers)).
 - `oauth: false`, because Shinan has no MCP OAuth in the first version
   (decided, owner, NO-1); the token is the only credential.
-- No `protocol` setting: OpenCode's default (`legacy`, revisions up to
-  2025-11-25) is one of the two revisions Shinan's MCP server supports
-  ([architecture §8.1](architecture.md#81-mcp-server)). **To be confirmed**
-  with M2-6 whether `"protocol": "auto"` should be set to use 2026-07-28.
+- No `protocol` setting (proposed). Shinan's MCP server accepts exactly two
+  protocol revisions, 2026-07-28 and 2025-11-25
+  ([architecture §8.1](architecture.md#81-mcp-server); M2-6,
+  [PR #115](https://github.com/guneet-xyz/shinan/pull/115)). M2-6 checked
+  both with OpenCode v2.3.0 against a local server: the default (`legacy`)
+  connects over 2025-11-25, and `"protocol": "auto"` connects over 2026-07-28
+  (through `server/discover`); both call the tools. Reason for the default:
+  one setting fewer, and nothing the trial uses needs 2026-07-28. Adding
+  `"protocol": "auto"` later changes nothing else.
 - The comment does not contain a file reference on purpose, so nothing in it
   is ever substituted.
-- **To be confirmed** with M2-6 and M2-9: the `/mcp` path and the skill
-  catalog URL `https://shinan.guneet.dev/skills/` (with `index.json` there,
-  [D-056](decisions/D-056-public-skill-path.md)). The skill's ID, which agents
-  load, comes from M2-9's `index.json` (expected `shinan`). Tools appear as
-  `shinan_<tool>`, or as `tools.shinan.<tool>` under OpenCode's Code Mode; the
-  tool names are fixed in M2-6.
+- The endpoint is `/mcp` (M2-6). Tools appear as `shinan_<tool>`, or as
+  `tools.shinan.<tool>` under OpenCode's Code Mode. The read tools are
+  `workspace_context`, `search_catalog`, `get_entity` and `catalog_lists`
+  (M2-6, [PR #115](https://github.com/guneet-xyz/shinan/pull/115)). The write
+  tools follow in M2-6's second PR as `propose_catalog_change`,
+  `record_fact_check`, `get_catalog_proposal`, `withdraw_catalog_proposal`
+  and `comment_on_catalog_proposal` (**to be confirmed** when it merges).
+- **To be confirmed** with M2-9: the skill catalog URL
+  `https://shinan.guneet.dev/skills/` (with `index.json` there,
+  [D-056](decisions/D-056-public-skill-path.md)) and the skill's ID, which
+  agents load, from M2-9's `index.json` (expected `shinan`).
 
 ### 4.4 OpenCode behaviour this relies on
 
@@ -270,7 +280,7 @@ From each folder below, run `opencode mcp list` (twice if the first run says
 | Another project's folder, such as `/mnt/projects/musashi` | `shinan` not listed   |
 
 Then, from a trial folder, an agent session loads the skill and calls the
-context tool (`workspace_context`, name **to be confirmed** in M2-6); the
+context tool (`workspace_context`); the
 answer names the agent `opencode-daedalus` and the trial workspace. Record the
 results in [#93](https://github.com/guneet-xyz/shinan/issues/93).
 
@@ -286,7 +296,7 @@ condition ([roadmap §4.6](roadmap.md#46-running-the-trial), RM-10).
 
 ### 5.1 The entities
 
-Decided (owner, O-71, widened by M2-Q6 on 2026-11-18,
+Decided (owner, O-71, widened by M2-Q9 on 2026-11-18,
 [roadmap §4.3](roadmap.md#43-the-catalog-during-the-trial),
 [build plan §7.3](build-plan-m2.md#73-answers-on-the-trial-start-kit)): 17
 entities. The map entry is the `workspace` repository file an agent reads to
@@ -350,7 +360,7 @@ as a procedure, for each entity:
 3. **Pointers** (repository URLs, issue trackers, documentation links, IDs)
    are checked by opening them, which makes them ordinary `observed` facts.
    Nothing is copied from the entry; a pointer the agent cannot open is
-   `unknown` (decided, owner, M2-Q7). Reason: every trial pointer is a link an
+   `unknown` (decided, owner, M2-Q10). Reason: every trial pointer is a link an
    agent can normally open, so checking costs little and gives real check
    times. Validation is unchanged: `checked: null` and `by: unknown` are only
    for imports ([catalog §8.3](catalog.md#83-validation)), which trial
@@ -369,12 +379,12 @@ as a procedure, for each entity:
 service/tailscale`) are not written, because their targets do not exist.
    The body says it in prose with a link to the owning repository, and the
    session lists them in its report. Adding more entities needs the owner
-   (O-71 and M2-Q6 fixed the list).
+   (O-71 and M2-Q9 fixed the list).
 7. **Dated history stays in the body**; current-state claims become facts
    ([catalog §2.5](catalog.md#25-body)).
 8. **No `imported_from`:** trial entities are not imports.
-9. **Propose** through `propose_catalog_change` (name **to be confirmed** in
-   M2-6) with an explanation naming the map entry's path and revision, and
+9. **Propose** through `propose_catalog_change` (from M2-6's second PR,
+   name **to be confirmed**) with an explanation naming the map entry's path and revision, and
    check the answer: applied, or waiting for approval and why. A validation
    warning (for example a secret-looking value) holds the proposal for the
    owner; fix the cause rather than asking for approval where possible.

@@ -2238,7 +2238,7 @@ When and how the move happens is owned by the [roadmap](roadmap.md) (D-018).
 - **Trial (decided, owner, O-71, [#25]):** agents fill the trial catalog by
   checking facts at their owning sources, using `workspace` repository entries
   only as a map. Pointers such as repository URLs are checked at their source
-  too, and nothing is copied (amended by the owner on 2026-11-18, M2-Q7, in
+  too, and nothing is copied (amended by the owner on 2026-11-18, M2-Q10, in
   [build plan M2 §7.3](build-plan-m2.md#73-answers-on-the-trial-start-kit)),
   so 13.1 does not apply to the trial.
 - **Migration and its rehearsal:** the full import follows 13.1 and 13.2.
