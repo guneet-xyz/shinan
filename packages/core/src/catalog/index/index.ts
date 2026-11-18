@@ -67,3 +67,18 @@ export type {
   CatalogIndexWorkspaceHealth,
   WorkspaceIndexCheck,
 } from "./maintain.js"
+export {
+  agentCatalogList,
+  agentCatalogLists,
+  agentGetEntity,
+  agentSearchCatalog,
+  agentWorkspaceContext,
+} from "./agent.js"
+export type {
+  AgentCatalogList,
+  AgentCatalogListInput,
+  AgentGetEntityInput,
+  AgentSearchInput,
+  AgentWorkspaceContext,
+} from "./agent.js"
+export type { TrustLabel } from "./labels.js"

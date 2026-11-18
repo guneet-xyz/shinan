@@ -781,6 +781,24 @@ sit behind NAT, firewalls or tailnets. The agent-facing parts of
   carries a machine-readable field saying who wrote it (member, agent, outside
   actor, Shinan) and whether it may be treated as an instruction. Field names
   and skill wording are owned by [agent integrations](agent-integrations.md).
+- **As built (M2-6, [#87](https://github.com/guneet-xyz/shinan/issues/87)),
+  proposed:** `/mcp` uses the official TypeScript SDK's v2 packages
+  (`@modelcontextprotocol/server` 2.4), whose `createMcpHandler` serves the
+  2026-07-28 revision and, statelessly, the 2025 `initialize` handshake from
+  one per-request server. Each request passes, in order: the per-address
+  request limit (as `/api/agent`), the 64 KB body limit (M2-12 raises it for
+  writes), the `Origin` check (a request carrying any `Origin` but the
+  installation's own is refused with 403), and `requireAgent`; the SDK then
+  checks the 2026-07-28 headers against the body (400 when they disagree).
+  Answers are single JSON bodies (`responseMode: "json"`) with
+  `Cache-Control: no-store`; only a 2026-07-28 client's
+  `subscriptions/listen` holds a stream open, which Shinan never notifies on.
+  The agent's token is not handed to the SDK: the handler gets the
+  authenticated agent, and core checks it again on every operation.
+  Checked with OpenCode v2.3.0 on Daedalus against a local server: with the
+  default `protocol` it connects over 2025-11-25, and with
+  `"protocol": "auto"` over 2026-07-28 (`server/discover`); both call the
+  tools.
 - **Session IDs are hints, never credentials.** OpenCode sends its session ID in
   `_meta["ai.opencode/sessionID"]` and documents that it must not be used for
   authentication. Matching calls to agent sessions follows the owner's answer

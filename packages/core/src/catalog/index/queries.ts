@@ -46,7 +46,7 @@ const sections = schema.catalogIndexSections
 type DocumentRecord = typeof documents.$inferSelect
 
 /** The catalog revision the index stands at, and whether it is behind. */
-async function answerFor(
+export async function answerFor(
   tx: Transaction,
   workspaceId: string,
 ): Promise<CatalogAnswer> {
@@ -227,16 +227,23 @@ export async function getCatalogEntity(
     ctx,
     workspaceId,
     "catalog.read",
-    async (scope) => {
-      const answer = await answerFor(scope.tx, scope.workspaceId)
-      const row = await requireEntity(scope.tx, scope.workspaceId, input.id)
-      return {
-        ...answer,
-        entity: await entityJson(scope.tx, scope.workspaceId, row, Date.now()),
-      }
-    },
+    (scope) => readCatalogEntity(scope.tx, scope.workspaceId, input),
     snapshotRead,
   )
+}
+
+/** `getCatalogEntity` inside a transaction the caller has checked for `catalog.read`. */
+export async function readCatalogEntity(
+  tx: Transaction,
+  workspaceId: string,
+  input: { id: string },
+): Promise<CatalogEntityAnswer> {
+  const answer = await answerFor(tx, workspaceId)
+  const row = await requireEntity(tx, workspaceId, input.id)
+  return {
+    ...answer,
+    entity: await entityJson(tx, workspaceId, row, Date.now()),
+  }
 }
 
 async function entityJson(
@@ -419,17 +426,24 @@ export async function getCatalogNeighbours(
     ctx,
     workspaceId,
     "catalog.read",
-    async (scope) => {
-      const answer = await answerFor(scope.tx, scope.workspaceId)
-      const row = await requireEntity(scope.tx, scope.workspaceId, input.id)
-      return {
-        ...answer,
-        entity: summaryJson(row),
-        ...(await relationsOf(scope.tx, scope.workspaceId, row)),
-      }
-    },
+    (scope) => readCatalogNeighbours(scope.tx, scope.workspaceId, input),
     snapshotRead,
   )
+}
+
+/** `getCatalogNeighbours` inside a transaction the caller has checked for `catalog.read`. */
+export async function readCatalogNeighbours(
+  tx: Transaction,
+  workspaceId: string,
+  input: { id: string },
+): Promise<CatalogNeighboursAnswer> {
+  const answer = await answerFor(tx, workspaceId)
+  const row = await requireEntity(tx, workspaceId, input.id)
+  return {
+    ...answer,
+    entity: summaryJson(row),
+    ...(await relationsOf(tx, workspaceId, row)),
+  }
 }
 
 export interface CatalogAppliesAnswer extends CatalogAnswer {
@@ -448,17 +462,24 @@ export async function getCatalogPoliciesFor(
     ctx,
     workspaceId,
     "catalog.read",
-    async (scope) => {
-      const answer = await answerFor(scope.tx, scope.workspaceId)
-      const row = await requireEntity(scope.tx, scope.workspaceId, input.id)
-      return {
-        ...answer,
-        entity: summaryJson(row),
-        ...(await appliesTo(scope.tx, scope.workspaceId, row)),
-      }
-    },
+    (scope) => readCatalogPoliciesFor(scope.tx, scope.workspaceId, input),
     snapshotRead,
   )
+}
+
+/** `getCatalogPoliciesFor` inside a transaction the caller has checked for `catalog.read`. */
+export async function readCatalogPoliciesFor(
+  tx: Transaction,
+  workspaceId: string,
+  input: { id: string },
+): Promise<CatalogAppliesAnswer> {
+  const answer = await answerFor(tx, workspaceId)
+  const row = await requireEntity(tx, workspaceId, input.id)
+  return {
+    ...answer,
+    entity: summaryJson(row),
+    ...(await appliesTo(tx, workspaceId, row)),
+  }
 }
 
 export interface ListEntitiesInput extends ListInput {
@@ -477,29 +498,36 @@ export async function listCatalogEntities(
     ctx,
     workspaceId,
     "catalog.read",
-    async (scope) => {
-      const range = page(input)
-      const answer = await answerFor(scope.tx, scope.workspaceId)
-      const rows = await scope.tx
-        .select()
-        .from(documents)
-        .where(
-          and(
-            eq(documents.workspaceId, scope.workspaceId),
-            isEntity,
-            input.type === undefined
-              ? undefined
-              : eq(documents.type, catalogText(input.type, "type", 100)),
-            statusFilter(input),
-          ),
-        )
-        .orderBy(asc(documents.catalogId), asc(documents.documentId))
-        .offset(range.offset)
-        .limit(range.limit + 1)
-      return { ...answer, ...paged(rows.map(summaryJson), range) }
-    },
+    (scope) => readCatalogEntities(scope.tx, scope.workspaceId, input),
     snapshotRead,
   )
+}
+
+/** `listCatalogEntities` inside a transaction the caller has checked for `catalog.read`. */
+export async function readCatalogEntities(
+  tx: Transaction,
+  workspaceId: string,
+  input: ListEntitiesInput = {},
+): Promise<ListAnswer<EntitySummaryJson>> {
+  const range = page(input)
+  const answer = await answerFor(tx, workspaceId)
+  const rows = await tx
+    .select()
+    .from(documents)
+    .where(
+      and(
+        eq(documents.workspaceId, workspaceId),
+        isEntity,
+        input.type === undefined
+          ? undefined
+          : eq(documents.type, catalogText(input.type, "type", 100)),
+        statusFilter(input),
+      ),
+    )
+    .orderBy(asc(documents.catalogId), asc(documents.documentId))
+    .offset(range.offset)
+    .limit(range.limit + 1)
+  return { ...answer, ...paged(rows.map(summaryJson), range) }
 }
 
 export interface SearchInput {
@@ -533,79 +561,84 @@ export async function searchCatalog(
     ctx,
     workspaceId,
     "catalog.read",
-    async (scope) => {
-      const text = catalogText(input.text, "text")
-      const limit = input.limit ?? 20
-      if (!Number.isInteger(limit) || limit < 1 || limit > 100)
-        throw new InvalidInputError(
-          "limit",
-          "The limit is a whole number from 1 to 100",
-        )
-      const answer = await answerFor(scope.tx, scope.workspaceId)
-      // Each configuration is matched against its own vector over the same
-      // fields, so `-word` excludes the word wherever it appears.
-      const english = sql`websearch_to_tsquery('english', ${text})`
-      const simple = sql`websearch_to_tsquery('simple', ${text})`
-      const matches = (
-        table: typeof documents | typeof sections,
-      ): [SQL, SQL] => [
-        sql`(${table.search} @@ ${english} or ${table.searchSimple} @@ ${simple})`,
-        sql`greatest(ts_rank(${table.search}, ${english}), ts_rank(${table.searchSimple}, ${simple}))`,
-      ]
-      const [documentMatch, documentRank] = matches(documents)
-      const [sectionMatch, sectionRank] = matches(sections)
-      const filters = and(
-        eq(documents.workspaceId, scope.workspaceId),
-        isEntity,
-        input.type === undefined
-          ? undefined
-          : eq(documents.type, catalogText(input.type, "type", 100)),
-        statusFilter(input),
-      )
-      // An entity matches as a whole (its fields, facts and body), so a
-      // word after a minus leaves it out wherever the word is; its best
-      // matching section can lift its rank.
-      const bestSection = sql`coalesce((select max(${sectionRank}) from ${sections} where ${sections.documentId} = ${documents.documentId} and ${sectionMatch}), 0)`
-      const rank = sql<number>`greatest(${documentRank}, ${bestSection})::float8`
-      const ranked = await scope.tx
-        .select({ documentId: documents.documentId, rank })
-        .from(documents)
-        .where(and(filters, documentMatch))
-        .orderBy(desc(rank), asc(documents.documentId))
-        .limit(limit)
-      if (ranked.length === 0) return { ...answer, items: [] }
-
-      const ids = ranked.map((r) => r.documentId)
-      const rows = new Map(
-        (
-          await scope.tx
-            .select()
-            .from(documents)
-            .where(inArray(documents.documentId, ids))
-        ).map((r) => [r.documentId, r]),
-      )
-      const sectionRows = await scope.tx
-        .select({
-          section: sections,
-          rank: sql<number>`${sectionRank}`,
-        })
-        .from(sections)
-        .where(and(inArray(sections.documentId, ids), sectionMatch))
-        .orderBy(desc(sectionRank), asc(sections.position))
-      return {
-        ...answer,
-        items: ranked.map((r) => ({
-          entity: summaryJson(rows.get(r.documentId)!),
-          rank: r.rank,
-          sections: sectionRows
-            .filter((s) => s.section.documentId === r.documentId)
-            .slice(0, 3)
-            .map((s) => sectionJson(s.section)),
-        })),
-      }
-    },
+    (scope) => readCatalogSearch(scope.tx, scope.workspaceId, input),
     snapshotRead,
   )
+}
+
+/** `searchCatalog` inside a transaction the caller has checked for `catalog.read`. */
+export async function readCatalogSearch(
+  tx: Transaction,
+  workspaceId: string,
+  input: SearchInput,
+): Promise<CatalogAnswer & { items: SearchResultJson[] }> {
+  const text = catalogText(input.text, "text")
+  const limit = input.limit ?? 20
+  if (!Number.isInteger(limit) || limit < 1 || limit > 100)
+    throw new InvalidInputError(
+      "limit",
+      "The limit is a whole number from 1 to 100",
+    )
+  const answer = await answerFor(tx, workspaceId)
+  // Each configuration is matched against its own vector over the same
+  // fields, so `-word` excludes the word wherever it appears.
+  const english = sql`websearch_to_tsquery('english', ${text})`
+  const simple = sql`websearch_to_tsquery('simple', ${text})`
+  const matches = (table: typeof documents | typeof sections): [SQL, SQL] => [
+    sql`(${table.search} @@ ${english} or ${table.searchSimple} @@ ${simple})`,
+    sql`greatest(ts_rank(${table.search}, ${english}), ts_rank(${table.searchSimple}, ${simple}))`,
+  ]
+  const [documentMatch, documentRank] = matches(documents)
+  const [sectionMatch, sectionRank] = matches(sections)
+  const filters = and(
+    eq(documents.workspaceId, workspaceId),
+    isEntity,
+    input.type === undefined
+      ? undefined
+      : eq(documents.type, catalogText(input.type, "type", 100)),
+    statusFilter(input),
+  )
+  // An entity matches as a whole (its fields, facts and body), so a
+  // word after a minus leaves it out wherever the word is; its best
+  // matching section can lift its rank.
+  const bestSection = sql`coalesce((select max(${sectionRank}) from ${sections} where ${sections.documentId} = ${documents.documentId} and ${sectionMatch}), 0)`
+  const rank = sql<number>`greatest(${documentRank}, ${bestSection})::float8`
+  const ranked = await tx
+    .select({ documentId: documents.documentId, rank })
+    .from(documents)
+    .where(and(filters, documentMatch))
+    .orderBy(desc(rank), asc(documents.documentId))
+    .limit(limit)
+  if (ranked.length === 0) return { ...answer, items: [] }
+
+  const ids = ranked.map((r) => r.documentId)
+  const rows = new Map(
+    (
+      await tx
+        .select()
+        .from(documents)
+        .where(inArray(documents.documentId, ids))
+    ).map((r) => [r.documentId, r]),
+  )
+  const sectionRows = await tx
+    .select({
+      section: sections,
+      rank: sql<number>`${sectionRank}`,
+    })
+    .from(sections)
+    .where(and(inArray(sections.documentId, ids), sectionMatch))
+    .orderBy(desc(sectionRank), asc(sections.position))
+  return {
+    ...answer,
+    items: ranked.map((r) => ({
+      entity: summaryJson(rows.get(r.documentId)!),
+      rank: r.rank,
+      sections: sectionRows
+        .filter((s) => s.section.documentId === r.documentId)
+        .slice(0, 3)
+        .map((s) => sectionJson(s.section)),
+    })),
+  }
 }
 
 export interface CatalogTypeSchemaAnswer extends CatalogAnswer {
@@ -625,52 +658,59 @@ export async function getCatalogTypeSchema(
     ctx,
     workspaceId,
     "catalog.read",
-    async (scope) => {
-      const type = catalogText(input.type, "type", 100)
-      const answer = await answerFor(scope.tx, scope.workspaceId)
-      const [row] = await scope.tx
-        .select()
-        .from(documents)
-        .where(
-          and(
-            eq(documents.workspaceId, scope.workspaceId),
-            eq(documents.kind, "schema"),
-            eq(documents.type, type),
-            sql`${documents.data} is not null`,
-          ),
-        )
-        .orderBy(asc(documents.documentId))
-        .limit(1)
-      if (row) {
-        const body = await scope.tx
-          .select()
-          .from(sections)
-          .where(eq(sections.documentId, row.documentId))
-          .orderBy(asc(sections.position))
-        return {
-          ...answer,
-          schema: {
-            ...(row.data as { schema: TypeSchemaJson }).schema,
-            title: row.title,
-            summary: row.summary,
-            body: body.map(sectionJson),
-          },
-        }
-      }
-      const builtIn = builtInSchemas.get(type)
-      if (!builtIn) throw new NotFoundError()
-      return {
-        ...answer,
-        schema: {
-          ...typeSchemaJson(builtIn),
-          title: null,
-          summary: null,
-          body: [],
-        },
-      }
-    },
+    (scope) => readCatalogTypeSchema(scope.tx, scope.workspaceId, input),
     snapshotRead,
   )
+}
+
+/** `getCatalogTypeSchema` inside a transaction the caller has checked for `catalog.read`. */
+export async function readCatalogTypeSchema(
+  tx: Transaction,
+  workspaceId: string,
+  input: { type: string },
+): Promise<CatalogTypeSchemaAnswer> {
+  const type = catalogText(input.type, "type", 100)
+  const answer = await answerFor(tx, workspaceId)
+  const [row] = await tx
+    .select()
+    .from(documents)
+    .where(
+      and(
+        eq(documents.workspaceId, workspaceId),
+        eq(documents.kind, "schema"),
+        eq(documents.type, type),
+        sql`${documents.data} is not null`,
+      ),
+    )
+    .orderBy(asc(documents.documentId))
+    .limit(1)
+  if (row) {
+    const body = await tx
+      .select()
+      .from(sections)
+      .where(eq(sections.documentId, row.documentId))
+      .orderBy(asc(sections.position))
+    return {
+      ...answer,
+      schema: {
+        ...(row.data as { schema: TypeSchemaJson }).schema,
+        title: row.title,
+        summary: row.summary,
+        body: body.map(sectionJson),
+      },
+    }
+  }
+  const builtIn = builtInSchemas.get(type)
+  if (!builtIn) throw new NotFoundError()
+  return {
+    ...answer,
+    schema: {
+      ...typeSchemaJson(builtIn),
+      title: null,
+      summary: null,
+      body: [],
+    },
+  }
 }
 
 /** Every type schema, built-in and custom, by type name (catalog §12.1). */
@@ -682,35 +722,41 @@ export async function listCatalogTypeSchemas(
     ctx,
     workspaceId,
     "catalog.read",
-    async (scope) => {
-      const answer = await answerFor(scope.tx, scope.workspaceId)
-      const rows = await scope.tx
-        .select({ type: documents.type, data: documents.data })
-        .from(documents)
-        .where(
-          and(
-            eq(documents.workspaceId, scope.workspaceId),
-            eq(documents.kind, "schema"),
-            sql`${documents.data} is not null`,
-          ),
-        )
-        .orderBy(asc(documents.documentId))
-      const types = new Map<string, TypeSchemaJson>()
-      for (const [type, builtIn] of builtInSchemas)
-        types.set(type, typeSchemaJson(builtIn))
-      const seen = new Set<string>()
-      for (const row of rows) {
-        if (row.type === null || seen.has(row.type)) continue
-        seen.add(row.type)
-        types.set(row.type, (row.data as { schema: TypeSchemaJson }).schema)
-      }
-      return {
-        ...answer,
-        items: [...types.values()].sort((a, b) => (a.type < b.type ? -1 : 1)),
-      }
-    },
+    (scope) => readCatalogTypeSchemas(scope.tx, scope.workspaceId),
     snapshotRead,
   )
+}
+
+/** `listCatalogTypeSchemas` inside a transaction the caller has checked for `catalog.read`. */
+export async function readCatalogTypeSchemas(
+  tx: Transaction,
+  workspaceId: string,
+): Promise<CatalogAnswer & { items: TypeSchemaJson[] }> {
+  const answer = await answerFor(tx, workspaceId)
+  const rows = await tx
+    .select({ type: documents.type, data: documents.data })
+    .from(documents)
+    .where(
+      and(
+        eq(documents.workspaceId, workspaceId),
+        eq(documents.kind, "schema"),
+        sql`${documents.data} is not null`,
+      ),
+    )
+    .orderBy(asc(documents.documentId))
+  const types = new Map<string, TypeSchemaJson>()
+  for (const [type, builtIn] of builtInSchemas)
+    types.set(type, typeSchemaJson(builtIn))
+  const seen = new Set<string>()
+  for (const row of rows) {
+    if (row.type === null || seen.has(row.type)) continue
+    seen.add(row.type)
+    types.set(row.type, (row.data as { schema: TypeSchemaJson }).schema)
+  }
+  return {
+    ...answer,
+    items: [...types.values()].sort((a, b) => (a.type < b.type ? -1 : 1)),
+  }
 }
 
 /** The workspace-wide lists (catalog §10, §12.1). */
@@ -765,118 +811,124 @@ export async function getCatalogList(
     ctx,
     workspaceId,
     "catalog.read",
-    async (scope) => {
-      if (!catalogLists.includes(input.list))
-        throw new InvalidInputError(
-          "list",
-          `The list is one of ${catalogLists.join(", ")}`,
-        )
-      const range = page(input)
-      const answer = await answerFor(scope.tx, scope.workspaceId)
-      const now = Date.now()
-      const tx = scope.tx
-      const inScope = and(
-        eq(documents.workspaceId, scope.workspaceId),
-        isEntity,
-        statusFilter(input),
-      )
-      let items: CatalogListItem[]
-      switch (input.list) {
-        case "discrepancies": {
-          const d = schema.catalogIndexDiscrepancies
-          const rows = await tx
-            .select({ discrepancy: d, document: documents })
-            .from(d)
-            .innerJoin(documents, eq(documents.documentId, d.documentId))
-            .where(inScope)
-            .orderBy(asc(d.entityId), asc(d.key), asc(d.documentId))
-            .offset(range.offset)
-            .limit(range.limit + 1)
-          const factRows = await factsOf(
-            tx,
-            rows.map((r) => r.document.documentId),
-          )
-          items = rows.map(({ discrepancy, document }) => ({
-            entity: summaryJson(document),
-            key: discrepancy.key,
-            values: discrepancy.values,
-            accepted: discrepancy.accepted,
-            facts: discrepancy.identities,
-            fact_details: factRows
-              .filter(
-                (f) =>
-                  f.documentId === document.documentId &&
-                  discrepancy.identities.includes(f.identity),
-              )
-              .map((f) => factJson(f, now)),
-          }))
-          break
-        }
-        case "due-for-recheck":
-        case "known-unknowns": {
-          const due = input.list === "due-for-recheck"
-          const rows = await tx
-            .select({ fact: facts, document: documents })
-            .from(facts)
-            .innerJoin(documents, eq(documents.documentId, facts.documentId))
-            .where(
-              and(
-                inScope,
-                due
-                  ? sql`${facts.dueAt} <= ${new Date(now)}`
-                  : eq(facts.state, "unknown"),
-              ),
-            )
-            .orderBy(
-              ...(due ? [asc(facts.dueAt)] : []),
-              asc(facts.entityId),
-              asc(facts.documentId),
-              asc(facts.position),
-            )
-            .offset(range.offset)
-            .limit(range.limit + 1)
-          items = rows.map(({ fact, document }) => ({
-            entity: summaryJson(document),
-            fact: factJson(fact, now),
-          }))
-          break
-        }
-        case "not-yet-recorded": {
-          const rows = await tx
-            .select()
-            .from(documents)
-            .where(
-              and(
-                inScope,
-                sql`(cardinality(${documents.missingKeys}) > 0 or exists (select 1 from ${facts} where ${facts.documentId} = ${documents.documentId} and ${facts.hasCheck} and ${facts.checked} is null))`,
-              ),
-            )
-            .orderBy(asc(documents.catalogId), asc(documents.documentId))
-            .offset(range.offset)
-            .limit(range.limit + 1)
-          const factRows = await factsOf(
-            tx,
-            rows.map((r) => r.documentId),
-          )
-          items = rows.map((document) => ({
-            entity: summaryJson(document),
-            missing_keys: document.missingKeys,
-            not_checked: factRows
-              .filter(
-                (f) =>
-                  f.documentId === document.documentId &&
-                  f.hasCheck &&
-                  f.checked === null,
-              )
-              .map((f) => factJson(f, now)),
-          }))
-          break
-        }
-      }
-      return { ...answer, ...paged(items, range) }
-    },
+    (scope) => readCatalogList(scope.tx, scope.workspaceId, input),
     snapshotRead,
   )
+}
+
+/** `getCatalogList` inside a transaction the caller has checked for `catalog.read`. */
+export async function readCatalogList(
+  tx: Transaction,
+  workspaceId: string,
+  input: CatalogListInput,
+): Promise<ListAnswer<CatalogListItem>> {
+  if (!catalogLists.includes(input.list))
+    throw new InvalidInputError(
+      "list",
+      `The list is one of ${catalogLists.join(", ")}`,
+    )
+  const range = page(input)
+  const answer = await answerFor(tx, workspaceId)
+  const now = Date.now()
+  const inScope = and(
+    eq(documents.workspaceId, workspaceId),
+    isEntity,
+    statusFilter(input),
+  )
+  let items: CatalogListItem[]
+  switch (input.list) {
+    case "discrepancies": {
+      const d = schema.catalogIndexDiscrepancies
+      const rows = await tx
+        .select({ discrepancy: d, document: documents })
+        .from(d)
+        .innerJoin(documents, eq(documents.documentId, d.documentId))
+        .where(inScope)
+        .orderBy(asc(d.entityId), asc(d.key), asc(d.documentId))
+        .offset(range.offset)
+        .limit(range.limit + 1)
+      const factRows = await factsOf(
+        tx,
+        rows.map((r) => r.document.documentId),
+      )
+      items = rows.map(({ discrepancy, document }) => ({
+        entity: summaryJson(document),
+        key: discrepancy.key,
+        values: discrepancy.values,
+        accepted: discrepancy.accepted,
+        facts: discrepancy.identities,
+        fact_details: factRows
+          .filter(
+            (f) =>
+              f.documentId === document.documentId &&
+              discrepancy.identities.includes(f.identity),
+          )
+          .map((f) => factJson(f, now)),
+      }))
+      break
+    }
+    case "due-for-recheck":
+    case "known-unknowns": {
+      const due = input.list === "due-for-recheck"
+      const rows = await tx
+        .select({ fact: facts, document: documents })
+        .from(facts)
+        .innerJoin(documents, eq(documents.documentId, facts.documentId))
+        .where(
+          and(
+            inScope,
+            due
+              ? sql`${facts.dueAt} <= ${new Date(now)}`
+              : eq(facts.state, "unknown"),
+          ),
+        )
+        .orderBy(
+          ...(due ? [asc(facts.dueAt)] : []),
+          asc(facts.entityId),
+          asc(facts.documentId),
+          asc(facts.position),
+        )
+        .offset(range.offset)
+        .limit(range.limit + 1)
+      items = rows.map(({ fact, document }) => ({
+        entity: summaryJson(document),
+        fact: factJson(fact, now),
+      }))
+      break
+    }
+    case "not-yet-recorded": {
+      const rows = await tx
+        .select()
+        .from(documents)
+        .where(
+          and(
+            inScope,
+            sql`(cardinality(${documents.missingKeys}) > 0 or exists (select 1 from ${facts} where ${facts.documentId} = ${documents.documentId} and ${facts.hasCheck} and ${facts.checked} is null))`,
+          ),
+        )
+        .orderBy(asc(documents.catalogId), asc(documents.documentId))
+        .offset(range.offset)
+        .limit(range.limit + 1)
+      const factRows = await factsOf(
+        tx,
+        rows.map((r) => r.documentId),
+      )
+      items = rows.map((document) => ({
+        entity: summaryJson(document),
+        missing_keys: document.missingKeys,
+        not_checked: factRows
+          .filter(
+            (f) =>
+              f.documentId === document.documentId &&
+              f.hasCheck &&
+              f.checked === null,
+          )
+          .map((f) => factJson(f, now)),
+      }))
+      break
+    }
+  }
+  return { ...answer, ...paged(items, range) }
 }
 
 async function factsOf(tx: Transaction, documentIds: readonly string[]) {
@@ -919,64 +971,69 @@ export async function getCatalogChanges(
     ctx,
     workspaceId,
     "catalog.read",
-    async (scope) => {
-      if (!Number.isInteger(input.since) || input.since < 0)
-        throw new InvalidInputError(
-          "since",
-          "A catalog revision is a whole number from 0",
-        )
-      const { limit } = page({ limit: input.limit ?? 100 })
-      const answer = await answerFor(scope.tx, scope.workspaceId)
-      const r = schema.catalogRevisions
-      const revisions = await scope.tx
-        .select()
-        .from(r)
-        .where(
-          and(eq(r.workspaceId, scope.workspaceId), gt(r.number, input.since)),
-        )
-        .orderBy(asc(r.number))
-        .limit(limit + 1)
-      const shown = revisions.slice(0, limit)
-      const rd = schema.catalogRevisionDocuments
-      const changed =
-        shown.length === 0
-          ? []
-          : await scope.tx
-              .select({
-                revision: rd.revision,
-                id: documents.catalogId,
-                kind: documents.kind,
-              })
-              .from(rd)
-              .leftJoin(documents, eq(documents.documentId, rd.documentId))
-              .where(
-                and(
-                  eq(rd.workspaceId, scope.workspaceId),
-                  inArray(
-                    rd.revision,
-                    shown.map((s) => s.number),
-                  ),
-                ),
-              )
-              .orderBy(asc(rd.revision), asc(documents.catalogId))
-      return {
-        ...answer,
-        since: input.since,
-        items: shown.map((s) => ({
-          revision: s.number,
-          at: s.createdAt.toISOString(),
-          changed_by: s.actorLabel,
-          changed_by_kind: s.actorKind,
-          documents: changed
-            .filter((c) => c.revision === s.number)
-            .map((c) => ({ id: c.id, kind: c.kind })),
-        })),
-        next_since:
-          revisions.length > limit ? shown[shown.length - 1]!.number : null,
-      }
-    },
+    (scope) => readCatalogChanges(scope.tx, scope.workspaceId, input),
     snapshotRead,
   )
+}
+
+/** `getCatalogChanges` inside a transaction the caller has checked for `catalog.read`. */
+export async function readCatalogChanges(
+  tx: Transaction,
+  workspaceId: string,
+  input: { since: number; limit?: number },
+): Promise<CatalogChangesAnswer> {
+  if (!Number.isInteger(input.since) || input.since < 0)
+    throw new InvalidInputError(
+      "since",
+      "A catalog revision is a whole number from 0",
+    )
+  const { limit } = page({ limit: input.limit ?? 100 })
+  const answer = await answerFor(tx, workspaceId)
+  const r = schema.catalogRevisions
+  const revisions = await tx
+    .select()
+    .from(r)
+    .where(and(eq(r.workspaceId, workspaceId), gt(r.number, input.since)))
+    .orderBy(asc(r.number))
+    .limit(limit + 1)
+  const shown = revisions.slice(0, limit)
+  const rd = schema.catalogRevisionDocuments
+  const changed =
+    shown.length === 0
+      ? []
+      : await tx
+          .select({
+            revision: rd.revision,
+            id: documents.catalogId,
+            kind: documents.kind,
+          })
+          .from(rd)
+          .leftJoin(documents, eq(documents.documentId, rd.documentId))
+          .where(
+            and(
+              eq(rd.workspaceId, workspaceId),
+              inArray(
+                rd.revision,
+                shown.map((s) => s.number),
+              ),
+            ),
+          )
+          .orderBy(asc(rd.revision), asc(documents.catalogId))
+  return {
+    ...answer,
+    since: input.since,
+    items: shown.map((s) => ({
+      revision: s.number,
+      at: s.createdAt.toISOString(),
+      changed_by: s.actorLabel,
+      changed_by_kind: s.actorKind,
+      documents: changed
+        .filter((c) => c.revision === s.number)
+        .map((c) => ({ id: c.id, kind: c.kind })),
+    })),
+    next_since:
+      revisions.length > limit ? shown[shown.length - 1]!.number : null,
+  }
 }
 
 export interface StartHereJson {
@@ -1002,46 +1059,50 @@ export async function getCatalogStartHere(
     ctx,
     workspaceId,
     "catalog.read",
-    async (scope) => {
-      const path = input.path ?? "agents"
-      if (path !== "agents" && path !== "people")
-        throw new InvalidInputError("path", "The path is agents or people")
-      const answer = await answerFor(scope.tx, scope.workspaceId)
-      const [row] = await scope.tx
-        .select()
-        .from(documents)
-        .where(
-          and(
-            eq(documents.workspaceId, scope.workspaceId),
-            eq(documents.kind, "start-here"),
-            ne(
-              sql`coalesce(${documents.data}, 'null'::jsonb)`,
-              sql`'null'::jsonb`,
-            ),
-          ),
-        )
-        .orderBy(asc(documents.documentId))
-        .limit(1)
-      if (!row) return { ...answer, start_here: null }
-      const steps = (row.data as Record<typeof path, StepJson[]>)[path]
-      const named = await summaries(
-        scope.tx,
-        scope.workspaceId,
-        steps.flatMap((s) => ("to" in s ? [s.to] : [])),
-      )
-      return {
-        ...answer,
-        start_here: {
-          path,
-          title: row.title,
-          summary: row.summary,
-          revision: row.revision,
-          steps: steps.map((s) =>
-            "to" in s ? { ...s, entity: named.get(s.to) ?? null } : s,
-          ),
-        },
-      }
-    },
+    (scope) => readCatalogStartHere(scope.tx, scope.workspaceId, input),
     snapshotRead,
   )
+}
+
+/** `getCatalogStartHere` inside a transaction the caller has checked for `catalog.read`. */
+export async function readCatalogStartHere(
+  tx: Transaction,
+  workspaceId: string,
+  input: { path?: "people" | "agents" } = {},
+): Promise<CatalogAnswer & { start_here: StartHereJson | null }> {
+  const path = input.path ?? "agents"
+  if (path !== "agents" && path !== "people")
+    throw new InvalidInputError("path", "The path is agents or people")
+  const answer = await answerFor(tx, workspaceId)
+  const [row] = await tx
+    .select()
+    .from(documents)
+    .where(
+      and(
+        eq(documents.workspaceId, workspaceId),
+        eq(documents.kind, "start-here"),
+        ne(sql`coalesce(${documents.data}, 'null'::jsonb)`, sql`'null'::jsonb`),
+      ),
+    )
+    .orderBy(asc(documents.documentId))
+    .limit(1)
+  if (!row) return { ...answer, start_here: null }
+  const steps = (row.data as Record<typeof path, StepJson[]>)[path]
+  const named = await summaries(
+    tx,
+    workspaceId,
+    steps.flatMap((s) => ("to" in s ? [s.to] : [])),
+  )
+  return {
+    ...answer,
+    start_here: {
+      path,
+      title: row.title,
+      summary: row.summary,
+      revision: row.revision,
+      steps: steps.map((s) =>
+        "to" in s ? { ...s, entity: named.get(s.to) ?? null } : s,
+      ),
+    },
+  }
 }

@@ -94,6 +94,31 @@ export interface ApiOptions {
 }
 
 /**
+ * Reads what the security log records about a request (identity §11): the
+ * client's network address, through trusted proxies only, and its client.
+ */
+export function requestInfoFor(
+  trustedProxies: TrustedProxies,
+): (c: HonoContext) => RequestInfo {
+  return (c) => {
+    const env = c.env as
+      { incoming?: { socket?: { remoteAddress?: string } } } | undefined
+    const client = c.req.header("user-agent")
+    return {
+      networkAddress: clientAddress(
+        env?.incoming?.socket?.remoteAddress,
+        c.req.header("x-forwarded-for"),
+        trustedProxies,
+      ),
+      client:
+        client === undefined
+          ? undefined
+          : (clientDescription(client) ?? undefined),
+    }
+  }
+}
+
+/**
  * The REST API under `/api`. Handlers only translate: they read the request,
  * call one core operation, and shape the answer. Permissions and rules are
  * core's (architecture §2.1).
@@ -110,22 +135,7 @@ export function createApi({
   const onError = errorHandler()
   api.onError(onError)
 
-  const requestInfo = (c: HonoContext): RequestInfo => {
-    const env = c.env as
-      { incoming?: { socket?: { remoteAddress?: string } } } | undefined
-    const client = c.req.header("user-agent")
-    return {
-      networkAddress: clientAddress(
-        env?.incoming?.socket?.remoteAddress,
-        c.req.header("x-forwarded-for"),
-        trustedProxies,
-      ),
-      client:
-        client === undefined
-          ? undefined
-          : (clientDescription(client) ?? undefined),
-    }
-  }
+  const requestInfo = requestInfoFor(trustedProxies)
 
   // Answers carry personal data; no browser or proxy keeps them.
   api.use("*", async (c, next) => {

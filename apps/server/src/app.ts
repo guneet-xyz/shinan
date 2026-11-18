@@ -5,8 +5,10 @@ import { Hono } from "hono"
 import type { DatabaseReadiness } from "@shinan/db"
 
 import { errorHandler } from "./api/errors.js"
-import { createApi } from "./api/routes.js"
+import { createApi, requestInfoFor } from "./api/routes.js"
 import type { ApiOptions } from "./api/routes.js"
+import { noTrustedProxies } from "./client-address.js"
+import { createMcp } from "./mcp/server.js"
 import { securityHeaders } from "./security.js"
 
 export interface AppOptions extends ApiOptions {
@@ -30,6 +32,17 @@ export function createApp(options: AppOptions) {
   )
 
   app.route("/api", createApi(options))
+  // The MCP endpoint (architecture §8.1): an agent endpoint, so like
+  // `/api/agent` it takes only an agent token and has no same-origin check.
+  app.route(
+    "/mcp",
+    createMcp({
+      db: options.db,
+      installationUrl: options.installationUrl,
+      requestInfo: requestInfoFor(options.trustedProxies ?? noTrustedProxies),
+      rateLimit: options.rateLimit,
+    }),
+  )
   // Not the web app either, so a health check pointed here by mistake, by
   // any spelling of these paths, fails rather than seeing the app's page.
   app.use("*", async (c, next) => {
