@@ -24,7 +24,7 @@ interface MoveScope {
  *   cannot sign in with it or create a new account with it;
  * - invitations still pending for the old address are withdrawn, so nobody
  *   can accept them with it, and a GitHub sign-in waiting for it is
- *   dropped;
+ *   dropped, as is any change of address the person asked for;
  * - the person's sign-in sessions end, all of them or all but `keepSession`;
  * - each of these is recorded in the security log, with `by`.
  *
@@ -52,7 +52,7 @@ export async function moveEmailAddress(
     .set({ email, updatedAt: sql`now()` })
     .where(eq(schema.people.id, person.id))
     .catch((error: unknown) => {
-      if (violatedUniqueConstraint(error))
+      if (violatedUniqueConstraint(error) !== undefined)
         throw new RuleViolationError(
           "email-taken",
           "That email address has another account",
@@ -104,15 +104,14 @@ export async function moveEmailAddress(
   await tx
     .delete(schema.pendingGitHubSignIns)
     .where(eq(schema.pendingGitHubSignIns.email, person.email))
-  // Nor a change to an address someone else asked for: it is taken now.
+  // Recovery starts clean: a change the person asked for themselves (to
+  // another address) no longer applies. Other people's requests for this
+  // address are left alone: confirming one now finds the address taken.
+  // Touching their rows here would lock them, and two people confirming
+  // the same address at once would then deadlock.
   await tx
     .delete(schema.emailChanges)
-    .where(
-      and(
-        eq(schema.emailChanges.email, email),
-        ne(schema.emailChanges.personId, person.id),
-      ),
-    )
+    .where(eq(schema.emailChanges.personId, person.id))
   const ended = await tx
     .delete(schema.signInSessions)
     .where(

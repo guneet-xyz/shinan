@@ -24,6 +24,7 @@ import {
 } from "./email-change.js"
 import { createInvitation } from "./invitations.js"
 import type { Person } from "./people.js"
+import { changeEmailOf } from "./recovery.js"
 import { openSignInLink } from "./sign-in.js"
 import { createWorkspace } from "./workspaces.js"
 
@@ -125,6 +126,8 @@ describe("requestEmailChange", () => {
     )
     const [alert] = await emailsTo(person.email, "security_alert")
     expect(alert!.message!.text).toContain(email)
+    // What to do if it was not them.
+    expect(alert!.message!.text).toContain("cancel the change")
     // Only the token's hash is stored.
     const token = await linkTokenFor(email)
     const [row] = await db
@@ -368,6 +371,31 @@ describe("confirmEmailChange", () => {
     expect(withdrawn!.state).toBe("withdrawn")
   })
 
+  it("answers the second of two accounts confirming one address with address taken", async () => {
+    for (let round = 0; round < 3; round++) {
+      const first = await newPerson(db, "first")
+      const second = await newPerson(db, "second")
+      const email = `${first.handle}-shared@example.com`
+      await allowlist(email)
+      await requestEmailChange(as(first), { email })
+      const firstToken = await linkTokenFor(email)
+      await requestEmailChange(as(second), { email })
+      const secondToken = await linkTokenFor(email)
+      const outcomes = await Promise.allSettled([
+        confirmEmailChange(as(first), { token: firstToken }),
+        confirmEmailChange(as(second), { token: secondToken }),
+      ])
+      expect(outcomes.filter((o) => o.status === "fulfilled")).toHaveLength(1)
+      const [lost] = outcomes.filter((o) => o.status === "rejected")
+      expect(lost).toMatchObject({ reason: { rule: "email-taken" } })
+      const holders = await db
+        .select()
+        .from(schema.people)
+        .where(eq(schema.people.email, email))
+      expect(holders).toHaveLength(1)
+    }
+  })
+
   it("lets the old address make no new account afterwards", async () => {
     const { person, email } = await withNewAddress()
     await requestEmailChange(as(person), { email })
@@ -377,6 +405,25 @@ describe("confirmEmailChange", () => {
       { email: person.email },
     )
     expect(opened).toEqual({ allowed: false })
+  })
+})
+
+describe("the operator's recovery command", () => {
+  it("drops the person's own waiting change, so recovery starts clean", async () => {
+    const { person, email } = await withNewAddress()
+    await requestEmailChange(as(person), { email })
+    const token = await linkTokenFor(email)
+    await changeEmailOf(
+      { db, actor: { kind: "shinan" } },
+      {
+        handle: person.handle,
+        email: `${person.handle}-recovered@example.com`,
+      },
+    )
+    expect(await getEmailChange(as(person))).toBeNull()
+    await expect(
+      confirmEmailChange(as(person), { token }),
+    ).rejects.toBeInstanceOf(NotFoundError)
   })
 })
 

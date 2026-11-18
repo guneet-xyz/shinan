@@ -134,7 +134,7 @@ export function securityAlertEmail(input: SecurityAlertEmail): EmailContent {
       break
     case "email-change-requested":
       subject = `Email address change requested for your ${installation} account`
-      what = `A change of your ${installation} account's email address to ${short(alert.newEmail, 200)} was requested on ${when}. It takes effect only when the link sent to that address is opened.`
+      what = `A change of your ${installation} account's email address to ${short(alert.newEmail, 200)} was requested on ${when}. It takes effect only when the link sent to that address is opened. If you did not ask for this, sign in now, cancel the change under Your account, then sign out everywhere.`
       break
     case "email-changed":
       subject = `Your ${installation} account's email address changed`

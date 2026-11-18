@@ -548,6 +548,56 @@ describe("expireInvitations", () => {
     })
   })
 
+  it("never waits on an invitation that a withdrawal or acceptance holds", async () => {
+    const { invitation } = await invite()
+    await pastExpiry(invitation.id)
+    // Withdrawing or accepting: the invitation first, then (through the
+    // events and members foreign keys) a share lock on the workspace.
+    const other = await pool.connect()
+    try {
+      await other.query("begin")
+      await other.query("select id from invitations where id = $1 for update", [
+        invitation.id,
+      ])
+      const job = expireInvitations({ db, actor: shinan })
+      await new Promise((resolve) => setTimeout(resolve, 300))
+      await other.query(
+        "update invitations set state = 'withdrawn', decided_at = now() where id = $1",
+        [invitation.id],
+      )
+      await other.query(
+        "select id from workspaces where id = $1 for key share",
+        [workspaceId],
+      )
+      await other.query("commit")
+      await expect(job).resolves.toEqual(expect.any(Number))
+    } finally {
+      other.release()
+    }
+    const [stored] = await db
+      .select()
+      .from(schema.invitations)
+      .where(eq(schema.invitations.id, invitation.id))
+    expect(stored!.state).toBe("withdrawn")
+  })
+
+  it("records the expiry first when an invitation past it is sent again", async () => {
+    const { invitation } = await invite()
+    await pastExpiry(invitation.id)
+    await resendInvitation(as(owner), {
+      workspaceId,
+      invitationId: invitation.id,
+    })
+    const kinds = (await listEvents(as(owner), workspaceId))
+      .filter((e) => e.subjects.some((x) => x.id === invitation.id))
+      .map((e) => e.kind)
+    // Newest first.
+    expect(kinds.slice(0, 2)).toEqual([
+      "invitation.resent",
+      "invitation.expired",
+    ])
+  })
+
   it("is Shinan's own job", async () => {
     await expect(expireInvitations(as(owner))).rejects.toBeInstanceOf(
       ForbiddenError,

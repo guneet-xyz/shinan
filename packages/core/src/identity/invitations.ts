@@ -154,8 +154,17 @@ export async function resendInvitation(
   return inWorkspace(ctx, input.workspaceId, "member.invite", async (scope) => {
     // The workspace first, as everything that changes its invitations.
     await lockWorkspace(scope)
-    const invitation = await invitationToResend(scope, input.invitationId)
+    let invitation = await invitationToResend(scope, input.invitationId)
     await checkInvitable(scope, invitation.email)
+    // Past its expiry but not yet recorded: recorded first, as the job or
+    // inviting again would, so every expiry has its record.
+    if (
+      invitation.state === "pending" &&
+      invitation.expiresAt.getTime() <= Date.now()
+    ) {
+      await recordExpired(scope, invitation)
+      invitation = { ...invitation, state: "expired" }
+    }
     if (invitation.state === "expired") {
       // Reopened only while it is still the address's latest invitation.
       const [newer] = await scope.tx
@@ -206,6 +215,8 @@ export async function withdrawInvitation(
     input.workspaceId,
     "invitation.withdraw",
     async (scope) => {
+      // The workspace first, as everything that changes its invitations.
+      await lockWorkspace(scope)
       const invitation = await pendingInvitation(scope, input.invitationId)
       await scope.tx
         .update(schema.invitations)
@@ -464,6 +475,7 @@ export async function expireInvitations(ctx: Context): Promise<number> {
       ).map((row) => row.workspaceId),
   )
   let recorded = 0
+  let failure: Error | undefined
   for (const workspaceId of workspaces) {
     if (recorded >= expiryBatch) break
     recorded += await atInstallation(
@@ -485,12 +497,23 @@ export async function expireInvitations(ctx: Context): Promise<number> {
           )
           .orderBy(schema.invitations.expiresAt, schema.invitations.id)
           .limit(expiryBatch - recorded)
-          .for("update")
+          // An invitation another request holds (withdrawing or accepting
+          // it, which lock the invitation before the workspace) is left for
+          // the next run, so the job never waits on it.
+          .for("update", { skipLocked: true })
         for (const invitation of due) await recordExpired(scope, invitation)
         return due.length
       },
-    )
+    ).catch((error: unknown) => {
+      // One workspace's failure leaves the others to this run.
+      failure ??=
+        error instanceof Error
+          ? error
+          : new Error("Expiring invitations failed")
+      return 0
+    })
   }
+  if (failure !== undefined) throw failure
   return recorded
 }
 

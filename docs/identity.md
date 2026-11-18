@@ -330,7 +330,10 @@ GitHub, when the old mailbox is lost):
 - **Then**, in one step and as the operator's command does: the address
   changes; the old one leaves the allowlist and its pending invitations are
   withdrawn (not moved); a GitHub sign-in waiting for it is dropped, and
-  other people's requests for the new address lapse. Every other sign-in
+  so is any change the person asked for themselves (the operator's command
+  thus cancels a waiting self-service change). Other people's waiting
+  requests for the new address are left to fail as "address taken" if
+  confirmed, also when two people confirm it at once. Every other sign-in
   session of the person ends; the one they confirmed from stays. Agent
   tokens stay, because the person and their agents are the same; the alert
   says to revoke any they do not recognise. Both addresses get a security
@@ -544,9 +547,12 @@ in the [glossary](domain-model.md#invitation).
   same way. Until then, reads already show such an invitation as expired
   and it cannot be accepted. Sending an expired invitation again, recorded
   or not, reopens it as pending with a new link, unless a newer invitation
-  to the same address is pending; that one is sent again instead. The job
-  works one workspace at a time, locking the workspace first as inviting
-  does, and leaves a workspace that is busy for its next run. Reason: the
+  to the same address is pending; that one is sent again instead. Sending
+  one past its expiry that the job has not reached yet records the expiry
+  first. The job works one workspace at a time, locking the workspace first
+  as inviting, resending and withdrawing do; it leaves a busy workspace,
+  and any invitation another request holds (accepting it), for its next
+  run, and one workspace's failure does not stop the others. Reason: the
   workspace's history and security log then show when each invitation
   stopped working (section 11), not only that it did.
 
