@@ -20,11 +20,20 @@ const objectMembers: ReadonlySet<string> = new Set([
 ])
 
 /**
- * A relation attribute name (such as `path`): a fact key that is not the name
- * of a JavaScript object member such as `constructor` or `__proto__`.
+ * A fact key (and a type schema's key): `factKeyPattern`, but not the name of
+ * a JavaScript object member such as `constructor` or `__proto__`, so code
+ * that keeps keys in plain objects (the index, MCP answers) cannot be misled.
+ */
+export function isFactKey(name: string): boolean {
+  return factKeyPattern.test(name) && !objectMembers.has(name)
+}
+
+/**
+ * A relation attribute name (such as `path`): a fact key, so also never the
+ * name of a JavaScript object member.
  */
 export function isAttributeName(name: string): boolean {
-  return factKeyPattern.test(name) && !objectMembers.has(name)
+  return isFactKey(name)
 }
 
 /**

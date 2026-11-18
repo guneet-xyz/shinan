@@ -1,4 +1,5 @@
 import { comparableValue, discrepancies } from "./analysis.js"
+import type { Section } from "./body.js"
 import { readCatalog } from "./catalog.js"
 import type { Catalog } from "./catalog.js"
 import { parseCatalogTime } from "./dates.js"
@@ -21,9 +22,9 @@ import {
 import type { CheckFields, FactToWrite } from "./fact-edits.js"
 import { factIdentityKey, parseFactIdentityKey } from "./identity.js"
 import {
-  factKeyPattern,
   isAttributeName,
   isEntityId,
+  isFactKey,
   parseEntityId,
   schemaId,
   startHereId,
@@ -842,9 +843,9 @@ function checkFact(fact: FactInput, key: KeySchema) {
     throw invalid(
       "`accepted` is not sent with a fact: Shinan writes it, naming the person who approves an `accept-discrepancy` operation",
     )
-  if (!factKeyPattern.test(fact.key))
+  if (!isFactKey(fact.key))
     throw invalid(
-      `"${fact.key}" is not a fact key: lowercase words joined by ".", "-" or "_"`,
+      `"${fact.key}" is not a fact key: lowercase words joined by ".", "-" or "_", and not a name such as "constructor"`,
     )
   if (!factStates.includes(fact.state))
     throw invalid(`"${fact.state}" is not a fact state`)
@@ -1730,7 +1731,18 @@ function editBody(editor: Editor, operation: EditBody) {
             ? eol
             : eol + eol
     editor.apply(replaceRange({ start: at, end: at }, gap + text))
-    sectionReads(editor, at + gap.length, name, label)
+    sectionReads(editor, at + gap.length, text.length, name, label)
+    // Added at the end, the blank line before it joins the last section.
+    const last = body.sections[body.sections.length - 1]
+    otherSectionsUnchanged(
+      name !== null && last
+        ? [...body.sections.slice(0, -1), { ...last, text: last.text + gap }]
+        : body.sections,
+      null,
+      editor.document.body.sections,
+      at + gap.length,
+      text.length,
+    )
     return
   }
   if (!section) throw conflict("changed", `${label} is not there any more`)
@@ -1742,24 +1754,72 @@ function editBody(editor: Editor, operation: EditBody) {
   const text =
     given !== "" && section.text.endsWith("\n") ? withBreak(given, eol) : given
   editor.apply(replaceRange(section.range, text))
-  if (text !== "") sectionReads(editor, section.range.start, name, label)
+  if (text !== "")
+    sectionReads(editor, section.range.start, text.length, name, label)
+  otherSectionsUnchanged(
+    body.sections,
+    section,
+    editor.document.body.sections,
+    section.range.start,
+    text.length,
+  )
 }
 
 /**
- * Checks that the text written at `start` reads as the section it is for:
- * starting with that section's heading, or for the text before the first
- * heading, with no heading. Otherwise the edit would quietly join it to the
- * section before or make it another section.
+ * Checks that a section edit left every other section as it was: the same
+ * headings, levels and text, in the same order, and the same anchors. New
+ * text that leaves a block open (an unclosed code fence) would otherwise
+ * swallow the sections after it into the edited one, and the wiki, the
+ * index and later section edits would lose them. When a section is
+ * removed, a later section with the same heading may take its anchor, so
+ * anchors are compared only otherwise.
+ */
+function otherSectionsUnchanged(
+  before: readonly Section[],
+  edited: Section | null,
+  after: readonly Section[],
+  start: number,
+  length: number,
+) {
+  const removed = length === 0
+  const key = (s: Section) =>
+    JSON.stringify([s.heading, s.level, s.text, removed ? null : s.anchor])
+  // An empty body reads as one empty section before any heading; it is no
+  // section to keep.
+  const real = (s: Section) => s.heading !== null || s.text.trim() !== ""
+  const expected = before.filter((s) => s !== edited && real(s)).map(key)
+  const actual = after
+    .filter(
+      (s) =>
+        real(s) && !(s.range.start >= start && s.range.start < start + length),
+    )
+    .map(key)
+  if (
+    expected.length !== actual.length ||
+    expected.some((k, i) => k !== actual[i])
+  )
+    throw readsWrong(
+      "the sections around the edited one would change (is a code block or other block left open?)",
+    )
+}
+
+/**
+ * Checks that the text written at `start` reads as the one section it is
+ * for: starting with that section's heading (or, for the text before the
+ * first heading, with no heading), and holding no other heading. Otherwise
+ * the edit would quietly join it to the section before, or add sections
+ * (even a second one with a heading already used); adding sections is an
+ * edit of the whole body.
  */
 function sectionReads(
   editor: Editor,
   start: number,
+  length: number,
   name: string | null,
   label: string,
 ) {
-  const section = editor.document.body.sections.find(
-    (s) => s.range.start === start,
-  )
+  const sections = editor.document.body.sections
+  const section = sections.find((s) => s.range.start === start)
   const ok =
     name === null
       ? section?.heading === null
@@ -1769,6 +1829,14 @@ function sectionReads(
       name === null
         ? `${label} cannot start with a heading`
         : `${label}'s new text starts with its own heading`,
+    )
+  if (
+    sections.some(
+      (s) => s.range.start > start && s.range.start < start + length,
+    )
+  )
+    throw invalid(
+      `${label}'s new text holds another heading; one section edit writes one section, so add sections by editing the whole body`,
     )
 }
 
@@ -1803,9 +1871,9 @@ function schemaText(operation: CreateSchema): Written {
   ]
   const keys = Object.entries(operation.keys ?? {})
   for (const [key] of keys)
-    if (!factKeyPattern.test(key))
+    if (!isFactKey(key))
       throw invalid(
-        `"${key}" is not a fact key: lowercase words joined by ".", "-" or "_"`,
+        `"${key}" is not a fact key: lowercase words joined by ".", "-" or "_", and not a name such as "constructor"`,
       )
   if (keys.length > 0)
     entries.push([
@@ -1848,9 +1916,9 @@ function sameOptions(
 function setSchemaKey(editor: Editor, operation: SetSchemaKey) {
   const document = editor.document
   if (document.kind !== "schema") throw invalid("Not a type schema document")
-  if (!factKeyPattern.test(operation.key))
+  if (!isFactKey(operation.key))
     throw invalid(
-      `"${operation.key}" is not a fact key: lowercase words joined by ".", "-" or "_"`,
+      `"${operation.key}" is not a fact key: lowercase words joined by ".", "-" or "_", and not a name such as "constructor"`,
     )
   const keysEntry = document.fields.get("keys")
   const keysMap = keysEntry?.value.kind === "map" ? keysEntry.value : null

@@ -465,6 +465,9 @@ function write(e: GeneratedEntity): string {
           }
         }
       }
+      // A comment on its own line before a state map, now and then; on the
+      // dash line when the state map comes first (`- # about observed`).
+      if (s.comments && counter++ % 2 === 0) block.unshift(`# about ${state}`)
       stateFields.push(block)
     }
     fields.push(
@@ -1291,3 +1294,136 @@ function runCommands(
   }
   return text
 }
+
+describe("section edits (#114)", () => {
+  const fragments = [
+    "plain text",
+    "```",
+    "~~~",
+    "    indented code",
+    "> a quote",
+    "- an item",
+    "1. first",
+    "<div>",
+    "<!--",
+    "-->",
+    "## Extra",
+    "Under\n---",
+    "Under\n===",
+    "| a | b |\n| - | - |",
+    "`",
+    "",
+  ]
+  const body = fc.array(
+    fc.record({
+      level: fc.integer({ min: 1, max: 3 }),
+      heading: fc.stringMatching(/^[A-Z][a-z]{1,6}$/),
+      text: fc.constantFrom("text", "more text\nover lines", "- item", ""),
+    }),
+    { minLength: 1, maxLength: 4 },
+  )
+
+  it(
+    "never change the other sections",
+    () => {
+      let applied = 0
+      let refusedCount = 0
+      fc.assert(
+        fc.property(
+          fc.boolean(),
+          body,
+          fc.nat(),
+          fc.array(fc.constantFrom(...fragments), { maxLength: 5 }),
+          fc.boolean(),
+          (intro, sections, pick, parts, append) => {
+            const text = [
+              "---",
+              "id: machine/x",
+              "type: machine",
+              "title: X",
+              "summary: S.",
+              "status: active",
+              "owner: person/guneet",
+              "---",
+              "",
+              ...(intro ? ["Intro.", ""] : []),
+              ...sections.flatMap((s) => [
+                `${"#".repeat(s.level)} ${s.heading}`,
+                "",
+                s.text,
+                "",
+              ]),
+            ].join("\n")
+            const before = readCatalog([text]).documents[0]!.body.sections
+            const target = before[pick % before.length]!
+            const rest = parts.join("\n\n")
+            const heading =
+              target.heading === null
+                ? ""
+                : `${"#".repeat(target.level)} ${target.heading}\n\n`
+            const operation: CatalogOperation = append
+              ? {
+                  op: "edit-body",
+                  document: "machine/x",
+                  section: "added",
+                  text: `## Added\n\n${rest}\n`,
+                  expect: { absent: true },
+                }
+              : {
+                  op: "edit-body",
+                  document: "machine/x",
+                  section: target.anchor,
+                  text: `${heading}${rest}\n`,
+                  expect: { text: target.text },
+                }
+            if (append && before.some((s) => s.anchor === "added")) return
+            const result = applyOperations([text], [operation], { by })
+            if (!result.applied) {
+              refusedCount++
+              for (const p of result.problems)
+                expect(["operation-invalid", "result-invalid"]).toContain(
+                  p.code,
+                )
+              return
+            }
+            applied++
+            const after = (result.changes[0]?.after ??
+              result.after.documents[0])!.body.sections
+            const key = (s: (typeof after)[number]) =>
+              JSON.stringify([s.heading, s.level, s.anchor])
+            const others = (
+              list: typeof before,
+              skip: (s: (typeof before)[number]) => boolean,
+            ) =>
+              list
+                .filter(
+                  (s) =>
+                    (s.heading !== null || s.text.trim() !== "") && !skip(s),
+                )
+                .map(key)
+            expect(
+              others(after, (s) =>
+                append ? s.anchor === "added" : s.anchor === target.anchor,
+              ),
+            ).toEqual(
+              others(before, (s) => !append && s.anchor === target.anchor),
+            )
+            // Every section before the edited one keeps its text exactly.
+            for (const s of before) {
+              if (s === target && !append) break
+              if (append && s === before[before.length - 1]) break
+              expect(after.find((a) => a.anchor === s.anchor)?.text).toBe(
+                s.text,
+              )
+            }
+          },
+        ),
+        runs(500),
+      )
+      // Both outcomes are exercised, so the property is not empty.
+      expect(applied).toBeGreaterThan(0)
+      expect(refusedCount).toBeGreaterThan(0)
+    },
+    timeout(500),
+  )
+})

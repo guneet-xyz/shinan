@@ -2120,3 +2120,338 @@ facts:
     ).toBe(true)
   })
 })
+
+describe("follow-ups from the review of #108 (#113)", () => {
+  const service = (facts: string) => `---
+id: service/x
+type: service
+title: X
+summary: S.
+status: active
+owner: person/guneet
+facts:
+${facts}---
+`
+
+  it("keeps a comment with the first value when a key becomes a list", () => {
+    const text = service(`  - checked: 2026-11-14
+    by: ${by}
+    scope: s
+    source: s
+    observed:
+      endpoint: https://a # main endpoint
+      environment: production
+`)
+    expect(
+      edit(text, {
+        op: "set-fact",
+        document: "service/x",
+        fact: { key: "endpoint", state: "observed", value: "https://b" },
+        check: { checked: "2026-11-14", scope: "s", source: "s" },
+        expect: { identity: "endpoint|observed|value=https://b", absent: true },
+      }),
+    ).toBe(
+      swap(
+        text,
+        "      endpoint: https://a # main endpoint\n",
+        "      endpoint:\n        - https://a # main endpoint\n        - https://b\n",
+      ),
+    )
+  })
+
+  it("keeps a comment before the next entry when a state map on the dash line goes", () => {
+    const text = service(`  - planned:
+      endpoint: { value: https://a, task: T-1 }
+    # about unknowns
+    unknown:
+      environment: Not decided
+`)
+    const removed = edit(text, {
+      op: "remove-fact",
+      document: "service/x",
+      expect: current(text, "endpoint|planned|value=https://a"),
+    })
+    expect(removed).toBe(
+      swap(
+        text,
+        "  - planned:\n      endpoint: { value: https://a, task: T-1 }\n    # about unknowns\n",
+        "  - # about unknowns\n",
+      ),
+    )
+    // The group stays editable: add to it, then remove it with its comment.
+    const added = edit(removed, {
+      op: "set-fact",
+      document: "service/x",
+      fact: { key: "provided-by", state: "unknown", note: "Not asked" },
+      expect: { identity: "provided-by|unknown", absent: true },
+    })
+    expect(added).toContain(
+      "  - # about unknowns\n    unknown:\n      environment: Not decided\n      provided-by: Not asked\n",
+    )
+    const emptied = edit(
+      added,
+      {
+        op: "remove-fact",
+        document: "service/x",
+        expect: current(added, "environment|unknown"),
+      },
+      {
+        op: "remove-fact",
+        document: "service/x",
+        expect: current(added, "provided-by|unknown"),
+      },
+    )
+    expect(emptied).not.toContain("facts:")
+    // Without a comment between, the next entry moves up to the dash.
+    const plain = text.replace("    # about unknowns\n", "")
+    expect(
+      edit(plain, {
+        op: "remove-fact",
+        document: "service/x",
+        expect: current(plain, "endpoint|planned|value=https://a"),
+      }),
+    ).toContain("  - unknown:\n      environment: Not decided\n")
+  })
+
+  it("refuses a section edit that adds headings", () => {
+    const body = `---
+id: machine/x
+type: machine
+title: X
+summary: S.
+status: active
+owner: person/guneet
+---
+
+## A
+
+a
+
+## B
+
+b
+`
+    const a =
+      readCatalog([body]).documents[0]?.body.sections.find(
+        (s) => s.anchor === "a",
+      )?.text ?? ""
+    for (const text of ["## A\n\na\n\n## C\n\nc\n", "## A\n\na\n\n## B\n\nb\n"])
+      expect(
+        refused(
+          [body],
+          [
+            {
+              op: "edit-body",
+              document: "machine/x",
+              section: "a",
+              text,
+              expect: { text: a },
+            },
+          ],
+        ),
+      ).toMatchObject([{ kind: "invalid", code: "operation-invalid" }])
+    expect(
+      refused(
+        [body],
+        [
+          {
+            op: "edit-body",
+            document: "machine/x",
+            section: "c",
+            text: "## C\n\nc\n\n## D\n",
+            expect: { absent: true },
+          },
+        ],
+      ),
+    ).toMatchObject([{ kind: "invalid" }])
+    // A body that starts with its first heading has no text before it.
+    const headed = body.replace("---\n\n## A", "---\n## A")
+    expect(
+      refused(
+        [headed],
+        [
+          {
+            op: "edit-body",
+            document: "machine/x",
+            section: null,
+            text: "Intro.\n\n## Z\n",
+            expect: { absent: true },
+          },
+        ],
+      ),
+    ).toMatchObject([{ kind: "invalid" }])
+  })
+
+  it("refuses JavaScript object member names as fact keys and schema keys", () => {
+    for (const key of ["constructor", "hasOwnProperty", "prototype"]) {
+      expect(
+        refused(
+          [domainSchema],
+          [
+            {
+              op: "set-schema-key",
+              document: "schema/domain",
+              key,
+              options: {},
+              expect: { absent: true },
+            },
+          ],
+        ),
+      ).toMatchObject([{ kind: "invalid", code: "operation-invalid" }])
+      expect(
+        refused(
+          [musashi],
+          [
+            {
+              op: "set-fact",
+              document: "machine/musashi",
+              fact: { key, state: "observed", value: "x" },
+              check,
+              expect: { identity: `${key}|observed`, absent: true },
+            },
+          ],
+        ),
+      ).toMatchObject([{ kind: "invalid", code: "operation-invalid" }])
+    }
+    const schema = swap(
+      domainSchema,
+      "  registrar: {}\n",
+      "  registrar: {}\n  constructor: {}\n",
+    )
+    expect(readCatalog([schema]).documents[0]?.problems).toMatchObject([
+      { code: "schema-invalid" },
+    ])
+    const entity = swap(
+      musashi,
+      "      platform.arch: aarch64\n",
+      "      constructor: x\n",
+    )
+    expect(readCatalog([entity]).documents[0]?.problems).toMatchObject([
+      { code: "fact-invalid" },
+    ])
+  })
+})
+
+describe("a section edit leaves the other sections as they were (#114)", () => {
+  const body = `---
+id: machine/x
+type: machine
+title: X
+summary: S.
+status: active
+owner: person/guneet
+---
+
+intro
+
+## A
+
+a
+
+## B
+
+b
+`
+  const sectionText = (anchor: string | null) =>
+    readCatalog([body]).documents[0]?.body.sections.find((s) =>
+      anchor === null ? s.heading === null : s.anchor === anchor,
+    )?.text ?? ""
+  const anchors = (text: string) =>
+    readCatalog([text]).documents[0]?.body.sections.map((s) => s.anchor)
+
+  it("refuses new text that leaves a code block open over the sections after it", () => {
+    expect(
+      refused(
+        [body],
+        [
+          {
+            op: "edit-body",
+            document: "machine/x",
+            section: "a",
+            text: "## A\n\n```\ncode\n",
+            expect: { text: sectionText("a") },
+          },
+        ],
+      ),
+    ).toMatchObject([{ kind: "invalid", code: "result-invalid" }])
+    expect(
+      refused(
+        [body],
+        [
+          {
+            op: "edit-body",
+            document: "machine/x",
+            section: null,
+            text: "```\n",
+            expect: { text: sectionText(null) },
+          },
+        ],
+      ),
+    ).toMatchObject([{ kind: "invalid", code: "result-invalid" }])
+    // At the end of the body, an open fence swallows nothing.
+    const added = edit(body, {
+      op: "edit-body",
+      document: "machine/x",
+      section: "c",
+      text: "## C\n\n~~~\n",
+      expect: { absent: true },
+    })
+    expect(anchors(added)).toEqual([null, "a", "b", "c"])
+  })
+
+  it("still allows a closed code block, and removing a section", () => {
+    const fenced = edit(body, {
+      op: "edit-body",
+      document: "machine/x",
+      section: "a",
+      text: "## A\n\n```\n## not a heading\n```\n",
+      expect: { text: sectionText("a") },
+    })
+    expect(anchors(fenced)).toEqual([null, "a", "b"])
+    const removed = edit(body, {
+      op: "edit-body",
+      document: "machine/x",
+      section: "a",
+      text: "",
+      expect: { text: sectionText("a") },
+    })
+    expect(anchors(removed)).toEqual([null, "b"])
+  })
+})
+
+describe("a comment on a key's own line (#114)", () => {
+  it("stays there when the key gains a second value", () => {
+    const text = `---
+id: service/x
+type: service
+title: X
+summary: S.
+status: active
+owner: person/guneet
+facts:
+  - checked: 2026-11-14
+    by: ${by}
+    scope: s
+    source: s
+    observed:
+      endpoint: # on key
+        https://a
+---
+`
+    expect(
+      edit(text, {
+        op: "set-fact",
+        document: "service/x",
+        fact: { key: "endpoint", state: "observed", value: "https://b" },
+        check: { checked: "2026-11-14", scope: "s", source: "s" },
+        expect: { identity: "endpoint|observed|value=https://b", absent: true },
+      }),
+    ).toBe(
+      swap(
+        text,
+        "      endpoint: # on key\n        https://a\n",
+        "      endpoint: # on key\n        - https://a\n        - https://b\n",
+      ),
+    )
+  })
+})

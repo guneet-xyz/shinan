@@ -3,9 +3,9 @@ import type { Body } from "./body.js"
 import { parseCatalogTime } from "./dates.js"
 import type { CatalogTime } from "./dates.js"
 import {
-  factKeyPattern,
   isAttributeName,
   isEntityId,
+  isFactKey,
   parseEntityId,
   schemaIdPrefix,
   schemaType,
@@ -44,7 +44,7 @@ import type { ScalarValue, YamlEntry, YamlMap, YamlNode } from "./yaml.js"
  * parsed documents (the agent index) records it and is rebuilt when it
  * changes (architecture §5.2, M2-3).
  */
-export const parserVersion = 2
+export const parserVersion = 3
 
 /**
  * The largest document Shinan reads: 64 KiB of UTF-8, the form documents are
@@ -458,10 +458,10 @@ function readFact(
   state: FactState,
   group: number,
 ): WrittenFact[] {
-  if (!factKeyPattern.test(entry.key)) {
+  if (!isFactKey(entry.key)) {
     reader.problem(
       "fact-invalid",
-      `"${entry.key}" is not a fact key: lowercase words joined by ".", "-" or "_"`,
+      `"${entry.key}" is not a fact key: lowercase words joined by ".", "-" or "_", and not a name such as "constructor"`,
       entry.keyRange,
     )
     return []
@@ -712,10 +712,10 @@ function readKeyDefinition(
   reader: Reader,
   entry: YamlEntry,
 ): SchemaKeyDefinition | null {
-  if (!factKeyPattern.test(entry.key)) {
+  if (!isFactKey(entry.key)) {
     reader.problem(
       "schema-invalid",
-      `"${entry.key}" is not a fact key: lowercase words joined by ".", "-" or "_"`,
+      `"${entry.key}" is not a fact key: lowercase words joined by ".", "-" or "_", and not a name such as "constructor"`,
       entry.keyRange,
     )
     return null

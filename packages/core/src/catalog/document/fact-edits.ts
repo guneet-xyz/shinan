@@ -196,20 +196,39 @@ export function stripAcceptedEdit(
  */
 export function factText(document: EntityDocument, fact: WrittenFact): Out {
   const at = locate(document, fact)
-  const out = valueOut(document.text, at.node, at.inFlow)
-  // The comment at the end of the fact's line moves with it.
-  const comment = /^[ \t]+#[^\r\n]*/.exec(
-    document.text.slice(at.node.range.end),
-  )?.[0]
-  if (!comment || at.inFlow) return out
+  return withComment(
+    document.text,
+    at.node,
+    valueOut(document.text, at.node, at.inFlow),
+    at.inFlow,
+  ).out
+}
+
+/**
+ * A value's text with the comment at the end of its line, which moves with
+ * it. Inside a flow collection there is no such comment.
+ */
+function withComment(
+  text: string,
+  node: YamlNode,
+  out: Out,
+  inFlow: boolean,
+): { out: Out; comment: string } {
+  const comment = inFlow
+    ? undefined
+    : /^[ \t]+#[^\r\n]*/.exec(text.slice(node.range.end))?.[0]
+  if (!comment) return { out, comment: "" }
   if (out.kind === "raw")
-    return { ...out, text: out.text + comment, flowSafe: false }
+    return {
+      out: { ...out, text: out.text + comment, flowSafe: false },
+      comment,
+    }
   if (out.kind === "lines") {
     const lines = [...out.lines]
     lines[lines.length - 1] += comment
-    return { ...out, lines }
+    return { out: { ...out, lines }, comment }
   }
-  return out
+  return { out, comment: "" }
 }
 
 export function checkMatches(
@@ -266,14 +285,26 @@ export function insertFactEdit(
     if (!many) continue
     if (keyEntry.value.kind === "list")
       return appendListItem(text, keyEntry.value, value, eol)
-    const old = valueOut(text, keyEntry.value, stateMap.flow)
-    return replaceEntryValue(
+    const plain = valueOut(text, keyEntry.value, stateMap.flow)
+    const asList = (first: Out) =>
+      replaceEntryValue(
+        text,
+        keyEntry,
+        stateMap.flow ? flowList([first, value]) : blockList([first, value]),
+        stateMap.flow,
+        eol,
+      )
+    // The first value's comment stays with it, on its own item.
+    const { out, comment } = withComment(
       text,
-      keyEntry,
-      stateMap.flow ? flowList([old, value]) : blockList([old, value]),
+      keyEntry.value,
+      plain,
       stateMap.flow,
-      eol,
     )
+    const edit = asList(out)
+    return comment && edit.end === keyEntry.value.range.end
+      ? { ...edit, end: edit.end + comment.length }
+      : asList(plain)
   }
 
   const group = blockMap([

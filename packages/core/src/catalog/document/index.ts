@@ -45,6 +45,7 @@ export {
   factKeyPattern,
   isAttributeName,
   isEntityId,
+  isFactKey,
   parseEntityId,
   reservedTypeNames,
   schemaId,
