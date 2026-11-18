@@ -27,6 +27,7 @@ now in its build phase.
 | `packages/db`         | Drizzle schema and migrations                                                   |
 | `packages/email`      | The email sender interface, the SES sender and an SMTP sender for development   |
 | `packages/api-client` | Typed client for the REST API                                                   |
+| `packages/skill`      | The agent skill, served at `/skills/`                                           |
 | `deploy/`             | The production image, the reference Compose file and local development services |
 
 The [build plan](docs/build-plan.md#2-code-layout-proposed) describes each part.

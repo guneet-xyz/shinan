@@ -115,7 +115,11 @@ All files go in one directory, next to `compose.yml`.
 ### Reverse proxy
 
 Point your proxy at `http://127.0.0.1:3000` (or your `SHINAN_PORT`), with
-HTTPS and a redirect from HTTP. Never route anything to port 3001. With Caddy:
+HTTPS and a redirect from HTTP. Never route anything to port 3001. Route
+every path: agents use `/mcp`, and OpenCode fetches the agent skill from
+`/skills/` without signing in. That path serves only the skill's own files,
+which are the same for every installation and hold no workspace data
+([D-056](decisions/D-056-public-skill-path.md)). With Caddy:
 
 ```text
 shinan.example.com {

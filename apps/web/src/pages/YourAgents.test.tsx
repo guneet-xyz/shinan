@@ -78,6 +78,12 @@ describe("your agents", () => {
     expect(
       screen.getByText(/It will not be shown again/).textContent,
     ).toBeTruthy()
+    // The setup guide opens beside it, so the token stays on screen.
+    const guide = screen.getByRole("link", {
+      name: "How to set up OpenCode (opens in a new tab)",
+    })
+    expect(guide.getAttribute("href")).toBe("/account/agents/setup")
+    expect(guide.getAttribute("target")).toBe("_blank")
     await waitFor(() => expect(api.yourAgents).toHaveBeenCalledTimes(2))
 
     await userEvent.click(screen.getByRole("button", { name: "Done" }))

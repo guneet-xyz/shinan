@@ -1,6 +1,7 @@
 import { CheckIcon, CopyIcon } from "lucide-react"
 import { useState } from "react"
 import type { FormEvent } from "react"
+import { Link } from "react-router"
 
 import type { Agent, IssuedAgentToken, TokenAccess } from "@shinan/api-client"
 
@@ -376,7 +377,15 @@ export function TokenShownOnce(props: {
             Authorization: Bearer &lt;token&gt;
           </code>
           . Keep it in a file only you can read, never in a project file, chat
-          or issue.
+          or issue.{" "}
+          <Link
+            to="/account/agents/setup"
+            target="_blank"
+            rel="noopener"
+            className="text-foreground underline underline-offset-4"
+          >
+            How to set up OpenCode (opens in a new tab)
+          </Link>
         </p>
         <div>
           <Button type="button" onClick={props.onDismiss}>

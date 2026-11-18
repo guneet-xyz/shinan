@@ -62,6 +62,7 @@ export default defineConfig({
         extends: true,
         test: { name: "markdown", root: "packages/markdown" },
       },
+      { extends: true, test: { name: "skill", root: "packages/skill" } },
       {
         extends: true,
         test: {

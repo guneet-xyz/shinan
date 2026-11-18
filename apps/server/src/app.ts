@@ -3,6 +3,7 @@ import { serveStatic } from "@hono/node-server/serve-static"
 import { Hono } from "hono"
 
 import type { DatabaseReadiness } from "@shinan/db"
+import type { SkillCatalog } from "@shinan/skill"
 
 import { errorHandler } from "./api/errors.js"
 import { createApi, requestInfoFor } from "./api/routes.js"
@@ -10,10 +11,13 @@ import type { ApiOptions } from "./api/routes.js"
 import { noTrustedProxies } from "./client-address.js"
 import { createMcp } from "./mcp/server.js"
 import { securityHeaders } from "./security.js"
+import { createSkills } from "./skills.js"
 
 export interface AppOptions extends ApiOptions {
   /** Directory of the built web app. When set, its files are served. */
   webDistDir?: string
+  /** The skill's files, served at `/skills/`; none when not given. */
+  skills?: SkillCatalog
 }
 
 /**
@@ -42,6 +46,12 @@ export function createApp(options: AppOptions) {
       requestInfo: requestInfoFor(options.trustedProxies ?? noTrustedProxies),
       rateLimit: options.rateLimit,
     }),
+  )
+  // The skill (D-056): public, and only its own files. Every other path
+  // under `/skills` is 404 here, never the web app's page.
+  app.route(
+    "/skills",
+    createSkills(options.skills ?? { version: "", files: new Map() }),
   )
   // Not the web app either, so a health check pointed here by mistake, by
   // any spelling of these paths, fails rather than seeing the app's page.
