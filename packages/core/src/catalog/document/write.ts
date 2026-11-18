@@ -113,6 +113,14 @@ function doubleQuoted(text: string): string {
   )
 }
 
+/**
+ * A map key: plain unless it would read as something other than its text,
+ * as the fact keys `null`, `true` and `false` would.
+ */
+export function keyText(key: string, flow: boolean): string {
+  return yamlScalar(key, flow)
+}
+
 /** A node on one line, as it reads inside a flow collection. */
 export function flowText(node: Out): string {
   switch (node.kind) {
@@ -125,7 +133,7 @@ export function flowText(node: Out): string {
     case "map":
       return node.entries.length === 0
         ? "{}"
-        : `{ ${node.entries.map(([k, v]) => `${k}: ${flowText(v)}`).join(", ")} }`
+        : `{ ${node.entries.map(([k, v]) => `${keyText(k, true)}: ${flowText(v)}`).join(", ")} }`
     case "list":
       return `[${node.items.map(flowText).join(", ")}]`
   }
@@ -153,10 +161,14 @@ function inlineText(node: Out): string {
 /** `key: value`, as lines starting at `indent` spaces. */
 export function entryLines(key: string, value: Out, indent: number): string[] {
   const pad = " ".repeat(indent)
-  if (inline(value)) return [`${pad}${key}: ${inlineText(value)}`]
+  const name = keyText(key, false)
+  if (inline(value)) return [`${pad}${name}: ${inlineText(value)}`]
   if (value.kind === "lines")
-    return [`${pad}${key}:`, ...value.lines.map((l) => indented(l, indent + 2))]
-  return [`${pad}${key}:`, ...blockLines(value, indent + 2)]
+    return [
+      `${pad}${name}:`,
+      ...value.lines.map((l) => indented(l, indent + 2)),
+    ]
+  return [`${pad}${name}:`, ...blockLines(value, indent + 2)]
 }
 
 /** A list item, as lines whose dash is at `indent` spaces. */

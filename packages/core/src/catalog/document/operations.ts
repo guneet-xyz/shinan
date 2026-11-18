@@ -17,6 +17,7 @@ export type CatalogOperation =
   | SetFact
   | RemoveFact
   | RecheckFacts
+  | AcceptDiscrepancy
   | EditBody
   | SetField
   | Retire
@@ -44,8 +45,8 @@ export interface FactInput {
   task?: string
   /** On a `planned` fact: the plan is to remove the value. */
   remove?: boolean
-  /** The `person` entity accepting the discrepancy this fact is part of (catalog §4.7). */
-  accepted?: string
+  // No `accepted`: Shinan writes it from the person who approves an
+  // `accept-discrepancy` operation (catalog §4.7).
 }
 
 /**
@@ -62,26 +63,35 @@ export interface CheckInput {
 
 /**
  * What an operation expects of one fact identity (catalog §8.5): either that
- * no current fact has it, or the current fact's value and fact check.
+ * no current fact has it, or the whole current fact as written: its value,
+ * its fact check, and the rest of its long form. A field left out means the
+ * fact does not have it, so a change to any of them (a plan to add becoming a
+ * plan to remove, a new note) makes a stale expectation conflict.
  */
 export type FactExpectation =
-  | { identity: FactIdentityKey; absent: true }
-  | {
-      identity: FactIdentityKey
-      /**
-       * The fact's value as text, as `factValueText` gives it: a value as
-       * written (`128`, `true`), a relation's target, an `unknown` fact's note.
-       */
-      value: string
-      /**
-       * The fact check of its group: `checked` as written (null for an
-       * imported `checked: null`), and any other field given must match.
-       * Null for a fact with no fact check.
-       */
-      check: ExpectedCheck | null
-    }
+  { identity: FactIdentityKey; absent: true } | PresentFact
 
-export type PresentFact = Extract<FactExpectation, { value: string }>
+export interface PresentFact {
+  identity: FactIdentityKey
+  /**
+   * The fact's value as text, as `factValueText` gives it: a value as
+   * written (`128`, `true`), a relation's target, an `unknown` fact's note.
+   */
+  value: string
+  /**
+   * The fact check of its group: `checked` as written (null for an imported
+   * `checked: null`), and any other field given must match. Null for a fact
+   * with no fact check.
+   */
+  check: ExpectedCheck | null
+  via?: string
+  note?: string
+  task?: string
+  remove?: boolean
+  accepted?: string
+  /** All of a relation's attributes, identifying or not. */
+  attributes?: Readonly<Record<string, Exclude<ScalarValue, null>>>
+}
 
 export interface ExpectedCheck {
   checked: string | null
@@ -140,6 +150,23 @@ export interface RemoveFact {
   expect: PresentFact
 }
 
+/**
+ * Accepts a discrepancy (catalog §4.7): every fact of it gets `accepted`,
+ * naming the person who approves the proposal, and the note saying why.
+ * Shinan writes the person from the approval, never from the operation, so
+ * this applies only when a person approves it (`ApplyContext.acceptedBy`).
+ */
+export interface AcceptDiscrepancy {
+  op: "accept-discrepancy"
+  document: string
+  /** The single-valued key whose facts disagree. */
+  key: string
+  /** Why the difference is accepted, written as each fact's `note`. */
+  note: string
+  /** Every fact of the discrepancy, as it is now. */
+  expect: readonly PresentFact[]
+}
+
 /** Records a new fact check for facts whose values did not change (catalog §4.5). */
 export interface RecheckFacts {
   op: "recheck-facts"
@@ -178,7 +205,8 @@ export type DocumentField =
 
 /**
  * Changes a document field (catalog §2.3): an entity's title, summary,
- * status (not to `retired`, which is `retire`), owner and decision fields; a
+ * status (between `active` and `deprecated`: retiring is `retire`, and a
+ * retired entity stays retired), owner and decision fields; a
  * type schema document's title, summary, status, owner, `required` and
  * `sections`; the start-here document's title, summary and owner. Null
  * removes an optional field; `expect.value` null means it is not there.

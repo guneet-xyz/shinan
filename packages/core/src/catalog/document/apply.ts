@@ -18,7 +18,7 @@ import {
   stripAcceptedEdit,
   writtenValueText,
 } from "./fact-edits.js"
-import type { CheckFields } from "./fact-edits.js"
+import type { CheckFields, FactToWrite } from "./fact-edits.js"
 import { factIdentityKey, parseFactIdentityKey } from "./identity.js"
 import {
   factKeyPattern,
@@ -31,7 +31,9 @@ import {
 } from "./ids.js"
 import { decisionStates, entityStatuses, factStates } from "./model.js"
 import type { CatalogDocument, EntityDocument, FactCheck } from "./model.js"
+import { checkOperationShape, ShapeError } from "./operation-shape.js"
 import type {
+  AcceptDiscrepancy,
   CatalogOperation,
   ChangeId,
   CheckInput,
@@ -57,7 +59,7 @@ import type {
 import { maxDocumentBytes, parseCatalogDocument } from "./parse.js"
 import type { Problem } from "./problems.js"
 import { buildTypeRegistry, factOptions, keySchema } from "./schemas.js"
-import type { TypeRegistry } from "./schemas.js"
+import type { KeySchema, TypeRegistry } from "./schemas.js"
 import { utf8Length } from "./source.js"
 import {
   appendListItem,
@@ -73,6 +75,7 @@ import {
 import type { Edit } from "./text-edit.js"
 import { blockLines, blockList, blockMap, flowList, scalar } from "./write.js"
 import type { Out } from "./write.js"
+import type { ScalarValue, YamlMap, YamlNode } from "./yaml.js"
 
 /** Who the operations are applied for. */
 export interface ApplyContext {
@@ -82,7 +85,29 @@ export interface ApplyContext {
    * Callers never send it; it comes from the request's actor.
    */
   by: string
+  /**
+   * The `person` entity of the person approving the proposal, when one is.
+   * Only `accept-discrepancy` uses it, writing it as `accepted` (catalog
+   * §4.7); an operation never names the person itself.
+   */
+  acceptedBy?: string
 }
+
+/**
+ * Limits on one proposal (**proposed**, M2-2). Every operation reads its
+ * document again after each edit, so the work grows with the facts a
+ * proposal writes; these bound it well above real use (a full recheck of
+ * Musashi, the largest trial entity, names 22 facts; seeding a group of
+ * entities writes a few dozen). Applying also runs off the main event loop
+ * with a time limit (security checklist 10.8).
+ */
+export const maxOperations = 50
+/**
+ * The most facts a proposal names in all: one per `set-fact` and
+ * `remove-fact`, and each fact of a `create-entity`, `recheck-facts` or
+ * `accept-discrepancy`.
+ */
+export const maxFacts = 100
 
 /**
  * Why an operation did not apply:
@@ -125,6 +150,10 @@ export type OperationProblemCode =
   | "result-invalid"
   /** The document's YAML is laid out in a way the edits do not handle. */
   | "unsupported-layout"
+  /** The proposal has more operations, or an operation more facts, than Shinan applies at once. */
+  | "too-many"
+  /** The operation applies only when a person approves it (accepting a discrepancy). */
+  | "needs-approval"
 
 /** One document the operations wrote. */
 export interface DocumentChange {
@@ -173,10 +202,70 @@ export function applyOperations(
   context: ApplyContext,
 ): ApplyResult {
   const before = readCatalog(documents)
-  const working = new Working(before, context)
   const problems: OperationProblem[] = []
-  const order = operations
-    .map((operation, index) => ({ operation, index }))
+  if (!Array.isArray(operations))
+    return {
+      applied: false,
+      before,
+      problems: [
+        {
+          operation: 0,
+          kind: "invalid",
+          code: "operation-invalid",
+          message: "A proposal's operations are a list",
+          documentId: null,
+        },
+      ],
+    }
+  if (operations.length > maxOperations)
+    return {
+      applied: false,
+      before,
+      problems: [
+        {
+          operation: maxOperations,
+          kind: "invalid",
+          code: "too-many",
+          message: `A proposal holds at most ${maxOperations} operations; split it`,
+          documentId: null,
+        },
+      ],
+    }
+  const valid: { operation: CatalogOperation; index: number }[] = []
+  operations.forEach((operation: unknown, index) => {
+    try {
+      checkOperationShape(operation)
+      valid.push({ operation: operation as CatalogOperation, index })
+    } catch (error) {
+      if (!(error instanceof ShapeError)) throw error
+      problems.push({
+        operation: index,
+        kind: "invalid",
+        code: "operation-invalid",
+        message: error.message,
+        documentId: null,
+      })
+    }
+  })
+  if (problems.length > 0) return { applied: false, before, problems }
+  const named = valid.reduce((n, { operation }) => n + factsNamed(operation), 0)
+  if (named > maxFacts)
+    return {
+      applied: false,
+      before,
+      problems: [
+        {
+          operation: 0,
+          kind: "invalid",
+          code: "too-many",
+          message: `A proposal names at most ${maxFacts} facts in all; this one names ${named}. Split it`,
+          documentId: null,
+        },
+      ],
+    }
+  const working = new Working(before, context)
+  const order = valid
+    .slice()
     .sort(
       (a, b) => phase(a.operation) - phase(b.operation) || a.index - b.index,
     )
@@ -220,14 +309,41 @@ export function factValueText(fact: Fact): string {
   return writtenValueText(fact)
 }
 
-/** What an operation expects of a fact, read from the fact as it is now. */
+/** What an operation expects of a fact: the whole fact as it is now. */
 export function expectationOf(fact: Fact): PresentFact {
   const check = fact.check
-  return {
+  const expected: PresentFact = {
     identity: fact.identity,
     value: factValueText(fact),
     check: check === null ? null : expectedCheckOf(check),
   }
+  if (fact.via !== undefined) expected.via = fact.via
+  if (fact.note !== undefined) expected.note = fact.note
+  if (fact.task !== undefined) expected.task = fact.task
+  if (fact.remove) expected.remove = true
+  if (fact.accepted !== undefined) expected.accepted = fact.accepted
+  const attributes = Object.entries(fact.attributes).filter(
+    (e): e is [string, Exclude<ScalarValue, null>] => e[1] !== null,
+  )
+  if (attributes.length > 0)
+    expected.attributes = Object.fromEntries(attributes)
+  return expected
+}
+
+/** The first field of the written fact that differs from the expectation, if any. */
+function differentField(fact: Fact, expected: PresentFact): string | null {
+  if (factValueText(fact) !== expected.value) return "value"
+  for (const name of ["via", "note", "task", "accepted"] as const)
+    if (fact[name] !== expected[name]) return name
+  if (fact.remove !== (expected.remove ?? false)) return "remove"
+  const written = Object.entries(fact.attributes)
+  const wanted = expected.attributes ?? {}
+  if (
+    written.length !== Object.keys(wanted).length ||
+    written.some(([k, v]) => !Object.hasOwn(wanted, k) || wanted[k] !== v)
+  )
+    return "attributes"
+  return null
 }
 
 function expectedCheckOf(check: FactCheck): ExpectedCheck {
@@ -239,6 +355,23 @@ function expectedCheckOf(check: FactCheck): ExpectedCheck {
   if (check.source !== undefined) expected.source = check.source
   expected.limits = check.limits ?? null
   return expected
+}
+
+/** How many facts an operation names, for the limit on a proposal. */
+function factsNamed(operation: CatalogOperation): number {
+  switch (operation.op) {
+    case "set-fact":
+    case "remove-fact":
+      return 1
+    case "create-entity":
+      return operation.facts?.length ?? 0
+    case "recheck-facts":
+      return operation.facts.length
+    case "accept-discrepancy":
+      return operation.expect.length
+    default:
+      return 0
+  }
 }
 
 function phase(operation: CatalogOperation): number {
@@ -286,6 +419,12 @@ interface Entry {
   document: CatalogDocument
 }
 
+/**
+ * What an operation may change in its document: these top-level fields, or
+ * the body. Everything else must read the same afterwards.
+ */
+type Touched = readonly string[] | "body"
+
 /** The documents as the operations applied so far left them. */
 class Working {
   readonly entries: Entry[]
@@ -300,31 +439,41 @@ class Working {
   }
 
   apply(operation: CatalogOperation) {
+    const facts = ["facts"]
     switch (operation.op) {
       case "create-entity":
         return this.createEntity(operation)
       case "set-fact":
-        return this.edit(operation.document, "entity", (d) =>
+        return this.edit(operation.document, "entity", facts, (d) =>
           setFact(d, operation, this.context.by),
         )
       case "remove-fact":
-        return this.edit(operation.document, "entity", (d) =>
+        return this.edit(operation.document, "entity", facts, (d) =>
           removeFact(d, operation),
         )
       case "recheck-facts":
-        return this.edit(operation.document, "entity", (d) =>
+        return this.edit(operation.document, "entity", facts, (d) =>
           recheckFacts(d, operation, this.context.by),
         )
+      case "accept-discrepancy":
+        return this.edit(operation.document, "entity", facts, (d) =>
+          acceptDiscrepancy(d, operation, this.context.acceptedBy),
+        )
       case "edit-body":
-        return this.edit(operation.document, null, (d) =>
+        return this.edit(operation.document, null, "body", (d) =>
           editBody(d, operation),
         )
       case "set-field":
-        return this.edit(operation.document, null, (d) =>
+        return this.edit(operation.document, null, [operation.field], (d) =>
           setField(d, operation),
         )
       case "retire":
-        return this.edit(operation.document, null, (d) => retire(d, operation))
+        return this.edit(
+          operation.document,
+          null,
+          ["status", "replaced_by"],
+          (d) => retire(d, operation),
+        )
       case "change-id":
         return this.changeId(operation)
       case "create-schema":
@@ -332,19 +481,17 @@ class Working {
           schemaText(operation),
         )
       case "set-schema-key":
-        return this.edit(operation.document, "schema", (d) =>
+        return this.edit(operation.document, "schema", ["keys"], (d) =>
           setSchemaKey(d, operation),
         )
       case "create-start-here":
         return this.create(startHereId, () => startHereText(operation))
       case "set-start-here-path":
-        return this.edit(startHereId, "start-here", (d) =>
+        return this.edit(startHereId, "start-here", [operation.path], (d) =>
           setStartHerePath(d, operation),
         )
       default:
-        throw invalid(
-          `"${String((operation as { op?: unknown }).op)}" is not a catalog operation`,
-        )
+        throw invalid("Not a catalog operation")
     }
   }
 
@@ -362,18 +509,20 @@ class Working {
     )
   }
 
-  /** Whether any document has this ID or alias. */
-  private taken(name: string): boolean {
+  /** Whether any document other than `except` has this ID or alias. */
+  private taken(name: string, except?: Entry): boolean {
     return this.entries.some(
       (e) =>
-        e.document.id === name ||
-        (e.document.kind === "entity" && e.document.aliases.includes(name)),
+        e !== except &&
+        (e.document.id === name ||
+          (e.document.kind === "entity" && e.document.aliases.includes(name))),
     )
   }
 
   private edit(
     id: string,
     kind: CatalogDocument["kind"] | null,
+    touched: Touched,
     change: (editor: Editor) => void,
   ) {
     const entry = this.find(id)
@@ -381,15 +530,17 @@ class Working {
       throw invalid(`"${id}" is not ${kindName[kind]}`)
     const editor = new Editor(entry.document, this.registry)
     change(editor)
-    this.commit(entry, editor.finish(entry.document))
+    this.commit(entry, editor.finish(entry.document, touched))
   }
 
-  private create(id: string, text: () => string) {
+  private create(id: string, written: () => Written) {
     if (this.taken(id))
       throw conflict("document-exists", `A document "${id}" already exists`)
-    const editor = Editor.create(text(), this.registry)
+    const { text, entries } = written()
+    const editor = Editor.create(text, this.registry)
+    verifyFields(editor.document, entries)
     const entry: Entry = { before: null, document: editor.document }
-    this.commit(entry, editor.finish(null), true)
+    this.commit(entry, editor.finish(null, "body"), true)
   }
 
   private createEntity(operation: CreateEntity) {
@@ -403,10 +554,9 @@ class Working {
         "document-exists",
         `A document "${operation.id}" already exists`,
       )
-    const editor = Editor.create(
-      entityText(operation, parsed.type),
-      this.registry,
-    )
+    const { text, entries } = entityText(operation, parsed.type)
+    const editor = Editor.create(text, this.registry)
+    verifyFields(editor.document, entries)
     for (const { fact, check } of operation.facts ?? []) {
       const key = keySchema(editor.typeSchema(), fact.key)
       setFact(
@@ -422,7 +572,7 @@ class Working {
       )
     }
     const entry: Entry = { before: null, document: editor.document }
-    this.commit(entry, editor.finish(null), true)
+    this.commit(entry, editor.finish(null, "body"), true)
   }
 
   private changeId(operation: ChangeId) {
@@ -439,22 +589,14 @@ class Working {
       )
     if (operation.id === document.id)
       throw invalid(`The entity's ID is already "${operation.id}"`)
-    if (
-      this.entries.some(
-        (e) =>
-          e !== entry &&
-          (e.document.id === operation.id ||
-            (e.document.kind === "entity" &&
-              e.document.aliases.includes(operation.id))),
-      )
-    )
+    if (this.taken(operation.id, entry))
       throw conflict(
         "document-exists",
         `A document already has the ID or alias "${operation.id}"`,
       )
     const editor = new Editor(document, this.registry)
     changeId(editor, operation.id)
-    this.commit(entry, editor.finish(document))
+    this.commit(entry, editor.finish(document, ["id", "aliases"]))
   }
 
   private commit(entry: Entry, document: CatalogDocument, created = false) {
@@ -517,8 +659,18 @@ class Editor {
     return type === null ? null : (this.registry.types.get(type) ?? null)
   }
 
+  private resolvedFor: {
+    document: CatalogDocument
+    entity: ResolvedEntity
+  } | null = null
+
   resolved(): ResolvedEntity {
-    return resolveEntity(this.entity, this.registry)
+    if (this.resolvedFor?.document !== this.document)
+      this.resolvedFor = {
+        document: this.document,
+        entity: resolveEntity(this.entity, this.registry),
+      }
+    return this.resolvedFor.entity
   }
 
   apply(edit: Edit) {
@@ -526,11 +678,12 @@ class Editor {
   }
 
   /**
-   * The document after the operation, if it reads without any problem the
-   * operation added: an edit that reads back differently is refused rather
-   * than stored.
+   * The document after the operation, if it reads as intended: no problem
+   * the document did not have before, and nothing outside what the
+   * operation touches reads differently. An edit that reads back otherwise
+   * is refused rather than stored.
    */
-  finish(before: CatalogDocument | null): CatalogDocument {
+  finish(before: CatalogDocument | null, touched: Touched): CatalogDocument {
     const added = subtract(
       this.problems(this.document),
       before ? this.problems(before) : [],
@@ -540,6 +693,7 @@ class Editor {
         `The result would not read as intended: ${added.map((p) => p.message).join("; ")}`,
         "result-invalid",
       )
+    if (before) untouched(before, this.document, touched)
     return this.document
   }
 
@@ -551,6 +705,99 @@ class Editor {
         : []),
     ]
   }
+}
+
+function readsWrong(what: string): OperationFailure {
+  return invalid(
+    `The result would not read as intended: ${what}`,
+    "result-invalid",
+  )
+}
+
+/** Checks that everything an operation does not touch reads as before. */
+function untouched(
+  before: CatalogDocument,
+  after: CatalogDocument,
+  touched: Touched,
+) {
+  if (touched === "body") {
+    const range = (d: CatalogDocument) =>
+      d.frontmatter ? d.text.slice(0, d.frontmatter.end) : null
+    if (range(before) !== range(after))
+      throw readsWrong("the frontmatter would change")
+    return
+  }
+  if (after.body.text !== before.body.text)
+    throw readsWrong("the body would change")
+  const names = new Set([...before.fields.keys(), ...after.fields.keys()])
+  for (const name of names) {
+    if (touched.includes(name)) continue
+    const was = before.fields.get(name)
+    const now = after.fields.get(name)
+    if (!was || !now || plain(was.value) !== plain(now.value))
+      throw readsWrong(`\`${name}\` would change`)
+  }
+}
+
+/** A YAML value as comparable text. */
+function plain(node: YamlNode): string {
+  const value = (n: YamlNode): unknown =>
+    n.kind === "scalar"
+      ? n.value
+      : n.kind === "list"
+        ? n.items.map(value)
+        : n.entries.map((e) => [e.key, value(e.value)])
+  return JSON.stringify(value(node))
+}
+
+/** What Shinan meant to write, as comparable text, in the shape `plain` reads. */
+function plainOut(out: Out): string {
+  const value = (o: Out): unknown => {
+    switch (o.kind) {
+      case "scalar":
+        return o.value
+      case "list":
+        return o.items.map(value)
+      case "map":
+        return o.entries.map(([k, v]) => [k, value(v)])
+      default:
+        return JSON.parse(plain(o.node)) as unknown
+    }
+  }
+  return JSON.stringify(value(out))
+}
+
+/** A new document's text and the top-level fields it was written with. */
+interface Written {
+  text: string
+  entries: [string, Out][]
+}
+
+/** Checks that each field reads back as written. */
+function verifyFields(document: CatalogDocument, entries: [string, Out][]) {
+  for (const [name, out] of entries) verifyField(document, [name], out)
+}
+
+/**
+ * Checks that a field (or a key inside one, such as a schema key under
+ * `keys`) reads back as written, or is gone when `out` is null.
+ */
+function verifyField(
+  document: CatalogDocument,
+  path: readonly string[],
+  out: Out | null,
+) {
+  let node: YamlNode | undefined = document.fields.get(path[0] ?? "")?.value
+  for (const key of path.slice(1))
+    node =
+      node?.kind === "map"
+        ? node.entries.find((e) => e.key === key)?.value
+        : undefined
+  const ok =
+    out === null
+      ? node === undefined
+      : node !== undefined && plain(node) === plainOut(out)
+  if (!ok) throw readsWrong(`\`${path.join(".")}\` would not read as written`)
 }
 
 function read(text: string): CatalogDocument {
@@ -577,7 +824,7 @@ function subtract(found: Problem[], earlier: Problem[]): Problem[] {
 
 // Facts.
 
-function identityOf(fact: FactInput, key: ReturnType<typeof keySchema>) {
+function identityOf(fact: FactInput, key: KeySchema) {
   return factIdentityKey({
     key: fact.key,
     state: fact.state,
@@ -590,49 +837,34 @@ function identityOf(fact: FactInput, key: ReturnType<typeof keySchema>) {
   })
 }
 
-function checkFact(fact: FactInput, key: ReturnType<typeof keySchema>) {
+function checkFact(fact: FactInput, key: KeySchema) {
+  if (Object.hasOwn(fact, "accepted"))
+    throw invalid(
+      "`accepted` is not sent with a fact: Shinan writes it, naming the person who approves an `accept-discrepancy` operation",
+    )
   if (!factKeyPattern.test(fact.key))
     throw invalid(
       `"${fact.key}" is not a fact key: lowercase words joined by ".", "-" or "_"`,
     )
   if (!factStates.includes(fact.state))
-    throw invalid(`"${String(fact.state)}" is not a fact state`)
-  const text = (name: string, value: unknown) => {
-    if (
-      value !== undefined &&
-      (typeof value !== "string" || value.trim() === "")
-    )
+    throw invalid(`"${fact.state}" is not a fact state`)
+  const text = (name: string, value: string | undefined) => {
+    if (value !== undefined && value.trim() === "")
       throw invalid(`The fact's \`${name}\` is text`)
   }
   text("to", fact.to)
   text("via", fact.via)
   text("note", fact.note)
   text("task", fact.task)
-  text("accepted", fact.accepted)
-  const value = fact.value
-  if (
-    value !== undefined &&
-    !(
-      (typeof value === "string" && value !== "") ||
-      typeof value === "boolean" ||
-      (typeof value === "number" && Number.isFinite(value))
-    )
-  )
+  if (fact.value === "")
     throw invalid(
-      `The value of "${fact.key}" is text, a finite number, or true or false`,
+      `The fact "${fact.key}" has no value; record it as unknown instead`,
     )
   for (const [name, v] of Object.entries(fact.attributes ?? {})) {
     if (!isAttributeName(name) || factOptions.has(name))
       throw invalid(`"${name}" cannot name a relation attribute`)
-    if (!(
-      (typeof v === "string" && v !== "") ||
-      typeof v === "boolean" ||
-      (typeof v === "number" && Number.isFinite(v))
-    ))
-      throw invalid(`The attribute "${name}" holds one value`)
+    if (v === "") throw invalid(`The attribute "${name}" holds one value`)
   }
-  if (fact.remove !== undefined && typeof fact.remove !== "boolean")
-    throw invalid("`remove` is true or false")
   if (fact.remove && fact.state !== "planned")
     throw invalid("Only a planned fact can plan a removal (`remove: true`)")
   if (key.relation) {
@@ -679,16 +911,13 @@ function checkFields(
       `An \`${state}\` fact needs its fact check: when, what and where from`,
     )
   }
-  if (typeof check.checked !== "string" || !parseCatalogTime(check.checked))
+  if (!parseCatalogTime(check.checked))
     throw invalid(
       "`checked` is a date (2026-11-14) or a date and time with a UTC offset (2026-11-14T09:30Z)",
     )
   for (const name of ["scope", "source", "limits"] as const) {
     const value = check[name]
-    if (
-      (value !== undefined || name !== "limits") &&
-      (typeof value !== "string" || value.trim() === "")
-    )
+    if ((value !== undefined || name !== "limits") && !value?.trim())
       throw invalid(`The fact check's \`${name}\` is one line of text`)
   }
   return {
@@ -719,10 +948,11 @@ function expectFact(resolved: ResolvedEntity, expect: FactExpectation): Fact[] {
       "fact-missing",
       `The fact ${expect.identity} is not there any more`,
     )
-  if (factValueText(fact) !== expect.value)
+  const changed = differentField(fact, expect)
+  if (changed)
     throw conflict(
       "fact-changed",
-      `The value of ${expect.identity} has changed since the operation was written`,
+      `The ${changed === "value" ? "value" : `\`${changed}\``} of ${expect.identity} has changed since the operation was written`,
     )
   if (!checkExpected(fact.check, expect.check))
     throw conflict(
@@ -753,10 +983,19 @@ function checkExpected(
   return true
 }
 
-/** Removes every current fact with this identity, one edit at a time. */
-function removeIdentity(editor: Editor, identity: string) {
+/**
+ * Removes every current fact with this identity, one edit at a time, except
+ * the first that `keep` matches, if any.
+ */
+function removeIdentity(
+  editor: Editor,
+  identity: string,
+  keep: (fact: Fact) => boolean = () => false,
+) {
   for (;;) {
-    const fact = factsWithIdentity(editor.resolved(), identity)[0]
+    const facts = factsWithIdentity(editor.resolved(), identity)
+    const kept = facts.find(keep)
+    const fact = facts.find((f) => f !== kept)
     if (!fact) return
     editor.apply(removeFactEdit(editor.entity, fact))
   }
@@ -774,15 +1013,10 @@ function discrepancyOf(resolved: ResolvedEntity, key: string): string {
 
 /**
  * When a single-valued key's discrepancy changed (a value changed, or a fact
- * joined or left it), removes `accepted` from every fact of the key, except
- * one the operation accepts explicitly (catalog §4.7).
+ * joined or left it), removes `accepted` from every fact of the key (catalog
+ * §4.7): the discrepancy needs accepting again.
  */
-function unaccept(
-  editor: Editor,
-  key: string,
-  before: string,
-  keep: string | null,
-) {
+function unaccept(editor: Editor, key: string, before: string) {
   if (discrepancyOf(editor.resolved(), key) === before) return
   for (;;) {
     const fact = editor
@@ -792,11 +1026,75 @@ function unaccept(
           f.key === key &&
           !f.schema.many &&
           (f.state === "intended" || f.state === "observed") &&
-          f.accepted !== undefined &&
-          f.identity !== keep,
+          f.accepted !== undefined,
       )
     if (!fact) return
     editor.apply(stripAcceptedEdit(editor.entity, fact))
+  }
+}
+
+/** A fact as written, to write again with changes. */
+function writtenOf(fact: Fact): FactToWrite {
+  const written: FactToWrite = { key: fact.key, state: fact.state }
+  if (fact.value !== undefined && fact.value !== null && !fact.schema.relation)
+    written.value = fact.value
+  if (fact.to !== undefined) written.to = fact.to
+  const attributes = Object.entries(fact.attributes).filter(
+    (e): e is [string, Exclude<ScalarValue, null>] => e[1] !== null,
+  )
+  if (attributes.length > 0) written.attributes = Object.fromEntries(attributes)
+  if (fact.via !== undefined) written.via = fact.via
+  if (fact.note !== undefined) written.note = fact.note
+  if (fact.task !== undefined) written.task = fact.task
+  if (fact.remove) written.remove = true
+  if (fact.accepted !== undefined) written.accepted = fact.accepted
+  return written
+}
+
+/**
+ * Checks that facts of keys the operation does not touch read as before.
+ * Facts in `moved` may have a new fact check.
+ */
+function otherFactsUnchanged(
+  before: ResolvedEntity,
+  after: ResolvedEntity,
+  keys: ReadonlySet<string>,
+  moved: ReadonlySet<string> = new Set(),
+) {
+  const model = (f: Fact, withCheck: boolean) =>
+    JSON.stringify([
+      f.identity,
+      f.value,
+      f.to,
+      f.via,
+      f.note,
+      f.task,
+      f.remove,
+      f.accepted,
+      Object.entries(f.attributes),
+      withCheck
+        ? [
+            f.check?.checked?.text,
+            f.check?.by,
+            f.check?.scope,
+            f.check?.source,
+            f.check?.limits,
+          ]
+        : null,
+    ])
+  const now = new Map<string, string[]>()
+  for (const f of after.facts) {
+    if (keys.has(f.key) && !moved.has(f.identity)) continue
+    const list = now.get(f.identity) ?? []
+    list.push(model(f, !moved.has(f.identity)))
+    now.set(f.identity, list)
+  }
+  for (const f of before.facts) {
+    if (keys.has(f.key) && !moved.has(f.identity)) continue
+    const list = now.get(f.identity) ?? []
+    const index = list.indexOf(model(f, !moved.has(f.identity)))
+    if (index < 0) throw readsWrong(`the fact ${f.identity} would change`)
+    list.splice(index, 1)
   }
 }
 
@@ -810,9 +1108,7 @@ function setFact(editor: Editor, operation: SetFact, by: string) {
       "identity-changed",
       `The fact as written has the identity ${identity}, not ${operation.expect.identity}`,
     )
-  const start = editor.resolved()
-  const current = expectFact(start, operation.expect)
-  let fact = operation.fact
+  let fact: FactToWrite = operation.fact
   if (operation.supersedes) {
     const superseded = parseFactIdentityKey(operation.supersedes.identity)
     if (
@@ -822,19 +1118,26 @@ function setFact(editor: Editor, operation: SetFact, by: string) {
       throw invalid(
         "A change of state supersedes a fact of the same key with another identity",
       )
-    if (!("value" in operation.supersedes))
+    // Catalog §4.2, §4.4: a plan or an unknown settled by what is now
+    // declared or seen. Taking away an intended or observed fact is a
+    // removal of its own (`remove-fact`), not part of writing another.
+    if (
+      !(superseded.state === "planned" || superseded.state === "unknown") ||
+      !(fact.state === "intended" || fact.state === "observed")
+    )
       throw invalid(
-        "`supersedes` names a current fact, with its value and check",
+        "A change of state settles a planned or unknown fact with an intended or observed one; remove other facts with `remove-fact`",
       )
-    expectFact(start, operation.supersedes)
   }
+  const start = editor.resolved()
+  const current = expectFact(start, operation.expect)
+  if (operation.supersedes) expectFact(start, operation.supersedes)
 
   // A recheck of a value that did not change keeps the acceptance of its
   // discrepancy, with the note that says why (catalog §4.7).
   const old = current[0]
   if (
     old?.accepted !== undefined &&
-    fact.accepted === undefined &&
     writtenValueText(old) === writtenValueText(fact)
   )
     fact = {
@@ -870,18 +1173,12 @@ function setFact(editor: Editor, operation: SetFact, by: string) {
   }
 
   const value = factOut(fact, key)
-  const existing = factsWithIdentity(editor.resolved(), identity)
-  const first = existing[0]
+  const first = factsWithIdentity(editor.resolved(), identity)[0]
   if (first && checkMatches(first.check, target)) {
     editor.apply(replaceFactEdit(editor.entity, first, value))
-    // A document that repeats the fact keeps only the first.
-    for (;;) {
-      const repeated = factsWithIdentity(editor.resolved(), identity)[1]
-      if (!repeated) break
-      editor.apply(removeFactEdit(editor.entity, repeated))
-    }
   } else {
-    removeIdentity(editor, identity)
+    // Written first and the old fact removed after, so a group or `facts`
+    // the move empties is dropped without `facts` being written anew.
     editor.apply(
       insertFactEdit(
         editor.entity,
@@ -893,86 +1190,149 @@ function setFact(editor: Editor, operation: SetFact, by: string) {
       ),
     )
   }
-  unaccept(
-    editor,
-    fact.key,
-    before,
-    operation.fact.accepted !== undefined ? identity : null,
-  )
+  // Only the fact just written stays; a document that repeated it keeps one.
+  removeIdentity(editor, identity, (f) => checkMatches(f.check, target))
+  unaccept(editor, fact.key, before)
   verifyFact(editor, identity, fact, target)
+  otherFactsUnchanged(start, editor.resolved(), new Set([fact.key]))
 }
 
 /** Checks that the written fact reads back as given: a guard against a bad edit. */
 function verifyFact(
   editor: Editor,
   identity: string,
-  fact: FactInput,
+  fact: FactToWrite,
   check: CheckFields | null,
 ) {
   const found = factsWithIdentity(editor.resolved(), identity)
   const written = found[0]
-  const same = (
-    a: string | number | boolean | null | undefined,
-    b: string | number | boolean | null | undefined,
-  ) => a === b
   const attributes = fact.attributes ?? {}
   if (
     found.length !== 1 ||
     !written ||
     !checkMatches(written.check, check) ||
-    !same(written.value, fact.value) ||
-    !same(written.to, fact.to) ||
-    !same(written.via, fact.via) ||
-    !same(written.note, fact.note) ||
-    !same(written.task, fact.task) ||
+    written.value !== (fact.state === "unknown" ? undefined : fact.value) ||
+    written.to !== fact.to ||
+    written.via !== fact.via ||
+    written.note !== fact.note ||
+    written.task !== fact.task ||
     written.remove !== (fact.remove ?? false) ||
-    !same(written.accepted, fact.accepted) ||
+    (written.accepted !== undefined && written.accepted !== fact.accepted) ||
     Object.keys(written.attributes).length !== Object.keys(attributes).length ||
     Object.entries(attributes).some(
       ([k, v]) =>
         !Object.hasOwn(written.attributes, k) || written.attributes[k] !== v,
     )
   )
-    throw invalid(
-      `The fact ${identity} would not read back as written`,
-      "result-invalid",
-    )
+    throw readsWrong(`the fact ${identity} would not read back as written`)
 }
 
 function removeFact(editor: Editor, operation: RemoveFact) {
-  if (!("value" in operation.expect))
-    throw invalid(
-      "`remove-fact` names a current fact, with its value and check",
-    )
   const start = editor.resolved()
   const found = expectFact(start, operation.expect)
   const key = found[0]?.key ?? ""
   const before = discrepancyOf(start, key)
   removeIdentity(editor, operation.expect.identity)
-  unaccept(editor, key, before, null)
+  unaccept(editor, key, before)
+  otherFactsUnchanged(start, editor.resolved(), new Set([key]))
+}
+
+/** The map of the group at `index` in the `facts` list. */
+function groupMap(document: EntityDocument, index: number): YamlMap {
+  const list = document.fields.get("facts")?.value
+  const node = list?.kind === "list" ? list.items[index] : undefined
+  if (node?.kind !== "map")
+    throw new UnsupportedLayoutError("A group is not where the model says")
+  return node
+}
+
+/**
+ * Rewrites a group's fact check in place, for a recheck of every fact in
+ * it: the facts, their text and comments stay where they are.
+ */
+function retargetGroup(editor: Editor, index: number, target: CheckFields) {
+  const eol = lineBreak(editor.text)
+  for (const field of ["checked", "by", "scope", "source"] as const) {
+    const map = groupMap(editor.entity, index)
+    const entry = map.entries.find((e) => e.key === field)
+    if (!entry)
+      throw new UnsupportedLayoutError("A fact check field is missing")
+    editor.apply(
+      replaceEntryValue(
+        editor.text,
+        entry,
+        scalar(target[field]),
+        map.flow,
+        eol,
+      ),
+    )
+  }
+  const map = groupMap(editor.entity, index)
+  const limits = map.entries.findIndex((e) => e.key === "limits")
+  const entry = map.entries[limits]
+  if (entry && target.limits !== undefined)
+    editor.apply(
+      replaceEntryValue(
+        editor.text,
+        entry,
+        scalar(target.limits),
+        map.flow,
+        eol,
+      ),
+    )
+  else if (entry) editor.apply(removeMapEntry(editor.text, map, limits))
+  else if (target.limits !== undefined)
+    editor.apply(
+      insertMapEntry(
+        editor.text,
+        map,
+        "limits",
+        scalar(target.limits),
+        eol,
+        map.entries.findIndex((e) => e.key === "source") + 1,
+      ),
+    )
 }
 
 function recheckFacts(editor: Editor, operation: RecheckFacts, by: string) {
   if (operation.facts.length === 0)
     throw invalid("A recheck names at least one fact")
+  const named = new Set(operation.facts.map((f) => f.identity))
+  if (named.size !== operation.facts.length)
+    throw invalid("A recheck names each fact once")
   const start = editor.resolved()
   for (const expect of operation.facts) {
-    if (!("value" in expect))
-      throw invalid(
-        "A recheck names current facts, with their values and checks",
-      )
     const [fact] = expectFact(start, expect)
     if (fact?.state === "planned")
       throw invalid(
         `${expect.identity} is planned; planned facts have no fact check`,
       )
   }
-  const target = checkFields("observed", operation.check, by)
+  const target = checkFields("observed", operation.check, by) as CheckFields
+
+  // A group whose facts are all rechecked keeps its place and its text:
+  // only its fact check is rewritten. Later moves then merge into it.
+  if (!editor.entity.groups.some((g) => checkMatches(g.check, target))) {
+    const whole = editor.entity.groups.find((group) => {
+      const entries = group.check?.entries
+      const facts = start.facts.filter((f) => f.group === group.index)
+      return (
+        entries?.checked &&
+        entries.by &&
+        entries.scope &&
+        entries.source &&
+        group.check?.checked &&
+        facts.length > 0 &&
+        facts.every((f) => named.has(f.identity))
+      )
+    })
+    if (whole) retargetGroup(editor, whole.index, target)
+  }
+
   for (const expect of operation.facts) {
     const fact = factsWithIdentity(editor.resolved(), expect.identity)[0]
     if (!fact || checkMatches(fact.check, target)) continue
     const value = factText(editor.entity, fact)
-    editor.apply(removeFactEdit(editor.entity, fact))
     editor.apply(
       insertFactEdit(
         editor.entity,
@@ -983,30 +1343,93 @@ function recheckFacts(editor: Editor, operation: RecheckFacts, by: string) {
         value,
       ),
     )
-    const moved = factsWithIdentity(editor.resolved(), expect.identity)
+    removeIdentity(editor, expect.identity, (f) =>
+      checkMatches(f.check, target),
+    )
+  }
+  const after = editor.resolved()
+  for (const expect of operation.facts) {
+    const moved = factsWithIdentity(after, expect.identity)
     if (
       moved.length !== 1 ||
       !checkMatches(moved[0]?.check ?? null, target) ||
-      factValueText(moved[0] as Fact) !== expect.value
+      differentField(moved[0] as Fact, expect)
     )
-      throw invalid(
-        `The fact ${expect.identity} would not read back as written`,
-        "result-invalid",
+      throw readsWrong(
+        `the fact ${expect.identity} would not read back as written`,
       )
   }
+  otherFactsUnchanged(start, after, new Set(), named)
+}
+
+function acceptDiscrepancy(
+  editor: Editor,
+  operation: AcceptDiscrepancy,
+  acceptedBy: string | undefined,
+) {
+  if (operation.note.trim() === "")
+    throw invalid("Say why the difference is accepted, in `note`")
+  const start = editor.resolved()
+  const found = discrepancies(start).find((d) => d.key === operation.key)
+  if (!found)
+    throw conflict("changed", `"${operation.key}" has no discrepancy any more`)
+  const named = new Set(operation.expect.map((e) => e.identity))
+  if (
+    named.size !== found.facts.length ||
+    found.facts.some((f) => !named.has(f.identity))
+  )
+    throw conflict(
+      "changed",
+      `The facts of the discrepancy of "${operation.key}" have changed since the operation was written`,
+    )
+  for (const expect of operation.expect) expectFact(start, expect)
+  const person = acceptedBy === undefined ? null : parseEntityId(acceptedBy)
+  if (person?.type !== "person")
+    throw invalid(
+      "Accepting a discrepancy is written when a person approves the proposal, and names that person",
+      "needs-approval",
+    )
+  for (const identity of named) {
+    const fact = factsWithIdentity(editor.resolved(), identity)[0] as Fact
+    editor.apply(
+      replaceFactEdit(
+        editor.entity,
+        fact,
+        factOut(
+          {
+            ...writtenOf(fact),
+            note: operation.note,
+            accepted: acceptedBy,
+          },
+          fact.schema,
+        ),
+      ),
+    )
+  }
+  const after = editor.resolved()
+  const accepted = discrepancies(after).find((d) => d.key === operation.key)
+  if (
+    !accepted?.accepted ||
+    discrepancyOf(after, operation.key) !==
+      discrepancyOf(start, operation.key) ||
+    accepted.facts.some(
+      (f) => f.accepted !== acceptedBy || f.note !== operation.note,
+    )
+  )
+    throw readsWrong(
+      `the discrepancy of "${operation.key}" would not read as accepted`,
+    )
+  otherFactsUnchanged(start, after, new Set([operation.key]))
 }
 
 // Entities and fields.
 
-function entityText(operation: CreateEntity, type: string): string {
-  const text = (name: string, value: unknown) => {
-    if (typeof value !== "string" || value.trim() === "")
-      throw invalid(`\`${name}\` is text`)
+function entityText(operation: CreateEntity, type: string): Written {
+  const text = (name: string, value: string) => {
+    if (value.trim() === "") throw invalid(`\`${name}\` is text`)
     return value
   }
-  const status = operation.status ?? "active"
-  if (!entityStatuses.includes(status))
-    throw invalid(`\`status\` is one of ${entityStatuses.join(", ")}`)
+  const status = choice("status", operation.status ?? "active", entityStatuses)
   const entries: [string, Out][] = [
     ["id", scalar(operation.id)],
     ["type", scalar(type)],
@@ -1035,7 +1458,7 @@ function entityText(operation: CreateEntity, type: string): string {
   } else if (operation.decision) {
     throw invalid("Only decision entities have a decision state")
   }
-  return documentText(entries, operation.body)
+  return { text: documentText(entries, operation.body), entries }
 }
 
 function documentText(entries: [string, Out][], body: string | undefined) {
@@ -1046,12 +1469,8 @@ function documentText(entries: [string, Out][], body: string | undefined) {
   return text
 }
 
-function reference(name: string, value: unknown, unknownAllowed: boolean) {
-  if (
-    typeof value === "string" &&
-    ((unknownAllowed && value === "unknown") || isEntityId(value))
-  )
-    return value
+function reference(name: string, value: string, unknownAllowed: boolean) {
+  if ((unknownAllowed && value === "unknown") || isEntityId(value)) return value
   throw invalid(
     `\`${name}\` is an entity ID such as person/guneet${unknownAllowed ? ", or unknown" : ""}`,
   )
@@ -1059,7 +1478,7 @@ function reference(name: string, value: unknown, unknownAllowed: boolean) {
 
 function choice<T extends string>(
   name: string,
-  value: unknown,
+  value: string,
   choices: readonly T[],
 ): T {
   const found = choices.find((c) => c === value)
@@ -1068,8 +1487,8 @@ function choice<T extends string>(
   return found
 }
 
-function time(name: string, value: unknown): string {
-  if (typeof value === "string" && parseCatalogTime(value)) return value
+function time(name: string, value: string): string {
+  if (parseCatalogTime(value)) return value
   throw invalid(
     `\`${name}\` is a date (2026-11-14) or a date and time with a UTC offset (2026-11-14T09:30Z)`,
   )
@@ -1140,7 +1559,9 @@ function sameValue(
 
 function setField(editor: Editor, operation: SetField) {
   const document = editor.document
-  const rule = settable[document.kind][operation.field]
+  const rule = Object.hasOwn(settable[document.kind], operation.field)
+    ? settable[document.kind][operation.field]
+    : undefined
   if (
     !rule ||
     (decisionFields.has(operation.field) &&
@@ -1162,39 +1583,44 @@ function setField(editor: Editor, operation: SetField) {
     if (rule.required) throw invalid(`\`${operation.field}\` is required`)
     if (document.fields.has(operation.field))
       editor.apply(removeFieldEdit(document, operation.field))
+    verifyField(editor.document, [operation.field], null)
     return
   }
+  let out: Out
   if (rule.list) {
-    if (
-      !Array.isArray(value) ||
-      value.some((v) => typeof v !== "string" || v === "")
-    )
+    if (typeof value === "string" || value.some((v) => v === ""))
       throw invalid(`\`${operation.field}\` is a list of text`)
-    editor.apply(
-      setFieldEdit(document, operation.field, flowList(value.map(scalar))),
-    )
-    return
+    out = flowList(value.map(scalar))
+  } else {
+    if (typeof value !== "string" || value.trim() === "")
+      throw invalid(`\`${operation.field}\` is text`)
+    switch (operation.field) {
+      case "status":
+        // Lifecycle changes are gated and have their own operations:
+        // `retire`, and no way back from retired (catalog §8.1).
+        if (value === "retired")
+          throw invalid("Retiring is its own operation, `retire`")
+        if (document.kind !== "start-here" && document.status === "retired")
+          throw invalid(
+            "A retired document stays retired; `set-field` does not bring it back",
+          )
+        choice("status", value, entityStatuses)
+        break
+      case "owner":
+      case "decided_by":
+        reference(operation.field, value, true)
+        break
+      case "decision_state":
+        choice("decision_state", value, decisionStates)
+        break
+      case "decided_on":
+        time("decided_on", value)
+        break
+    }
+    out = scalar(value)
   }
-  if (typeof value !== "string" || value.trim() === "")
-    throw invalid(`\`${operation.field}\` is text`)
-  switch (operation.field) {
-    case "status":
-      if (value === "retired")
-        throw invalid("Retiring is its own operation, `retire`")
-      choice("status", value, entityStatuses)
-      break
-    case "owner":
-    case "decided_by":
-      reference(operation.field, value, true)
-      break
-    case "decision_state":
-      choice("decision_state", value, decisionStates)
-      break
-    case "decided_on":
-      time("decided_on", value)
-      break
-  }
-  editor.apply(setFieldEdit(document, operation.field, scalar(value)))
+  editor.apply(setFieldEdit(document, operation.field, out))
+  verifyField(editor.document, [operation.field], out)
 }
 
 function retire(editor: Editor, operation: Retire) {
@@ -1208,25 +1634,24 @@ function retire(editor: Editor, operation: Retire) {
     )
   if (document.status === "retired") throw invalid("It is already retired")
   editor.apply(setFieldEdit(document, "status", scalar("retired")))
+  verifyField(editor.document, ["status"], scalar("retired"))
   if (operation.replacedBy !== undefined) {
     if (editor.document.kind !== "entity")
       throw invalid("Only an entity names a replacement")
     if (operation.replacedBy === editor.document.id)
       throw invalid("An entity cannot replace itself")
-    editor.apply(
-      setFieldEdit(
-        editor.document,
-        "replaced_by",
-        scalar(reference("replacedBy", operation.replacedBy, false)),
-      ),
-    )
+    const out = scalar(reference("replacedBy", operation.replacedBy, false))
+    editor.apply(setFieldEdit(editor.document, "replaced_by", out))
+    verifyField(editor.document, ["replaced_by"], out)
   }
 }
 
 function changeId(editor: Editor, id: string) {
   const old = editor.entity.id as string
   editor.apply(setFieldEdit(editor.document, "id", scalar(id)))
+  verifyField(editor.document, ["id"], scalar(id))
   const document = editor.entity
+  const aliases = document.aliases
   const entry = document.fields.get("aliases")
   const node = entry?.value
   const eol = lineBreak(document.text)
@@ -1236,7 +1661,8 @@ function changeId(editor: Editor, id: string) {
     )
     const item = node.items[index]
     // Changing back to a former ID: that alias becomes the old ID.
-    if (item) editor.apply(replaceListItem(item, scalar(old), node.flow))
+    if (item)
+      editor.apply(replaceListItem(document.text, item, scalar(old), node.flow))
     else editor.apply(appendListItem(document.text, node, scalar(old), eol))
   } else if (!entry || (node?.kind === "scalar" && node.value === null)) {
     editor.apply(setFieldEdit(document, "aliases", flowList([scalar(old)])))
@@ -1245,6 +1671,12 @@ function changeId(editor: Editor, id: string) {
       "`aliases` is not a list, so the old ID cannot be added to it",
     )
   }
+  const expected = [...aliases.filter((a) => a !== id), old].sort()
+  if (
+    JSON.stringify([...editor.entity.aliases].sort()) !==
+    JSON.stringify(expected)
+  )
+    throw readsWrong("`aliases` would not read as written")
 }
 
 // Body.
@@ -1253,10 +1685,14 @@ function editBody(editor: Editor, operation: EditBody) {
   const document = editor.document
   const body = document.body
   const eol = lineBreak(document.text)
-  if (typeof operation.text !== "string")
-    throw invalid("`text` is Markdown text")
   // New text takes the document's line breaks.
   const given = lineBreaks(operation.text, eol)
+  // A document that ends right after its closing `---` gets the line break
+  // its body starts after.
+  const lead =
+    body.range.start === document.text.length && !document.text.endsWith("\n")
+      ? eol
+      : ""
   if (operation.section === undefined) {
     if (!("text" in operation.expect))
       throw invalid("The whole body is always there; expect its text")
@@ -1265,7 +1701,7 @@ function editBody(editor: Editor, operation: EditBody) {
         "changed",
         "The body has changed since the operation was written",
       )
-    editor.apply(replaceRange(body.range, given))
+    editor.apply(replaceRange(body.range, given === "" ? "" : lead + given))
     return
   }
   const name = operation.section
@@ -1284,30 +1720,17 @@ function editBody(editor: Editor, operation: EditBody) {
       )
     if (given === "") return
     const text = withBreak(given, eol)
-    if (name === null) {
-      editor.apply(
-        replaceRange({ start: body.range.start, end: body.range.start }, text),
-      )
-    } else {
-      const gap =
-        body.text === ""
-          ? eol
-          : /(\r?\n){2}$/.test(body.text)
-            ? ""
-            : body.text.endsWith("\n")
-              ? eol
-              : eol + eol
-      editor.apply(
-        replaceRange(
-          { start: body.range.end, end: body.range.end },
-          gap + text,
-        ),
-      )
-      if (!editor.document.body.sections.some((s) => s.anchor === name))
-        throw invalid(
-          `The text does not start a section "${name}"; it starts with its heading`,
-        )
-    }
+    const at = name === null ? body.range.start : body.range.end
+    const gap =
+      name === null || body.text === ""
+        ? lead
+        : /(\r?\n){2}$/.test(body.text)
+          ? ""
+          : body.text.endsWith("\n")
+            ? eol
+            : eol + eol
+    editor.apply(replaceRange({ start: at, end: at }, gap + text))
+    sectionReads(editor, at + gap.length, name, label)
     return
   }
   if (!section) throw conflict("changed", `${label} is not there any more`)
@@ -1319,6 +1742,34 @@ function editBody(editor: Editor, operation: EditBody) {
   const text =
     given !== "" && section.text.endsWith("\n") ? withBreak(given, eol) : given
   editor.apply(replaceRange(section.range, text))
+  if (text !== "") sectionReads(editor, section.range.start, name, label)
+}
+
+/**
+ * Checks that the text written at `start` reads as the section it is for:
+ * starting with that section's heading, or for the text before the first
+ * heading, with no heading. Otherwise the edit would quietly join it to the
+ * section before or make it another section.
+ */
+function sectionReads(
+  editor: Editor,
+  start: number,
+  name: string | null,
+  label: string,
+) {
+  const section = editor.document.body.sections.find(
+    (s) => s.range.start === start,
+  )
+  const ok =
+    name === null
+      ? section?.heading === null
+      : section !== undefined && section.anchor === name
+  if (!ok)
+    throw invalid(
+      name === null
+        ? `${label} cannot start with a heading`
+        : `${label}'s new text starts with its own heading`,
+    )
 }
 
 function lineBreaks(text: string, eol: string): string {
@@ -1331,27 +1782,18 @@ function withBreak(text: string, eol: string): string {
 
 // Type schema documents.
 
-function checkType(type: unknown): string {
-  if (typeof type !== "string" || !typeNamePattern.test(type))
+function checkType(type: string): string {
+  if (!typeNamePattern.test(type))
     throw invalid("A type name is lowercase kebab-case, such as dns-zone")
   return type
 }
 
-function keyOptions(options: KeyOptions): Out {
-  if (typeof options !== "object" || options === null)
-    throw invalid("A key's options are a map, such as { many: true }")
-  return keyOptionsOut(options)
-}
-
-function schemaText(operation: CreateSchema): string {
-  const text = (name: string, value: unknown) => {
-    if (typeof value !== "string" || value.trim() === "")
-      throw invalid(`\`${name}\` is text`)
+function schemaText(operation: CreateSchema): Written {
+  const text = (name: string, value: string) => {
+    if (value.trim() === "") throw invalid(`\`${name}\` is text`)
     return value
   }
-  const status = operation.status ?? "active"
-  if (!entityStatuses.includes(status))
-    throw invalid(`\`status\` is one of ${entityStatuses.join(", ")}`)
+  const status = choice("status", operation.status ?? "active", entityStatuses)
   const entries: [string, Out][] = [
     ["id", scalar(schemaId(checkType(operation.type)))],
     ["title", scalar(text("title", operation.title))],
@@ -1366,12 +1808,15 @@ function schemaText(operation: CreateSchema): string {
         `"${key}" is not a fact key: lowercase words joined by ".", "-" or "_"`,
       )
   if (keys.length > 0)
-    entries.push(["keys", blockMap(keys.map(([k, o]) => [k, keyOptions(o)]))])
+    entries.push([
+      "keys",
+      blockMap(keys.map(([k, o]) => [k, keyOptionsOut(o)])),
+    ])
   if (operation.required?.length)
     entries.push(["required", flowList(operation.required.map(scalar))])
   if (operation.sections?.length)
     entries.push(["sections", flowList(operation.sections.map(scalar))])
-  return documentText(entries, operation.body)
+  return { text: documentText(entries, operation.body), entries }
 }
 
 function sameOptions(
@@ -1435,9 +1880,10 @@ function setSchemaKey(editor: Editor, operation: SetSchemaKey) {
       editor.apply(
         removeMapEntry(document.text, keysMap, keysMap.entries.indexOf(entry)),
       )
+    verifyField(editor.document, ["keys", operation.key], null)
     return
   }
-  const value = keyOptions(operation.options)
+  const value = keyOptionsOut(operation.options)
   if (entry && keysMap)
     editor.apply(
       replaceEntryValue(document.text, entry, value, keysMap.flow, eol),
@@ -1450,18 +1896,17 @@ function setSchemaKey(editor: Editor, operation: SetSchemaKey) {
     editor.apply(
       setFieldEdit(document, "keys", blockMap([[operation.key, value]])),
     )
+  verifyField(editor.document, ["keys", operation.key], value)
 }
 
 // The start-here document.
 
 function stepsOut(steps: readonly StartHereStepInput[]): Out {
-  if (!Array.isArray(steps)) throw invalid("A path is a list of steps")
   return steps.length === 0 ? flowList([]) : blockList(steps.map(stepOut))
 }
 
-function startHereText(operation: CreateStartHere): string {
-  if (typeof operation.title !== "string" || operation.title.trim() === "")
-    throw invalid("`title` is text")
+function startHereText(operation: CreateStartHere): Written {
+  if (operation.title.trim() === "") throw invalid("`title` is text")
   const entries: [string, Out][] = [
     ["id", scalar(startHereId)],
     ["title", scalar(operation.title)],
@@ -1472,7 +1917,7 @@ function startHereText(operation: CreateStartHere): string {
     entries.push(["owner", scalar(reference("owner", operation.owner, true))])
   entries.push(["people", stepsOut(operation.people)])
   entries.push(["agents", stepsOut(operation.agents)])
-  return documentText(entries, operation.body)
+  return { text: documentText(entries, operation.body), entries }
 }
 
 function stepInput(step: {
@@ -1524,7 +1969,7 @@ function setStartHerePath(editor: Editor, operation: SetStartHerePath) {
       "changed",
       `The ${operation.path} path has changed since the operation was written`,
     )
-  editor.apply(
-    setFieldEdit(document, operation.path, stepsOut(operation.steps)),
-  )
+  const out = stepsOut(operation.steps)
+  editor.apply(setFieldEdit(document, operation.path, out))
+  verifyField(editor.document, [operation.path], out)
 }

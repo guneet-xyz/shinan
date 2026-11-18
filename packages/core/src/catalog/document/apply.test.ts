@@ -7,13 +7,19 @@ import {
   musashi,
   startHere,
 } from "../../../test/catalog-documents.js"
-import { applyOperations, expectationOf } from "./apply.js"
+import {
+  applyOperations,
+  expectationOf,
+  maxFacts,
+  maxOperations,
+} from "./apply.js"
 import type { ApplyResult, OperationProblem } from "./apply.js"
 import { readCatalog } from "./catalog.js"
 import type {
   CatalogOperation,
   CheckInput,
   FactExpectation,
+  FactInput,
   PresentFact,
 } from "./operations.js"
 import { maxDocumentBytes } from "./parse.js"
@@ -280,7 +286,7 @@ describe("set-fact (catalog §4.2)", () => {
         key: "cpu.count",
         state: "observed",
         value: 2,
-        accepted: "person/guneet",
+        task: "T-3",
         note: "Small on purpose",
         via: "nproc",
       },
@@ -288,22 +294,46 @@ describe("set-fact (catalog §4.2)", () => {
       expect: { identity: "cpu.count|observed|via=nproc", absent: true },
     })
     expect(text).toContain(
-      "      cpu.count: { value: 2, via: nproc, note: Small on purpose, accepted: person/guneet }\n",
+      "      cpu.count: { value: 2, via: nproc, note: Small on purpose, task: T-3 }\n",
     )
   })
 
-  it("writes the actor's written form as `by`, never a caller's", () => {
+  it("writes the actor's written form as `by`, and refuses a caller's", () => {
     const text = edit(musashi, {
       op: "set-fact",
       document: "machine/musashi",
       fact: { key: "role", state: "observed", value: "production" },
-      check: { ...check, by: "someone-else" } as CheckInput,
+      check,
       expect: { identity: "role|observed", absent: true },
     })
     expect(text).toContain(
       `${checkLines}    observed:\n      role: production\n`,
     )
-    expect(text).not.toContain("someone-else")
+    expect(
+      refused(
+        [musashi],
+        [
+          {
+            op: "set-fact",
+            document: "machine/musashi",
+            fact: { key: "role", state: "observed", value: "production" },
+            check: { ...check, by: "someone-else" } as CheckInput,
+            expect: { identity: "role|observed", absent: true },
+          },
+        ],
+      ),
+    ).toMatchObject([{ kind: "invalid", code: "operation-invalid" }])
+  })
+
+  it("quotes fact keys that would read as null or a boolean", () => {
+    const text = edit(musashi, {
+      op: "set-fact",
+      document: "machine/musashi",
+      fact: { key: "null", state: "observed", value: "x" },
+      check,
+      expect: { identity: "null|observed", absent: true },
+    })
+    expect(text).toContain('      "null": x\n')
   })
 
   it("creates the `facts` field when there is none", () => {
@@ -509,7 +539,7 @@ describe("accepted discrepancies (catalog §4.7)", () => {
         "Metadata lags after a resize",
       ],
     ])
-    // A long form over several lines moves as it is, re-indented.
+    // Its group's only fact: the group keeps its place and its text.
     expect(
       edit(accepted, {
         op: "recheck-facts",
@@ -518,7 +548,7 @@ describe("accepted discrepancies (catalog §4.7)", () => {
         check,
       }),
     ).toContain(
-      "      disk.data.size:\n        value: 64 GB\n        via: instance-metadata\n        note: Metadata lags after a resize\n        accepted: person/guneet\n---",
+      "    source: Read-only SSH\n    observed:\n      disk.data.size:\n        value: 64 GB\n        via: instance-metadata\n        note: Metadata lags after a resize\n        accepted: person/guneet\n  - unknown:",
     )
   })
 
@@ -555,25 +585,91 @@ describe("accepted discrepancies (catalog §4.7)", () => {
     ])
   })
 
-  it("keeps an acceptance the operation writes itself", () => {
-    const text = edit(musashi, {
-      op: "set-fact",
-      document: "machine/musashi",
-      fact: {
-        key: "disk.data.size",
-        state: "observed",
-        value: "64 GB",
-        via: "instance-metadata",
-        note: "Lags",
-        accepted: "person/guneet",
-      },
-      check,
-      expect: current(musashi, "disk.data.size|observed|via=instance-metadata"),
+  it("refuses `accepted` sent with a fact: Shinan writes it", () => {
+    expect(
+      refused(
+        [musashi],
+        [
+          {
+            op: "set-fact",
+            document: "machine/musashi",
+            fact: {
+              key: "disk.data.size",
+              state: "observed",
+              value: "64 GB",
+              via: "instance-metadata",
+              accepted: "person/guneet",
+            } as FactInput,
+            check,
+            expect: current(
+              musashi,
+              "disk.data.size|observed|via=instance-metadata",
+            ),
+          },
+        ],
+      ),
+    ).toMatchObject([{ kind: "invalid", code: "operation-invalid" }])
+  })
+
+  const accept = (
+    expect = [
+      current(musashi, "disk.data.size|observed|via=filesystem"),
+      current(musashi, "disk.data.size|observed|via=instance-metadata"),
+    ],
+  ): CatalogOperation => ({
+    op: "accept-discrepancy",
+    document: "machine/musashi",
+    key: "disk.data.size",
+    note: "Metadata lags after a resize",
+    expect,
+  })
+
+  it("accepts a discrepancy only when a person approves, naming that person", () => {
+    const result = applyOperations([musashi], [accept()], {
+      by,
+      acceptedBy: "person/guneet",
     })
+    if (!result.applied) throw new Error(JSON.stringify(result.problems))
+    const text = result.changes[0]?.after.text ?? ""
     expect(discrepancy(text)).toEqual([
-      ["filesystem", "128 GiB", undefined, undefined],
-      ["instance-metadata", "64 GB", "person/guneet", "Lags"],
+      [
+        "filesystem",
+        "128 GiB",
+        "person/guneet",
+        "Metadata lags after a resize",
+      ],
+      [
+        "instance-metadata",
+        "64 GB",
+        "person/guneet",
+        "Metadata lags after a resize",
+      ],
     ])
+    expect(
+      readCatalog([text]).entities.get("machine/musashi") &&
+        text.includes(
+          "disk.data.size: { value: 128 GiB, via: filesystem, note: Metadata lags after a resize, accepted: person/guneet }",
+        ),
+    ).toBe(true)
+    expect(refused([musashi], [accept()])).toMatchObject([
+      { kind: "invalid", code: "needs-approval" },
+    ])
+    expect(
+      applyOperations([musashi], [accept()], {
+        by,
+        acceptedBy: "machine/musashi",
+      }),
+    ).toMatchObject({ applied: false, problems: [{ code: "needs-approval" }] })
+  })
+
+  it("accepts only the discrepancy as the operation saw it", () => {
+    const one = [current(musashi, "disk.data.size|observed|via=filesystem")]
+    expect(
+      applyOperations([musashi], [accept(one)], {
+        by,
+        acceptedBy: "person/guneet",
+      }),
+    ).toMatchObject({ applied: false, problems: [{ code: "changed" }] })
   })
 })
 
@@ -1689,5 +1785,338 @@ owner: person/guneet
       "checked-in-future",
       "reference-unresolved",
     ])
+  })
+})
+
+describe("review fixes (#108)", () => {
+  const folded = swap(
+    musashi,
+    "summary: Azure VM that runs the shared production stacks.\n",
+    "summary: >-\n  Azure VM that runs\n  the shared production stacks.\n",
+  )
+
+  it("replaces a block scalar's value cleanly, keeping its final line break", () => {
+    expect(
+      edit(folded, {
+        op: "set-field",
+        document: "machine/musashi",
+        field: "summary",
+        value: "Azure VM.",
+        expect: {
+          value: "Azure VM that runs the shared production stacks.",
+        },
+      }),
+    ).toBe(
+      musashi.replace(
+        "Azure VM that runs the shared production stacks.",
+        "Azure VM.",
+      ),
+    )
+    // A comment at column 0 after the value stays its own line.
+    const commented = swap(
+      musashi,
+      "title: Musashi\n",
+      "title: |\n  Musashi\n# the display name\n",
+    )
+    expect(
+      edit(commented, {
+        op: "set-field",
+        document: "machine/musashi",
+        field: "title",
+        value: "New",
+        expect: { value: "Musashi\n" },
+      }),
+    ).toBe(swap(commented, "title: |\n  Musashi\n", "title: New\n"))
+    for (const style of ["|", ">-", "|+"]) {
+      const text = swap(
+        musashi,
+        "      disk.data.free: 74 GiB\n",
+        `      disk.data.free: ${style}\n        74 GiB\n# free space\n`,
+      )
+      const after = edit(text, {
+        op: "set-fact",
+        document: "machine/musashi",
+        fact: { key: "disk.data.free", state: "observed", value: "70 GiB" },
+        check: growCheck,
+        expect: current(text, "disk.data.free|observed"),
+      })
+      expect(after).toContain("      disk.data.free: 70 GiB\n# free space\n")
+    }
+  })
+
+  it("conflicts when a planned fact's `remove`, task or note changed", () => {
+    const planned = `---
+id: service/x
+type: service
+title: X
+summary: S.
+status: active
+owner: person/guneet
+facts:
+  - planned:
+      endpoint: { value: https://a, task: T-1 }
+---
+`
+    const stale = current(planned, "endpoint|planned|value=https://a")
+    for (const changed of [
+      "{ value: https://a, task: T-1, remove: true }",
+      "{ value: https://a, task: T-2 }",
+      "{ value: https://a, task: T-1, note: Later }",
+    ]) {
+      const now = planned.replace("{ value: https://a, task: T-1 }", changed)
+      expect(
+        refused(
+          [now],
+          [{ op: "remove-fact", document: "service/x", expect: stale }],
+        ),
+      ).toMatchObject([{ kind: "conflict", code: "fact-changed" }])
+      expect(
+        refused(
+          [now],
+          [
+            {
+              op: "set-fact",
+              document: "service/x",
+              fact: { key: "endpoint", state: "intended", value: "https://a" },
+              check,
+              expect: {
+                identity: "endpoint|intended|value=https://a",
+                absent: true,
+              },
+              supersedes: stale,
+            },
+          ],
+        ),
+      ).toMatchObject([{ kind: "conflict", code: "fact-changed" }])
+    }
+  })
+
+  it("supersedes only a planned or unknown fact, and only with an intended or observed one", () => {
+    const both = swap(
+      musashi,
+      "      disk.root.used: 93%\n",
+      "      disk.root.used: 93%\n    intended:\n      platform.arch: aarch64\n",
+    )
+    const setArch = (
+      state: "observed" | "planned" | "unknown",
+      supersedes: PresentFact,
+    ): CatalogOperation => ({
+      op: "set-fact",
+      document: "machine/musashi",
+      fact:
+        state === "unknown"
+          ? { key: "network.public_ipv6", state, note: "?" }
+          : {
+              key: "platform.arch",
+              state,
+              value: "x86_64",
+              ...(state === "planned" ? { task: "T-1" } : {}),
+            },
+      ...(state === "observed" ? { check } : {}),
+      expect: {
+        identity:
+          state === "unknown"
+            ? "network.public_ipv6|unknown"
+            : `platform.arch|${state}`,
+        absent: true,
+      },
+      supersedes,
+    })
+    // An observation taking away the intended fact.
+    expect(
+      refused(
+        [both],
+        [setArch("observed", current(both, "platform.arch|intended"))],
+      ),
+    ).toMatchObject([{ kind: "invalid" }])
+    // A plan taking away an observation.
+    expect(
+      refused(
+        [both],
+        [setArch("planned", current(both, "platform.arch|observed"))],
+      ),
+    ).toMatchObject([{ kind: "invalid" }])
+  })
+
+  it("does not bring a retired entity back with set-field", () => {
+    const retired = swap(
+      dockyard,
+      "status: active\n",
+      "status: retired\nreplaced_by: project/harbor\n",
+    )
+    expect(
+      refused(
+        [retired],
+        [
+          {
+            op: "set-field",
+            document: "project/dockyard",
+            field: "status",
+            value: "active",
+            expect: { value: "retired" },
+          },
+        ],
+      ),
+    ).toMatchObject([{ kind: "invalid", code: "operation-invalid" }])
+  })
+
+  it("keeps a section's heading, and the text before the first heading without one", () => {
+    const cautions =
+      readCatalog([dockyard]).documents[0]?.body.sections.find(
+        (s) => s.anchor === "cautions",
+      )?.text ?? ""
+    expect(
+      refused(
+        [dockyard],
+        [
+          {
+            op: "edit-body",
+            document: "project/dockyard",
+            section: "cautions",
+            text: "No heading any more.\n",
+            expect: { text: cautions },
+          },
+        ],
+      ),
+    ).toMatchObject([{ kind: "invalid" }])
+    expect(
+      refused(
+        [dockyard],
+        [
+          {
+            op: "edit-body",
+            document: "project/dockyard",
+            section: "cautions",
+            text: "## Warnings\n\nRenamed.\n",
+            expect: { text: cautions },
+          },
+        ],
+      ),
+    ).toMatchObject([{ kind: "invalid" }])
+  })
+
+  it("edits the body of a document that ends right after its frontmatter", () => {
+    const bare =
+      "---\nid: machine/x\ntype: machine\ntitle: X\nsummary: S.\nstatus: active\nowner: person/guneet\n---"
+    expect(
+      edit(bare, {
+        op: "edit-body",
+        document: "machine/x",
+        text: "# X\n",
+        expect: { text: "" },
+      }),
+    ).toBe(`${bare}\n# X\n`)
+    expect(
+      edit(bare, {
+        op: "edit-body",
+        document: "machine/x",
+        section: "notes",
+        text: "## Notes\n",
+        expect: { absent: true },
+      }),
+    ).toBe(`${bare}\n## Notes\n`)
+  })
+
+  it("keeps a moved fact's comment, and rechecks a whole group in place", () => {
+    const commented = swap(
+      musashi,
+      "      platform.arch: aarch64\n",
+      "      platform.arch: aarch64 # from uname -m\n",
+    )
+    expect(
+      edit(commented, {
+        op: "recheck-facts",
+        document: "machine/musashi",
+        facts: [current(commented, "platform.arch|observed")],
+        check,
+      }),
+    ).toContain(
+      `${checkLines}    observed:\n      platform.arch: aarch64 # from uname -m\n---`,
+    )
+    const group = [
+      "platform.vm_size|observed",
+      "platform.arch|observed",
+      "disk.root.used|observed",
+    ]
+    const text = edit(musashi, {
+      op: "recheck-facts",
+      document: "machine/musashi",
+      facts: group.map((g) => current(musashi, g)),
+      check,
+    })
+    expect(text).toBe(
+      swap(
+        musashi,
+        "  - checked: 2026-11-13 # a fact check group\n    by: guneet via opencode-daedalus\n    scope: Read-only check of the VM platform\n    source: Read-only SSH and Azure instance metadata (workspace issue 101)\n    limits: Public IPs and network security group not inspected\n",
+        "  - checked: 2026-11-16 # a fact check group\n    by: guneet via opencode-daedalus\n    scope: df -h on the data disk\n    source: Read-only SSH\n",
+      ),
+    )
+  })
+
+  it("refuses malformed operations instead of throwing", () => {
+    const malformed = [
+      null,
+      { op: "set-fact" },
+      {
+        op: "remove-fact",
+        document: "machine/musashi",
+        expect: { identity: 7, value: "x", check: null },
+      },
+      {
+        op: "set-field",
+        document: "machine/musashi",
+        field: "title",
+        value: { a: 1 },
+        expect: { value: "Musashi" },
+      },
+      { op: "recheck-facts", document: "machine/musashi", facts: "all", check },
+      { op: "__proto__" },
+    ]
+    for (const operation of malformed)
+      expect(
+        refused([musashi], [operation as unknown as CatalogOperation]),
+      ).toMatchObject([{ kind: "invalid", code: "operation-invalid" }])
+  })
+
+  it("caps the operations and the facts in a proposal", () => {
+    const many = Array.from(
+      { length: maxOperations + 1 },
+      (): CatalogOperation => ({
+        op: "set-field",
+        document: "machine/musashi",
+        field: "title",
+        value: "X",
+        expect: { value: "Musashi" },
+      }),
+    )
+    expect(refused([musashi], many)).toMatchObject([{ code: "too-many" }])
+    expect(
+      refused(
+        [musashi],
+        [
+          {
+            op: "recheck-facts",
+            document: "machine/musashi",
+            facts: Array.from({ length: maxFacts + 1 }, () =>
+              current(musashi, "platform.arch|observed"),
+            ),
+            check,
+          },
+        ],
+      ),
+    ).toMatchObject([{ code: "too-many" }])
+  })
+
+  it("rechecks every fact of the largest trial entity in one operation", () => {
+    const entity = readCatalog([musashi]).entities.get("machine/musashi")
+    const facts = (entity?.facts ?? []).map(expectationOf)
+    const result = apply(
+      [musashi],
+      [{ op: "recheck-facts", document: "machine/musashi", facts, check }],
+    )
+    const after = result.after.entities.get("machine/musashi")
+    expect(
+      after?.facts.every((f) => f.check?.checked?.text === "2026-11-16"),
+    ).toBe(true)
   })
 })

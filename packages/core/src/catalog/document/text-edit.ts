@@ -1,5 +1,11 @@
 import type { Range } from "./source.js"
-import { blockLines, entryLines, flowText, itemLines } from "./write.js"
+import {
+  blockLines,
+  entryLines,
+  flowText,
+  itemLines,
+  keyText,
+} from "./write.js"
 import type { Out } from "./write.js"
 import type { YamlEntry, YamlList, YamlMap, YamlNode } from "./yaml.js"
 
@@ -151,12 +157,12 @@ export function insertMapEntry(
       return {
         start: last.range.end,
         end: last.range.end,
-        text: `, ${key}: ${flowText(value)}`,
+        text: `, ${keyText(key, true)}: ${flowText(value)}`,
       }
     return {
       start: map.range.start,
       end: map.range.end,
-      text: `{ ${key}: ${flowText(value)} }`,
+      text: `{ ${keyText(key, true)}: ${flowText(value)} }`,
     }
   }
   const first = map.entries[0]
@@ -221,9 +227,22 @@ export function appendListItem(
 }
 
 /**
+ * The line break a block scalar (`|`, `>`) ends with: its range includes the
+ * break, which a replacement must keep so the next line stays its own.
+ */
+function blockScalarTail(text: string, node: YamlNode): string {
+  if (node.kind !== "scalar") return ""
+  const first = text[node.range.start]
+  if (first !== "|" && first !== ">") return ""
+  const written = text.slice(node.range.start, node.range.end)
+  return written.endsWith("\r\n") ? "\r\n" : written.endsWith("\n") ? "\n" : ""
+}
+
+/**
  * Replaces an entry's value. A value that fits on the key's line replaces
  * the old value's text exactly; a block value starts on the next line,
- * indented two spaces more than the key.
+ * indented two spaces more than the key. A block scalar's final line break
+ * stays.
  */
 export function replaceEntryValue(
   text: string,
@@ -239,30 +258,32 @@ export function replaceEntryValue(
     (value.kind === "map" ? value.entries.length > 0 : value.items.length > 0)
   const old = entry.value
   const oldIsBlock = (old.kind === "map" || old.kind === "list") && !old.flow
+  const tail = written(entry) ? blockScalarTail(text, old) : ""
   if (!blockValue && !oldIsBlock && written(entry))
     return {
       start: old.range.start,
       end: old.range.end,
-      text: inFlow ? flowText(value) : inlineFirst(value),
+      text: (inFlow ? flowText(value) : inlineFirst(value)) + tail,
     }
   const colon = colonOf(text, entry)
   if (!blockValue)
     return {
       start: colon + 1,
       end: written(entry) ? old.range.end : colon + 1,
-      text: ` ${inFlow ? flowText(value) : inlineFirst(value)}`,
+      text: ` ${inFlow ? flowText(value) : inlineFirst(value)}${tail}`,
     }
   const indent = column(text, entry.keyRange.start) + 2
   const body = blockLines(value, indent)
   return {
     start: colon + 1,
     end: written(entry) ? old.range.end : colon + 1,
-    text: eol + body.join(eol),
+    text: eol + body.join(eol) + tail,
   }
 }
 
 /** Replaces a list item with a value that fits on one line. */
 export function replaceListItem(
+  text: string,
   item: YamlNode,
   value: Out,
   inFlow: boolean,
@@ -270,7 +291,9 @@ export function replaceListItem(
   return {
     start: item.range.start,
     end: item.range.end,
-    text: inFlow ? flowText(value) : inlineFirst(value),
+    text:
+      (inFlow ? flowText(value) : inlineFirst(value)) +
+      blockScalarTail(text, item),
   }
 }
 

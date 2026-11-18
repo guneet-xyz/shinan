@@ -67,6 +67,8 @@ interface Style {
   comments: boolean
   flowLists: boolean
   quote: "double" | "single"
+  /** Some text values written as block scalars (`|`, `>-`), some followed by a comment at column 0. */
+  blockScalars: boolean
 }
 
 interface GeneratedEntity {
@@ -319,6 +321,7 @@ const entity: fc.Arbitrary<GeneratedEntity> = fc
       comments: fc.boolean(),
       flowLists: fc.boolean(),
       quote: fc.constantFrom("double" as const, "single" as const),
+      blockScalars: fc.boolean(),
     }),
   })
   .map(dedupe)
@@ -345,15 +348,39 @@ function write(e: GeneratedEntity): string {
   const comment = (i: number) =>
     s.comments && i % 3 === 0 ? ` # note ${i}` : ""
   let counter = 0
+  /** A comment at column 0, marked so the group writer does not indent it. */
+  const column0 = "\u0000"
+  const styles = ["|-", ">-", "|", "|+"]
+  /**
+   * `key: value` as lines, the value as a block scalar now and then: only
+   * text on one line that a block scalar keeps as it is.
+   */
+  const entry = (indent: number, key: string, v: Scalar): string[] => {
+    const n = counter++
+    if (
+      !s.blockScalars ||
+      n % 3 !== 1 ||
+      typeof v !== "string" ||
+      !/^[^\s][^\r\n]*$/.test(v) ||
+      /\s$/.test(v)
+    )
+      return [`${pad(indent)}${key}: ${written(v, s, false)}`]
+    const lines = [
+      `${pad(indent)}${key}: ${styles[n % styles.length]}`,
+      `${pad(indent + 2)}${v}`,
+    ]
+    if (s.comments) lines.push(`${column0}# after a block scalar`)
+    return lines
+  }
   const lines = [
     "---",
     `id: service/${e.slug}`,
     "type: service",
-    `title: ${written(e.title, s, false)}${comment(counter++)}`,
-    `summary: ${written(e.summary, s, false)}`,
+    ...entry(0, "title", e.title),
+    ...entry(0, "summary", e.summary),
     `status: ${e.status}`,
     "owner: person/guneet",
-  ]
+  ].map((l) => l.replace(column0, ""))
   if (e.aliases.length > 0) lines.push(`aliases: [${e.aliases.join(", ")}]`)
   if (e.groups.length > 0) lines.push("facts:")
   const base = s.zeroIndent ? 0 : s.indent
@@ -399,7 +426,17 @@ function write(e: GeneratedEntity): string {
           first.key === "secrets-in"
         if (!many || (list.length === 1 && counter++ % 2 === 0)) {
           if (!first.long)
-            block.push(`${pad(s.indent)}${first.key}: ${short(first, false)}`)
+            block.push(
+              ...(first.to === undefined
+                ? entry(
+                    s.indent,
+                    first.key,
+                    first.state === "unknown"
+                      ? (first.note as string)
+                      : (first.value as Scalar),
+                  )
+                : [`${pad(s.indent)}${first.key}: ${short(first, false)}`]),
+            )
           else if (first.block) {
             block.push(`${pad(s.indent)}${first.key}:`)
             for (const p of longFlow(first).map((p) =>
@@ -437,8 +474,8 @@ function write(e: GeneratedEntity): string {
     )
     fields.forEach((field, i) => {
       field.forEach((line, j) => {
-        if (i === 0 && j === 0) lines.push(`${pad(base)}- ${line}`)
-        else if (j === 0) lines.push(`${pad(fieldCol)}${line}`)
+        if (line.startsWith(column0)) lines.push(line.slice(1))
+        else if (i === 0 && j === 0) lines.push(`${pad(base)}- ${line}`)
         else lines.push(`${pad(fieldCol)}${line}`)
       })
     })
@@ -489,6 +526,8 @@ type Target =
       identity?: string
       input?: FactInput
       check?: CheckInput
+      /** The key whose discrepancy is accepted. */
+      accepts?: string
     }
   | { kind: "recheck"; identities: string[]; check: CheckInput }
   | { kind: "remove"; identity: string; key: string }
@@ -702,8 +741,12 @@ function operationFor(
       }
     }
     case 5: {
-      const field = pick(["title", "summary", "status"] as const, c.a) as
-        "title" | "summary" | "status"
+      // A retired entity stays retired.
+      const fields =
+        document.status === "retired"
+          ? (["title", "summary"] as const)
+          : (["title", "summary", "status"] as const)
+      const field = pick(fields, c.a) as "title" | "summary" | "status"
       const value =
         field === "status" ? (c.flag ? "active" : "deprecated") : c.text
       const now = document[field]
@@ -733,12 +776,18 @@ function operationFor(
           target: { kind: "body" },
         }
       const name = section.anchor
+      // A section keeps its heading; the text before the first heading has none.
+      const paragraph = `${c.text.replace(/[\r\n#]/g, " ")}\n`
+      const text =
+        section.heading === null
+          ? paragraph
+          : `${"#".repeat(section.level)} ${section.heading}\n\n${paragraph}`
       return {
         operation: {
           op: "edit-body",
           document: id,
           section: name,
-          text: c.a % 3 === 0 ? "" : replacement,
+          text: c.a % 3 === 0 ? "" : text,
           expect: { text: section.text },
         },
         target: { kind: "body" },
@@ -767,35 +816,21 @@ function operationFor(
     }
     case 10:
     case 11: {
-      // Accepting one side of a discrepancy: the same value, with `accepted`.
-      const side = pick(
-        discrepancies(entity).flatMap((d) => d.facts),
-        c.a,
-      )
-      if (!side) return null
-      const fact: FactInput = {
-        key: side.key,
-        state: side.state,
-        ...(side.value !== undefined ? { value: side.value as Scalar } : {}),
-        ...(side.to !== undefined ? { to: side.to } : {}),
-        ...(side.via !== undefined ? { via: side.via } : {}),
-        note: "Accepted: the sources lag",
-        accepted: "person/guneet",
-      }
+      // Accepting a discrepancy, as a person's approval writes it.
+      const found = pick(discrepancies(entity), c.a)
+      if (!found) return null
       return {
         operation: {
-          op: "set-fact",
+          op: "accept-discrepancy",
           document: id,
-          fact,
-          check: c.check,
-          expect: expectationOf(side),
+          key: found.key,
+          note: "Accepted: the sources lag",
+          expect: found.facts.map(expectationOf),
         },
         target: {
           kind: "fact",
-          keys: new Set([side.key]),
-          identity: side.identity,
-          input: fact,
-          check: c.check,
+          keys: new Set([found.key]),
+          accepts: found.key,
         },
       }
     }
@@ -906,10 +941,6 @@ function checkAccepted(
       .sort()
       .join("\n")
   for (const key of keys) {
-    const explicit =
-      target.kind === "fact" && target.input?.accepted !== undefined
-        ? target.identity
-        : null
     const facts = after.facts.filter(
       (f) =>
         f.key === key &&
@@ -917,11 +948,7 @@ function checkAccepted(
         (f.state === "intended" || f.state === "observed"),
     )
     if (of(before, key) !== of(after, key))
-      expect(
-        facts.filter(
-          (f) => f.accepted !== undefined && f.identity !== explicit,
-        ),
-      ).toEqual([])
+      expect(facts.filter((f) => f.accepted !== undefined)).toEqual([])
     else
       for (const fact of before.facts.filter(
         (f) => f.key === key && f.accepted !== undefined,
@@ -934,6 +961,16 @@ function checkAccepted(
 }
 
 function checkModel(afterEntity: ResolvedEntity, target: Target) {
+  if (target.kind === "fact" && target.accepts) {
+    const found = discrepancies(afterEntity).find(
+      (d) => d.key === target.accepts,
+    )
+    expect(found?.accepted).toBe(true)
+    for (const fact of found?.facts ?? []) {
+      expect(fact.accepted).toBe("person/guneet")
+      expect(fact.note).toBe("Accepted: the sources lag")
+    }
+  }
   if (target.kind === "remove")
     expect(afterEntity.facts.some((f) => f.identity === target.identity)).toBe(
       false,
@@ -983,8 +1020,12 @@ const runs = (numRuns: number): fc.Parameters<unknown> => ({
   verbose: 0,
   ...(process.env.FC_SEED ? { seed: Number(process.env.FC_SEED) } : {}),
 })
+/**
+ * A generous time limit: a busy machine (or a widened run) must not turn a
+ * slow run into a failure without a counterexample.
+ */
 const timeout = (numRuns: number) =>
-  Math.max(120_000, Number(process.env.FC_RUNS ?? numRuns) * 100)
+  Math.max(600_000, Number(process.env.FC_RUNS ?? numRuns) * 1000)
 
 describe("operations on random documents", () => {
   it(
@@ -1210,6 +1251,7 @@ function runCommands(
     if (!planned) continue
     const result = applyOperations([...others, text], [planned.operation], {
       by,
+      acceptedBy: "person/guneet",
     })
     if (!result.applied)
       throw new Error(

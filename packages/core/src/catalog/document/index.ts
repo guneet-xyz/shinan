@@ -8,7 +8,13 @@ export {
   notYetRecorded,
 } from "./analysis.js"
 export type { Discrepancy, Freshness, NotYetRecorded } from "./analysis.js"
-export { applyOperations, expectationOf, factValueText } from "./apply.js"
+export {
+  applyOperations,
+  expectationOf,
+  factValueText,
+  maxFacts,
+  maxOperations,
+} from "./apply.js"
 export type {
   ApplyContext,
   ApplyResult,
@@ -76,6 +82,7 @@ export type {
   WrittenFact,
 } from "./model.js"
 export type {
+  AcceptDiscrepancy,
   CatalogOperation,
   ChangeId,
   CheckInput,

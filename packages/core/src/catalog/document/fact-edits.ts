@@ -32,6 +32,12 @@ import {
 import type { Out } from "./write.js"
 import type { YamlEntry, YamlList, YamlMap, YamlNode } from "./yaml.js"
 
+/**
+ * A fact as Shinan writes it: an operation's fact, plus `accepted`, which
+ * only Shinan writes (catalog §4.7).
+ */
+export type FactToWrite = FactInput & { accepted?: string }
+
 /** The fields of a fact check as Shinan writes them, `by` included. */
 export interface CheckFields {
   checked: string
@@ -158,7 +164,8 @@ export function replaceFactEdit(
   value: Out,
 ): Edit {
   const at = locate(document, fact)
-  if (at.itemList) return replaceListItem(at.node, value, at.inFlow)
+  if (at.itemList)
+    return replaceListItem(document.text, at.node, value, at.inFlow)
   return replaceEntryValue(
     document.text,
     at.keyEntry,
@@ -189,7 +196,20 @@ export function stripAcceptedEdit(
  */
 export function factText(document: EntityDocument, fact: WrittenFact): Out {
   const at = locate(document, fact)
-  return valueOut(document.text, at.node, at.inFlow)
+  const out = valueOut(document.text, at.node, at.inFlow)
+  // The comment at the end of the fact's line moves with it.
+  const comment = /^[ \t]+#[^\r\n]*/.exec(
+    document.text.slice(at.node.range.end),
+  )?.[0]
+  if (!comment || at.inFlow) return out
+  if (out.kind === "raw")
+    return { ...out, text: out.text + comment, flowSafe: false }
+  if (out.kind === "lines") {
+    const lines = [...out.lines]
+    lines[lines.length - 1] += comment
+    return { ...out, lines }
+  }
+  return out
 }
 
 export function checkMatches(
@@ -324,7 +344,7 @@ function checkEntries(check: CheckFields): [string, Out][] {
  * A new fact, in canonical style: the short form when it has only a value
  * (or a target, or an `unknown` fact's note), and otherwise a flow map.
  */
-export function factOut(fact: FactInput, key: KeySchema): Out {
+export function factOut(fact: FactToWrite, key: KeySchema): Out {
   const attributes = Object.entries(fact.attributes ?? {})
   const identifying = key.relation?.identifiedBy ?? []
   attributes.sort(([a], [b]) => {
