@@ -999,12 +999,13 @@ owner, N-6, [#25](https://github.com/guneet-xyz/shinan/issues/25)).
 
 ### 9.1 What Shinan sends
 
-| Message                                                                                                                       | When                              | What it says, and to whom                                | Status                                                                     |
-| ----------------------------------------------------------------------------------------------------------------------------- | --------------------------------- | -------------------------------------------------------- | -------------------------------------------------------------------------- |
-| Email magic link                                                                                                              | First version                     | [Identity](identity.md) §3.1                             | Decided (owner, O-41, N-7)                                                 |
-| Invitation                                                                                                                    | First version                     | [Identity](identity.md) §5.2                             | Decided (owner, O-48)                                                      |
-| Security alerts: sign-in from a browser not seen before, GitHub added or removed as a sign-in method, an agent token approved | First version                     | [Identity](identity.md) §3.3                             | Proposed by identity                                                       |
-| Notifications: Needs you items and replies to a person's own comments, immediately or as a daily summary                      | Phase 2 (plan, sections 5 and 10) | [Human experience](human-experience.md), "Notifications" | Decided that they are phase 2 (plan); content proposed by human experience |
+| Message                                                                                                                        | When                              | What it says, and to whom                                | Status                                                                     |
+| ------------------------------------------------------------------------------------------------------------------------------ | --------------------------------- | -------------------------------------------------------- | -------------------------------------------------------------------------- |
+| Email magic link                                                                                                               | First version                     | [Identity](identity.md) §3.1                             | Decided (owner, O-41, N-7)                                                 |
+| Invitation                                                                                                                     | First version                     | [Identity](identity.md) §5.2                             | Decided (owner, O-48)                                                      |
+| Security alerts: sign-in from a browser not seen before, GitHub added or removed as a sign-in method, an agent token approved  | First version                     | [Identity](identity.md) §3.3                             | Proposed by identity                                                       |
+| Email address change: the confirmation link to the new address; alerts to the old address when asked for and to both when made | First version (#66)               | [Identity](identity.md) §3.4                             | Proposed by identity                                                       |
+| Notifications: Needs you items and replies to a person's own comments, immediately or as a daily summary                       | Phase 2 (plan, sections 5 and 10) | [Human experience](human-experience.md), "Notifications" | Decided that they are phase 2 (plan); content proposed by human experience |
 
 ### 9.2 How Shinan sends
 
@@ -1126,7 +1127,8 @@ current result.
 scripts; `frame-ancestors 'none'`; a strict `Referrer-Policy`; no sensitive data
 in URLs; uniform, generic error pages; no stack traces to clients. Nothing is
 served without sign-in except the sign-in and invitation pages, the magic-link
-landing page, the skill's files at `/skills/` (**Decided**, owner,
+landing page, the landing page of an email address change's link (which
+shows only the installation's name before sign-in), the skill's files at `/skills/` (**Decided**, owner,
 [D-056](decisions/D-056-public-skill-path.md)), and the webhook and MCP
 endpoints, which need their own credentials.
 

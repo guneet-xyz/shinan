@@ -78,6 +78,17 @@ export const rateLimits = {
     record: { action: "request.throttled" },
   },
   /**
+   * Asking to change one's email address, counted by the person (identity
+   * §3.4, **proposed**): each request emails the new address and alerts the
+   * old one, so a person (or someone in their sign-in session) cannot use
+   * it to flood either mailbox. Far above real use.
+   */
+  "email-change": {
+    max: 5,
+    windowSeconds: 3600,
+    record: { action: "request.throttled" },
+  },
+  /**
    * Catalog proposals by one agent, counted by the agent (catalog §8.2,
    * **proposed**, M2-4): with the workspace's catalog size limit, an agent
    * cannot flood a workspace with large entities that apply on their own.

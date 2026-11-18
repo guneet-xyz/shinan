@@ -43,6 +43,7 @@ export const account: Account = {
     githubAvailable: true,
   },
   operator: false,
+  pendingEmailChange: null,
 }
 
 export const workspace: Workspace = {
@@ -155,6 +156,9 @@ export function fakeApi(overrides: Partial<ApiClient> = {}): Fake {
     "signOutEverywhere",
     "addGitHub",
     "removeGitHub",
+    "requestEmailChange",
+    "cancelEmailChange",
+    "confirmEmailChange",
     "invitationsForYou",
     "acceptInvitationById",
     "declineInvitationById",

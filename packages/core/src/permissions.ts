@@ -118,6 +118,29 @@ export const rules = deepFreeze({
     people: false,
     shinan: true,
   },
+  /**
+   * A person asks to change their own email address (identity §3.4): with
+   * re-authentication, like adding or removing a sign-in method, since the
+   * address is how they sign in.
+   */
+  "email-change.request": {
+    level: "installation",
+    access: "write",
+    people: true,
+    shinan: false,
+    reauthentication: true,
+  },
+  /**
+   * A person confirms the change from the link sent to the new address, or
+   * cancels it. No re-authentication: the link proves the new mailbox, and
+   * cancelling only keeps things as they are.
+   */
+  "email-change.complete": {
+    level: "installation",
+    access: "write",
+    people: true,
+    shinan: false,
+  },
   /** A person accepts or declines an invitation to their address (§5.2). */
   "invitation.respond": {
     level: "installation",

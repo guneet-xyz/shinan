@@ -356,6 +356,11 @@ docker compose run --rm --no-deps web account end-sessions <handle>
 docker compose run --rm --no-deps web account change-email <handle> <new address>
 ```
 
+People who can still sign in (with GitHub, for example) change their own
+address from Your account instead: add their new address to the email
+allowlist first, then they confirm it from a link sent there. Operators'
+own addresses are changed only in `SHINAN_OPERATORS` and with the command.
+
 ## The agent index
 
 The catalog's agent index is built from the stored catalog text and can be

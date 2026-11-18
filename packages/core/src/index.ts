@@ -79,6 +79,14 @@ export type {
   SignInSession,
 } from "./identity/sign-in.js"
 export {
+  cancelEmailChange,
+  confirmEmailChange,
+  emailChangeMinutes,
+  getEmailChange,
+  requestEmailChange,
+} from "./identity/email-change.js"
+export type { PendingEmailChange } from "./identity/email-change.js"
+export {
   acceptInvitation,
   createInvitation,
   declineInvitation,
@@ -173,11 +181,13 @@ export type {
 // Message templates are pure functions, so they bypass no check. The core
 // operations that send them queue them with the internal `queueEmail`.
 export {
+  emailChangeEmail,
   invitationEmail,
   magicLinkEmail,
   securityAlertEmail,
 } from "./email/templates.js"
 export type {
+  EmailChangeEmail,
   InvitationEmail,
   MagicLinkEmail,
   SecurityAlert,

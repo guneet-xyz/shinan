@@ -408,12 +408,15 @@ export async function findPendingGitHubSignIn(
 /**
  * Deletes sign-in records that can no longer be used: GitHub sign-ins that
  * waited too long for an email address, and sign-in sessions past their
- * expiry, which hold network addresses and user agents. Run hourly by the
+ * expiry, which hold network addresses and user agents, and email address
+ * changes whose link expired (identity §3.4). Run hourly by the
  * worker.
  */
-export async function pruneSignInRecords(
-  ctx: Context,
-): Promise<{ pendingGitHubSignIns: number; signInSessions: number }> {
+export async function pruneSignInRecords(ctx: Context): Promise<{
+  pendingGitHubSignIns: number
+  signInSessions: number
+  emailChanges: number
+}> {
   return atInstallation(ctx, "sign-in", async (scope) => {
     const pending = await scope.tx
       .delete(schema.pendingGitHubSignIns)
@@ -423,9 +426,15 @@ export async function pruneSignInRecords(
       .delete(schema.signInSessions)
       .where(lt(schema.signInSessions.expiresAt, sql`now()`))
       .returning({ id: schema.signInSessions.id })
+    // Email changes whose link expired unopened (identity §3.4).
+    const changes = await scope.tx
+      .delete(schema.emailChanges)
+      .where(lt(schema.emailChanges.expiresAt, sql`now()`))
+      .returning({ personId: schema.emailChanges.personId })
     return {
       pendingGitHubSignIns: pending.length,
       signInSessions: sessions.length,
+      emailChanges: changes.length,
     }
   })
 }

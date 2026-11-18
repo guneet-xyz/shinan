@@ -1285,6 +1285,17 @@ allowlist ([Identity](identity.md) section 3.2). **Proposed** (M1-4).
 Reason: identity requires both, and they belong to the person, not to a
 workspace.
 
+**Proposed ([#66](https://github.com/guneet-xyz/shinan/issues/66)):** under
+Sign-in methods, **Change email address** opens a field for the new address,
+explaining that it must be on the allowlist, that a link is sent there, and
+what confirming does; sending it asks for a recent sign-in if needed. While
+the link waits, the section says where it went and until when, with
+**Cancel the change**. The link opens a page that, before sign-in, shows
+only the installation's name and asks the person to sign in; signed in as
+the person who asked, it shows the old and new address and **Confirm new
+address**; anyone else is told the link does not work for their account.
+The rules are [Identity](identity.md) §3.4's.
+
 ### Your agents
 
 An agent is per person, coding tool and machine, for example "Guneet's

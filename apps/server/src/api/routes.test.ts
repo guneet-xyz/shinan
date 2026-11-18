@@ -158,6 +158,99 @@ describe("GET /account", () => {
   })
 })
 
+describe("changing one's email address", () => {
+  it("asks for re-authentication, then emails a link that only its person can open", async () => {
+    const email = `${contributor.handle}-new@example.com`
+    await db.insert(schema.emailAllowlist).values({ email })
+
+    const stale = await call("/account/email-change", {
+      body: { email },
+      headers: {
+        ...sameOrigin,
+        ...as(contributor, { reauthenticated: false }),
+      },
+    })
+    expect(stale.status).toBe(403)
+    expect(await stale.json()).toMatchObject({
+      error: "reauthentication-required",
+    })
+
+    const asked = await call("/account/email-change", {
+      body: { email },
+      headers: { ...sameOrigin, ...as(contributor) },
+    })
+    expect(asked.status).toBe(200)
+    expect(await json<Api.PendingEmailChange>(asked)).toMatchObject({ email })
+    const account = await json<Api.Account>(
+      await call("/account", { headers: as(contributor) }),
+    )
+    expect(account.pendingEmailChange).toMatchObject({ email })
+
+    const [delivery] = await db
+      .select()
+      .from(schema.emailDeliveries)
+      .where(
+        and(
+          eq(schema.emailDeliveries.recipient, email),
+          eq(schema.emailDeliveries.kind, "email_change"),
+        ),
+      )
+    const token = /\/email-change#(\S+)/.exec(delivery!.message!.text)![1]!
+
+    // Someone else, signed in, with the link: nothing to find.
+    const stranger = await call("/account/email-change/confirm", {
+      body: { token },
+      headers: { ...sameOrigin, ...as(owner) },
+    })
+    expect(stranger.status).toBe(404)
+
+    const confirmed = await call("/account/email-change/confirm", {
+      body: { token },
+      headers: {
+        ...sameOrigin,
+        ...as(contributor, { reauthenticated: false }),
+      },
+    })
+    expect(confirmed.status).toBe(200)
+    expect(await confirmed.json()).toEqual({ email })
+    const after = await json<Api.Account>(
+      await call("/account", { headers: as(contributor) }),
+    )
+    expect(after.person.email).toBe(email)
+    expect(after.pendingEmailChange).toBeNull()
+  })
+
+  it("refuses an address off the allowlist, with the rule", async () => {
+    const response = await call("/account/email-change", {
+      body: { email: "not-listed@example.com" },
+      headers: { ...sameOrigin, ...as(contributor) },
+    })
+    expect(response.status).toBe(409)
+    expect(await response.json()).toMatchObject({
+      error: "conflict",
+      rule: "not-allowlisted",
+    })
+  })
+
+  it("cancels a waiting change", async () => {
+    const email = `${owner.handle}-new@example.com`
+    await db.insert(schema.emailAllowlist).values({ email })
+    await call("/account/email-change", {
+      body: { email },
+      headers: { ...sameOrigin, ...as(owner) },
+    })
+    const cancelled = await call("/account/email-change", {
+      method: "DELETE",
+      headers: { ...sameOrigin, ...as(owner) },
+    })
+    expect(cancelled.status).toBe(204)
+    const account = await json<Api.Account>(
+      await call("/account", { headers: as(owner) }),
+    )
+    expect(account.pendingEmailChange).toBeNull()
+  })
+})
+
 describe("workspaces", () => {
   it("shows the workspace with the reader's role", async () => {
     const response = await call(ws(), { headers: as(contributor) })
