@@ -282,6 +282,19 @@ describe("decide", () => {
       })
     })
 
+    it("lets every member, and no agent, record the pages they opened", () => {
+      expect(allowed("catalog.mark-opened", owner)).toEqual({ allowed: true })
+      expect(allowed("catalog.mark-opened", contributor)).toEqual({
+        allowed: true,
+      })
+      expect(
+        allowed("catalog.mark-opened", {
+          ...ownersAgent,
+          scopes: ["catalog:read", "catalog:propose"],
+        }),
+      ).toMatchObject({ allowed: false })
+    })
+
     it("lets only Shinan keep the index in step", () => {
       expect(allowed("catalog-index.maintain", { kind: "shinan" })).toEqual({
         allowed: true,

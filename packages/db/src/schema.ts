@@ -1225,3 +1225,33 @@ export const catalogIndexProvenance = pgTable(
     index("catalog_index_provenance_workspace_id").on(t.workspaceId),
   ],
 )
+
+/**
+ * When each person last opened each catalog page in the wiki, and the
+ * catalog revision the page stood at then (human experience, start here for
+ * people: "opened" and "changed since you opened it"). Not catalog content
+ * and not an event: a small personal record, overwritten on each opening.
+ */
+export const catalogPageVisits = pgTable(
+  "catalog_page_visits",
+  {
+    workspaceId: uuid("workspace_id").notNull(),
+    personId: uuid("person_id")
+      .notNull()
+      .references(() => people.id),
+    documentId: uuid("document_id").notNull(),
+    /** The catalog revision that had last changed the page when it was opened. */
+    revision: integer("revision").notNull(),
+    openedAt: timestamp("opened_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.personId, t.documentId] }),
+    foreignKey({
+      name: "catalog_page_visits_document_fk",
+      columns: [t.workspaceId, t.documentId],
+      foreignColumns: [catalogDocuments.workspaceId, catalogDocuments.id],
+    }),
+  ],
+)

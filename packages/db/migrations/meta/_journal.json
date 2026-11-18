@@ -57,6 +57,13 @@
       "when": 1794992490114,
       "tag": "0007_written_by_provenance",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1795008058242,
+      "tag": "0008_wiki_page_visits",
+      "breakpoints": true
     }
   ]
 }
