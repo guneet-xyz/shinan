@@ -1512,6 +1512,24 @@ how the rules are applied.
   (`too-large`), as [2.1](#21-one-document-per-entity-and-what-source-of-truth-means)
   sets for documents. Reason: it bounds the work of every check, and no
   catalog document needs more.
+- **Cost** (**proposed**, [#116](https://github.com/guneet-xyz/shinan/issues/116)).
+  A proposal is validated against the validation of the revision it is based
+  on, which the catalog worker keeps for each workspace's latest revision
+  (wired in after M2-4). Only these documents are validated again:
+  - the documents the change writes, adds or removes;
+  - the documents sharing an ID or alias with one of those, or with another
+    document;
+  - when a type schema changes, every schema document and the entities of the
+    changed types;
+  - every document that references any of the above;
+  - when time has passed, the documents whose fact checks were in the future.
+
+  The result is the same as validating every document. A property test checks
+  this against full validation on random catalogs and changes. Reason: a
+  one-field change on a 20,000-document catalog then validates in about
+  50 ms instead of about 2 s, so proposals do not queue behind each other in
+  the worker. Checks of a whole catalog (`validateCatalog`) still validate
+  every document.
 
 ### 8.4 Agents' documentation-impact obligation
 
