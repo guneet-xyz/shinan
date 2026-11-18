@@ -557,7 +557,7 @@ function operationFor(
             ) as string,
           }
       } else {
-        fact.value = many ? (pick(many.values, c.a)) : c.value
+        fact.value = many ? pick(many.values, c.a) : c.value
         if (c.flag && !schema.many) fact.via = pick(["df", "lsblk"], c.b)
       }
       if (state === "planned") fact.task = "T-7"
@@ -654,8 +654,7 @@ function operationFor(
       const relation = vocabulary.relations.find((r) => r.key === settled.key)
       const many = vocabulary.many.find((m) => m.key === settled.key)
       if (settled.schema.relation) {
-        fact.to =
-          settled.to ?? (pick(relation?.targets ?? machines, c.b))
+        fact.to = settled.to ?? pick(relation?.targets ?? machines, c.b)
         const attribute = relation?.attribute
         if (attribute)
           fact.attributes = {
