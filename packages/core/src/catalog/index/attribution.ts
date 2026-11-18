@@ -1,6 +1,8 @@
 import type { ActorKind } from "@shinan/db"
 
 import type { Section } from "../document/index.js"
+import { foundUnits, sectionWords, storedUnits } from "./provenance.js"
+import type { Provenance } from "./provenance.js"
 
 /** A catalog revision and who made it, as its record says. */
 export interface RevisionAuthor {
@@ -12,14 +14,12 @@ export interface RevisionAuthor {
 
 /**
  * A body section with two credits, both from Shinan's records of who made
- * each revision, never from the text:
+ * each revision, never from claims in the text:
  *
  * - the revision that last changed it, and that revision's author;
- * - the least-trusted author who wrote any of it: the least trusted of
- *   everyone who changed the section since it first appeared. Trust labels
- *   (agent integrations) use this one, so a person who fixes a typo in an
- *   agent's section, renames its heading or moves it does not make the
- *   agent's text look like the person's.
+ * - the least-trusted author whose words may be in it (`written_by`), from
+ *   the document's provenance. Trust labels (agent integrations) use this
+ *   one.
  */
 export interface AttributedSection {
   anchor: string | null
@@ -32,46 +32,57 @@ export interface AttributedSection {
 }
 
 /**
- * How far text from each kind of actor is trusted, least first: outside
- * actors, unknown ones (imported text), agents, Shinan itself, then people.
- */
-const trust: Record<ActorKind, number> = {
-  outside: 0,
-  unknown: 1,
-  agent: 2,
-  shinan: 3,
-  person: 4,
-}
-
-/**
  * Credits each section of a document's new text against the sections of its
- * previous revision:
+ * previous revision, and records in `provenance` the words the revision
+ * introduced:
  *
- * 1. A section with the same anchor and exactly the same text keeps its
- *    credits.
+ * 1. A section with the same anchor and exactly the same text (blank lines
+ *    at its end aside) keeps its credits.
  * 2. A section whose exact text was a previous section left over by step 1
  *    keeps that section's credits, whatever its anchor now is. Anchors of
  *    repeated headings are numbered (`notes`, `notes-1`), so deleting one
  *    section can rename another without changing a byte of it. Among
  *    sections with the same text, the earliest are paired first.
- * 3. Any other section was last changed by `change`. Its least-trusted
- *    author is the least trusted of `change` and of every previous section
- *    it shares a non-blank line with (a heading counts, without its `#`
- *    markers): words an agent wrote keep the agent's credit when a person
- *    edits them, renames their heading, moves them or splits the section.
- *    A section with no line from before is credited to `change` alone.
+ * 3. Any other section was last changed by `change`, and when `change` is
+ *    not a person, every unit of its new text is recorded as brought in by
+ *    them, even words the document already had (an agent can change what
+ *    text says by recombining a person's phrases). Its least-trusted
+ *    author is the least trusted of `change` and of the authors of every
+ *    unit of its words (`provenance.ts`: word 3-grams) anyone introduced
+ *    in any earlier revision of the document. So it is lifted to a
+ *    more-trusted author only when no run of three words from less-trusted
+ *    text remains: a person's own rewrite lifts it; rewrapping,
+ *    punctuation, list markers, invisible characters, heading changes,
+ *    copyedits that leave three words in a row, moving, splitting and
+ *    restoring earlier text do not.
  *
  * When unsure, this errs towards the less-trusted credit. Applied to every
- * revision of a document in order, starting from no sections, it gives the
- * same credits whether the previous credits come from the stored index
- * (when a revision is applied) or from replaying the document's history (a
- * rebuild).
+ * revision of a document in order, starting from no sections and an empty
+ * provenance, it gives the same credits whether the previous credits and
+ * provenance come from the stored index (when a revision is applied) or
+ * from replaying the document's history (a rebuild).
  */
 export function attributeSections(
   previous: readonly AttributedSection[],
   sections: readonly Pick<Section, "anchor" | "text">[],
   change: RevisionAuthor,
+  provenance: Provenance,
 ): AttributedSection[] {
+  const author = { kind: change.authorKind, author: change.author }
+  const words = sections.map(sectionWords)
+  const before = new Map<number, Set<string>>()
+  for (const p of previous)
+    for (const unit of storedUnits(sectionWords(p))) {
+      const known = before.get(unit.hash)
+      if (known) known.add(unit.words)
+      else before.set(unit.hash, new Set([unit.words]))
+    }
+  provenance.introduce(
+    before,
+    words.flatMap((w) => storedUnits(w)),
+    author,
+  )
+
   const result: (AttributedSection | undefined)[] = sections.map(
     () => undefined,
   )
@@ -80,35 +91,41 @@ export function attributeSections(
     unused.delete(j)
     return previous[j]!
   }
-
+  // Blank lines at a section's end change with what follows it (adding a
+  // section after it), not with what it says.
+  const texts = previous.map((p) => p.text.trimEnd())
+  const keep = (j: number, section: Pick<Section, "anchor" | "text">) => ({
+    ...take(j),
+    anchor: section.anchor,
+    text: section.text,
+  })
   // 1. Same anchor, same text.
   sections.forEach((section, i) => {
+    const text = section.text.trimEnd()
     const j = previous.findIndex(
       (p, k) =>
-        unused.has(k) && p.anchor === section.anchor && p.text === section.text,
+        unused.has(k) && p.anchor === section.anchor && texts[k] === text,
     )
-    if (j >= 0) result[i] = { ...take(j), anchor: section.anchor }
+    if (j >= 0) result[i] = keep(j, section)
   })
   // 2. Same text, another anchor.
   sections.forEach((section, i) => {
     if (result[i]) return
-    const j = previous.findIndex(
-      (p, k) => unused.has(k) && p.text === section.text,
-    )
-    if (j >= 0) result[i] = { ...take(j), anchor: section.anchor }
+    const text = section.text.trimEnd()
+    const j = previous.findIndex((_, k) => unused.has(k) && texts[k] === text)
+    if (j >= 0) result[i] = keep(j, section)
   })
-  // 3. Changed or new.
-  const before = previous.map((p) => ({ credit: p, lines: linesOf(p.text) }))
+  // 3. Changed or new. Every unit of a section someone other than a person
+  // changed counts as theirs, even words already in the document: an agent
+  // can change what text says by putting a person's phrases together anew.
+  const none = new Map<number, Set<string>>()
+  sections.forEach((_, i) => {
+    if (!result[i]) provenance.introduce(none, storedUnits(words[i]!), author)
+  })
   return sections.map((section, i) => {
     const kept = result[i]
     if (kept) return kept
-    let least = { kind: change.authorKind, author: change.author }
-    const lines = linesOf(section.text)
-    for (const { credit, lines: old } of before) {
-      if (trust[credit.leastTrustedKind] >= trust[least.kind]) continue
-      if ([...lines].some((l) => old.has(l)))
-        least = { kind: credit.leastTrustedKind, author: credit.leastTrusted }
-    }
+    const least = provenance.leastTrusted(foundUnits(words[i]!), author)
     return {
       anchor: section.anchor,
       text: section.text,
@@ -119,14 +136,4 @@ export function attributeSections(
       leastTrusted: least.author,
     }
   })
-}
-
-/** A text's non-blank lines, trimmed, headings without their `#` markers. */
-function linesOf(text: string): Set<string> {
-  return new Set(
-    text
-      .split(/\r\n|\r|\n/)
-      .map((l) => l.replace(/^\s{0,3}#{1,6}(?=\s|$)/, "").trim())
-      .filter((l) => l !== ""),
-  )
 }

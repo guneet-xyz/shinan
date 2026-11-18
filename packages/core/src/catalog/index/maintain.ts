@@ -8,7 +8,13 @@ import { addJob } from "../../jobs.js"
 import type { QueueDefinition } from "../../jobs.js"
 import { isId } from "../../validation.js"
 import { parserVersion } from "../document/index.js"
-import { compareWorkspaceIndex, rebuildWorkspaceIndex } from "./indexer.js"
+import { indexRulesVersion } from "./derive.js"
+import {
+  compareWorkspaceIndex,
+  hasStaleRows,
+  rebuildWorkspaceIndex,
+  stateBehind,
+} from "./indexer.js"
 import { latestRevision } from "./store.js"
 
 /**
@@ -40,10 +46,10 @@ export interface CatalogIndexRebuildJob {
 
 /**
  * Asks the worker to rebuild workspaces' indexes: the given ones, or every
- * workspace whose index was built by another parser version (after a
- * release changed the parser) or never built. Answers say the index is
- * behind from now until the rebuild finishes. Returns the workspaces asked
- * for.
+ * workspace whose index (or any of its rows) another parser or index rules
+ * version built, after a release changed them or a rollback, or that was
+ * never built. Answers say the index is behind from now until the rebuild
+ * finishes. Returns the workspaces asked for.
  */
 export async function requestCatalogIndexRebuilds(
   ctx: Context,
@@ -63,7 +69,9 @@ export async function requestCatalogIndexRebuilds(
           or(
             isNull(s.workspaceId),
             ne(s.parserVersion, parserVersion),
+            ne(s.rulesVersion, indexRulesVersion),
             sql`${s.rebuildRequestedAt} is not null`,
+            sql`exists (select 1 from ${schema.catalogIndexDocuments} d where d.workspace_id = ${schema.catalogRevisions.workspaceId} and (d.parser_version <> ${parserVersion} or d.rules_version <> ${indexRulesVersion}))`,
           ),
         )
       workspaceIds = rows.map((r) => r.workspaceId)
@@ -145,7 +153,10 @@ export async function rebuildCatalogIndex(
 /** The outcome of the round-trip check for one workspace. */
 export interface WorkspaceIndexCheck {
   workspaceId: string
-  /** `behind`: built by another parser version or being rebuilt, so not compared; a rebuild is asked for. */
+  /**
+   * `behind`: built (wholly or partly) by another parser or index rules
+   * version, or being rebuilt, so not compared; a rebuild is asked for.
+   */
   outcome: "matched" | "differs" | "behind"
   revision: number
   documents: number
@@ -195,8 +206,8 @@ export async function checkCatalogIndexes(
         const latest = await latestRevision(tx, workspaceId)
         if (
           !state ||
-          state.parserVersion !== parserVersion ||
-          state.rebuildRequestedAt !== null
+          stateBehind(state) ||
+          (await hasStaleRows(tx, workspaceId))
         ) {
           return {
             workspaceId,
@@ -297,10 +308,7 @@ export async function getCatalogIndexHealth(
         revision: state.revision,
         latestRevision: latest ?? 0,
         parserVersion: state.parserVersion,
-        behind:
-          state.revision < (latest ?? 0) ||
-          state.parserVersion !== parserVersion ||
-          state.rebuildRequestedAt !== null,
+        behind: state.revision < (latest ?? 0) || stateBehind(state),
         rebuildRequestedAt: iso(state.rebuildRequestedAt),
         rebuiltAt: iso(state.rebuiltAt),
         checkedAt: iso(state.checkedAt),

@@ -898,6 +898,10 @@ const tsvector = customType<{ data: string }>({
   dataType: () => "tsvector",
 })
 
+const bytea = customType<{ data: Buffer }>({
+  dataType: () => "bytea",
+})
+
 const parserVersionColumn = () => integer("parser_version").notNull()
 
 /** Where a workspace's index stands, and the last round-trip check. */
@@ -909,6 +913,11 @@ export const catalogIndexState = pgTable("catalog_index_state", {
   revision: integer("revision").notNull().default(0),
   /** The parser version of the last full build. */
   parserVersion: parserVersionColumn(),
+  /**
+   * The version of the index's own rules (such as how `written_by` is
+   * credited) of the last full build; 0 before the rules were versioned.
+   */
+  rulesVersion: integer("rules_version").notNull().default(0),
   /** Set while a rebuild is asked for or running: answers say the index is behind. */
   rebuildRequestedAt: timestamp("rebuild_requested_at", {
     withTimezone: true,
@@ -938,6 +947,8 @@ export const catalogIndexDocuments = pgTable(
     /** The catalog revision whose text these rows were built from. */
     revision: integer("revision").notNull(),
     parserVersion: parserVersionColumn(),
+    /** The index rules version these rows were built by (with all the document's rows); 0 before it was recorded. */
+    rulesVersion: integer("rules_version").notNull().default(0),
     /** `entity`, `schema` or `start-here` (catalog §2, §3.9, §11). */
     kind: text("kind").notNull(),
     /** The catalog ID, such as `machine/musashi`; null if the text has none. */
@@ -990,6 +1001,12 @@ export const catalogIndexDocuments = pgTable(
       t.kind,
       t.type,
       t.status,
+    ),
+    // For finding rows another parser or rules version built, on every answer.
+    index("catalog_index_documents_versions").on(
+      t.workspaceId,
+      t.parserVersion,
+      t.rulesVersion,
     ),
     index("catalog_index_documents_aliases").using("gin", t.aliases),
     index("catalog_index_documents_search").using("gin", t.search),
@@ -1150,9 +1167,8 @@ export const catalogIndexSections = pgTable(
     /** The author's written form (identity §8.7). */
     author: text("author").notNull(),
     /**
-     * The least-trusted author who wrote any of the section since it first
-     * appeared, for trust labels: a person editing an agent's section does
-     * not make it the person's.
+     * The least-trusted author whose words may be in the section, from the
+     * document's word provenance (catalog §12.4), for trust labels.
      */
     leastTrustedKind: actorKindEnum("least_trusted_kind").notNull(),
     leastTrusted: text("least_trusted").notNull(),
@@ -1177,5 +1193,35 @@ export const catalogIndexSections = pgTable(
     index("catalog_index_sections_workspace_id").on(t.workspaceId),
     index("catalog_index_sections_search").using("gin", t.search),
     index("catalog_index_sections_search_simple").using("gin", t.searchSimple),
+  ],
+)
+
+/**
+ * Where a document's words came from (catalog §12.4, `written_by`): for each
+ * unit of its words (a hashed, normalised word 3-gram) that anyone less
+ * trusted than a person ever introduced into the document, the
+ * least-trusted author who did. Derived from the document's history like
+ * every index row, and compared by the round-trip check.
+ */
+export const catalogIndexProvenance = pgTable(
+  "catalog_index_provenance",
+  {
+    documentId: uuid("document_id").primaryKey(),
+    workspaceId: uuid("workspace_id").notNull(),
+    parserVersion: parserVersionColumn(),
+    /** The authors the units name, sorted: their kind and written form. */
+    authors: jsonb("authors")
+      .$type<{ kind: ActorKind; author: string }[]>()
+      .notNull(),
+    /** The units, sorted, 10 bytes each: a 53-bit hash and the author's place in `authors`. */
+    units: bytea("units").notNull(),
+  },
+  (t) => [
+    foreignKey({
+      name: "catalog_index_provenance_document_fk",
+      columns: [t.documentId],
+      foreignColumns: [catalogIndexDocuments.documentId],
+    }).onDelete("cascade"),
+    index("catalog_index_provenance_workspace_id").on(t.workspaceId),
   ],
 )

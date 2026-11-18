@@ -21,9 +21,10 @@ import { addMember } from "../../identity/members.js"
 import type { Person } from "../../identity/people.js"
 import { createWorkspace } from "../../identity/workspaces.js"
 import type { JobQueue } from "../../jobs.js"
-import { parserVersion } from "../document/index.js"
+import { parseCatalogDocument, parserVersion } from "../document/index.js"
 import { appendCatalogRevision, findCatalogDocument } from "../revisions.js"
-import type { RevisionActor } from "../revisions.js"
+import type { RevisionActor, RevisionDocument } from "../revisions.js"
+import { indexRulesVersion } from "./derive.js"
 import { compareWorkspaceIndex, rebuildWorkspaceIndex } from "./indexer.js"
 import {
   checkCatalogIndexes,
@@ -73,10 +74,7 @@ const shinanActor: RevisionActor = {
   confidence: "recorded",
 }
 
-async function apply(
-  actor: RevisionActor,
-  documents: { documentId?: string; text: string }[],
-) {
+async function apply(actor: RevisionActor, documents: RevisionDocument[]) {
   return db.transaction((tx) =>
     appendCatalogRevision(tx, workspaceId, actor, documents),
   )
@@ -98,6 +96,7 @@ async function snapshot(): Promise<string> {
     schema.catalogIndexRelations,
     schema.catalogIndexDiscrepancies,
     schema.catalogIndexSections,
+    schema.catalogIndexProvenance,
   ] as const
   const all: unknown[] = []
   for (const table of tables) {
@@ -171,6 +170,17 @@ describe("appending revisions", () => {
     await expect(
       apply(personActor(owner), [{ documentId: id!, text: fixtures.guneet }]),
     ).rejects.toThrow(/documents of its workspace/)
+  })
+
+  it("refuses a parse that is not of the text it comes with", async () => {
+    await expect(
+      apply(personActor(owner), [
+        {
+          text: fixtures.guneet,
+          parsed: parseCatalogDocument(fixtures.musashi),
+        },
+      ]),
+    ).rejects.toThrow(/parse of its text/)
   })
 
   it("never edits a stored revision", async () => {
@@ -874,6 +884,56 @@ describe("rebuilds and the round-trip check", () => {
       .where(eq(schema.catalogIndexState.workspaceId, workspaceId))
     return state!
   }
+
+  it("says the index is behind while built by other index rules, until rebuilt", async () => {
+    await apply(personActor(owner), [{ text: fixtures.musashi }])
+    await db
+      .update(schema.catalogIndexState)
+      .set({ rulesVersion: indexRulesVersion - 1 })
+      .where(eq(schema.catalogIndexState.workspaceId, workspaceId))
+    const behind = await getCatalogEntity(asPerson(db, owner), workspaceId, {
+      id: "machine/musashi",
+    })
+    expect(behind.index_behind).toBe(true)
+    await rebuildCatalogIndex(asShinan(db), { workspaceId })
+    expect(await stateOf()).toMatchObject({ rulesVersion: indexRulesVersion })
+  })
+
+  it("reports rows an older release wrote as behind, not as differing", async () => {
+    await apply(
+      personActor(owner),
+      fixtures.allDocuments.map((text) => ({ text })),
+    )
+    // An older release, run against the same database after a rollback,
+    // re-indexed a document: its rows carry no rules version and no
+    // provenance.
+    const musashi = await documentId("machine/musashi")
+    await db
+      .update(schema.catalogIndexDocuments)
+      .set({ rulesVersion: 0 })
+      .where(eq(schema.catalogIndexDocuments.documentId, musashi))
+    await db
+      .delete(schema.catalogIndexProvenance)
+      .where(eq(schema.catalogIndexProvenance.documentId, musashi))
+    const answer = await getCatalogEntity(asPerson(db, owner), workspaceId, {
+      id: "person/guneet",
+    })
+    expect(answer.index_behind).toBe(true)
+    const [checked] = await checkCatalogIndexes(asShinan(db), {
+      workspaceIds: [workspaceId],
+    })
+    expect(checked).toMatchObject({ outcome: "behind" })
+    const asked = await requestCatalogIndexRebuilds({
+      ...asShinan(db),
+      jobs: { send: () => Promise.resolve(null) },
+    })
+    expect(asked).toContain(workspaceId)
+    await rebuildCatalogIndex(asShinan(db), { workspaceId })
+    const [after] = await checkCatalogIndexes(asShinan(db), {
+      workspaceIds: [workspaceId],
+    })
+    expect(after).toMatchObject({ outcome: "matched" })
+  })
 
   it("says the index is behind while built by another parser version, until rebuilt", async () => {
     await apply(personActor(owner), [{ text: fixtures.musashi }])

@@ -153,9 +153,10 @@ export interface SectionJson {
   changed_by: string
   changed_by_kind: ActorKind
   /**
-   * The least-trusted author who wrote any of the section since it first
-   * appeared (outside, then unknown, agent, Shinan, person): a person who
-   * edits, renames or moves an agent's section does not make it theirs.
+   * The least-trusted author whose words may be in the section, from the
+   * document's word provenance (outside, then unknown, agent, Shinan,
+   * person; catalog §12.4). A person lifts it only by writing the words
+   * themselves; mechanical edits, moves and reverts do not.
    */
   written_by: string
   written_by_kind: ActorKind

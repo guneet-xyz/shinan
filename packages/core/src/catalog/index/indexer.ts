@@ -3,6 +3,7 @@ import { createHash } from "node:crypto"
 import { and, asc, eq, getTableColumns, inArray, schema, sql } from "@shinan/db"
 import type { IndexCheckDifference, Transaction } from "@shinan/db"
 
+import { schemaIdPrefix } from "../document/ids.js"
 import {
   buildTypeRegistry,
   maxDocumentBytes,
@@ -16,11 +17,12 @@ import type {
   Section,
   TypeRegistry,
 } from "../document/index.js"
-import { splitFrontmatter } from "../document/parse.js"
+import { readDocumentId, splitFrontmatter } from "../document/parse.js"
 import { attributeSections } from "./attribution.js"
 import type { AttributedSection, RevisionAuthor } from "./attribution.js"
-import { deriveDocumentRows } from "./derive.js"
+import { deriveDocumentRows, indexRulesVersion } from "./derive.js"
 import type { DocumentRows } from "./derive.js"
+import { Provenance } from "./provenance.js"
 import {
   latestRevision,
   latestTexts,
@@ -51,7 +53,7 @@ export async function lockIndexState(
 ): Promise<IndexState> {
   await tx
     .insert(schema.catalogIndexState)
-    .values({ workspaceId, parserVersion })
+    .values({ workspaceId, parserVersion, rulesVersion: indexRulesVersion })
     .onConflictDoNothing()
   const [state] = await tx
     .select()
@@ -98,6 +100,7 @@ export async function indexRevision(
     kind: t.kind,
     type: t.type,
     parserVersion: t.parserVersion,
+    rulesVersion: t.rulesVersion,
   }
   const indexed = await tx
     .select(columns)
@@ -162,37 +165,57 @@ export async function indexRevision(
       unchanged.set(documentId, schemaDocument)
 
   const all = [...changed.keys(), ...unchanged.keys()]
-  const credits = await storedCredits(
+  const stored = await storedCredits(
     tx,
-    all.filter((id) => indexed.get(id)?.parserVersion === parserVersion),
+    all.filter((id) => {
+      const row = indexed.get(id)
+      return (
+        row?.parserVersion === parserVersion &&
+        row.rulesVersion === indexRulesVersion
+      )
+    }),
   )
   // A document with no earlier revision starts with no credits.
   const earlier = await documentsWithEarlierText(
     tx,
     workspaceId,
-    [...changed.keys()].filter((id) => !credits.has(id)),
+    [...changed.keys()].filter((id) => !stored.has(id)),
     change.revision,
   )
   for (const id of changed.keys())
-    if (!credits.has(id) && !earlier.has(id)) credits.set(id, [])
+    if (!stored.has(id) && !earlier.has(id))
+      stored.set(id, { credits: [], provenance: new Provenance() })
   const rows: DocumentRows[] = []
   for (const [documentId, { revision, document }] of [
     ...changed,
     ...unchanged,
   ]) {
     const sections = document.body.sections
-    const previous = credits.get(documentId)
+    const previous = stored.get(documentId)
     let attribution: AttributedSection[]
+    let provenance: Provenance
     if (changed.has(documentId) && previous) {
-      attribution = attributeSections(previous, sections, change)
+      provenance = previous.provenance
+      attribution = attributeSections(
+        previous.credits,
+        sections,
+        change,
+        provenance,
+      )
     } else if (
       !changed.has(documentId) &&
       previous &&
-      same(previous, sections)
+      same(previous.credits, sections)
     ) {
-      attribution = previous
+      attribution = previous.credits
+      provenance = previous.provenance
     } else {
-      attribution = await replayDocument(tx, workspaceId, documentId, revision)
+      ;({ attribution, provenance } = await replayDocument(
+        tx,
+        workspaceId,
+        documentId,
+        revision,
+      ))
     }
     rows.push(
       deriveDocumentRows({
@@ -202,6 +225,7 @@ export async function indexRevision(
         document,
         registry,
         attribution,
+        provenance,
       }),
     )
   }
@@ -247,15 +271,32 @@ async function documentsWithEarlierText(
   return new Set(rows.map((row) => row.documentId))
 }
 
-/** The stored section credits of documents, by document. */
+/**
+ * The stored section credits and word provenance of documents, by
+ * document. A document whose provenance is not stored (an index built
+ * before provenance existed) is left out, so it is replayed.
+ */
 async function storedCredits(
   tx: Transaction,
   documentIds: readonly string[],
-): Promise<Map<string, AttributedSection[]>> {
-  const credits = new Map<string, AttributedSection[]>(
-    documentIds.map((id) => [id, []]),
-  )
-  if (documentIds.length === 0) return credits
+): Promise<
+  Map<string, { credits: AttributedSection[]; provenance: Provenance }>
+> {
+  const found = new Map<
+    string,
+    { credits: AttributedSection[]; provenance: Provenance }
+  >()
+  if (documentIds.length === 0) return found
+  const p = schema.catalogIndexProvenance
+  for (const row of await tx
+    .select({ documentId: p.documentId, authors: p.authors, units: p.units })
+    .from(p)
+    .where(inArray(p.documentId, [...documentIds])))
+    found.set(row.documentId, {
+      credits: [],
+      provenance: Provenance.decode(row),
+    })
+  if (found.size === 0) return found
   const s = schema.catalogIndexSections
   const rows = await tx
     .select({
@@ -269,27 +310,28 @@ async function storedCredits(
       leastTrusted: s.leastTrusted,
     })
     .from(s)
-    .where(inArray(s.documentId, [...documentIds]))
+    .where(inArray(s.documentId, [...found.keys()]))
     .orderBy(asc(s.documentId), asc(s.position))
   for (const { documentId, ...credit } of rows)
-    credits.get(documentId)!.push(credit)
-  return credits
+    found.get(documentId)!.credits.push(credit)
+  return found
 }
 
-/** A document's section credits from its whole history, up to `revision`. */
+/** A document's section credits and word provenance from its whole history, up to `revision`. */
 async function replayDocument(
   tx: Transaction,
   workspaceId: string,
   documentId: string,
   revision: number,
-): Promise<AttributedSection[]> {
+): Promise<{ attribution: AttributedSection[]; provenance: Provenance }> {
   const history = await textHistory(tx, workspaceId, [documentId], revision)
   const authors = await revisionAuthors(
     tx,
     workspaceId,
     history.map((h) => h.revision),
   )
-  return replay(history, authors).attribution
+  const { attribution, provenance } = replay(history, authors)
+  return { attribution, provenance }
 }
 
 /**
@@ -308,8 +350,13 @@ async function replayDocument(
 function replay(
   history: readonly StoredText[],
   authors: ReadonlyMap<number, RevisionAuthor>,
-): { attribution: AttributedSection[]; document: CatalogDocument | null } {
+): {
+  attribution: AttributedSection[]
+  provenance: Provenance
+  document: CatalogDocument | null
+} {
   let attribution: AttributedSection[] = []
+  const provenance = new Provenance()
   let document: CatalogDocument | null = null
   let previousBody: string | null = null
   let previousFits = false
@@ -325,9 +372,14 @@ function replay(
     if (last) document = read
     const author = authors.get(revision)
     if (!author) throw new Error(`Catalog revision ${revision} has no record`)
-    attribution = attributeSections(attribution, read.body.sections, author)
+    attribution = attributeSections(
+      attribution,
+      read.body.sections,
+      author,
+      provenance,
+    )
   }
-  return { attribution, document }
+  return { attribution, provenance, document }
 }
 
 /**
@@ -428,10 +480,15 @@ export async function deriveWorkspace(
   batchSize = 200,
 ): Promise<number> {
   const latest = await latestTexts(tx, workspaceId)
+  // Only type schema documents are needed before the rest, so only their
+  // frontmatter is read to find them.
   const schemas: SchemaDocument[] = []
-  for (const { text } of latest) {
+  const schemaIds = new Set<string>()
+  for (const { documentId, text } of latest) {
+    if (!readDocumentId(text)?.startsWith(schemaIdPrefix)) continue
     const document = parseCatalogDocument(text)
     if (document.kind === "schema") schemas.push(document)
+    schemaIds.add(documentId)
   }
   const registry = buildTypeRegistry(schemas)
   const authors = await revisionAuthors(tx, workspaceId)
@@ -452,7 +509,11 @@ export async function deriveWorkspace(
       while (end < history.length && history[end]!.documentId === documentId)
         end++
       const own = history.slice(start, end)
-      const { attribution, document } = replay(own, authors)
+      const { attribution, provenance, document } = replay(own, authors)
+      if (document?.kind === "schema" && !schemaIds.has(documentId))
+        throw new Error(
+          `Document ${documentId} is a type schema document that reading its frontmatter missed`,
+        )
       rows.push(
         deriveDocumentRows({
           workspaceId,
@@ -461,6 +522,7 @@ export async function deriveWorkspace(
           document: document!,
           registry,
           attribution,
+          provenance,
         }),
       )
       start = end
@@ -488,6 +550,7 @@ export async function rebuildWorkspaceIndex(
     tables.relations,
     tables.discrepancies,
     tables.sections,
+    tables.provenance,
     tables.documents,
   ])
     await tx.delete(table).where(eq(table.workspaceId, workspaceId))
@@ -500,11 +563,50 @@ export async function rebuildWorkspaceIndex(
     .set({
       revision,
       parserVersion,
+      rulesVersion: indexRulesVersion,
       rebuildRequestedAt: null,
       rebuiltAt: sql`now()`,
     })
     .where(eq(schema.catalogIndexState.workspaceId, workspaceId))
   return { revision, documents }
+}
+
+/**
+ * Whether a workspace's index must be rebuilt before it can be trusted: its
+ * state says another parser or rules version built it, or a rebuild is
+ * asked for.
+ */
+export function stateBehind(state: IndexState | undefined): boolean {
+  return (
+    !state ||
+    state.parserVersion !== parserVersion ||
+    state.rulesVersion !== indexRulesVersion ||
+    state.rebuildRequestedAt !== null
+  )
+}
+
+/**
+ * Whether any of a workspace's index rows were built by another parser or
+ * rules version, as an older release running against the same database
+ * leaves them (a rollback, then a roll forward): the round-trip check then
+ * reports the index as behind, not as differing from its text.
+ */
+export async function hasStaleRows(
+  tx: Transaction,
+  workspaceId: string,
+): Promise<boolean> {
+  const t = schema.catalogIndexDocuments
+  const [row] = await tx
+    .select({ documentId: t.documentId })
+    .from(t)
+    .where(
+      and(
+        eq(t.workspaceId, workspaceId),
+        sql`(${t.parserVersion} <> ${parserVersion} or ${t.rulesVersion} <> ${indexRulesVersion})`,
+      ),
+    )
+    .limit(1)
+  return row !== undefined
 }
 
 /** The tables of the index, by the names the round-trip check reports. */
@@ -514,6 +616,7 @@ const tables = {
   relations: schema.catalogIndexRelations,
   discrepancies: schema.catalogIndexDiscrepancies,
   sections: schema.catalogIndexSections,
+  provenance: schema.catalogIndexProvenance,
 } as const
 type TableName = keyof typeof tables
 
@@ -565,6 +668,8 @@ function rowsOf(rows: DocumentRows, name: TableName): object[] {
       return [rows.document]
     case "discrepancies":
       return [...rows.discrepancies].sort((a, b) => (a.key < b.key ? -1 : 1))
+    case "provenance":
+      return [rows.provenance]
     default:
       return rows[name]
   }
@@ -580,6 +685,7 @@ async function storedRows(
   const r = tables.relations
   const x = tables.discrepancies
   const s = tables.sections
+  const p = tables.provenance
   const found: Record<TableName, { documentId: string; search?: unknown }[]> = {
     documents: await tx.select().from(d).where(inArray(d.documentId, ids)),
     facts: await tx
@@ -602,6 +708,7 @@ async function storedRows(
       .from(s)
       .where(inArray(s.documentId, ids))
       .orderBy(asc(s.documentId), asc(s.position)),
+    provenance: await tx.select().from(p).where(inArray(p.documentId, ids)),
   }
   const byDocument = new Map<string, Record<TableName, object[]>>()
   for (const name of Object.keys(found) as TableName[]) {
@@ -618,6 +725,7 @@ async function storedRows(
           relations: [],
           discrepancies: [],
           sections: [],
+          provenance: [],
         }
         byDocument.set(row.documentId, entry)
       }
@@ -627,9 +735,11 @@ async function storedRows(
   return byDocument
 }
 
-/** A stable text form of rows: keys sorted, times as ISO text, absent values left out. */
+/** A stable text form of rows: keys sorted, times as ISO text, bytes as hex, absent values left out. */
 function canonical(value: unknown): string {
-  return JSON.stringify(value, (_key, v: unknown) => {
+  return JSON.stringify(value, function (this: unknown, key, v: unknown) {
+    const raw = (this as Record<string, unknown>)[key]
+    if (Buffer.isBuffer(raw)) return raw.toString("hex")
     if (v instanceof Date) return v.toISOString()
     if (v && typeof v === "object" && !Array.isArray(v)) {
       const sorted: Record<string, unknown> = {}
@@ -692,6 +802,13 @@ async function insertRows(
     tables.sections,
     rows.flatMap((r) => r.sections),
   )
+  // Provenance rows can hold tens of kilobytes each.
+  await insertJson(
+    tx,
+    tables.provenance,
+    rows.map((r) => r.provenance),
+    100,
+  )
 }
 
 /**
@@ -703,6 +820,7 @@ async function insertJson(
   tx: Transaction,
   table: (typeof tables)[TableName],
   rows: readonly object[],
+  perStatement = chunkSize,
 ): Promise<void> {
   if (rows.length === 0) return
   const columns = Object.entries(
@@ -713,16 +831,20 @@ async function insertJson(
   ).filter(([, column]) => !column.generated)
   const records = rows.map((row) => {
     const record: Record<string, unknown> = {}
-    for (const [key, column] of columns)
-      record[column.name] = (row as Record<string, unknown>)[key] ?? null
+    for (const [key, column] of columns) {
+      const value = (row as Record<string, unknown>)[key] ?? null
+      record[column.name] = Buffer.isBuffer(value)
+        ? `\\x${value.toString("hex")}`
+        : value
+    }
     return record
   })
   const names = sql.join(
     columns.map(([, column]) => sql.identifier(column.name)),
     sql`, `,
   )
-  for (let i = 0; i < records.length; i += chunkSize)
+  for (let i = 0; i < records.length; i += perStatement)
     await tx.execute(
-      sql`insert into ${table} (${names}) select ${names} from jsonb_populate_recordset(null::${table}, ${JSON.stringify(records.slice(i, i + chunkSize))}::jsonb)`,
+      sql`insert into ${table} (${names}) select ${names} from jsonb_populate_recordset(null::${table}, ${JSON.stringify(records.slice(i, i + perStatement))}::jsonb)`,
     )
 }

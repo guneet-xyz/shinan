@@ -323,9 +323,11 @@ a second PR, so M2-2 and M2-3 can start earlier.
 - **Trust labels** ([trust labels](agent-integrations.md#trust-labels)) on
   every text field: `author_kind`, `author` and `instruction`. All catalog
   text is `instruction: no`. The author of each fact is its fact check's
-  actor; the author of each body section is the actor of the revision that
-  last changed it, derived from history by the indexer (M2-3). Labels come
-  from Shinan's records, never from the text.
+  actor; the author of each body section is its `written_by`, the
+  least-trusted author whose words may remain in it, derived from history by
+  the indexer (M2-3, [#110](https://github.com/guneet-xyz/shinan/issues/110);
+  catalog §12.4). Labels come from Shinan's records, never from claims in
+  the text.
 - **Server instructions:** a short version of the conventions and a pointer
   to the skill ([design rule 7](agent-integrations.md#design-rules)).
 - **Writes are retry-safe** (design rule 3) through the idempotency key.
@@ -576,7 +578,8 @@ People type secrets; agents never handle them. Agents prepare every step.
 
 Decided by the owner on 2026-11-17 ("Approve and start",
 [issue #79](https://github.com/guneet-xyz/shinan/issues/79)). The labels
-M2-Q1 to M2-Q5 name the questions this plan asked.
+M2-Q1 to M2-Q5 name the questions this plan asked; M2-Q6 came up during
+M2-3 (2026-11-18).
 
 ### 7.1 Answers
 
@@ -600,6 +603,13 @@ M2-Q1 to M2-Q5 name the questions this plan asked.
    record changes.
 4. **M2-Q4, catalog purge:** in M2 (M2-10), catalog content only.
 5. **M2-Q5, agents at trial start:** OpenCode on Daedalus only.
+6. **M2-Q6, what a trust label's author means for catalog body sections**
+   (owner, 2026-11-18, [#110](https://github.com/guneet-xyz/shinan/issues/110)):
+   the least-trusted actor whose words may remain in the section, judged
+   from the document's history (catalog §12.4), not the actor of the last
+   change. Recorded in [agent integrations, trust labels](agent-integrations.md#trust-labels);
+   M2-6 shows `written_by` as `author`/`author_kind`. No decision record
+   changes.
 
 ### 7.2 Defaults for open questions in the documents
 

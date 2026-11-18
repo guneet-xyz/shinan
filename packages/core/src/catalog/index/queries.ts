@@ -7,7 +7,6 @@ import { InvalidInputError, NotFoundError } from "../../errors.js"
 import {
   builtInSchemas,
   entityStatuses,
-  parserVersion,
   schemaId,
   workspaceTarget,
 } from "../document/index.js"
@@ -28,6 +27,7 @@ import type {
   TypeSchemaAnswerJson,
   TypeSchemaJson,
 } from "./format.js"
+import { hasStaleRows, stateBehind } from "./indexer.js"
 import { latestRevision } from "./store.js"
 
 /**
@@ -59,8 +59,8 @@ async function answerFor(
     catalog_revision: state?.revision ?? 0,
     index_behind: state
       ? state.revision < latest ||
-        state.parserVersion !== parserVersion ||
-        state.rebuildRequestedAt !== null
+        stateBehind(state) ||
+        (await hasStaleRows(tx, workspaceId))
       : latest > 0,
   }
 }

@@ -18,6 +18,15 @@ import type {
 } from "../document/index.js"
 import type { AttributedSection } from "./attribution.js"
 import { stepJson, typeSchemaJson } from "./format.js"
+import type { Provenance } from "./provenance.js"
+
+/**
+ * The version of the index's own rules, beside the parser's: how sections
+ * are credited (`attribution.ts`, `provenance.ts`) and anything else derived
+ * beyond reading the text. Raise it when they change: indexes built by
+ * another version are then behind and rebuilt, as for a parser change.
+ */
+export const indexRulesVersion = 1
 
 export type DocumentRow = typeof schema.catalogIndexDocuments.$inferInsert
 export type FactRow = typeof schema.catalogIndexFacts.$inferInsert
@@ -25,6 +34,7 @@ export type RelationRow = typeof schema.catalogIndexRelations.$inferInsert
 export type DiscrepancyRow =
   typeof schema.catalogIndexDiscrepancies.$inferInsert
 export type SectionRow = typeof schema.catalogIndexSections.$inferInsert
+export type ProvenanceRow = typeof schema.catalogIndexProvenance.$inferInsert
 
 /** Every index row one catalog document gives. */
 export interface DocumentRows {
@@ -33,6 +43,7 @@ export interface DocumentRows {
   relations: RelationRow[]
   discrepancies: DiscrepancyRow[]
   sections: SectionRow[]
+  provenance: ProvenanceRow
 }
 
 export interface DeriveInput {
@@ -45,6 +56,8 @@ export interface DeriveInput {
   registry: TypeRegistry
   /** Credits for `document.body.sections`, in the same order. */
   attribution: readonly AttributedSection[]
+  /** Where the document's words came from, after this revision. */
+  provenance: Provenance
 }
 
 /**
@@ -71,6 +84,7 @@ export function deriveDocumentRows(input: DeriveInput): DocumentRows {
   const row: DocumentRow = {
     ...base,
     revision: input.revision,
+    rulesVersion: indexRulesVersion,
     kind: document.kind,
     catalogId: document.id,
     type: null,
@@ -165,6 +179,7 @@ export function deriveDocumentRows(input: DeriveInput): DocumentRows {
         leastTrusted: credit.leastTrusted,
       }
     }),
+    provenance: { ...base, ...input.provenance.encode() },
   }
 }
 
