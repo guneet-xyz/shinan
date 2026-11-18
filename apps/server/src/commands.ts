@@ -30,6 +30,7 @@ import { createApp, createInternalApp } from "./app.js"
 import { readDatabaseUrl, readEmailConfig, readWebConfig } from "./config.js"
 import type { EmailConfig, Env } from "./config.js"
 import { checkHealth } from "./health.js"
+import { listenerOptions } from "./in-flight.js"
 import { connectJobQueue, migrateJobQueue, startWorker } from "./jobs.js"
 import { createBetterAuthSignIn } from "./sign-in/better-auth.js"
 
@@ -286,11 +287,14 @@ interface Listener {
 
 async function serveUntilShutdown(listeners: Listener[]): Promise<void> {
   const servers = listeners.map(({ name, fetch, host, port }) =>
-    serve({ fetch, hostname: host, port }, (info) => {
-      console.info(
-        `${productName} ${name} listening on http://${info.address}:${info.port}`,
-      )
-    }),
+    serve(
+      { fetch, hostname: host, port, serverOptions: listenerOptions() },
+      (info) => {
+        console.info(
+          `${productName} ${name} listening on http://${info.address}:${info.port}`,
+        )
+      },
+    ),
   )
 
   await waitForShutdown()

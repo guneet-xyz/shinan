@@ -32,6 +32,7 @@ import {
   proposalLimits,
   RuleViolationError,
   shinanLabel,
+  throttleAddress,
 } from "@shinan/core"
 import type { AgentActor, Context, RequestInfo } from "@shinan/core"
 import type { Database } from "@shinan/db"
@@ -40,6 +41,7 @@ import { createLimitedLog, errorSummary } from "@shinan/db"
 import { requireAgent } from "../api/agent-auth.js"
 import type { AgentEnv } from "../api/agent-auth.js"
 import { errorHandler } from "../api/errors.js"
+import { limitInFlight } from "../in-flight.js"
 import { rateLimited } from "../security.js"
 
 export interface McpOptions {
@@ -59,6 +61,15 @@ export interface McpOptions {
  */
 export const mcpBodyLimit = 512 * 1024
 
+/**
+ * How many `/mcp` requests may be in flight at once (**proposed**, M2-12):
+ * 8 per token, as deep as one workspace's proposal queue, for an agent and
+ * its subagents; 16 per network address, for several agents on one
+ * machine. With 512 KB bodies that is at most about 5 MiB held for one
+ * token, and 10 MiB for one address, against `web`'s memory limit.
+ */
+export const mcpInFlight = { perToken: 8, perAddress: 16 }
+
 /** The protocol revisions the endpoint serves (architecture §8.1). */
 export const protocolVersions = ["2026-07-28", "2025-11-25"] as const
 
@@ -71,11 +82,18 @@ export const protocolVersions = ["2026-07-28", "2025-11-25"] as const
  *
  * 1. the per-address request limit, as for `/api/agent`, since a working
  *    token is not held up by the failed-token limit;
- * 2. the body size, before the body is read;
- * 3. `Origin`: a request a browser sends from another site is refused
+ * 2. the requests in flight from the address, an IPv6 address by its /64
+ *    (`mcpInFlight`);
+ * 3. the body size, before the body is read;
+ * 4. `Origin`: a request a browser sends from another site is refused
  *    (403), as the transport requires;
- * 4. the agent token (`requireAgent`): only `Authorization: Bearer`, never
- *    with a cookie or in the address.
+ * 5. the agent token (`requireAgent`): only `Authorization: Bearer`, never
+ *    with a cookie or in the address;
+ * 6. the requests in flight with the token (`mcpInFlight`).
+ *
+ * Over 2 or 6 the answer is 429, before the body is read, so a client that
+ * sends large bodies slowly holds only a few in memory; Node cuts off any
+ * request not received in `requestReceiveSeconds`.
  *
  * The SDK then checks the 2026-07-28 headers (`MCP-Protocol-Version`,
  * `Mcp-Method`, `Mcp-Name`) against the body. Tools only translate to core
@@ -103,6 +121,15 @@ export function createMcp(options: McpOptions) {
     )
   mcp.use(
     "*",
+    limitInFlight<AgentEnv>({
+      max: mcpInFlight.perAddress,
+      // An IPv6 address by its /64, as the rate limits count it.
+      key: (c) => throttleAddress(options.requestInfo(c).networkAddress),
+      refuse: tooManyInFlight,
+    }),
+  )
+  mcp.use(
+    "*",
     bodyLimit({
       maxSize: mcpBodyLimit,
       onError: () => jsonRpcError(413, -32600, "The request is too large"),
@@ -123,6 +150,14 @@ export function createMcp(options: McpOptions) {
       db: options.db,
       installationUrl: options.installationUrl,
       requestInfo: options.requestInfo,
+    }),
+  )
+  mcp.use(
+    "*",
+    limitInFlight<AgentEnv>({
+      max: mcpInFlight.perToken,
+      key: (c) => c.var.agent.tokenId,
+      refuse: tooManyInFlight,
     }),
   )
 
@@ -167,6 +202,16 @@ export function createMcp(options: McpOptions) {
 }
 
 const log = createLimitedLog()
+
+function tooManyInFlight(): Response {
+  const response = jsonRpcError(
+    429,
+    -32000,
+    "Too many requests at once; send this one again when an earlier one is answered",
+  )
+  response.headers.set("retry-after", "1")
+  return response
+}
 
 /**
  * Checks a POST body before the SDK sees it, and returns it parsed, or the

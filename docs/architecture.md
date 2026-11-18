@@ -902,11 +902,18 @@ sit behind NAT, firewalls or tailnets. The agent-facing parts of
   (`@modelcontextprotocol/server` 2.4), whose `createMcpHandler` serves the
   2026-07-28 revision and, statelessly, the 2025 `initialize` handshake from
   one per-request server. Each request passes, in order: the per-address
-  request limit (as `/api/agent`), a 512 KB body limit (larger than the
-  API's 64 KB, because one catalog proposal may hold 256 KiB of JSON; M2-12
-  reviews it), the `Origin` check (a request carrying any `Origin` but the
-  installation's own is refused with 403), and `requireAgent`; the SDK then
-  checks the 2026-07-28 headers against the body (400 when they disagree).
+  request limit (as `/api/agent`), at most 16 requests in flight per
+  address (an IPv6 address by its /64), a 512 KB body limit (larger than the API's 64 KB, because one
+  catalog proposal may hold 256 KiB of JSON), the `Origin` check (a request
+  carrying any `Origin` but the installation's own is refused with 403),
+  `requireAgent`, and at most 8 requests in flight per token; over either
+  in-flight cap the answer is 429 before the body is read, and Node gives a
+  client 30 seconds to send a whole request (**proposed**, M2-12: slow
+  senders otherwise held about 0.63 MiB of memory per stalled body for up
+  to 300 seconds). The SDK then checks the 2026-07-28 headers against the
+  body (400 when they disagree). Answers to the 2025 handshake's requests
+  are short event streams (`text/event-stream`) that close after the
+  result; `responseMode: "json"` shapes only 2026-07-28 exchanges.
   Before the SDK, Shinan refuses a JSON array of messages (400: neither
   revision allows batches, and a batch would multiply the request limits,
   which count HTTP requests), an `MCP-Protocol-Version` other than the two
@@ -1242,7 +1249,9 @@ From the `workspace` repository's catalog and `infra/musashi` (read 2026-11-16):
 - **Proposed** starting memory limits: web 512 MiB, worker 384 MiB, PostgreSQL
   512 MiB; estimates to be measured during the proof of concept. **M2-4:**
   web 1,536 MiB, for its one catalog worker (heap up to 768 MiB, §5.3); the
-  `infra/musashi` stack needs the same change when M2 is deployed.
+  `infra/musashi` stack's change is drafted for the M2 deployment request
+  ([infra/musashi#130](https://git.guneet.dev/infra/musashi/issues/130),
+  draft PR [#131](https://git.guneet.dev/infra/musashi/pulls/131); M2-12).
 - **Proposed:** containers hardened as in [10.1](#101-threats-and-controls); the
   same image and reference Compose layout self-hosters get, adapted to
   Musashi's rules. Reason: proves the self-hosting path by using it.

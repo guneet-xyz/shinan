@@ -135,6 +135,20 @@ reads the visitor's address from `X-Forwarded-For`, which your proxy must
 set (Caddy and nginx's usual settings do). Without it, every visitor shares
 one address and one set of limits.
 
+**Agents' requests at `/mcp`.** Don't buffer its answers, and don't time them
+out in under a few minutes. A request in the 2025-11-25 form, which OpenCode
+uses by default, is answered as a short event stream (`text/event-stream`)
+that closes after the result; the 2026-07-28 form gets plain JSON. Either can
+take minutes: a catalog proposal may wait in its workspace's queue, and for
+the catalog to load after a restart. Caddy's `reverse_proxy` needs nothing
+(it flushes event streams at once and sets no response timeout). With nginx,
+set `proxy_buffering off` and `proxy_read_timeout 300s` for `/mcp`; its
+default of 60 seconds would cut a slow answer off. Don't limit request bodies
+below 512 KB: Shinan limits them itself, before reading them (64 KB on the
+API, 512 KB on `/mcp` and catalog proposals), gives a client 30 seconds to
+send a whole request, and answers 429 to more than a few `/mcp` requests in
+flight at once from one token or address.
+
 The address Shinan sees is not always `127.0.0.1`: a proxy on the host
 reaching the published port arrives from the Docker network's gateway. Find it
 with:
@@ -218,6 +232,67 @@ To roll back, set the previous digest and run `docker compose up -d`.
 Migrations are written to work with the previous release, so this needs no
 database change, unless the release notes say otherwise; then restore the dump
 you took in step 2.
+
+### Upgrading from 0.2 to 0.3 (the catalog)
+
+0.3 adds the catalog, the agents' MCP endpoint and the agent skill. Before you
+upgrade:
+
+- **Memory.** `web` now runs a [catalog worker](#catalog-workers) thread. The
+  reference Compose file raises its limit from 512 MiB to 1,536 MiB
+  (`SHINAN_WEB_MEMORY`). If you copied the Compose file, raise `web`'s
+  `mem_limit` the same way. If the host is short of memory, a smaller ceiling
+  works with a smaller heap: `SHINAN_CATALOG_WORKER_HEAP_MB=640` and 1,280 MiB.
+- **Settings.** `SHINAN_CATALOG_WORKERS` and `SHINAN_CATALOG_WORKER_HEAP_MB`
+  are new and optional (defaults 1 and 768).
+- **Your proxy** must route every path: agents use `/mcp`, and OpenCode
+  fetches `/skills/` without signing in. Don't buffer `/mcp` answers (some
+  are short event streams) or time them out in under a few minutes, and
+  don't limit request bodies below 512 KB ([reverse proxy](#reverse-proxy)).
+  Caddy needs no change; nginx needs `proxy_buffering off` and a longer
+  `proxy_read_timeout` for `/mcp`.
+- **Migrations** only add tables, columns, indexes and triggers. 0.2's code
+  runs on the upgraded database: rolling back is setting the previous digest
+  again, and the catalog and agents stay in the database, unused, until you
+  upgrade again. Until then, agents' requests to `/mcp` get 404. 0.2 does
+  not revoke agent tokens when someone is removed from the allowlist and
+  added back, or signs out everywhere: after upgrading again, revoke the
+  tokens of anyone whose access changed in between. To drop 0.3's data
+  instead, restore the dump into an empty database, as in
+  [backups](#backups-your-responsibility); restoring over the upgraded
+  database with `pg_restore --clean` leaves 0.3's tables behind. A failed
+  `migrate` changes nothing: it applies all pending migrations in one
+  transaction.
+- **The agent index** has nothing to rebuild on the first start, since the
+  catalog starts empty. From then on the worker checks it every night
+  ([the agent index](#the-agent-index)).
+
+## Agents: the MCP endpoint, tokens and the skill
+
+Coding agents reach Shinan at `https://<your host>/mcp`, with an agent token
+in the `Authorization` header, and load the agent skill from
+`https://<your host>/skills/`
+([agent integrations](agent-integrations.md#mcp-server-and-tools)).
+
+- **Tokens** are made by members, by hand, for their own agents (Your agents,
+  then **Set up OpenCode** for the steps). Each is shown once and stored only
+  as a hash. A token is read-only or full, works only in the workspace it was
+  made for, and is bound to `SHINAN_URL`. Members revoke their own tokens;
+  workspace owners can revoke any token in the workspace. Each new token
+  emails its member, and is recorded in the workspace's security log.
+- **`/mcp` refuses sign-in cookies**, a token in the address and requests
+  from other sites, so a browser can't be used to call it. Each token is rate
+  limited (600 requests a minute); so are failed token uses per address. At
+  most 8 requests may be in flight at once per token and 16 per address (an
+  IPv6 address by its /64); more get 429, before their bodies are read.
+  OpenCode (checked in its source, 2026-11-18) retries a 429 twice, after
+  250 ms and 1 s, only while connecting and listing tools; a tool call that
+  gets 429 fails at once, and the agent sees the error and can call again.
+  Normal use, a few tool calls at a time, stays well below the cap.
+  Agents' catalog proposals have their own limit (60 in 10 minutes).
+- **`/skills/`** serves only the skill's own files, the same for every
+  installation, with no workspace data
+  ([D-056](decisions/D-056-public-skill-path.md)).
 
 ## Backups: your responsibility
 
