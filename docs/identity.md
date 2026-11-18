@@ -500,6 +500,15 @@ in the [glossary](domain-model.md#invitation).
   installation's name.
 - Creating, withdrawing, accepting and declining are recorded in the security
   log.
+- **Proposed ([#67](https://github.com/guneet-xyz/shinan/issues/67)):** expiry
+  is recorded too. An hourly worker job (`invitation-expiry`) marks every
+  pending invitation past its expiry as `expired`, as of its expiry time, and
+  records an `invitation.expired` event and security-log entry credited to
+  Shinan; inviting the same address again before the job has run records it
+  the same way. Until then, reads already show such an invitation as expired
+  and it cannot be accepted. Reason: the workspace's history and security log
+  then show when each invitation stopped working (section 11), not only that
+  it did.
 
 ### 5.3 Leaving, removal and role changes
 

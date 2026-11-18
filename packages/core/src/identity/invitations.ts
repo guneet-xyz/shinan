@@ -1,10 +1,12 @@
 import { alias, and, desc, eq, gt, isNull, or, schema, sql } from "@shinan/db"
 import type { InvitationState, Role, Transaction } from "@shinan/db"
 
+import type { ResolvedActor } from "../actor.js"
 import {
   atInstallation,
   inWorkspace,
   joinWorkspaceByInvitation,
+  shinanInWorkspace,
 } from "../authorize.js"
 import type { Context, WorkspaceScope } from "../context.js"
 import { queueEmail } from "../email/queue.js"
@@ -108,10 +110,8 @@ export async function createInvitation(
           "That address already has a pending invitation; send it again instead",
         )
       }
-      await scope.tx
-        .update(schema.invitations)
-        .set({ state: "expired", decidedAt: sql`now()` })
-        .where(eq(schema.invitations.id, earlier.id))
+      // Replaced before the expiry job reached it: recorded as it would.
+      await recordExpired(scope, earlier, shinanResolved)
     }
 
     const token = newToken()
@@ -371,6 +371,78 @@ function invitationsForYou(tx: Transaction) {
     .innerJoin(inviterPerson, eq(inviterPerson.id, inviter.personId))
 }
 
+/** Shinan as it is recorded: an invitation's expiry is credited to it. */
+const shinanResolved: ResolvedActor = Object.freeze({
+  kind: "shinan",
+  personId: null,
+  agentId: null,
+  agentSessionId: null,
+  label: "shinan",
+  confidence: "recorded",
+  member: null,
+  operator: false,
+})
+
+/**
+ * Marks a pending invitation past its expiry as `expired`, as of its
+ * expiry, and records it: an `invitation.expired` event and security-log
+ * entry, credited to Shinan (identity §5.2, §11).
+ */
+async function recordExpired(
+  scope: WriteScope,
+  invitation: typeof schema.invitations.$inferSelect,
+  by: ResolvedActor,
+): Promise<void> {
+  const [expired] = await scope.tx
+    .update(schema.invitations)
+    .set({ state: "expired", decidedAt: invitation.expiresAt })
+    .where(
+      and(
+        eq(schema.invitations.id, invitation.id),
+        eq(schema.invitations.state, "pending"),
+      ),
+    )
+    .returning()
+  if (!expired) return
+  await recordInvitation(scope, "invitation.expired", expired, {
+    summary: `The invitation for ${expired.email} expired`,
+    by,
+  })
+}
+
+/** How many invitations one run of the expiry job records at most. */
+export const expiryBatch = 500
+
+/**
+ * Records every pending invitation past its expiry as `expired` (identity
+ * §5.2): the scheduled job's work, hourly. Until it runs, reads already show
+ * such an invitation as expired, and it cannot be accepted. Returns how many
+ * it recorded; a run takes at most `expiryBatch`, and the next run the rest.
+ */
+export async function expireInvitations(ctx: Context): Promise<number> {
+  return atInstallation(ctx, "invitation.expire", async (installation) => {
+    const due = await installation.tx
+      .select()
+      .from(schema.invitations)
+      .where(
+        and(
+          eq(schema.invitations.state, "pending"),
+          sql`${schema.invitations.expiresAt} <= now()`,
+        ),
+      )
+      .orderBy(schema.invitations.expiresAt, schema.invitations.id)
+      .limit(expiryBatch)
+      .for("update", { skipLocked: true })
+    for (const invitation of due)
+      await recordExpired(
+        shinanInWorkspace(installation, invitation.workspaceId),
+        invitation,
+        installation.actor,
+      )
+    return due.length
+  })
+}
+
 function withExpiry<T extends { state: InvitationState; expiresAt: Date }>(
   row: T,
 ): T {
@@ -504,19 +576,25 @@ async function recordInvitation(
   scope: WriteScope,
   kind: string,
   invitation: typeof schema.invitations.$inferSelect,
-  event: { summary: string },
+  event: {
+    summary: string
+    /** Who it is credited to, when not the scope's actor. */
+    by?: ResolvedActor
+  },
 ): Promise<void> {
+  const actor = event.by ?? scope.actor
   await appendEvent(scope, {
     kind,
     subjects: [{ type: "invitation", id: invitation.id }],
     summary: event.summary,
     data: { email: invitation.email, role: invitation.role },
+    credit: actor,
   })
   await recordSecurityEntry(scope.tx, {
     workspaceId: scope.workspaceId,
     action: kind,
     outcome: "succeeded",
-    actor: scope.actor,
+    actor,
     subjectPersonId: await personWith(scope.tx, invitation.email),
     request: scope.request,
     details: {

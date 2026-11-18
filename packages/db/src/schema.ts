@@ -359,8 +359,8 @@ export const members = pgTable(
 
 /**
  * Where an invitation stands (identity §5.2, glossary). A pending
- * invitation past its expiry counts as expired; it is stored as `expired`
- * only when it is replaced.
+ * invitation past its expiry counts as expired; the hourly expiry job (or
+ * inviting the address again) stores it as `expired`.
  */
 export const invitationStates = [
   "pending",

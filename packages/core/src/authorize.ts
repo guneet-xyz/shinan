@@ -169,6 +169,33 @@ export async function createWorkspaceAsOwner(
 }
 
 /**
+ * A scope in one workspace for Shinan's own job that records invitations as
+ * expired (identity §5.2): Shinan is no member, so this is the only way it
+ * acts in a workspace, and only for that action. The caller has found the
+ * invitations in that workspace.
+ */
+export function shinanInWorkspace(
+  installation: InstallationScope<"invitation.expire">,
+  workspaceId: string,
+): WorkspaceScope<"invitation.expire"> {
+  if (
+    installation.action !== "invitation.expire" ||
+    installation.actor.kind !== "shinan"
+  )
+    throw new Error("Only Shinan's expiry job can use this")
+  return {
+    action: installation.action,
+    tx: installation.tx,
+    workspaceId,
+    actor: installation.actor,
+    origin: installation.origin,
+    request: installation.request,
+    jobs: installation.jobs,
+    installationUrl: installation.installationUrl,
+  } as WorkspaceScope<"invitation.expire">
+}
+
+/**
  * Makes the actor a member of a workspace through an invitation they accept
  * (identity §5.2), and returns a scope in it for recording that. Like
  * `createWorkspaceAsOwner`, it is the only way in without the membership
