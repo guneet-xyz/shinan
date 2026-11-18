@@ -23,6 +23,7 @@ import { linkClass } from "../facts"
 import { wikiPath } from "../format"
 import { PageNotice } from "../notices"
 import { ProposalChanges } from "./changes"
+import { BulkApproval, ProposalComments } from "./review-actions"
 import { hasHidden, visible } from "./visible"
 
 /** Whether a proposal was made by one of the viewer's own agents. */
@@ -41,6 +42,16 @@ function Author(props: { proposal: CatalogProposal; personId: string }) {
       {fromYourAgent(proposal, props.personId) && (
         <Badge variant="secondary" className="ml-2">
           from your agent
+        </Badge>
+      )}
+      {proposal.authorStatus === "agent-disabled" && (
+        <Badge variant="destructive" className="ml-2">
+          agent disabled
+        </Badge>
+      )}
+      {proposal.authorStatus === "member-left" && (
+        <Badge variant="destructive" className="ml-2">
+          member left
         </Badge>
       )}
     </>
@@ -69,7 +80,10 @@ export function ReviewPage() {
         </Link>
         .
       </PageHeader>
-      <BulkApproval />
+      <BulkApproval
+        waiting={waiting.data?.items ?? []}
+        onDone={waiting.reload}
+      />
       <Section title="Waiting for approval">
         {waiting.error ? <ErrorMessage error={waiting.error} /> : null}
         {!waiting.data && !waiting.error && <Loading />}
@@ -109,24 +123,6 @@ export function ReviewPage() {
       </Section>
     </div>
   )
-}
-
-/**
- * Bulk approval while the strict setting is on (catalog §8.2): all of one
- * task's proposals, or a selected list. Slot for M2-4b, which adds the
- * strict setting and bulk approval; until then nothing is shown.
- */
-export function BulkApproval() {
-  return null
-}
-
-/**
- * Comments on a proposal, from members and agents (catalog §8.6). Slot for
- * M2-4b, which adds comments; until then nothing is shown.
- */
-export function ProposalComments(props: { proposal: CatalogProposal }) {
-  void props
-  return null
 }
 
 /** One catalog proposal: what it changes and why, and what to do with it. */
@@ -331,6 +327,17 @@ function Decide(props: {
 
   return (
     <Section title="Decide">
+      {proposal.authorStatus !== undefined &&
+        proposal.authorStatus !== "current" && (
+          <PageNotice warning>
+            <p>
+              {proposal.authorStatus === "agent-disabled"
+                ? "The agent that made this proposal has since been disabled."
+                : "The member who made this proposal, or whose agent did, has left the workspace."}{" "}
+              Look at it the harder for that, or reject it.
+            </p>
+          </PageNotice>
+        )}
       {own && !mayApprove && (
         <p className="text-sm text-muted-foreground">
           This is from your agent: another member approves it, since this

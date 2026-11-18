@@ -1072,7 +1072,18 @@ describe("catalog review", () => {
         ],
       }),
     )
-    fake.catalogProposals.mockResolvedValue({ items: [proposal()] })
+    fake.recentCatalogChanges.mockResolvedValue({
+      items: [
+        {
+          revision: 8,
+          proposal: proposal(),
+          approvedBy: null,
+          revertible: true,
+          revertedBy: null,
+        },
+      ],
+      nextCursor: null,
+    })
     renderApp(`/w/${workspaceId}/wiki/changes`, fake)
     expect(
       (

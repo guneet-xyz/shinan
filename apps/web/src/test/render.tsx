@@ -141,6 +141,11 @@ export function fakeApi(overrides: Partial<ApiClient> = {}): Fake {
     markCatalogPageOpened: () => Promise.resolve(),
     // No catalog proposals unless a test makes some.
     catalogProposals: () => Promise.resolve({ items: [] }),
+    catalogSettings: () => Promise.resolve({ strict: false }),
+    catalogProposalComments: () =>
+      Promise.resolve({ items: [], nextCursor: null, total: 0 }),
+    recentCatalogChanges: () =>
+      Promise.resolve({ items: [], nextCursor: null }),
   }
   const names: (keyof ApiClient)[] = [
     "status",
@@ -215,6 +220,14 @@ export function fakeApi(overrides: Partial<ApiClient> = {}): Fake {
     "approveCatalogProposal",
     "rejectCatalogProposal",
     "withdrawCatalogProposal",
+    "catalogSettings",
+    "setCatalogStrict",
+    "bulkApproveCatalogProposals",
+    "bulkRejectCatalogProposals",
+    "catalogProposalComments",
+    "commentOnCatalogProposal",
+    "revertCatalogProposal",
+    "recentCatalogChanges",
   ]
   const fake = {} as Record<string, unknown>
   for (const name of names) {

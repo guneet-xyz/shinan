@@ -10,7 +10,7 @@ import type {
   CatalogList,
   CatalogListItem,
   CatalogNotYetRecordedItem,
-  CatalogProposal,
+  RecentCatalogChange,
 } from "@shinan/api-client"
 
 import { Button, buttonVariants } from "@/components/ui/button"
@@ -26,6 +26,7 @@ import { EntityLink, FactRow, linkClass } from "./facts"
 import { entityPath, wikiPath } from "./format"
 import { sectionElementId } from "./links"
 import { IndexBehind } from "./notices"
+import { RevertAction } from "./review/revert"
 
 /** What each workspace-wide list is, in words (catalog §10). */
 const listNames: Record<CatalogList, { title: string; about: string }> = {
@@ -425,15 +426,19 @@ export function ChangesPage() {
       const since = Math.max(0, latest - pageSize)
       const [answer, applied] = await Promise.all([
         api.catalogChanges(workspace.id, { since, limit: pageSize }),
-        api.catalogProposals(workspace.id, { state: "applied", limit: 200 }),
+        // The same revisions, from the proposals that made them: whether
+        // each can be reverted, and whether it was.
+        api.recentCatalogChanges(workspace.id, {
+          approval: "any",
+          cursor: latest + 1,
+          limit: pageSize,
+        }),
       ])
       return {
         ...answer,
         since,
         items: answer.items.filter((i) => i.revision <= latest).reverse(),
-        proposals: new Map(
-          applied.items.map((p) => [p.appliedRevision, p] as const),
-        ),
+        proposals: new Map(applied.items.map((c) => [c.revision, c] as const)),
       }
     },
   )
@@ -455,7 +460,8 @@ export function ChangesPage() {
               <ChangeItem
                 workspaceId={workspace.id}
                 change={change}
-                proposal={changes.data!.proposals.get(change.revision)}
+                applied={changes.data!.proposals.get(change.revision)}
+                onReverted={changes.reload}
               />
             </li>
           ))}
@@ -477,9 +483,11 @@ export function ChangesPage() {
 function ChangeItem(props: {
   workspaceId: string
   change: CatalogChange
-  proposal: CatalogProposal | undefined
+  applied: RecentCatalogChange | undefined
+  onReverted: () => void
 }) {
-  const { change, proposal } = props
+  const { change } = props
+  const proposal = props.applied?.proposal
   return (
     <>
       <p className="text-sm">
@@ -501,7 +509,9 @@ function ChangeItem(props: {
           </>
         )}
       </p>
-      {proposal && <RevertAction proposal={proposal} />}
+      {props.applied && (
+        <RevertAction change={props.applied} onReverted={props.onReverted} />
+      )}
       <ul className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
         {change.documents.map((d, i) => (
           <li key={`${d.id ?? "?"}:${i}`}>
@@ -529,14 +539,4 @@ function ChangeItem(props: {
       </ul>
     </>
   )
-}
-
-/**
- * Revert (human experience, reviewing catalog changes): one action that
- * makes a new proposal restoring the earlier values (catalog §8.2). Slot
- * for M2-4b, which adds revert; until then nothing is shown.
- */
-export function RevertAction(props: { proposal: CatalogProposal }) {
-  void props
-  return null
 }
