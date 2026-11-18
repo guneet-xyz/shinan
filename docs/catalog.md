@@ -130,7 +130,7 @@ lines, then a Markdown body.
   object member (`__proto__`, `constructor`). Reason: every reader (the
   index, the export, a person) then agrees on what the text says.
 - **Proposed (M2-1):** limits on what Shinan reads, checked before anything
-  else. A document is at most 64 KiB (65,536 characters); the largest
+  else. A document is at most 64 KiB (65,536 bytes of UTF-8); the largest
   `workspace` repository document is about 19 KB. In the body, a line may
   start with at most 32 nested quote or list markers, at most 1,000 quotes or
   list items may be opened inside others, and at most 500 lines may consist

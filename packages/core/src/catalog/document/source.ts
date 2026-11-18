@@ -48,3 +48,8 @@ export function lineRange(text: string, range: Range): Range {
 export function slice(text: string, range: Range): string {
   return text.slice(range.start, range.end)
 }
+
+/** The length of `text` in UTF-8 bytes, as it is stored and sent. */
+export function utf8Length(text: string): number {
+  return Buffer.byteLength(text, "utf8")
+}

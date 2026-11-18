@@ -68,7 +68,7 @@ export type {
   WrittenFact,
 } from "./model.js"
 export {
-  maxDocumentLength,
+  maxDocumentBytes,
   parseCatalogDocument,
   parserVersion,
 } from "./parse.js"
@@ -88,7 +88,7 @@ export type {
   TypeRegistry,
   TypeSchema,
 } from "./schemas.js"
-export { lineRange, positionAt } from "./source.js"
+export { lineRange, positionAt, utf8Length } from "./source.js"
 export type { Position, Range } from "./source.js"
 export type {
   ScalarValue,

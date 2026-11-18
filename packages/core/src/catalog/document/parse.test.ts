@@ -6,7 +6,7 @@ import {
   musashi,
   startHere,
 } from "../../../test/catalog-documents.js"
-import { maxDocumentLength, parseCatalogDocument } from "./parse.js"
+import { maxDocumentBytes, parseCatalogDocument } from "./parse.js"
 import type { ProblemCode } from "./problems.js"
 import { slice } from "./source.js"
 
@@ -505,13 +505,22 @@ describe("hostile input", () => {
   const front = withFrontmatter(header, "")
   const fill = (unit: string, size: number) =>
     unit.repeat(Math.ceil(size / unit.length)).slice(0, size)
-  const room = maxDocumentLength - front.length
+  const room = maxDocumentBytes - front.length
 
   it("refuses a document longer than the limit before reading it", () => {
     const d = parseCatalogDocument(front + "x".repeat(room + 1))
     expect(d.problems.map((p) => p.code)).toEqual(["too-large"])
     expect(d.id).toBeNull()
     expect(parseCatalogDocument(front + "x".repeat(room)).problems).toEqual([])
+  })
+
+  it("counts the limit in UTF-8 bytes, not characters", () => {
+    // "é" is one character but two bytes.
+    const half = "é".repeat(Math.ceil(room / 2) + 1)
+    expect(half.length).toBeLessThan(room)
+    const d = parseCatalogDocument(front + half)
+    expect(d.problems.map((p) => p.code)).toEqual(["too-large"])
+    expect(d.problems[0]?.message).toContain("bytes")
   })
 
   // Each of these took from 10 seconds to minutes at this size before the

@@ -34,6 +34,7 @@ import type {
 } from "./model.js"
 import { blocking } from "./problems.js"
 import type { Problem, ProblemCode } from "./problems.js"
+import { utf8Length } from "./source.js"
 import type { Range } from "./source.js"
 import { parseYaml } from "./yaml.js"
 import type { ScalarValue, YamlEntry, YamlMap, YamlNode } from "./yaml.js"
@@ -46,11 +47,11 @@ import type { ScalarValue, YamlEntry, YamlMap, YamlNode } from "./yaml.js"
 export const parserVersion = 1
 
 /**
- * The longest document Shinan reads, in characters (UTF-16 code units, as
- * JavaScript counts them). Checked before anything else, so hostile input
- * cannot make reading slow (catalog §2.1).
+ * The largest document Shinan reads: 64 KiB of UTF-8, the form documents are
+ * stored and sent in. Checked before anything else, so hostile input cannot
+ * make reading slow (catalog §2.1).
  */
-export const maxDocumentLength = 64 * 1024
+export const maxDocumentBytes = 64 * 1024
 
 /**
  * Reads one catalog document. Never throws: anything that keeps the document
@@ -58,11 +59,12 @@ export const maxDocumentLength = 64 * 1024
  * that could be read is still there, with its place in `text`.
  */
 export function parseCatalogDocument(text: string): CatalogDocument {
-  if (text.length > maxDocumentLength)
+  const bytes = utf8Length(text)
+  if (bytes > maxDocumentBytes)
     return unread(
       text,
       "too-large",
-      `The document is ${text.length} characters long; a catalog document holds at most ${maxDocumentLength}`,
+      `The document is ${bytes} bytes long; a catalog document holds at most ${maxDocumentBytes} bytes (64 KiB)`,
     )
   try {
     return read(text)
