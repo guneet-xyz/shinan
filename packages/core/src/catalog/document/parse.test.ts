@@ -571,6 +571,24 @@ describe("hostile input", () => {
       (n) => (`> a\n${"  b\n".repeat(990)}\n` + fill("x\n\n", n)).slice(0, n),
     ],
     [
+      "> > a, then > b, just under the limit",
+      (n) => (`> > a\n${"> b\n".repeat(990)}\n` + fill("x\n\n", n)).slice(0, n),
+    ],
+    [
+      "> > > > a, then > b, just under the limit",
+      (n) =>
+        (`> > > > a\n${"> b\n".repeat(990)}\n` + fill("x\n\n", n)).slice(0, n),
+    ],
+    [
+      "> - a, then > b, just under the limit",
+      (n) => (`> - a\n${"> b\n".repeat(990)}\n` + fill("x\n\n", n)).slice(0, n),
+    ],
+    [
+      "> - - a, then > b, just under the limit",
+      (n) =>
+        (`> - - a\n${"> b\n".repeat(990)}\n` + fill("x\n\n", n)).slice(0, n),
+    ],
+    [
       "list continuation lines",
       (n) => `123456789. a\n${fill("           b\n", n - 20)}`,
     ],
@@ -703,6 +721,28 @@ describe("hostile input", () => {
     ],
     ["lines that could start a list", fill("-x\n\n", room), "separate quotes"],
     ["unclosed links", fill("[a](", room), "not closed"],
+    // Lazy lines that keep the outer markers: `> b` continues the inner
+    // quote's or list item's paragraph.
+    [
+      "> > a, then > b",
+      `> > a\n${fill("> b\n", room - 6)}`,
+      "without its markers",
+    ],
+    [
+      "> > > > a, then > b",
+      `> > > > a\n${fill("> b\n", room - 10)}`,
+      "without its markers",
+    ],
+    [
+      "> - a, then > b",
+      `> - a\n${fill("> b\n", room - 6)}`,
+      "without its markers",
+    ],
+    [
+      "> - - a, then > b",
+      `> - - a\n${fill("> b\n", room - 8)}`,
+      "without its markers",
+    ],
     ["unclosed links to <", fill("[a](<", room), "not closed"],
     ["unclosed links, one per line", fill("[a](\n", room), "not closed"],
   ])(

@@ -148,7 +148,7 @@ lines, then a Markdown body.
   line that could start with a marker but continues with text (`-x`, `1.5`)
   counts as a block start, and inside a quote or list as a lazy line; every
   unmarked line continuing a quote paragraph is lazy, at any indentation, and
-  so is one in a list item indented less than the item's content; underlines
+  so is one in a list item indented less than the item's content, and one that keeps fewer markers than the line that opened its paragraph (`> > a` then `> b`); underlines
   count inside quotes and lists; markers inside code count too. Reason: an
   exact scan would be a second Markdown parser with its own gaps, while
   over-counting costs nothing for real documents, which stay below every

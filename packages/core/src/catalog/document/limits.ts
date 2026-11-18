@@ -17,6 +17,10 @@
  *   never belongs to the quote); in a list item, so does every such line
  *   indented less than the item's content (the column after its marker and
  *   spaces), which is the only way it can belong to the item;
+ * - a non-blank line in a quote or list paragraph that keeps some markers
+ *   but fewer than the line that opened the paragraph counts as a lazy line
+ *   too (`> > a` then `> b` lines continue the inner quote's paragraph
+ *   without its marker);
  * - markers inside fenced code are counted like any others.
  *
  * - link destinations opened with `](` are counted per paragraph, less the
@@ -91,6 +95,7 @@ export function bodyShape(text: string): BodyShape {
   let inContainer = false
   let inQuote = false
   let contentColumn = 0
+  let paragraphMarkers = 0
   let opened = 0
   let closed = 0
   for (const line of lines) {
@@ -114,6 +119,7 @@ export function bodyShape(text: string): BodyShape {
       inContainer &&
       !blank &&
       (start.candidate ||
+        (start.markers > 0 && start.markers < paragraphMarkers) ||
         (start.markers === 0 && (inQuote || start.indent < contentColumn)))
     )
       shape.lazy++
@@ -126,6 +132,11 @@ export function bodyShape(text: string): BodyShape {
     inContainer =
       !blank && (start.markers > 0 || start.candidate || inContainer)
     previous = blank ? "" : start.kinds
+    // The markers of the paragraph's own container: a line with fewer keeps
+    // continuing it, lazily; a blank line, or `>` with nothing after it,
+    // ends it.
+    if (blank || isBlankText(start.rest)) paragraphMarkers = start.markers
+    else if (start.markers >= paragraphMarkers) paragraphMarkers = start.markers
   }
   shape.unclosedLinks += Math.max(0, opened - closed)
   return shape
