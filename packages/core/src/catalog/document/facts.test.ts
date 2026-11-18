@@ -444,6 +444,12 @@ describe("type registry (catalog §3, §3.9)", () => {
       "  a: { relation: [service], identified_by: [note] }\n",
       "",
     ],
+    [
+      "an identifying attribute named like a fact check's field",
+      "schema/domain",
+      "  a: { relation: [service], identified_by: [checked] }\n",
+      "",
+    ],
   ])("refuses %s", (_, id, keys, extra) => {
     expect(
       buildTypeRegistry([schemaDoc(id, keys, extra)]).problems.map(

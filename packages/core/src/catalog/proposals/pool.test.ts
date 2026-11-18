@@ -54,7 +54,12 @@ function setUp(options: CatalogWorkerOptions = {}) {
   return { workers, loaded, load }
 }
 
-describe("the catalog workers", () => {
+// Each test starts worker threads, which load TypeScript through tsx when
+// run from source: about a second each on an idle machine, and many more
+// under heavy load (#128). Nothing below depends on how long that takes,
+// only on the order of events, so the tests get a generous timeout rather
+// than the default 5 s.
+describe("the catalog workers", { timeout: 120_000 }, () => {
   it("parse stored texts in batches before a proposal, and only those they lack", async () => {
     const { workers, loaded, load } = setUp({ readBatch: 1 })
     const first = await workers.prepare("w1", documents, load, input)

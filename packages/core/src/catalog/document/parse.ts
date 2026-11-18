@@ -3,7 +3,7 @@ import type { Body } from "./body.js"
 import { parseCatalogTime } from "./dates.js"
 import type { CatalogTime } from "./dates.js"
 import {
-  isAttributeName,
+  attributeNameProblem,
   isEntityId,
   isFactKey,
   parseEntityId,
@@ -44,7 +44,7 @@ import type { ScalarValue, YamlEntry, YamlMap, YamlNode } from "./yaml.js"
  * parsed documents (the agent index) records it and is rebuilt when it
  * changes (architecture §5.2, M2-3).
  */
-export const parserVersion = 3
+export const parserVersion = 4
 
 /**
  * The largest document Shinan reads: 64 KiB of UTF-8, the form documents are
@@ -558,11 +558,8 @@ function readLongForm(
   const attributes = Object.create(null) as Record<string, ScalarValue>
   for (const e of node.entries) {
     if (longFormOptions.has(e.key)) continue
-    if (!isAttributeName(e.key))
-      fail(
-        `"${e.key}" cannot name an attribute: lowercase words joined by ".", "-" or "_"`,
-        e.keyRange,
-      )
+    const problem = attributeNameProblem(e.key)
+    if (problem !== null) fail(problem, e.keyRange)
     else if (e.value.kind !== "scalar" || e.value.value === null)
       fail(
         `The attribute "${e.key}" of "${base.key}" must be one value`,

@@ -187,29 +187,42 @@ export async function agentWithdrawCatalogProposal(
   } catch (error) {
     if (!(error instanceof RuleViolationError)) throw error
     const current = await getCatalogProposal(ctx, agent.workspaceId, proposalId)
-    const again =
-      current.state === "withdrawn" &&
-      current.author.kind === "agent" &&
-      current.decidedBy !== null &&
-      current.decidedBy === current.author.label &&
-      (await authorIsThisAgent(ctx, agent, current))
-    if (!again) throw error
+    if (!(await withdrawnByThisAgent(ctx, agent, current.id))) throw error
     proposal = current
   }
   return answerOf(ctx, agent, { outcome: proposal.state, proposal }, [])
 }
 
-/** Whether the agent making the request wrote the proposal. */
-async function authorIsThisAgent(
+/**
+ * Whether the agent making the request wrote the proposal and withdrew it,
+ * by agent ID: an agent made again under the same handle has the same
+ * label but is another agent.
+ */
+async function withdrawnByThisAgent(
   ctx: Context,
   agent: AgentActor,
-  proposal: CatalogProposal,
+  proposalId: string,
 ): Promise<boolean> {
   return inWorkspace(
     ctx,
     agent.workspaceId,
     "catalog.read",
-    (scope) => Promise.resolve(scope.actor.label === proposal.author.label),
+    async (scope) => {
+      const p = schema.catalogProposals
+      const [row] = await scope.tx
+        .select({
+          state: p.state,
+          author: p.actorAgentId,
+          decidedBy: p.decidedByAgentId,
+        })
+        .from(p)
+        .where(and(eq(p.workspaceId, scope.workspaceId), eq(p.id, proposalId)))
+      return (
+        row?.state === "withdrawn" &&
+        row.author === agent.agentId &&
+        row.decidedBy === agent.agentId
+      )
+    },
     snapshotRead,
   )
 }

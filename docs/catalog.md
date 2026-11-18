@@ -657,7 +657,8 @@ Rules (all **proposed**):
   number of days (`30d`); a relation is multi-valued unless `many: false`
   (as in [4.2](#42-fact-identity-cardinality-and-current-facts)); a relation
   attribute cannot be named like a fact's long-form field (`value`, `to`,
-  `via`, `note`, `task`, `remove`, `accepted`); `required` names keys of the
+  `via`, `note`, `task`, `remove`, `accepted`) or a fact check's field
+  (`checked`, `by`, `scope`, `source`, `limits`); `required` names keys of the
   type. An extension of a built-in type may add keys, `required` keys and
   `sections`; a retired extension adds nothing.
 - **Built-in types can be extended, not changed.** A workspace may add keys to
@@ -830,7 +831,12 @@ facts:
   history.
 - **Proposed (M2-1):** details of the long form. A relation's long form names
   its target with `to`; any other field is a relation attribute (such as
-  `path` or `item`) and holds one value. A key that is not a relation has only
+  `path` or `item`) and holds one value. **Proposed
+  ([#128](https://github.com/guneet-xyz/shinan/issues/128)):** an attribute
+  is never named like a fact check's field (`checked`, `by`, `scope`,
+  `source`, `limits`); such a fact is invalid. Reason: `{ to: …, by: guneet,
+checked: 2020-01-01 }` under an agent's own fact check would read, in the
+  text or an export, as if someone else had checked it. A key that is not a relation has only
   `value`, `via`, `note`, `task`, `remove` and `accepted`. `remove: true` is
   only for `planned` facts. `task` holds a task ID (`T-12`) or the ID of an
   accepted `decision` entity. `planned` facts are in a group with no fact

@@ -8,6 +8,7 @@ import {
   newPerson,
   testDatabase,
 } from "../../../test/helpers.js"
+import type { AgentActor } from "../../actor.js"
 import type { Context } from "../../context.js"
 import {
   BusyError,
@@ -30,6 +31,7 @@ import {
 } from "../index/indexer.js"
 import { getCatalogEntity } from "../index/queries.js"
 import { appendCatalogRevision } from "../revisions.js"
+import { agentWithdrawCatalogProposal } from "./agent.js"
 import { CatalogWorkers, replaceCatalogWorkers } from "./pool.js"
 import type { Prepare } from "./pool.js"
 import {
@@ -771,6 +773,34 @@ describe("approval, rejection and withdrawal", () => {
       withdrawCatalogProposal(asOwner, workspaceId, second.id),
     ).resolves.toMatchObject({ state: "withdrawn", decidedBy: owner.handle })
     expect(await events("catalog.proposal-withdrawn")).toHaveLength(2)
+  })
+
+  it("answers an agent's repeated withdrawal by agent ID, not by its label", async () => {
+    await seed()
+    const first = stored(
+      await propose(asOwnersAgent, [
+        {
+          op: "retire",
+          document: "machine/musashi",
+          expect: { status: "active" },
+        },
+      ]),
+    )
+    for (let i = 0; i < 2; i++)
+      await expect(
+        agentWithdrawCatalogProposal(asOwnersAgent, first.id),
+      ).resolves.toMatchObject({ outcome: "withdrawn" })
+    // Another agent whose label is the same, as when an agent is made
+    // again under the same handle, did not withdraw it.
+    const again = await asAgent(db, owner, workspaceId)
+    const label = `${owner.handle} via ${(again.actor as AgentActor).agentHandle}`
+    await db
+      .update(schema.catalogProposals)
+      .set({ actorLabel: label, decidedByLabel: label })
+      .where(eq(schema.catalogProposals.id, first.id))
+    await expect(
+      agentWithdrawCatalogProposal(again, first.id),
+    ).rejects.toMatchObject({ rule: "proposal-not-pending" })
   })
 
   it("lists proposals newest first, or waiting ones oldest first", async () => {
