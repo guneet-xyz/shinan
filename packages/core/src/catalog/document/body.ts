@@ -177,7 +177,10 @@ function collectLinks(
   // Table cells carry no lines of their own; their row's do.
   let lastMap: [number, number] | null = null
   const cursor = new Map<number, number>()
+  let previous: Token | undefined
   for (const token of tokens) {
+    const after = previous
+    previous = token
     if (token.map) lastMap = token.map
     if (token.type === "reference_definition" && token.map) {
       const meta = token.meta as { href?: string } | null
@@ -198,6 +201,7 @@ function collectLinks(
       token.map ?? lastMap,
       lines,
       cursor,
+      after?.type === "th_open" || after?.type === "td_open",
     )
     for (const child of token.children ?? []) {
       const kind =
@@ -320,13 +324,14 @@ class ContentPlace {
     map: [number, number],
     private readonly lines: Lines,
     cursor: Map<number, number>,
+    cell: boolean,
   ) {
     let at = 0
     content.split("\n").forEach((piece, i) => {
       const line = Math.min(map[0] + i, Math.max(map[0], map[1] - 1))
       const core = piece.trimStart()
       const lead = piece.length - core.length
-      const place = find(lines.line(line), core, cursor.get(line) ?? 0)
+      const place = find(lines.line(line), core, cursor.get(line) ?? 0, cell)
       if (place) cursor.set(line, place.end)
       this.pieces.push({
         content: at,
@@ -361,30 +366,39 @@ class ContentPlace {
 }
 
 /**
- * Finds a line of content in its source line: at the end (after trailing
- * spaces), or else from `from` on, or else with `|` written as `\|`.
+ * Finds a line of content in its source line, from `from` on. A table
+ * cell's content is searched for with every `|` written `\|` first (a bare
+ * `|` would have ended the cell), and never just at the end of the row, so
+ * it cannot match across a cell boundary. Other content is found at the end
+ * of its line (after trailing spaces), or else anywhere after `from`.
  */
 function find(
   source: string,
   core: string,
   from: number,
+  cell: boolean,
 ): { start: number; end: number; pipes: number[] } | null {
   if (core === "") return null
-  const trimmed = source.trimEnd()
-  if (trimmed.endsWith(core)) {
-    const start = trimmed.length - core.length
-    return { start, end: trimmed.length, pipes: [] }
+  if (!cell) {
+    const trimmed = source.trimEnd()
+    if (trimmed.endsWith(core) && trimmed.length - core.length >= from) {
+      const start = trimmed.length - core.length
+      return { start, end: trimmed.length, pipes: [] }
+    }
+  }
+  if (cell && core.includes("|")) {
+    const escaped = core.replaceAll("|", "\\|")
+    const found = source.indexOf(escaped, from)
+    if (found >= 0) {
+      const pipes: number[] = []
+      for (let i = core.indexOf("|"); i >= 0; i = core.indexOf("|", i + 1))
+        pipes.push(i)
+      return { start: found, end: found + escaped.length, pipes }
+    }
   }
   const index = source.indexOf(core, from)
   if (index >= 0) return { start: index, end: index + core.length, pipes: [] }
-  if (!core.includes("|")) return null
-  const escaped = core.replaceAll("|", "\\|")
-  const found = source.indexOf(escaped, from)
-  if (found < 0) return null
-  const pipes: number[] = []
-  for (let i = core.indexOf("|"); i >= 0; i = core.indexOf("|", i + 1))
-    pipes.push(i)
-  return { start: found, end: found + escaped.length, pipes }
+  return null
 }
 
 type ParseEnv = Env & {

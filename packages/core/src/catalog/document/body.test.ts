@@ -193,6 +193,28 @@ describe("link positions", () => {
     }
   })
 
+  it.each([
+    [
+      "an escaped pipe before another cell's link",
+      "| a | b | c |\n|-|-|-|\n| [y](z) \\| w | [y](z) | w |\n",
+    ],
+    [
+      "a cell that ends like the next one",
+      '| h | h | h |\n|-|-|-|\n| `a|b` \\| x | [a](https://example.com/a_b "t") `a|b` | xa *e* |\n',
+    ],
+    ["cells without outer pipes", "a | b\n-|-\n[y](z) | [y](z)\n"],
+    [
+      "repeated cells",
+      "| [y](z) | [y](z) | [y](z) |\n|-|-|-|\n| [y](z) | [y](z) | [y](z) |\n",
+    ],
+  ])("places each table link in its own cell: %s", (_, text) => {
+    const links = parseBody(text, 0).links
+    const written = [...text.matchAll(/\[[a-z]\]\([^)]*\)/g)].map(
+      (m) => m.index,
+    )
+    expect(links.map((l) => l.range.start)).toEqual(written)
+  })
+
   it("does not list a reference-style image with a link in its text as inline", () => {
     const text = "![#[a\n  b](c)][r]\n\n[r]: d\n"
     const links = parseBody(text, 0).links
@@ -303,10 +325,11 @@ describe("link positions on generated bodies", () => {
     .tuple(inline, fc.boolean())
     .map(([t, pipe]) => (pipe ? `${t} \\| x` : t).replace(/\n/g, " "))
   const table = fc
-    .array(cell, { minLength: 1, maxLength: 3 })
-    .map(
-      (cells) =>
-        `| ${cells.map(() => "h").join(" | ")} |\n|${cells.map(() => "-").join("|")}|\n| ${cells.join(" | ")} |`,
+    .tuple(fc.array(cell, { minLength: 1, maxLength: 3 }), fc.boolean())
+    .map(([cells, outer]) =>
+      outer
+        ? `| ${cells.map(() => "h").join(" | ")} |\n|${cells.map(() => "-").join("|")}|\n| ${cells.join(" | ")} |`
+        : `${cells.map(() => "h").join(" | ")}\n${cells.map(() => "-").join("|")}\n${cells.join(" | ")}`,
     )
   const listWithTabs = fc
     .tuple(word, inline)
@@ -344,7 +367,11 @@ describe("link positions on generated bodies", () => {
           expect(lineEnds.has(link.range.end)).toBe(true)
         }
       }),
-      { numRuns: 500, verbose: 1 },
+      {
+        numRuns: Number(process.env.FC_RUNS ?? 500),
+        verbose: 1,
+        ...(process.env.FC_SEED ? { seed: Number(process.env.FC_SEED) } : {}),
+      },
     )
     // The fallback is a safety net; the generator should not need it.
     expect(fallbacks).toBe(0)
