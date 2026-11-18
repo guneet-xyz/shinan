@@ -64,6 +64,13 @@
       "when": 1795008058242,
       "tag": "0008_wiki_page_visits",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1795017067608,
+      "tag": "0009_catalog_proposals",
+      "breakpoints": true
     }
   ]
 }
