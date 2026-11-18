@@ -40,7 +40,9 @@ CREATE TABLE "catalog_index_documents" (
 	"problems" jsonb NOT NULL,
 	"data" jsonb,
 	"search_text" text NOT NULL,
-	"search" "tsvector" GENERATED ALWAYS AS (setweight(to_tsvector('english', coalesce(title, '')), 'A') || setweight(to_tsvector('english', coalesce(summary, '')), 'B') || setweight(to_tsvector('english', search_text), 'C') || setweight(to_tsvector('simple', coalesce(title, '') || ' ' || search_text), 'D')) STORED NOT NULL
+	"body" text NOT NULL,
+	"search" "tsvector" GENERATED ALWAYS AS (setweight(to_tsvector('english', coalesce(title, '')), 'A') || setweight(to_tsvector('english', coalesce(summary, '')), 'B') || setweight(to_tsvector('english', search_text), 'C') || setweight(to_tsvector('english', body), 'D')) STORED NOT NULL,
+	"search_simple" "tsvector" GENERATED ALWAYS AS (setweight(to_tsvector('simple', coalesce(title, '')), 'A') || setweight(to_tsvector('simple', coalesce(summary, '')), 'B') || setweight(to_tsvector('simple', search_text), 'C') || setweight(to_tsvector('simple', body), 'D')) STORED NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "catalog_index_facts" (
@@ -109,7 +111,10 @@ CREATE TABLE "catalog_index_sections" (
 	"changed_revision" integer NOT NULL,
 	"author_kind" "actor_kind" NOT NULL,
 	"author" text NOT NULL,
+	"least_trusted_kind" "actor_kind" NOT NULL,
+	"least_trusted" text NOT NULL,
 	"search" "tsvector" GENERATED ALWAYS AS (setweight(to_tsvector('english', coalesce(heading, '')), 'A') || setweight(to_tsvector('english', text), 'B')) STORED NOT NULL,
+	"search_simple" "tsvector" GENERATED ALWAYS AS (setweight(to_tsvector('simple', coalesce(heading, '')), 'A') || setweight(to_tsvector('simple', text), 'B')) STORED NOT NULL,
 	CONSTRAINT "catalog_index_sections_document_id_position_pk" PRIMARY KEY("document_id","position")
 );
 --> statement-breakpoint
@@ -166,6 +171,7 @@ CREATE INDEX "catalog_index_documents_catalog_id" ON "catalog_index_documents" U
 CREATE INDEX "catalog_index_documents_type_status" ON "catalog_index_documents" USING btree ("workspace_id","kind","type","status");--> statement-breakpoint
 CREATE INDEX "catalog_index_documents_aliases" ON "catalog_index_documents" USING gin ("aliases");--> statement-breakpoint
 CREATE INDEX "catalog_index_documents_search" ON "catalog_index_documents" USING gin ("search");--> statement-breakpoint
+CREATE INDEX "catalog_index_documents_search_simple" ON "catalog_index_documents" USING gin ("search_simple");--> statement-breakpoint
 CREATE INDEX "catalog_index_facts_entity" ON "catalog_index_facts" USING btree ("workspace_id","entity_id");--> statement-breakpoint
 CREATE INDEX "catalog_index_facts_due_at" ON "catalog_index_facts" USING btree ("workspace_id","due_at") WHERE "catalog_index_facts"."due_at" is not null;--> statement-breakpoint
 CREATE INDEX "catalog_index_facts_unknown" ON "catalog_index_facts" USING btree ("workspace_id") WHERE "catalog_index_facts"."state" = 'unknown';--> statement-breakpoint
@@ -173,6 +179,7 @@ CREATE INDEX "catalog_index_relations_from" ON "catalog_index_relations" USING b
 CREATE INDEX "catalog_index_relations_to" ON "catalog_index_relations" USING btree ("workspace_id","to_id");--> statement-breakpoint
 CREATE INDEX "catalog_index_sections_workspace_id" ON "catalog_index_sections" USING btree ("workspace_id");--> statement-breakpoint
 CREATE INDEX "catalog_index_sections_search" ON "catalog_index_sections" USING gin ("search");--> statement-breakpoint
+CREATE INDEX "catalog_index_sections_search_simple" ON "catalog_index_sections" USING gin ("search_simple");--> statement-breakpoint
 CREATE INDEX "catalog_revision_documents_workspace_id_revision" ON "catalog_revision_documents" USING btree ("workspace_id","revision");--> statement-breakpoint
 -- Catalog revisions are never edited (catalog §9): a change is a new
 -- revision, and a revert is a new catalog proposal. Purge (M2-10) will

@@ -12,10 +12,15 @@ import {
   testDatabase,
 } from "../../../test/helpers.js"
 import type { ResolvedActor } from "../../actor.js"
-import { ForbiddenError, NotFoundError } from "../../errors.js"
+import {
+  ForbiddenError,
+  InvalidInputError,
+  NotFoundError,
+} from "../../errors.js"
 import { addMember } from "../../identity/members.js"
 import type { Person } from "../../identity/people.js"
 import { createWorkspace } from "../../identity/workspaces.js"
+import type { JobQueue } from "../../jobs.js"
 import { parserVersion } from "../document/index.js"
 import { appendCatalogRevision, findCatalogDocument } from "../revisions.js"
 import type { RevisionActor } from "../revisions.js"
@@ -24,6 +29,7 @@ import {
   checkCatalogIndexes,
   getCatalogIndexHealth,
   rebuildCatalogIndex,
+  requestCatalogIndexRebuilds,
 } from "./maintain.js"
 import {
   getCatalogChanges,
@@ -300,6 +306,11 @@ describe("section credits", () => {
       ["Musashi", 1, owner.handle, "person"],
       ["Cautions", 2, agent.label, "agent"],
     ])
+    expect(entity.body.map((s) => s.written_by_kind)).toEqual([
+      "person",
+      "person",
+      "agent",
+    ])
   })
 
   it("credits a renamed section to whoever renamed it", async () => {
@@ -359,6 +370,131 @@ describe("type schema changes", () => {
       compareWorkspaceIndex(tx, workspaceId),
     )
     expect(compared.differences).toEqual([])
+  })
+})
+
+describe("type schemas kept between revisions", () => {
+  const withTags = fixtures.domainSchema.replace(
+    "  registrar: {}\n",
+    "  registrar: {}\n  tags: { many: true }\n",
+  )
+  const withNotes = fixtures.domainSchema.replace(
+    "  registrar: {}\n",
+    "  registrar: {}\n  notes: {}\n",
+  )
+  const tagged = fixtures.guneetDev.replace(
+    "      registrar: Cloudflare\n",
+    "      registrar: Cloudflare\n      tags: main\n",
+  )
+
+  async function tagsFact() {
+    const { entity } = await getCatalogEntity(
+      asPerson(db, owner),
+      workspaceId,
+      {
+        id: "domain/guneet-dev",
+      },
+    )
+    return entity.facts.find((f) => f.key === "tags")
+  }
+
+  it("never come back from a revision that was rolled back", async () => {
+    await apply(personActor(owner), [
+      { text: fixtures.domainSchema },
+      { text: tagged },
+    ])
+    const schemaId = await documentId("schema/domain")
+    await expect(
+      db.transaction(async (tx) => {
+        await appendCatalogRevision(tx, workspaceId, personActor(owner), [
+          { documentId: schemaId, text: withTags },
+        ])
+        throw new Error("Something later in the apply failed")
+      }),
+    ).rejects.toThrow(/later in the apply/)
+    // The next revision takes the same number, with another schema.
+    const next = await apply(personActor(owner), [
+      { documentId: schemaId, text: withNotes },
+    ])
+    expect(next.revision).toBe(2)
+
+    expect(await tagsFact()).toMatchObject({ many: false, in_schema: false })
+    const compared = await db.transaction((tx) =>
+      compareWorkspaceIndex(tx, workspaceId),
+    )
+    expect(compared.differences).toEqual([])
+  })
+
+  it("follow a schema document's text when it is rewritten in place, as purge does", async () => {
+    await apply(personActor(owner), [{ text: withTags }, { text: tagged }])
+    const schemaId = await documentId("schema/domain")
+    // Purge (M2-10) replaces content in a stored revision; here the schema's
+    // text loses the key that a revision applied earlier had cached.
+    await db.transaction(async (tx) => {
+      await tx.execute(
+        sql`alter table catalog_revision_documents disable trigger catalog_revision_documents_append_only`,
+      )
+      await tx
+        .update(schema.catalogRevisionDocuments)
+        .set({ text: fixtures.domainSchema })
+        .where(eq(schema.catalogRevisionDocuments.documentId, schemaId))
+      await tx.execute(
+        sql`alter table catalog_revision_documents enable trigger catalog_revision_documents_append_only`,
+      )
+    })
+    // A later revision of the entity is read with the schema as now stored.
+    await apply(personActor(owner), [
+      {
+        documentId: await documentId("domain/guneet-dev"),
+        text: tagged.replace("The main domain.", "The main domain, still."),
+      },
+    ])
+    expect(await tagsFact()).toMatchObject({ many: false, in_schema: false })
+  })
+
+  it("follow which of two schema documents defines a type", async () => {
+    const second = fixtures.domainSchema.replace(
+      "  registrar: {}\n",
+      "  registrar: {}\n  tags: { many: true }\n",
+    )
+    await apply(personActor(owner), [
+      { text: fixtures.domainSchema },
+      { text: second },
+      { text: tagged },
+    ])
+    // The schema that defines `domain` is the first by document ID; move
+    // that one to another type, so the other one takes over.
+    const [first] = (
+      await db
+        .select({ id: schema.catalogIndexDocuments.documentId })
+        .from(schema.catalogIndexDocuments)
+        .where(
+          sql`${schema.catalogIndexDocuments.workspaceId} = ${workspaceId} and ${schema.catalogIndexDocuments.kind} = 'schema'`,
+        )
+        .orderBy(asc(schema.catalogIndexDocuments.documentId))
+    ).map((r) => r.id)
+    const [firstText] = await db
+      .select({ text: schema.catalogRevisionDocuments.text })
+      .from(schema.catalogRevisionDocuments)
+      .where(eq(schema.catalogRevisionDocuments.documentId, first!))
+    await apply(personActor(owner), [
+      {
+        documentId: first!,
+        text: firstText!.text.replace("id: schema/domain", "id: schema/area"),
+      },
+    ])
+    const compared = await db.transaction((tx) =>
+      compareWorkspaceIndex(tx, workspaceId),
+    )
+    expect(compared.differences).toEqual([])
+    const domain = await getCatalogTypeSchema(
+      asPerson(db, owner),
+      workspaceId,
+      {
+        type: "domain",
+      },
+    )
+    expect(domain.schema.document).toBe("schema/domain")
   })
 })
 
@@ -499,6 +635,43 @@ describe("queries", () => {
     expect(retired.items.map((i) => i.entity.id)).toContain("machine/takezo")
     const hidden = await searchCatalog(ctx, workspaceId, { text: "takezo" })
     expect(hidden.items.map((i) => i.entity.id)).not.toContain("machine/takezo")
+  })
+
+  it("leaves out entities with a word after a minus, wherever the word is", async () => {
+    const entity = (slug: string, summary: string, body: string) => `---
+id: project/${slug}
+type: project
+title: Alpha ${slug}
+summary: ${summary}
+status: active
+owner: person/guneet
+---
+
+# Alpha ${slug}
+
+## Notes
+
+${body}
+`
+    await apply(personActor(owner), [
+      { text: entity("one", "Keeps running all day.", "Quiet.") },
+      { text: entity("two", "Quiet.", "Keeps running all day.") },
+      { text: entity("three", "Quiet.", "Quiet.") },
+    ])
+    const found = await searchCatalog(asPerson(db, owner), workspaceId, {
+      text: "alpha -running",
+    })
+    expect(found.items.map((i) => i.entity.id)).toEqual(["project/three"])
+  })
+
+  it("refuses control characters in what it is asked, before the database sees them", async () => {
+    const ctx = asPerson(db, owner)
+    await expect(
+      searchCatalog(ctx, workspaceId, { text: "a\u0000b" }),
+    ).rejects.toThrow(InvalidInputError)
+    await expect(
+      getCatalogEntity(ctx, workspaceId, { id: "machine/\u0000musashi" }),
+    ).rejects.toThrow(InvalidInputError)
   })
 
   it("lists entities by type and status", async () => {
@@ -779,6 +952,29 @@ describe("rebuilds and the round-trip check", () => {
       workspaceIds: [workspaceId],
     })
     expect(fixed).toMatchObject({ outcome: "matched" })
+  })
+
+  it("asks for rebuilds once per workspace, however its ID is written", async () => {
+    await apply(personActor(owner), [{ text: fixtures.musashi }])
+    const sent: unknown[] = []
+    const asked = await requestCatalogIndexRebuilds(
+      {
+        ...asShinan(db),
+        jobs: {
+          send: (_name: string, data: object) => {
+            sent.push(data)
+            return Promise.resolve(null)
+          },
+        } as JobQueue,
+      },
+      { workspaceIds: [workspaceId, workspaceId.toUpperCase()] },
+    )
+    expect(asked).toEqual([workspaceId])
+    expect(sent).toEqual([{ workspaceId }])
+    const behind = await getCatalogEntity(asPerson(db, owner), workspaceId, {
+      id: "machine/musashi",
+    })
+    expect(behind.index_behind).toBe(true)
   })
 
   it("only lets Shinan rebuild and check", async () => {

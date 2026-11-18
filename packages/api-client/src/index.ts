@@ -74,7 +74,6 @@ export interface Redirect {
   url: string
 }
 
-/** An address on the installation's email allowlist (identity §3.2). */
 /**
  * The agent index's health, for installation operators (architecture §5.2,
  * rule 5): per workspace, its index revision, whether it is behind, and the
@@ -98,6 +97,7 @@ export interface CatalogIndexHealth {
   }[]
 }
 
+/** An address on the installation's email allowlist (identity §3.2). */
 export interface AllowlistEntry {
   email: string
   addedAt: string

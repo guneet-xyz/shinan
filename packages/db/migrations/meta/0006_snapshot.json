@@ -1,5 +1,5 @@
 {
-  "id": "43775fed-1e2d-4434-870b-f00da57f0c0d",
+  "id": "1b2ab6d3-e4c5-48b2-afba-39ccba2fd19b",
   "prevId": "e11bd9fc-1d9c-48b8-a54e-c03900047844",
   "version": "7",
   "dialect": "postgresql",
@@ -698,13 +698,29 @@
           "primaryKey": false,
           "notNull": true
         },
+        "body": {
+          "name": "body",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
         "search": {
           "name": "search",
           "type": "tsvector",
           "primaryKey": false,
           "notNull": true,
           "generated": {
-            "as": "setweight(to_tsvector('english', coalesce(title, '')), 'A') || setweight(to_tsvector('english', coalesce(summary, '')), 'B') || setweight(to_tsvector('english', search_text), 'C') || setweight(to_tsvector('simple', coalesce(title, '') || ' ' || search_text), 'D')",
+            "as": "setweight(to_tsvector('english', coalesce(title, '')), 'A') || setweight(to_tsvector('english', coalesce(summary, '')), 'B') || setweight(to_tsvector('english', search_text), 'C') || setweight(to_tsvector('english', body), 'D')",
+            "type": "stored"
+          }
+        },
+        "search_simple": {
+          "name": "search_simple",
+          "type": "tsvector",
+          "primaryKey": false,
+          "notNull": true,
+          "generated": {
+            "as": "setweight(to_tsvector('simple', coalesce(title, '')), 'A') || setweight(to_tsvector('simple', coalesce(summary, '')), 'B') || setweight(to_tsvector('simple', search_text), 'C') || setweight(to_tsvector('simple', body), 'D')",
             "type": "stored"
           }
         }
@@ -784,6 +800,21 @@
           "columns": [
             {
               "expression": "search",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "gin",
+          "with": {}
+        },
+        "catalog_index_documents_search_simple": {
+          "name": "catalog_index_documents_search_simple",
+          "columns": [
+            {
+              "expression": "search_simple",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -1338,6 +1369,19 @@
           "primaryKey": false,
           "notNull": true
         },
+        "least_trusted_kind": {
+          "name": "least_trusted_kind",
+          "type": "actor_kind",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "least_trusted": {
+          "name": "least_trusted",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
         "search": {
           "name": "search",
           "type": "tsvector",
@@ -1345,6 +1389,16 @@
           "notNull": true,
           "generated": {
             "as": "setweight(to_tsvector('english', coalesce(heading, '')), 'A') || setweight(to_tsvector('english', text), 'B')",
+            "type": "stored"
+          }
+        },
+        "search_simple": {
+          "name": "search_simple",
+          "type": "tsvector",
+          "primaryKey": false,
+          "notNull": true,
+          "generated": {
+            "as": "setweight(to_tsvector('simple', coalesce(heading, '')), 'A') || setweight(to_tsvector('simple', text), 'B')",
             "type": "stored"
           }
         }
@@ -1370,6 +1424,21 @@
           "columns": [
             {
               "expression": "search",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "gin",
+          "with": {}
+        },
+        "catalog_index_sections_search_simple": {
+          "name": "catalog_index_sections_search_simple",
+          "columns": [
+            {
+              "expression": "search_simple",
               "isExpression": false,
               "asc": true,
               "nulls": "last"

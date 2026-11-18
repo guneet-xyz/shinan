@@ -91,6 +91,7 @@ export function deriveDocumentRows(input: DeriveInput): DocumentRows {
     })),
     data: null,
     searchText: "",
+    body: document.body.text,
   }
   const searchWords: string[] = []
   if (document.id !== null) searchWords.push(document.id, idWords(document.id))
@@ -160,6 +161,8 @@ export function deriveDocumentRows(input: DeriveInput): DocumentRows {
         changedRevision: credit.changedRevision,
         authorKind: credit.authorKind,
         author: credit.author,
+        leastTrustedKind: credit.leastTrustedKind,
+        leastTrusted: credit.leastTrusted,
       }
     }),
   }

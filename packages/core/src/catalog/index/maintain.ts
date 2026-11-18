@@ -68,6 +68,8 @@ export async function requestCatalogIndexRebuilds(
         )
       workspaceIds = rows.map((r) => r.workspaceId)
     }
+    // In one order everywhere, so two requests at once cannot deadlock.
+    workspaceIds.sort()
     for (const workspaceId of workspaceIds) {
       await scope.tx
         .insert(schema.catalogIndexState)
@@ -93,16 +95,17 @@ async function existingWorkspaces(
   tx: Transaction,
   ids: readonly string[],
 ): Promise<string[]> {
-  const valid = ids.filter(isId).map((id) => id.toLowerCase())
+  const wanted = new Set(ids.map((id) => id.toLowerCase()))
+  if ([...wanted].some((id) => !isId(id))) throw new NotFoundError()
   const rows =
-    valid.length === 0
+    wanted.size === 0
       ? []
       : await tx
           .select({ id: schema.workspaces.id })
           .from(schema.workspaces)
-          .where(inArray(schema.workspaces.id, valid))
-  if (rows.length !== new Set(ids).size) throw new NotFoundError()
-  return rows.map((r) => r.id)
+          .where(inArray(schema.workspaces.id, [...wanted]))
+  if (rows.length !== wanted.size) throw new NotFoundError()
+  return rows.map((r) => r.id).sort()
 }
 
 /**

@@ -136,9 +136,10 @@ export interface AppliesJson {
 }
 
 /**
- * One section of a body, split by heading (catalog §2.5, §12.1), with the
- * catalog revision that last changed it and that revision's author, from
- * Shinan's records. Trust labels are built from these.
+ * One section of a body, split by heading (catalog §2.5, §12.1), with
+ * credits from Shinan's records, never from the text: the catalog revision
+ * that last changed it and that revision's author, and the least-trusted
+ * author who wrote any of it. Trust labels are built from the latter.
  */
 export interface SectionJson {
   /** Null for the text before the first heading. */
@@ -151,6 +152,13 @@ export interface SectionJson {
   /** The author's written form (identity §8.7). */
   changed_by: string
   changed_by_kind: ActorKind
+  /**
+   * The least-trusted author who wrote any of the section since it first
+   * appeared (outside, then unknown, agent, Shinan, person): a person who
+   * edits, renames or moves an agent's section does not make it theirs.
+   */
+  written_by: string
+  written_by_kind: ActorKind
 }
 
 export interface ProblemJson {
@@ -366,5 +374,7 @@ export function sectionJson(section: SectionRecord): SectionJson {
     changed_in: section.changedRevision,
     changed_by: section.author,
     changed_by_kind: section.authorKind,
+    written_by: section.leastTrusted,
+    written_by_kind: section.leastTrustedKind,
   }
 }

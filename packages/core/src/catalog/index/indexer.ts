@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto"
+
 import { and, asc, eq, getTableColumns, inArray, schema, sql } from "@shinan/db"
 import type { IndexCheckDifference, Transaction } from "@shinan/db"
 
@@ -108,16 +110,29 @@ export async function indexRevision(
     )
     .then((rows) => new Map(rows.map((r) => [r.documentId, r])))
 
-  const registry = await registryFor(tx, workspaceId, indexed, changed)
+  const { registry, stored: storedSchemas } = await registryFor(
+    tx,
+    workspaceId,
+    indexed,
+    changed,
+  )
 
-  // Types whose schema document changed: their entities are read again.
+  // When a type schema document changes, the entities of the types it
+  // describes or described are read again, and so is every other type
+  // schema document: which document defines a type can move from one to
+  // another (a type with two schema documents).
   const types = new Set<string>()
+  let schemasChanged = false
   for (const [documentId, { document }] of changed) {
     const before = indexed.get(documentId)
-    if (before?.kind === "schema" && before.type !== null)
-      types.add(before.type)
-    if (document.kind === "schema" && document.describes !== null)
-      types.add(document.describes)
+    if (before?.kind === "schema") {
+      schemasChanged = true
+      if (before.type !== null) types.add(before.type)
+    }
+    if (document.kind === "schema") {
+      schemasChanged = true
+      if (document.describes !== null) types.add(document.describes)
+    }
   }
   const affectedRows =
     types.size === 0
@@ -142,6 +157,9 @@ export async function indexRevision(
       { revision: s.revision, document: parseCatalogDocument(s.text) },
     ]),
   )
+  if (schemasChanged)
+    for (const [documentId, schemaDocument] of storedSchemas)
+      unchanged.set(documentId, schemaDocument)
 
   const all = [...changed.keys(), ...unchanged.keys()]
   const credits = await storedCredits(
@@ -247,6 +265,8 @@ async function storedCredits(
       changedRevision: s.changedRevision,
       authorKind: s.authorKind,
       author: s.author,
+      leastTrustedKind: s.leastTrustedKind,
+      leastTrusted: s.leastTrusted,
     })
     .from(s)
     .where(inArray(s.documentId, [...documentIds]))
@@ -278,6 +298,12 @@ async function replayDocument(
  * exactly the previous one's has the same sections, so it is not read
  * again; the size limit is the one thing outside the body that changes
  * what the body gives, so both texts must be within it.
+ *
+ * This relies on the body being read on its own, before the frontmatter,
+ * with its own failures caught (`parseCatalogDocument`). Only a bug that
+ * throws while reading frontmatter (`read-failed`) would empty the sections
+ * of a revision this skips; the daily round-trip check would then report
+ * the document.
  */
 function replay(
   history: readonly StoredText[],
@@ -308,62 +334,84 @@ function replay(
  * The type schemas the documents of a revision are read with: the stored
  * type schema documents, with any the revision changed in their new form
  * (architecture §5.2: one parser reads schemas and entities from the same
- * revision). Kept for the next revision while the schema documents stay
- * the same.
+ * revision). Also returns the stored ones, read.
+ *
+ * The parsed schemas are kept between revisions, keyed by each document's
+ * ID and a hash of its exact text, never by revision number: a revision
+ * rolled back leaves its number free for the next one, and purge rewrites a
+ * revision's text in place, so neither can bring back a stale schema.
  */
 async function registryFor(
   tx: Transaction,
   workspaceId: string,
   indexed: ReadonlyMap<string, { kind: string }>,
   changed: ReadonlyMap<string, { revision: number; document: CatalogDocument }>,
-): Promise<TypeRegistry> {
-  const stored = [...indexed]
+): Promise<{
+  registry: TypeRegistry
+  stored: Map<string, { revision: number; document: CatalogDocument }>
+}> {
+  const storedIds = [...indexed]
     .filter(([id, row]) => row.kind === "schema" && !changed.has(id))
     .map(([id]) => id)
-  const revisions =
-    stored.length === 0
-      ? []
-      : await tx
-          .select({
-            documentId: schema.catalogDocuments.id,
-            revision: schema.catalogDocuments.currentRevision,
-          })
-          .from(schema.catalogDocuments)
-          .where(inArray(schema.catalogDocuments.id, stored))
-  const changedSchemas = [...changed]
-    .filter(([, c]) => c.document.kind === "schema")
-    .map(([documentId, c]) => ({ documentId, revision: c.revision }))
-  const versions = [...revisions, ...changedSchemas].sort((a, b) =>
-    a.documentId < b.documentId ? -1 : 1,
-  )
-  const key = `${workspaceId}:${versions.map((v) => `${v.documentId}@${v.revision}`).join(",")}`
-  const cached = registryCache.get(key)
-  if (cached) {
-    registryCache.delete(key)
-    registryCache.set(key, cached)
-    return cached
-  }
+  const texts = await latestTexts(tx, workspaceId, storedIds)
+  const versions = [
+    ...texts.map((t) => ({
+      documentId: t.documentId,
+      text: t.text,
+      revision: t.revision,
+      parsed: undefined as CatalogDocument | undefined,
+    })),
+    ...[...changed]
+      .filter(([, c]) => c.document.kind === "schema")
+      .map(([documentId, c]) => ({
+        documentId,
+        text: c.document.text,
+        revision: c.revision,
+        parsed: c.document,
+      })),
+  ].sort((a, b) => (a.documentId < b.documentId ? -1 : 1))
 
-  const read = new Map(
-    (await latestTexts(tx, workspaceId, stored)).map((s) => [
-      s.documentId,
-      parseCatalogDocument(s.text),
-    ]),
-  )
-  for (const [documentId, c] of changed) read.set(documentId, c.document)
-  const registry = buildTypeRegistry(
-    versions
-      .map((v) => read.get(v.documentId))
-      .filter((d): d is SchemaDocument => d?.kind === "schema"),
-  )
-  registryCache.set(key, registry)
+  const key = versions
+    .map(
+      (v) =>
+        `${v.documentId}:${createHash("sha256").update(v.text).digest("base64")}`,
+    )
+    .join(",")
+  let entry = registryCache.get(key)
+  if (entry) {
+    registryCache.delete(key)
+  } else {
+    const documents = versions.map(
+      (v) => v.parsed ?? parseCatalogDocument(v.text),
+    )
+    entry = {
+      registry: buildTypeRegistry(
+        documents.filter((d): d is SchemaDocument => d.kind === "schema"),
+      ),
+      documents: new Map(versions.map((v, i) => [v.documentId, documents[i]!])),
+    }
+  }
+  registryCache.set(key, entry)
   if (registryCache.size > registryCacheSize)
     registryCache.delete(registryCache.keys().next().value!)
-  return registry
+
+  const stored = new Map<
+    string,
+    { revision: number; document: CatalogDocument }
+  >()
+  for (const t of texts)
+    stored.set(t.documentId, {
+      revision: t.revision,
+      document: entry.documents.get(t.documentId)!,
+    })
+  return { registry: entry.registry, stored }
 }
 
-/** Recently used type schemas, by workspace and schema document revisions. */
-const registryCache = new Map<string, TypeRegistry>()
+/** Recently used type schemas, by schema documents' IDs and text hashes. */
+const registryCache = new Map<
+  string,
+  { registry: TypeRegistry; documents: Map<string, CatalogDocument> }
+>()
 const registryCacheSize = 32
 
 /**
@@ -561,6 +609,7 @@ async function storedRows(
       // The search columns are generated by PostgreSQL from the others.
       const stored: Record<string, unknown> = { ...row }
       delete stored.search
+      delete stored.searchSimple
       let entry = byDocument.get(row.documentId)
       if (!entry) {
         entry = {

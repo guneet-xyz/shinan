@@ -963,10 +963,19 @@ export const catalogIndexDocuments = pgTable(
     data: jsonb("data").$type<Record<string, unknown>>(),
     /** IDs split into words, aliases, and facts' keys, values and notes, for search. */
     searchText: text("search_text").notNull(),
+    /** The whole body, so a search matches (and a `-word` excludes) the entity as a whole. */
+    body: text("body").notNull(),
+    /** Title, summary, search text and body, with English stemming. */
     search: tsvector("search")
       .notNull()
       .generatedAlwaysAs(
-        sql`setweight(to_tsvector('english', coalesce(title, '')), 'A') || setweight(to_tsvector('english', coalesce(summary, '')), 'B') || setweight(to_tsvector('english', search_text), 'C') || setweight(to_tsvector('simple', coalesce(title, '') || ' ' || search_text), 'D')`,
+        sql`setweight(to_tsvector('english', coalesce(title, '')), 'A') || setweight(to_tsvector('english', coalesce(summary, '')), 'B') || setweight(to_tsvector('english', search_text), 'C') || setweight(to_tsvector('english', body), 'D')`,
+      ),
+    /** The same fields word for word, so IDs and values such as `instance-metadata` match as written. */
+    searchSimple: tsvector("search_simple")
+      .notNull()
+      .generatedAlwaysAs(
+        sql`setweight(to_tsvector('simple', coalesce(title, '')), 'A') || setweight(to_tsvector('simple', coalesce(summary, '')), 'B') || setweight(to_tsvector('simple', search_text), 'C') || setweight(to_tsvector('simple', body), 'D')`,
       ),
   },
   (t) => [
@@ -984,6 +993,7 @@ export const catalogIndexDocuments = pgTable(
     ),
     index("catalog_index_documents_aliases").using("gin", t.aliases),
     index("catalog_index_documents_search").using("gin", t.search),
+    index("catalog_index_documents_search_simple").using("gin", t.searchSimple),
   ],
 )
 
@@ -1139,10 +1149,22 @@ export const catalogIndexSections = pgTable(
     authorKind: actorKindEnum("author_kind").notNull(),
     /** The author's written form (identity §8.7). */
     author: text("author").notNull(),
+    /**
+     * The least-trusted author who wrote any of the section since it first
+     * appeared, for trust labels: a person editing an agent's section does
+     * not make it the person's.
+     */
+    leastTrustedKind: actorKindEnum("least_trusted_kind").notNull(),
+    leastTrusted: text("least_trusted").notNull(),
     search: tsvector("search")
       .notNull()
       .generatedAlwaysAs(
         sql`setweight(to_tsvector('english', coalesce(heading, '')), 'A') || setweight(to_tsvector('english', text), 'B')`,
+      ),
+    searchSimple: tsvector("search_simple")
+      .notNull()
+      .generatedAlwaysAs(
+        sql`setweight(to_tsvector('simple', coalesce(heading, '')), 'A') || setweight(to_tsvector('simple', text), 'B')`,
       ),
   },
   (t) => [
@@ -1154,5 +1176,6 @@ export const catalogIndexSections = pgTable(
     }).onDelete("cascade"),
     index("catalog_index_sections_workspace_id").on(t.workspaceId),
     index("catalog_index_sections_search").using("gin", t.search),
+    index("catalog_index_sections_search_simple").using("gin", t.searchSimple),
   ],
 )

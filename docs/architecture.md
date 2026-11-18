@@ -497,15 +497,28 @@ indexing (**Proposed**).
     revision waits and is indexed on top.
   - **Applying a revision re-reads only what it touches:** the changed
     documents (already parsed, if the caller has them), the type schema
-    documents (kept between revisions while unchanged), and, when a type
-    schema document changes, the entities of that type. Measured on Daedalus:
+    documents (kept between revisions while their text is unchanged, by a
+    hash of the text, so a rolled-back revision or a purge cannot bring back
+    a stale schema), and, when a type schema document changes, the entities
+    of the types it describes or described and every other type schema
+    document. Measured on Daedalus:
     about 20 ms per one-document revision for catalogs of 1,000 to 5,000
     entities.
   - **Section credits.** Each body section records the revision that last
-    changed it and that revision's author, for trust labels. Applying a
-    revision compares the new sections with the stored ones; a rebuild
+    changed it and that revision's author, and the least-trusted author
+    whose words may remain in it, for trust labels (catalog §12.4). Applying
+    a revision compares the new sections with the stored ones; a rebuild
     replays each document's history, reading only revisions whose body
     changed. The round-trip check confirms both give the same credits.
+  - **Answers are read from one snapshot** (repeatable read, read only), so
+    an answer's catalog revision and its rows agree.
+  - **Rolling deployments.** A process still running an older parser after
+    a newer worker has rebuilt the index would add rows of the older
+    version. Applying a revision with an older parser than the index's
+    therefore marks the index behind, so answers say so until the next
+    rebuild. The reference Compose setup replaces `web` and `worker`
+    together, so this only matters for setups that run several versions at
+    once.
   - **Rebuilds** delete a workspace's index rows and derive them again from
     the stored text in one transaction, so readers see the old rows, marked
     behind, until it commits: a few seconds per thousand entities (3 to 6 s

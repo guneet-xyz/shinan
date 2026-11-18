@@ -2,6 +2,7 @@ import { and, eq, inArray, schema, sql } from "@shinan/db"
 import type { Transaction } from "@shinan/db"
 
 import type { ResolvedActor } from "../actor.js"
+import { parserVersion } from "./document/index.js"
 import type { CatalogDocument } from "./document/index.js"
 import { indexRevision, lockIndexState } from "./index/indexer.js"
 
@@ -46,7 +47,15 @@ export async function appendCatalogRevision(
   if (new Set(given).size !== given.length)
     throw new Error("A catalog revision changes each document once")
 
-  await lockIndexState(tx, workspaceId)
+  const state = await lockIndexState(tx, workspaceId)
+  // A process still running an older parser than the one that last built
+  // the index (during a rolling deployment) would add rows of its older
+  // version: answers say the index is behind until the next rebuild.
+  if (state.parserVersion > parserVersion && state.rebuildRequestedAt === null)
+    await tx
+      .update(schema.catalogIndexState)
+      .set({ rebuildRequestedAt: sql`now()` })
+      .where(eq(schema.catalogIndexState.workspaceId, workspaceId))
   const [next] = await tx
     .select({
       number: sql<number>`coalesce(max(${schema.catalogRevisions.number}), 0)::int + 1`,
