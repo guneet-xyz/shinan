@@ -44,10 +44,11 @@ export interface CatalogWorkerOptions {
 
 export const defaultWorkerOptions: Required<CatalogWorkerOptions> = {
   /**
-   * 20 s. A one-field change on a catalog at its limits took 2 to 4.3 s on
-   * Daedalus under a load of 4 to 5 on 2 cores; the slowest proposal
-   * within the operation limits (a 100-fact recheck of a 54 KB document)
-   * about 8 s.
+   * 20 s. On a catalog at its limits, on Daedalus under a load of 8 to 10
+   * on 2 cores, a one-field change took 0.1 to 2.8 s, and the first one
+   * after the catalog was loaded, which validates every document, 1.5 to
+   * 4.5 s; the slowest proposal within the operation limits (a 100-fact
+   * recheck of a 54 KB document) took about 8 s under a load of 4 to 5.
    */
   timeLimitMs: 20_000,
   /**
@@ -57,14 +58,17 @@ export const defaultWorkerOptions: Required<CatalogWorkerOptions> = {
   loadLimitMs: 60_000,
   readBatch: 100,
   loadBatchBytes: 512 * 1024,
-  /** 384 MiB: a catalog at its limit estimates at most 320 MiB. */
+  /**
+   * 384 MiB: a catalog at its limit estimates at most 320 MiB, its kept
+   * validation included.
+   */
   cacheBytes: 384 * 1024 * 1024,
   /**
-   * 768 MiB. Applying a one-field change to a catalog at its limits peaked
-   * at 413 MiB of heap (1,620 documents of 100 facts, the shape that takes
-   * the most), and at 109 to 344 MiB for other shapes; the worst shapes
-   * also applied with 640 MiB, the least the server accepts. Operators set
-   * it with `SHINAN_CATALOG_WORKER_HEAP_MB`.
+   * 768 MiB. Loading a catalog at its limits and applying one-field
+   * changes to it ran within a 448 MiB heap for every shape measured, and
+   * within 384 MiB for all but 1,670 documents of 100 facts, the shape
+   * that takes the most (#116); 640 MiB is the least the server accepts.
+   * Operators set it with `SHINAN_CATALOG_WORKER_HEAP_MB`.
    */
   heapMb: 768,
   /**
@@ -189,6 +193,17 @@ export class CatalogWorkers {
     input: PrepareInput,
   ): Promise<Prepared> {
     return this.run(workspaceId, (prepare) => prepare(documents, load, input))
+  }
+
+  /**
+   * Drops what the workspace's worker keeps parsed and validated, stopping
+   * it; the next proposal there reads the catalog again. For a change to
+   * stored text that keeps its revision number, such as purge (catalog
+   * §9): make it within the workspace's turn (`run`), so that no proposal
+   * works on the old text meanwhile.
+   */
+  async forget(workspaceId: string): Promise<void> {
+    await this.slots.get(workspaceId)?.stop()
   }
 
   /** Stops every worker; the next request starts new ones. */

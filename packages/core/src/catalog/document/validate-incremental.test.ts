@@ -179,6 +179,40 @@ ${s.keys.length > 0 ? `keys:\n${s.keys.map((k) => `  ${k}\n`).join("")}` : ""}--
 `,
   )
 
+/**
+ * A runbook applies to a type as well as to entities: `applies-to:
+ * schema/<type>` resolves while that type exists, so adding or removing
+ * its schema changes the runbook's problems.
+ */
+const runbook = fc
+  .record({
+    id: fc.constantFrom("runbook/r1", "runbook/r2"),
+    appliesTo: fc.constantFrom(
+      "schema/widget",
+      "schema/gadget",
+      "schema/gadget",
+      "schema/machine",
+      "schema/nothing",
+      "workspace",
+      "machine/m1",
+    ),
+    on: checked,
+  })
+  .map(
+    (r) => `---
+id: ${r.id}
+type: runbook
+title: ${r.id}
+summary: A runbook for tests.
+status: active
+owner: person/ana
+facts:
+${group(r.on, "observed", [`applies-to: ${r.appliesTo}`, "last_successful_run: 2026-11-01", "changes_deployment: false"])}---
+
+# ${r.id}
+`,
+  )
+
 const startHereText = (steps: readonly string[]) => `---
 id: start-here
 title: Start here
@@ -192,7 +226,8 @@ const startHere = fc
 
 const document = fc.oneof(
   { arbitrary: entity, weight: 12 },
-  { arbitrary: schema, weight: 2 },
+  { arbitrary: runbook, weight: 3 },
+  { arbitrary: schema, weight: 3 },
   { arbitrary: startHere, weight: 1 },
   { arbitrary: fc.constant("Not a catalog document."), weight: 1 },
 )
@@ -486,6 +521,106 @@ ${group("2026-11-14", "observed", ["size: 3"])}${group("2026-11-14", "intended",
     expect(
       inside(updateCatalogValidation(base, after, context), after),
     ).toEqual(inside(prepareCatalogValidation(after, context), after))
+  })
+
+  it("validates again what applies to a type when its schema comes or goes", () => {
+    const gadget = `---
+id: schema/gadget
+title: Gadget
+summary: A type for tests.
+status: active
+owner: person/ana
+---
+
+# Gadget
+`
+    const runbook = `---
+id: runbook/r1
+type: runbook
+title: R1
+summary: A runbook for tests.
+status: active
+owner: person/ana
+facts:
+${group("2026-11-14", "observed", ["applies-to: schema/gadget", "last_successful_run: 2026-11-01", "changes_deployment: false"])}---
+
+# R1
+`
+    const unresolved = (v: CatalogValidation) =>
+      [...v.problems()].filter((p) => p.code === "reference-unresolved")
+    const without = readCatalog([text("person/ana"), runbook])
+    const base = prepareCatalogValidation(without, context)
+    expect(unresolved(base)).toHaveLength(1)
+
+    const withSchema = readCatalog([
+      ...without.documents,
+      parseCatalogDocument(gadget),
+    ])
+    const added = validateChangeIncrementally(
+      {
+        before: without,
+        after: withSchema,
+        changed: withSchema.documents.slice(2),
+      },
+      context,
+      base,
+    )
+    expect(unresolved(added.after)).toEqual([])
+    expect(inside(added.after, withSchema)).toEqual(
+      inside(prepareCatalogValidation(withSchema, context), withSchema),
+    )
+
+    // Removing the schema again breaks the runbook's `applies-to`: the
+    // change is charged with it, though it does not write the runbook.
+    const removed: Change = {
+      before: withSchema,
+      after: readCatalog(without.documents),
+      changed: [],
+    }
+    const result = validateChange(removed, context, added.after)
+    expect(result).toEqual(validateChangeFully(removed, context))
+    expect(result.problems).toMatchObject([
+      { code: "reference-unresolved", documentId: "runbook/r1" },
+    ])
+  })
+
+  it("validates again, for the same documents, a fact check no longer in the future", () => {
+    const later = `---
+id: machine/m1
+type: machine
+title: M1
+summary: An entity for tests.
+status: active
+owner: person/ana
+facts:
+${group("2026-11-23", "observed", ["role: Spare"])}---
+`
+    const catalog = readCatalog([text("person/ana"), later])
+    const base = prepareCatalogValidation(catalog, context)
+    const codes = (v: CatalogValidation) => [...v.problems()].map((p) => p.code)
+    expect(codes(base)).toContain("checked-in-future")
+    const daysOn = { now: now + 4 * day }
+    const updated = updateCatalogValidation(
+      base,
+      readCatalog(catalog.documents),
+      daysOn,
+    )
+    expect(updated).not.toBe(base)
+    expect(codes(updated)).not.toContain("checked-in-future")
+    expect(inside(updated, catalog)).toEqual(
+      inside(prepareCatalogValidation(catalog, daysOn), catalog),
+    )
+  })
+
+  it("agrees with full validation when one document object is listed twice", () => {
+    const documents = [text("person/ana"), text("machine/m1")].map(
+      parseCatalogDocument,
+    )
+    const base = prepareCatalogValidation(readCatalog(documents), context)
+    const twice = readCatalog([...documents, documents[1] as CatalogDocument])
+    expect(
+      inside(updateCatalogValidation(base, twice, context), twice),
+    ).toEqual(inside(prepareCatalogValidation(twice, context), twice))
   })
 
   it("starts over for other member handles or an earlier time", () => {

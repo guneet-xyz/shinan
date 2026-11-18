@@ -400,17 +400,27 @@ interface DocumentValidation {
  *
  * It holds each document's problems and the secrets found in it, and an
  * index of which documents reference each ID, alias and type. Each
- * revision gets its own: a validation is never changed once made.
+ * revision gets its own: a validation is never changed once made, and the
+ * `Problem` objects in it are shared with every result made from it, so
+ * nothing may change those either. It keeps the catalog's documents and
+ * type registry, but not its resolved entities, so keeping it costs little
+ * beyond the parsed documents (catalog worker, `estimatedBytes`).
  */
 export class CatalogValidation {
   #byText?: Map<string, Problem[][]>
   #firstById?: Map<string, Problem[]>
   #types?: Map<string, string>
+  /** The documents validated, in the catalog's order. */
+  readonly documents: readonly CatalogDocument[]
+  /** @internal The catalog's type schema documents. */
+  readonly schemas: readonly CatalogDocument[]
+  /** @internal */
+  readonly registry: TypeRegistry
 
   /** @internal Use `prepareCatalogValidation` and `updateCatalogValidation`. */
   constructor(
     /** The catalog validated, or one with the very same documents. */
-    readonly catalog: Catalog,
+    catalog: Catalog,
     /** @internal By document, in the catalog's order. */
     readonly entries: ReadonlyMap<CatalogDocument, DocumentValidation>,
     /** @internal The documents that reference each name. */
@@ -419,7 +429,11 @@ export class CatalogValidation {
     readonly now: number,
     /** @internal `memberHandles`, as one string; null when not given. */
     readonly members: string | null,
-  ) {}
+  ) {
+    this.documents = catalog.documents
+    this.schemas = catalog.schemas
+    this.registry = catalog.registry
+  }
 
   /** @internal Every problem, by document in order. */
   *problems(): Iterable<Problem> {
@@ -457,7 +471,7 @@ export class CatalogValidation {
 
   /** @internal Each type schema, written out to compare. */
   get types(): ReadonlyMap<string, string> {
-    this.#types ??= typeTexts(this.catalog.registry)
+    this.#types ??= typeTexts(this.registry)
     return this.#types
   }
 }
@@ -508,12 +522,8 @@ export function updateCatalogValidation(
   if (membersKey(context) !== base.members || now < base.now)
     return prepareCatalogValidation(catalog, context)
   const documents = catalog.documents
-  if (now === base.now && sameList(documents, base.catalog.documents))
-    return base
+  if (now === base.now && sameList(documents, base.documents)) return base
   const present = new Set(documents)
-  // The same document twice: rare enough to validate in full.
-  if (present.size !== documents.length)
-    return prepareCatalogValidation(catalog, context)
 
   const v = new Validator(catalog, context)
   const dirty = new Set<CatalogDocument>()
@@ -537,7 +547,7 @@ export function updateCatalogValidation(
   for (const list of v.names.values())
     if (list.length > 1) for (const document of list) touch(document)
 
-  if (!sameList(catalog.schemas, base.catalog.schemas)) {
+  if (!sameList(catalog.schemas, base.schemas)) {
     const was = base.types
     const is = typeTexts(catalog.registry)
     const types = new Set<string>()

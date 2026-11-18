@@ -591,22 +591,43 @@ indexing (**Proposed**).
       needs is parsed.
     - **A proposal past its limit** stops only its own workspace's worker;
       the next proposal there loads that catalog again.
+    - **Kept validation** ([#116](https://github.com/guneet-xyz/shinan/issues/116)).
+      Each worker also keeps the validation of its workspace's latest
+      revision, so a proposal validates only the documents it can affect
+      (catalog §8.3, "Cost"). A proposal ready to store leaves its parsed
+      documents and the validation of the catalog it would make; the next
+      proposal keeps them if it finds them stored, telling so by the stored
+      text, never by revision numbers, and drops them otherwise (the
+      proposal waits for approval, its transaction rolled back, or another
+      process stored a revision first and the turn starts over). Any
+      revision's validation gives the same result, so keeping the latest
+      only saves work. Both are dropped with the worker (a time limit, out
+      of memory, a new workspace taking it over), when documents are
+      evicted for the cache's budget, and by `CatalogWorkers.forget`,
+      which purge needs because it rewrites stored text in place (to call
+      within the workspace's turn). A new parser or rules version comes
+      with new code, so with new processes and empty workers.
     - **Memory.** Each worker's cache is limited to 384 MiB as estimated by
-      `estimatedBytes`: 3 × text bytes + 1,792 × facts + 2,048 × fact
-      check groups + 256 × body sections + 128 × body links + 16 KiB per
-      document, above the heap measured for every shape tried (typical
-      entities, 100 long-form facts in one check group or each in its own,
-      365 short facts, 57 KB of prose, 2,000 links). The worker's heap is
-      limited to 768 MiB (`resourceLimits`, `SHINAN_CATALOG_WORKER_HEAP_MB`,
-      at least 640 MiB); one out of memory is stopped like one out of time. A workspace's
-      catalog is limited to 5,000 documents, 25 MiB of text and an estimate
-      of 320 MiB (catalog §8.2), until validation is incremental
-      ([#116](https://github.com/guneet-xyz/shinan/issues/116)). Measured on
-      Daedalus under a load of 4 to 5 on 2 cores, a one-field change at
-      those limits took 2 to 4.3 s and its heap peaked at 109 to 413 MiB,
-      the most for 1,620 documents of 100 facts; the worst shapes at the
-      limit (100 facts in one check group, or each in its own) also
-      applied in a worker with a 640 MiB heap.
+      `estimatedBytes`, which counts each document's share of the kept
+      validation: 3 × text bytes + 1,792 × facts + 2,048 × fact check
+      groups + 256 × body sections + 320 × body links + 8 KiB per
+      document, above the heap measured for every shape tried (the least an
+      entity holds, small and typical entities, 100 long-form facts in one
+      check group or each in its own, 365 short facts, 38 KB of prose,
+      2,000 links), with a warning for every fact and link. The worker's
+      heap is limited to 768 MiB (`resourceLimits`,
+      `SHINAN_CATALOG_WORKER_HEAP_MB`, at least 640 MiB); one out of memory
+      is stopped like one out of time. A workspace's catalog is limited to
+      20,000 documents, 50 MiB of text and an estimate of 320 MiB (catalog
+      §8.2). Measured on Daedalus under a load of 8 to 10 on 2 cores, at
+      those limits: a one-field change took 0.1 to 2.8 s, most of it
+      applying the operations, which reads the catalog's entities twice;
+      the first proposal after loading, which validates every document,
+      took 1.5 to 4.5 s; and every shape ran within a 448 MiB heap, all but
+      the heaviest (1,670 documents of 100 facts) within 384 MiB. Through
+      the database, the first proposal after a restart on 20,000 small
+      documents took 27 s, almost all of it reading and parsing, and the
+      next ones 1.2 to 1.8 s.
     - **A catalog that no longer fits** (only if the estimate were wrong)
       makes proposals there fail with `catalog-too-large`; the `web` log
       and the workspace's security log say so, and the operator raises the

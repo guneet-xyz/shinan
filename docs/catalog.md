@@ -1485,15 +1485,16 @@ how proposals are applied and classed (`packages/core`, `catalog/proposals`).
   within the limits, a 100-fact recheck of a 54 KB document, took about
   8 s on a busy development host); reading the stored catalog first is
   not counted ([architecture §5.3](architecture.md#53-how-sync-works)).
-- **A workspace's catalog** holds at most 5,000 documents, 25 MiB of text,
-  and 320 MiB as Shinan estimates the memory it takes to hold it (facts
-  count most: `estimatedBytes`, [architecture §5.3](architecture.md#53-how-sync-works)).
-  A change that takes it past any of these and grows it is refused
-  (`catalog-full`); one that shrinks it is always accepted. These limits
-  rise when validation becomes incremental
-  ([#116](https://github.com/guneet-xyz/shinan/issues/116)): until then
-  every proposal validates the whole catalog, which at these limits took
-  2 to 4.3 s on a busy Daedalus. An agent sends at most 60 proposals in
+- **A workspace's catalog** holds at most 20,000 documents, 50 MiB of text,
+  and 320 MiB as Shinan estimates the memory it takes to hold it and its
+  validation (facts and links count most: `estimatedBytes`,
+  [architecture §5.3](architecture.md#53-how-sync-works)). A change that
+  takes it past any of these and grows it is refused (`catalog-full`); one
+  that shrinks it is always accepted. Raised from 5,000 documents and
+  25 MiB when validation became incremental
+  ([#116](https://github.com/guneet-xyz/shinan/issues/116), "Cost" in
+  [8.3](#83-validation)): at the new limits a one-field change took 0.1 to
+  2.8 s on a busy Daedalus, against 2 to 4.3 s at the old ones. An agent sends at most 60 proposals in
   10 minutes, counted when Shinan starts on each. When the catalog workers
   are busy or an agent is over its limit, the proposal is refused at once
   as busy (HTTP 429 with `Retry-After`) and can be sent again. Reason: new
@@ -1602,7 +1603,8 @@ how the rules are applied.
 - **Cost** (**proposed**, [#116](https://github.com/guneet-xyz/shinan/issues/116)).
   A proposal is validated against the validation of the revision it is based
   on, which the catalog worker keeps for each workspace's latest revision
-  (wired in after M2-4). Only these documents are validated again:
+  ([architecture §5.3](architecture.md#53-how-sync-works), "Kept
+  validation"). Only these documents are validated again:
   - the documents the change writes, adds or removes;
   - the documents sharing an ID or alias with one of those, or with another
     document;
@@ -1611,6 +1613,7 @@ how the rules are applied.
   - every document that references any of the above;
   - when time has passed, the documents whose fact checks were in the future.
 
+  An earlier time or other member handles validate every document again.
   The result is the same as validating every document. A property test checks
   this against full validation on random catalogs and changes. Reason: a
   one-field change on a 20,000-document catalog then validates in about
