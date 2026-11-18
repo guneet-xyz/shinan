@@ -105,6 +105,19 @@ function inspect(service, format) {
   }).trim()
 }
 
+/**
+ * The container ports a service publishes on the host: those with a host
+ * binding. Docker may leave an unpublished port out or list it without one;
+ * for this file's PostgreSQL, Docker 28 shows `{}` and Docker 29
+ * `{"5432/tcp":null}`.
+ */
+function publishedPorts(service) {
+  const ports = JSON.parse(inspect(service, "{{json .NetworkSettings.Ports}}"))
+  return Object.entries(ports ?? {})
+    .filter(([, bindings]) => bindings?.length > 0)
+    .map(([port]) => port)
+}
+
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 async function waitFor(what, check, seconds = 120) {
@@ -155,7 +168,8 @@ async function request(path, init = {}) {
  * Walks /app inside the image as its own user, on a writable root file
  * system and without a network, and lists what that user could write and
  * what is not owned by root or is writable by its group or everyone. What
- * it cannot read is listed too, so a broken image fails a check.
+ * it cannot read (a directory it cannot list, a file it cannot open for
+ * reading) is listed too, so a broken image fails a check.
  */
 function writableAppFiles() {
   const walk = `
@@ -168,6 +182,7 @@ function writableAppFiles() {
         stat = fs.lstatSync(p)
         if (stat.isSymbolicLink()) return
         if (stat.isDirectory()) entries = fs.readdirSync(p)
+        else if (stat.isFile()) fs.closeSync(fs.openSync(p, "r"))
       } catch (e) {
         unreadable.push(p + " " + e.code)
         if (!stat) return
@@ -207,7 +222,7 @@ async function run() {
   const files = writableAppFiles()
   check(
     files.unreadable.length === 0,
-    "the image's user can read every directory under /app" +
+    "the image's user can list every directory and read every file under /app" +
       (files.unreadable.length
         ? ` (not: ${files.unreadable.slice(0, 5).join(", ")})`
         : ""),
@@ -254,14 +269,10 @@ async function run() {
     )
   }
   check(
-    inspect("web", "{{json .NetworkSettings.Ports}}").includes('"3000/tcp"') &&
-      !inspect("web", "{{json .NetworkSettings.Ports}}").includes("3001"),
+    publishedPorts("web").join(" ") === "3000/tcp",
     "web publishes only port 3000, not the internal listener",
   )
-  check(
-    inspect("postgres", "{{json .NetworkSettings.Ports}}") === "{}",
-    "PostgreSQL publishes no port",
-  )
+  check(publishedPorts("postgres").length === 0, "PostgreSQL publishes no port")
 
   const log = compose("logs", "--no-color", "web")
   const links = [...log.matchAll(/(https:\/\/\S+\/setup)#(\S+)/g)]
