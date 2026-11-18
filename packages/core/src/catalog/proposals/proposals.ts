@@ -732,16 +732,23 @@ export function checkCatalogSize(
   } = catalogLimits,
 ): void {
   const mib = (n: number) => Math.round(n / 1024 / 1024)
-  const past =
-    (size.documents > limits.documents &&
-      size.documents > size.documentsBefore) ||
-    (size.bytes > limits.bytes && size.bytes > size.bytesBefore) ||
-    (size.estimated > limits.estimatedBytes &&
-      size.estimated > size.estimatedBefore)
-  if (past)
+  const past = [
+    size.documents > limits.documents &&
+      size.documents > size.documentsBefore &&
+      `${size.documents} documents, past ${limits.documents}`,
+    size.bytes > limits.bytes &&
+      size.bytes > size.bytesBefore &&
+      `${mib(size.bytes)} MiB of text, past ${mib(limits.bytes)} MiB`,
+    size.estimated > limits.estimatedBytes &&
+      size.estimated > size.estimatedBefore &&
+      `${mib(size.estimated)} MiB in memory, past ${mib(limits.estimatedBytes)} MiB`,
+  ].filter((p): p is string => p !== false)
+  if (past.length > 0)
     throw new RuleViolationError(
       "catalog-full",
-      `A workspace's catalog holds at most ${limits.documents} documents, ${mib(limits.bytes)} MiB of text and ${mib(limits.estimatedBytes)} MiB as Shinan holds it in memory (facts count most); this change would take it to ${size.documents} documents, ${mib(size.bytes)} MiB and ${mib(size.estimated)} MiB. Retire or shorten documents first.`,
+      `This change would take the workspace's catalog to ${past.join(" and ")}. ` +
+        `A catalog holds at most ${limits.documents} documents, ${mib(limits.bytes)} MiB of text and ${mib(limits.estimatedBytes)} MiB as Shinan holds it in memory with its validation, where text, facts, links, and each problem and suspected secret validation finds all count. ` +
+        "Changes that do not grow the catalog still apply. To make room, shorten documents (edit-body), remove facts no longer needed (remove-fact), and fix what validation warns about, such as dead links, keys outside their type's schema and suspected secrets (catalog §8.2).",
     )
 }
 

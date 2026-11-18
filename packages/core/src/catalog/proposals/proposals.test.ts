@@ -1010,11 +1010,45 @@ describe("the catalog size limit", () => {
       RuleViolationError,
     )
     expect(() => checkCatalogSize(size(900, 4), limits)).toThrow(
-      /at most 3 documents/,
+      /to 4 documents, past 3\. A catalog holds at most 3 documents/,
     )
     expect(() => checkCatalogSize(size(900, 3, 900, 5001), limits)).toThrow(
       RuleViolationError,
     )
+  })
+
+  it("says which limit the change passes, what counts, and how to make room", () => {
+    const big = { bytes: 2 ** 20, documents: 3, estimatedBytes: 2 ** 20 }
+    let message = ""
+    try {
+      checkCatalogSize(
+        {
+          bytesBefore: 2 ** 20,
+          bytes: 2 ** 20,
+          documentsBefore: 3,
+          documents: 3,
+          estimatedBefore: 2 ** 20,
+          estimated: 3 * 2 ** 20,
+        },
+        big,
+      )
+    } catch (error) {
+      message = (error as RuleViolationError).message
+    }
+    expect(message).toMatch(
+      /^This change would take .* to 3 MiB in memory, past 1 MiB\./,
+    )
+    expect(message).not.toMatch(/documents, past|of text, past/)
+    expect(message).not.toMatch(/facts count most|Retire/)
+    for (const counted of ["problem", "suspected secret", "links", "facts"])
+      expect(message).toContain(counted)
+    for (const way of [
+      "edit-body",
+      "remove-fact",
+      "dead links",
+      "catalog §8.2",
+    ])
+      expect(message).toContain(way)
   })
 
   it("lets a change that shrinks or stays within it apply", () => {
