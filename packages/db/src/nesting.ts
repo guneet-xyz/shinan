@@ -24,7 +24,17 @@ export class NestedConnectionError extends Error {
   }
 }
 
-const holding = new AsyncLocalStorage<boolean>()
+/**
+ * Whether the work running now started inside a transaction that is still
+ * open. The store is the transaction's own state, cleared when its work
+ * settles, so work it started that runs later (a timer, an emitter's
+ * handler) may use `db` again once the transaction is over.
+ */
+const holding = new AsyncLocalStorage<{ open: boolean }>()
+
+function inTransaction(): boolean {
+  return holding.getStore()?.open ?? false
+}
 
 /** Refusals since the last `takeNestedConnectionRefusals`, as their messages and where they came from. */
 const refusals: string[] = []
@@ -57,7 +67,7 @@ function guardPool<P extends object>(pool: P): P {
   return new Proxy(pool, {
     get(target, property, receiver) {
       const value: unknown = Reflect.get(target, property, receiver)
-      if (poolConnecting.has(property) && holding.getStore())
+      if (poolConnecting.has(property) && inTransaction())
         refuse(`$client.${String(property)}`)
       return value
     },
@@ -89,7 +99,7 @@ export function refuseNestedConnections<D extends object>(db: D): D {
       if (property === "$client" && typeof value === "object" && value)
         return (client ??= guardPool(value))
       if (!connecting.has(property)) return value
-      if (holding.getStore()) refuse(String(property))
+      if (inTransaction()) refuse(String(property))
       if (property !== "transaction" || typeof value !== "function")
         return value
       return (
@@ -98,7 +108,16 @@ export function refuseNestedConnections<D extends object>(db: D): D {
       ): unknown =>
         (value as (...args: unknown[]) => unknown).call(
           target,
-          (tx: unknown) => holding.run(true, () => work(tx)),
+          (tx: unknown) => {
+            const state = { open: true }
+            return holding.run(state, async () => {
+              try {
+                return await work(tx)
+              } finally {
+                state.open = false
+              }
+            })
+          },
           ...rest,
         )
     },

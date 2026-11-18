@@ -1,4 +1,4 @@
-import { afterAll, afterEach } from "vitest"
+import { afterAll, afterEach, beforeEach } from "vitest"
 
 import { takeNestedConnectionRefusals } from "@shinan/db"
 
@@ -17,5 +17,13 @@ function check(when: string): void {
     )
 }
 
+// Before each test, so a refusal from a `beforeAll` hook, or from work an
+// earlier test left running, is named as such rather than charged to the
+// test that happens to come next. It runs before the file's own hooks.
+beforeEach(() =>
+  check(
+    "before this test: in a beforeAll hook, or by work an earlier test left running",
+  ),
+)
 afterEach(() => check("during this test"))
-afterAll(() => check("in this file's hooks"))
+afterAll(() => check("in this file's afterAll hooks, or by work left running"))
