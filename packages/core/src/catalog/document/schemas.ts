@@ -1,4 +1,4 @@
-import { factKeyPattern, reservedTypeNames } from "./ids.js"
+import { isAttributeName, reservedTypeNames } from "./ids.js"
 import type { EntityStatus, SchemaDocument } from "./model.js"
 import { recheckPattern } from "./parse.js"
 import { blocking } from "./problems.js"
@@ -366,7 +366,7 @@ export function buildTypeRegistry(
           }
         : null
       for (const attribute of relation?.identifiedBy ?? []) {
-        if (!factKeyPattern.test(attribute) || factOptions.has(attribute))
+        if (!isAttributeName(attribute) || factOptions.has(attribute))
           problem(
             `"${attribute}" cannot name a relation attribute`,
             definition.range,

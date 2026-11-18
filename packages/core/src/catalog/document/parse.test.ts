@@ -6,7 +6,7 @@ import {
   musashi,
   startHere,
 } from "../../../test/catalog-documents.js"
-import { parseCatalogDocument } from "./parse.js"
+import { maxDocumentLength, parseCatalogDocument } from "./parse.js"
 import type { ProblemCode } from "./problems.js"
 import { slice } from "./source.js"
 
@@ -498,5 +498,171 @@ describe("the start-here document (catalog §11)", () => {
     expect(
       codes(doc("  []\n").replace("agents", "facts: []\nagents")),
     ).toContain("field-invalid")
+  })
+})
+
+describe("hostile input", () => {
+  const front = withFrontmatter(header, "")
+  const fill = (unit: string, size: number) =>
+    unit.repeat(Math.ceil(size / unit.length)).slice(0, size)
+  const room = maxDocumentLength - front.length
+
+  it("refuses a document longer than the limit before reading it", () => {
+    const d = parseCatalogDocument(front + "x".repeat(room + 1))
+    expect(d.problems.map((p) => p.code)).toEqual(["too-large"])
+    expect(d.id).toBeNull()
+    expect(parseCatalogDocument(front + "x".repeat(room)).problems).toEqual([])
+  })
+
+  // Each of these took from 10 seconds to minutes at this size before the
+  // limits (micromark's time grows with their square). The bound is loose
+  // because garbage collection on a busy machine can add seconds.
+  const bound = 5000
+
+  it.each([
+    ["repeated *a_ (emphasis)", fill("*a_", room)],
+    ["unclosed links", fill("[a](", room)],
+    ["unclosed links to <", fill("[a](<", room)],
+    ["inline HTML comments", fill("a <!-- b\n", room)],
+    ["nested link brackets", fill("[", room)],
+    ["many backticks", fill("`a", room)],
+    ["a long flat list", fill("- a\n", room)],
+    [
+      "lists nested just under the limit",
+      ("- a\n  - b\n".repeat(990) + fill("x\n\n", room)).slice(0, room),
+    ],
+    ["quotes 31 deep", `${"> ".repeat(31)}a\n\n${fill("x\n\n", room - 70)}`],
+    [
+      "setext headings just under the limit",
+      ("a\n===\n".repeat(490) + fill("x\n\n", room)).slice(0, room),
+    ],
+  ])(
+    "reads %s quickly",
+    (_, body) => {
+      const started = performance.now()
+      const d = parseCatalogDocument(front + body)
+      expect(performance.now() - started).toBeLessThan(bound)
+      expect(d.problems).toEqual([])
+      expect(d.body.sections.map((s) => s.text).join("")).toBe(d.body.text)
+    },
+    30_000,
+  )
+
+  it.each([
+    ["deeply nested quotes", `${">".repeat(room - 2)} x`, "deep"],
+    ["deeply nested lists", fill("1. ", room), "deep"],
+    ["a list in every list item", fill("- - a\n", room), "inside others"],
+    [
+      "nested lists by indentation",
+      fill("- a\n  - b\n", room),
+      "inside others",
+    ],
+    [
+      "quotes reopened inside quotes",
+      fill("> > a\n> \n", room),
+      "inside others",
+    ],
+    ["many setext headings", fill("a\n===\n", room), "lines of only"],
+  ])(
+    "refuses %s quickly, without throwing",
+    (_, body, reason) => {
+      const started = performance.now()
+      const d = parseCatalogDocument(front + body)
+      expect(performance.now() - started).toBeLessThan(bound)
+      expect(d.problems.map((p) => p.code)).toEqual(["body-invalid"])
+      expect(d.problems[0]?.message).toContain(reason)
+      expect(d.id).toBe("machine/x")
+    },
+    30_000,
+  )
+
+  it("finds links deep inside quotes and lists", () => {
+    const quoted = `${"> ".repeat(30)}[m](machine/musashi)\n`
+    expect(entity(front + quoted).body.links.map((l) => l.reference)).toEqual([
+      "machine/musashi",
+    ])
+    const listed = `${Array.from({ length: 30 }, (_, i) => `${"  ".repeat(i)}- a`).join("\n")} [m](machine/musashi)\n`
+    expect(entity(front + listed).body.links.map((l) => l.reference)).toEqual([
+      "machine/musashi",
+    ])
+  })
+})
+
+describe("numbers are read only as written (catalog §2.1)", () => {
+  const fact = (v: string) =>
+    withFrontmatter(
+      `${header}facts:\n  - checked: 2026-11-14\n    by: guneet\n    scope: s\n    source: s\n    observed:\n      disk.root.size: ${v}\n`,
+    )
+
+  it.each([
+    "12345678901234567890",
+    "0x10",
+    "0o17",
+    "+12",
+    "1e3",
+    "1.10",
+    "1.0",
+    ".5",
+    "-0",
+  ])("refuses %s, which would read as another number", (v) => {
+    const d = parseCatalogDocument(fact(v))
+    expect(d.problems.map((p) => p.code)).toEqual(["frontmatter-invalid"])
+    expect(d.problems[0]?.message).toContain("quotes")
+  })
+
+  it.each([
+    ["128", 128],
+    ["-5", -5],
+    ["0.5", 0.5],
+    ['"1.10"', "1.10"],
+    ['"0x10"', "0x10"],
+  ])("reads %s", (v, value) => {
+    const d = entity(fact(v))
+    expect(d.problems).toEqual([])
+    expect(d.facts[0]?.value).toBe(value)
+  })
+})
+
+describe("names that are object members", () => {
+  const check =
+    "  - checked: 2026-11-14\n    by: guneet\n    scope: s\n    source: s\n"
+
+  it.each(["__proto__", "constructor", "toString", "prototype"])(
+    "refuses %s as a relation attribute",
+    (name) => {
+      const d = entity(
+        withFrontmatter(
+          `${header}facts:\n${check}    observed:\n      secrets-in: { to: service/o, ${name}: evil, item: a }\n`,
+        ),
+      )
+      expect(d.problems.map((p) => p.code)).toEqual(["fact-invalid"])
+      expect(d.problems[0]?.message).toContain(name)
+    },
+  )
+
+  it("keeps attributes in a map with no prototype", () => {
+    const d = entity(
+      withFrontmatter(
+        `${header}facts:\n${check}    observed:\n      secrets-in: { to: service/o, item: a }\n`,
+      ),
+    )
+    const attributes = d.facts[0]?.attributes ?? {}
+    expect(Object.getPrototypeOf(attributes)).toBeNull()
+    expect(Object.keys(attributes)).toEqual(["item"])
+  })
+})
+
+describe("facts and their groups", () => {
+  it("gives each fact its own group's check when an earlier item is not a group", () => {
+    const d = entity(
+      withFrontmatter(
+        `${header}facts:\n  - oops\n  - checked: 2026-11-14\n    by: guneet\n    scope: s\n    source: s\n    observed:\n      role: web\n  - unknown:\n      hostname: Not looked\n`,
+      ),
+    )
+    expect(d.groups.map((g) => g.index)).toEqual([1, 2])
+    expect(d.facts.map((f) => [f.key, f.group])).toEqual([
+      ["role", 1],
+      ["hostname", 2],
+    ])
   })
 })

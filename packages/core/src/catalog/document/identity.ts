@@ -51,7 +51,12 @@ export function factIdentityKey(fact: IdentityInput): FactIdentityKey {
   } else if (fact.relation) {
     add("to", fact.to)
     for (const attribute of fact.relation.identifiedBy)
-      add(attribute, fact.attributes[attribute])
+      add(
+        attribute,
+        Object.hasOwn(fact.attributes, attribute)
+          ? fact.attributes[attribute]
+          : undefined,
+      )
   } else if (fact.state !== "unknown") {
     add("value", fact.value)
   }
@@ -82,6 +87,17 @@ export function parseFactIdentityKey(
     })
   }
   return { key: unescape(key), state: factState, parts }
+}
+
+/**
+ * The identity key without its fact state, for linking facts that differ only
+ * in state: a planned removal and the fact it removes, or an intended and an
+ * observed value of the same key.
+ */
+export function identityWithoutState(identity: FactIdentityKey): string {
+  const parts = identity.split("|")
+  parts.splice(1, 1)
+  return parts.join("|")
 }
 
 /** A fact value as text, for identity keys and comparing values. */

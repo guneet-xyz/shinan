@@ -1,10 +1,10 @@
 import {
+  Composer,
   isAlias,
   isMap,
   isPair,
   isScalar,
   isSeq,
-  parseDocument,
   Parser,
   Scalar,
 } from "yaml"
@@ -82,8 +82,10 @@ export function parseYaml(source: string, offset: number): YamlResult {
     end: offset + Math.max(start, end),
   })
 
+  // One tokenization serves both the marker checks and the composer.
+  const tokens = Array.from(new Parser().parse(source))
   let documents = 0
-  for (const token of new Parser().parse(source)) {
+  for (const token of tokens) {
     if (token.type === "directive")
       problems.push({
         message: "YAML directives (lines starting with %) are not allowed",
@@ -109,7 +111,11 @@ export function parseYaml(source: string, offset: number): YamlResult {
       range: at(0, source.length),
     })
 
-  const document = parseDocument(source, parseOptions)
+  const composed = Array.from(
+    new Composer(parseOptions).compose(tokens, true, source.length),
+  )
+  const document = composed[0]
+  if (!document) return { node: null, problems }
   for (const error of [...document.errors, ...document.warnings]) {
     problems.push({
       message: describeError(error.code, error.message),
@@ -161,6 +167,20 @@ function convert(
         range,
       })
       return null
+    }
+    if (typeof value === "number") {
+      // Every reader must see what the text says, so a number is accepted
+      // only when it reads back as written: not `1.10`, `0x10`, `+12`, `1e3`
+      // or an integer too large to hold exactly.
+      const [start, end] = node.range ?? [0, 0]
+      const written = source.slice(start, end)
+      if (String(value) !== written) {
+        problems.push({
+          message: `${written} would be read as the number ${String(value)}; put it in quotes to keep it as written`,
+          range,
+        })
+        return null
+      }
     }
     if (
       value !== null &&

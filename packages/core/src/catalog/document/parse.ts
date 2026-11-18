@@ -1,8 +1,10 @@
-import { parseBody } from "./body.js"
+import { BodyTooComplexError, parseBody } from "./body.js"
+import type { Body } from "./body.js"
 import { parseCatalogTime } from "./dates.js"
 import type { CatalogTime } from "./dates.js"
 import {
   factKeyPattern,
+  isAttributeName,
   isEntityId,
   parseEntityId,
   schemaIdPrefix,
@@ -44,14 +46,89 @@ import type { ScalarValue, YamlEntry, YamlMap, YamlNode } from "./yaml.js"
 export const parserVersion = 1
 
 /**
+ * The longest document Shinan reads, in characters (UTF-16 code units, as
+ * JavaScript counts them). Checked before anything else, so hostile input
+ * cannot make reading slow (catalog §2.1).
+ */
+export const maxDocumentLength = 64 * 1024
+
+/**
  * Reads one catalog document. Never throws: anything that keeps the document
  * from being read as catalog §2 describes is in `problems`, and every part
  * that could be read is still there, with its place in `text`.
  */
 export function parseCatalogDocument(text: string): CatalogDocument {
+  if (text.length > maxDocumentLength)
+    return unread(
+      text,
+      "too-large",
+      `The document is ${text.length} characters long; a catalog document holds at most ${maxDocumentLength}`,
+    )
+  try {
+    return read(text)
+  } catch (error) {
+    // A backstop: nothing below should throw, but a dependency might.
+    return unread(
+      text,
+      "frontmatter-invalid",
+      `The document could not be read: ${error instanceof Error ? error.message : String(error)}`,
+    )
+  }
+}
+
+/** A document that could not be read at all: only its text and the problem. */
+function unread(
+  text: string,
+  code: ProblemCode,
+  message: string,
+): EntityDocument {
+  return {
+    kind: "entity",
+    text,
+    frontmatter: null,
+    body: {
+      range: { start: text.length, end: text.length },
+      text: "",
+      sections: [],
+      links: [],
+    },
+    id: null,
+    title: null,
+    summary: null,
+    owner: null,
+    importedFrom: null,
+    fields: new Map(),
+    problems: [blocking(code, message, null)],
+    type: null,
+    status: null,
+    replacedBy: null,
+    aliases: [],
+    decision: null,
+    groups: [],
+    facts: [],
+  }
+}
+
+function read(text: string): CatalogDocument {
   const split = splitFrontmatter(text)
-  const body = parseBody(text.slice(split.bodyStart), split.bodyStart)
   const reader = new Reader()
+  let body: Body
+  try {
+    body = parseBody(text.slice(split.bodyStart), split.bodyStart)
+  } catch (error) {
+    reader.problem(
+      "body-invalid",
+      error instanceof BodyTooComplexError
+        ? error.message
+        : `The body could not be read: ${error instanceof Error ? error.message : String(error)}`,
+    )
+    body = {
+      range: { start: split.bodyStart, end: text.length },
+      text: text.slice(split.bodyStart),
+      sections: [],
+      links: [],
+    }
+  }
 
   let map: YamlMap | null = null
   if (!split.frontmatter) {
@@ -84,6 +161,8 @@ export function parseCatalogDocument(text: string): CatalogDocument {
   for (const e of map?.entries ?? []) fields.set(e.key, e)
   const id = reader.string(fields, "id", map !== null)
   reader.documentId = id
+  // Problems found before the ID was read belong to this document too.
+  for (const p of reader.problems) p.documentId ??= id
 
   const common = {
     text,
@@ -397,7 +476,7 @@ function readFact(
         task: undefined,
         remove: false,
         accepted: undefined,
-        attributes: {},
+        attributes: Object.create(null) as Record<string, ScalarValue>,
       }
     }
     if (node.kind === "list") {
@@ -442,10 +521,16 @@ function readLongForm(
     ok = false
   }
   const options = new Map(node.entries.map((e) => [e.key, e]))
-  const attributes: Record<string, ScalarValue> = {}
+  // No prototype, so an attribute named like an Object member is just data.
+  const attributes = Object.create(null) as Record<string, ScalarValue>
   for (const e of node.entries) {
     if (longFormOptions.has(e.key)) continue
-    if (e.value.kind !== "scalar" || e.value.value === null)
+    if (!isAttributeName(e.key))
+      fail(
+        `"${e.key}" cannot name an attribute: lowercase words joined by ".", "-" or "_"`,
+        e.keyRange,
+      )
+    else if (e.value.kind !== "scalar" || e.value.value === null)
       fail(
         `The attribute "${e.key}" of "${base.key}" must be one value`,
         e.range,

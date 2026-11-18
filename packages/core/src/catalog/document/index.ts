@@ -19,6 +19,7 @@ export type { Fact, ResolvedEntity } from "./entity.js"
 export {
   canonicalValue,
   factIdentityKey,
+  identityWithoutState,
   parseFactIdentityKey,
 } from "./identity.js"
 export type {
@@ -28,6 +29,7 @@ export type {
 } from "./identity.js"
 export {
   factKeyPattern,
+  isAttributeName,
   isEntityId,
   parseEntityId,
   reservedTypeNames,
@@ -65,7 +67,11 @@ export type {
   WorkspaceList,
   WrittenFact,
 } from "./model.js"
-export { parseCatalogDocument, parserVersion } from "./parse.js"
+export {
+  maxDocumentLength,
+  parseCatalogDocument,
+  parserVersion,
+} from "./parse.js"
 export type { Problem, ProblemCode, Severity } from "./problems.js"
 export {
   anyTarget,

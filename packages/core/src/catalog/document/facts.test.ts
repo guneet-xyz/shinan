@@ -14,7 +14,11 @@ import {
 } from "./analysis.js"
 import { readCatalog } from "./catalog.js"
 import { factsWithIdentity, resolveEntity } from "./entity.js"
-import { factIdentityKey, parseFactIdentityKey } from "./identity.js"
+import {
+  factIdentityKey,
+  identityWithoutState,
+  parseFactIdentityKey,
+} from "./identity.js"
 import { parseCatalogDocument } from "./parse.js"
 import { buildTypeRegistry, builtInSchemas } from "./schemas.js"
 
@@ -467,5 +471,39 @@ describe("type registry (catalog §3, §3.9)", () => {
     ])
     expect(registry.types.get("domain")?.status).toBe("retired")
     expect(registry.types.get("machine")?.keys.has("ups.model")).toBe(false)
+  })
+})
+
+describe("facts and their checks", () => {
+  it("resolves each fact's check by its group, not by list position", () => {
+    const e = resolve(
+      `${header}  - oops\n${check()}    observed:\n      role: web\n  - unknown:\n      hostname: Not looked\n`,
+    )
+    expect(e.facts.map((f) => [f.key, f.check?.by ?? null])).toEqual([
+      ["role", "guneet"],
+      ["hostname", null],
+    ])
+  })
+
+  it("links facts that differ only in state", () => {
+    const e = resolve(
+      `${header}${check()}    observed:\n      on-network: service/tailscale\n  - planned:\n      on-network: { to: service/tailscale, task: T-1, remove: true }\n`,
+    )
+    const [observed, planned] = e.facts
+    expect(identityWithoutState(observed!.identity)).toBe(
+      identityWithoutState(planned!.identity),
+    )
+    expect(identityWithoutState(observed!.identity)).toBe(
+      "on-network|to=service/tailscale",
+    )
+  })
+
+  it("refuses an identifying attribute named like an object member", () => {
+    const registry = buildTypeRegistry([
+      parseCatalogDocument(
+        "---\nid: schema/zone\ntitle: Z\nsummary: Z.\nstatus: active\nowner: person/guneet\nkeys:\n  linked-to: { relation: [machine], identified_by: [constructor] }\n---\n",
+      ) as Parameters<typeof buildTypeRegistry>[0][number],
+    ])
+    expect(registry.problems.map((p) => p.code)).toEqual(["schema-invalid"])
   })
 })

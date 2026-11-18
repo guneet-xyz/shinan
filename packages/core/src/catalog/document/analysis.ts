@@ -16,7 +16,10 @@ export interface Discrepancy {
    * Whether the difference has been accepted: every fact in it names, with
    * `accepted`, the person who accepted it (and says why in its `note`). An
    * accepted discrepancy stays visible but is not flagged as needing
-   * attention. A new fact in it (for example a recheck) needs accepting again.
+   * attention. Operations keep `accepted` through a recheck that changes no
+   * value, and remove it from every fact of the discrepancy when a value
+   * changes or a fact joins or leaves it (catalog §4.7); a fact that joins
+   * without `accepted` already makes it unaccepted here.
    */
   accepted: boolean
 }
@@ -25,7 +28,9 @@ export interface Discrepancy {
 export function comparableValue(fact: Fact): string {
   if (fact.schema.relation) {
     const attributes = fact.schema.relation.identifiedBy.map((a) => {
-      const v = fact.attributes[a]
+      const v = Object.hasOwn(fact.attributes, a)
+        ? fact.attributes[a]
+        : undefined
       return v === undefined ? "" : `${a}=${canonicalValue(v)}`
     })
     return [fact.to ?? "", ...attributes].filter((p) => p !== "").join(" ")

@@ -9,8 +9,12 @@ export type Severity = "blocking" | "warning"
 
 /** What a problem is about. Codes are stable: tests, the API and the screens use them. */
 export type ProblemCode =
+  /** The document is longer than Shinan reads (catalog §2.1). */
+  | "too-large"
   /** The frontmatter is missing, is not YAML, or uses YAML outside the allowed subset (catalog §2.1). */
   | "frontmatter-invalid"
+  /** The body could not be read as Markdown. */
+  | "body-invalid"
   /** A required document field is missing (catalog §2.3, §3.9, §11). */
   | "field-missing"
   /** A document field has the wrong form, or is not a field of this kind of document. */

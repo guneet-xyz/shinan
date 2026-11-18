@@ -49,15 +49,147 @@ export interface BodyLink {
   range: Range
 }
 
+/**
+ * Markdown constructs the body model never uses, turned off: emphasis,
+ * inline HTML and hard line breaks. Emphasis (`attention`) and inline HTML
+ * take quadratic time in micromark on hostile input such as repeated `*a_`
+ * or `<!--`. Heading text keeps any literal `*` or `_`, which anchors drop
+ * anyway. Links, code, headings, quotes, lists and HTML blocks stay, since
+ * they decide what is a heading or a link.
+ */
+const options = {
+  extensions: [
+    {
+      disable: {
+        null: ["attention", "htmlText", "hardBreakEscape", "hardBreakTrailing"],
+      },
+    },
+  ],
+}
+
+/**
+ * Limits checked before micromark reads the body. Its time grows with the
+ * square of the nesting depth of quotes and lists on a line, of the number
+ * of quotes and lists opened inside others, and of the number of setext
+ * headings (text underlined with `===` or `---`), so input past these
+ * limits is refused. Real documents stay far below them.
+ */
+export const maxNesting = 32
+export const maxNestedContainers = 1000
+export const maxUnderlines = 500
+
+/**
+ * Thrown when a body goes past the limits above;
+ * `parseCatalogDocument` reports it as a problem.
+ */
+export class BodyTooComplexError extends Error {}
+
 /** Parses the body that starts at `offset` in the document. */
 export function parseBody(text: string, offset: number): Body {
-  const tree = fromMarkdown(text)
+  const { deepest, nested, underlines } = nesting(text)
+  if (deepest > maxNesting)
+    throw new BodyTooComplexError(
+      `A line nests quotes or lists ${deepest} deep; at most ${maxNesting} are read`,
+    )
+  if (nested > maxNestedContainers)
+    throw new BodyTooComplexError(
+      `The body opens ${nested} quotes or list items inside others; at most ${maxNestedContainers} are read`,
+    )
+  if (underlines > maxUnderlines)
+    throw new BodyTooComplexError(
+      `The body has ${underlines} lines of only = or -; at most ${maxUnderlines} are read`,
+    )
+  const tree = fromMarkdown(text, options)
   return {
     range: { start: offset, end: offset + text.length },
     text,
     sections: splitSections(tree, text, offset),
     links: collectLinks(tree, offset),
   }
+}
+
+/**
+ * Scans the start of every line for quote markers (`>`) and list markers
+ * (`-`, `*`, `+`, `1.`, `1)`) separated only by spaces and tabs. Returns the
+ * most markers on one line, and how many markers probably open a quote or
+ * list item inside another: after another marker on the same line, or a
+ * list marker indented by two or more columns. Also counts lines of only `=`
+ * or `-`, which may underline setext headings.
+ */
+function nesting(text: string): {
+  deepest: number
+  nested: number
+  underlines: number
+} {
+  let deepest = 0
+  let nested = 0
+  let underlines = 0
+  let depth = 0
+  let indent = 0
+  let atStart = true
+  let lineStart = 0
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i)
+    if (c === 10) {
+      if (underline(text, lineStart, i)) underlines++
+      lineStart = i + 1
+      atStart = true
+      depth = 0
+      indent = 0
+      continue
+    }
+    if (!atStart) continue
+    if (c === 32 || c === 9 || c === 13) {
+      if (depth === 0) indent += c === 9 ? 4 : c === 32 ? 1 : 0
+      continue
+    }
+    let list = false
+    if (c === 62) {
+      if (depth > 0) nested++
+      depth++
+    } else if ((c === 45 || c === 42 || c === 43) && isSpace(text, i + 1)) {
+      list = true
+    } else if (isDigit(c)) {
+      let j = i
+      while (j < text.length && j - i < 9 && isDigit(text.charCodeAt(j))) j++
+      const mark = text.charCodeAt(j)
+      if ((mark === 46 || mark === 41) && isSpace(text, j + 1)) {
+        list = true
+        i = j
+      } else atStart = false
+    } else {
+      atStart = false
+    }
+    if (list) {
+      if (depth > 0 || indent >= 2) nested++
+      depth++
+    }
+    if (depth > deepest) deepest = depth
+  }
+  if (underline(text, lineStart, text.length)) underlines++
+  return { deepest, nested, underlines }
+}
+
+/** Whether `text[start, end)` is a line of only `=` or only `-`, with spaces around. */
+function underline(text: string, start: number, end: number): boolean {
+  let mark = 0
+  for (let i = start; i < end; i++) {
+    const c = text.charCodeAt(i)
+    if (c === 32 || c === 9 || c === 13) continue
+    if (c !== 61 && c !== 45) return false
+    if (mark !== 0 && c !== mark) return false
+    mark = c
+  }
+  return mark !== 0
+}
+
+function isSpace(text: string, i: number): boolean {
+  const c = text.charCodeAt(i)
+  return Number.isNaN(c) || c === 32 || c === 9 || c === 10 || c === 13
+}
+
+function isDigit(c: number): boolean {
+  return c >= 48 && c <= 57
 }
 
 function splitSections(tree: Root, text: string, offset: number): Section[] {
@@ -102,7 +234,11 @@ function splitSections(tree: Root, text: string, offset: number): Section[] {
 
 function collectLinks(tree: Root, offset: number): BodyLink[] {
   const links: BodyLink[] = []
-  const visit = (node: Nodes) => {
+  // An explicit stack, not recursion: deeply nested quotes or lists must not
+  // overflow the call stack.
+  const stack: Nodes[] = [tree]
+  while (stack.length > 0) {
+    const node = stack.pop() as Nodes
     if (
       (node.type === "link" ||
         node.type === "image" ||
@@ -120,9 +256,10 @@ function collectLinks(tree: Root, offset: number): BodyLink[] {
         },
       })
     }
-    if ("children" in node) for (const child of node.children) visit(child)
+    if ("children" in node)
+      for (let i = node.children.length - 1; i >= 0; i--)
+        stack.push(node.children[i] as Nodes)
   }
-  visit(tree)
   return links
 }
 
@@ -140,11 +277,12 @@ export class AnchorMaker {
   private readonly seen = new Map<string, number>()
 
   make(heading: string): string {
-    const base = heading
-      .toLowerCase()
-      .trim()
-      .replace(/[^\p{L}\p{N}\p{M}\s_-]/gu, "")
-      .replace(/\s/g, "-")
+    const base =
+      heading
+        .toLowerCase()
+        .trim()
+        .replace(/[^\p{L}\p{N}\p{M}\s_-]/gu, "")
+        .replace(/\s/g, "-") || "section"
     const count = this.seen.get(base)
     if (count === undefined) {
       this.seen.set(base, 0)

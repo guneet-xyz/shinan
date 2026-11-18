@@ -118,7 +118,11 @@ export interface FactCheck {
 export interface WrittenFact {
   key: string
   state: FactState
-  /** Index of its group in `groups`. */
+  /**
+   * Its group's position in the `facts` list: the `index` of a group in
+   * `groups`. Not a position in `groups`, which leaves out list items that
+   * are not groups.
+   */
   group: number
   /** Its position when the key holds a list; null when the key holds one value. */
   item: number | null

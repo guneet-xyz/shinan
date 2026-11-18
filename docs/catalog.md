@@ -121,11 +121,25 @@ lines, then a Markdown body.
   or not-a-number values. Shinan reads dates itself: a date (`2026-11-14`) or a
   date and time with a UTC offset (`2026-11-14T09:30Z`); a time without an
   offset is refused, because "not in the future" and freshness could not be
-  decided for it. Numbers are read as numbers, so a version such as `1.10` is
-  quoted to keep its last zero. Every field not listed for its kind of
-  document is refused, so a misplaced fact is never silently ignored. Reason:
-  every reader (the index, the export, a person) then agrees on what the text
-  says.
+  decided for it. A plain number is accepted only when it reads back exactly
+  as written: `128`, `-5` and `0.5` are numbers, while `1.10`, `0x10`, `0o17`,
+  `+12`, `1e3` and integers too large to hold exactly are refused with a
+  request to quote them (a version is written `"1.10"`). Every field not
+  listed for its kind of document is refused, so a misplaced fact is never
+  silently ignored, and so is a relation attribute named like a JavaScript
+  object member (`__proto__`, `constructor`). Reason: every reader (the
+  index, the export, a person) then agrees on what the text says.
+- **Proposed (M2-1):** limits on what Shinan reads, checked before anything
+  else. A document is at most 64 KiB (65,536 characters); the largest
+  `workspace` repository document is about 19 KB. In the body, a line may
+  start with at most 32 nested quote or list markers, at most 1,000 quotes or
+  list items may be opened inside others, and at most 500 lines may consist
+  of only `=` or `-` (setext heading underlines). Emphasis, inline HTML and
+  hard line breaks are not parsed in the body model, which uses only
+  headings and links. Longer or deeper documents are refused (`too-large`,
+  `body-invalid`). Reason: the Markdown parser's time grows with the square
+  of these on hostile input (a 64 KB body of nested lists took over a
+  minute), and every proposal, MCP write and index rebuild reads documents.
 
 ### 2.2 Export: the exit path
 
@@ -370,7 +384,9 @@ plus body section conventions and what belongs elsewhere.
 The built-in schemas below are **proposed**, drawn from the `workspace`
 repository's templates, which have worked for its 18 projects, 4 machines,
 10 services, 3 runbooks and 3 decisions (counted at `86bba32`). In the lists,
-"(many)" marks multi-valued keys; other keys are single-valued.
+"(many)" marks multi-valued keys; other keys are single-valued, except
+relations, which are multi-valued unless marked otherwise
+([4.2](#42-fact-identity-cardinality-and-current-facts)).
 
 All types share one rule: each entity says **what belongs elsewhere** and links
 to it. Reason: P3.
@@ -635,30 +651,38 @@ Relations are multi-valued unless the schema says otherwise.
 
 **Identity: which written facts are "the same fact".**
 
-| Kind of key       | A fact is identified by                                                                            |
-| ----------------- | -------------------------------------------------------------------------------------------------- |
-| Single-valued key | key + fact state + `via` (if given)                                                                |
-| Multi-valued key  | key + value                                                                                        |
-| Relation          | relation + target + the attributes the schema names as identifying (for `checkout-on`, the `path`) |
+| Kind of key                                                           | A fact is identified by                                                                                                              |
+| --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Single-valued key, or single-valued relation (**proposed**, M2-1)     | key + fact state + `via` (if given)                                                                                                  |
+| Multi-valued key                                                      | key + fact state (**proposed**, M2-1) + value                                                                                        |
+| Multi-valued relation                                                 | relation + fact state (**proposed**, M2-1) + target + the attributes the schema names as identifying (for `checkout-on`, the `path`) |
+| `unknown` fact of a multi-valued key or relation (**proposed**, M2-1) | key + fact state (and the target, for a relation that names one)                                                                     |
 
 `via` is an optional short label for the means of observation, such as
 `filesystem` or `instance-metadata`. It is only needed when two different
 observations of one single-valued key are kept on purpose.
 
-**Proposed (M2-1, [#82](https://github.com/guneet-xyz/shinan/issues/82)),
-completing the table:**
+Reasons for the parts marked M2-1
+([#82](https://github.com/guneet-xyz/shinan/issues/82)):
 
-- **The fact state is part of every identity**, not only of single-valued
-  keys. Reason: otherwise an `intended` and an `observed` value of a
-  multi-valued key, or a `planned` removal and the checkout it plans to
-  remove ([4.4](#44-fact-states)), would be one fact and could not both be
-  written.
+- **The fact state is part of every identity.** Otherwise an `intended` and
+  an `observed` value of a multi-valued key, or a `planned` removal and the
+  checkout it plans to remove ([4.4](#44-fact-states)), would be one fact and
+  could not both be written.
 - **A single-valued relation** (such as `on-machine`) is identified like a
-  single-valued key: relation + state + `via`. Reason: a new target then
-  replaces the old one, and two different targets seen by different means are
-  a discrepancy, as for any single-valued key.
-- An `unknown` fact of a multi-valued key is identified by key and state (and
-  its target, for a relation that names one).
+  single-valued key. A new target then replaces the old one, and two
+  different targets seen by different means are a discrepancy, as for any
+  single-valued key.
+
+**A change of state** (**proposed**, M2-1). Because the state is part of the
+identity, writing a fact in a new state does not by itself replace the fact
+in the old one. A change of state (a `planned` fact becoming `intended` or
+`observed`, an `unknown` fact becoming known) is one operation that names the
+identity it supersedes, removes that fact and sets the new one. Writing a
+known (`intended` or `observed`) value also removes, in the same operation,
+an `unknown` fact of the same key (and, for a relation, the same target), since it is no longer unknown; it never happens by
+omission. Reason: replace-or-add stays a simple rule on identities, while
+plans and unknowns do not linger beside the facts that settled them.
 
 **The fact identity key** (**proposed**, M2-1): every fact gets one line of
 text naming its identity, derived when the document is read and never
@@ -769,7 +793,8 @@ Rules:
 - A `planned` fact never turns into another state by itself. When the owning
   source declares the change, a new `intended` fact replaces it; when the
   change is seen in the world, a new `observed` fact records it. Both come
-  with fact checks. **Proposed.** Reason: the `workspace` repository's rule
+  with fact checks, and the operation names the `planned` fact it replaces
+  ([4.2](#42-fact-identity-cardinality-and-current-facts), a change of state). **Proposed.** Reason: the `workspace` repository's rule
   that "planned changes are proposals until implemented and verified".
 - A merged change that is not yet applied is `intended`; its absence in the
   world shows as a [discrepancy](#47-discrepancies) with the `observed` fact.
@@ -906,12 +931,16 @@ Rules (**proposed**; reason: P5 and the `workspace` repository's practice):
   that the difference is accepted, with a `note` and an owner. An accepted
   discrepancy stays visible but is not flagged as needing attention.
   **Proposed (M2-1):** acceptance is written on the facts: each fact of the
-  discrepancy names the person who accepted it with `accepted:
-person/<handle>` and says why in its `note`. A discrepancy is accepted when
-  all its facts carry `accepted`; a new fact in it (for example a recheck,
-  which replaces the fact) needs accepting again. Reason: it keeps the
-  acceptance in the text with the evidence, and new evidence is looked at
-  again.
+  discrepancy names the person who accepted it with
+  `accepted: person/<handle>` and says why in its `note`. A discrepancy is
+  accepted when all its facts carry `accepted`. A recheck that leaves every
+  value unchanged keeps `accepted` on the rechecked fact, so the acceptance
+  stays. When a value changes, or a fact joins or leaves the discrepancy, the
+  operation removes `accepted` from all its facts and the discrepancy needs
+  accepting again. Reason: it keeps the acceptance in the text with the
+  evidence; a routine recheck of an accepted difference (such as Musashi's
+  lagging metadata) does not come back for approval every time, while new
+  evidence is looked at again.
 - A `planned` fact that differs from current facts is a plan, not a
   discrepancy.
 - **Open:** whether to flag gaps between the `intended` and `observed` values
@@ -1330,7 +1359,8 @@ same catalog pages and changed only with catalog approval. Details
   agents.
 
 - It links and does not copy: each step is a reference to an entity (usually a
-  policy or runbook) or a generated list. Validation warns when a step points
+  policy or runbook) or a generated list, or, during the trial, a URL (see the
+  shape below). Validation warns when a step points
   to a retired entity or to one with discrepancies. Reason: P3; onboarding
   pages are where copies go stale fastest.
 - **Proposed (M2-1, [#82](https://github.com/guneet-xyz/shinan/issues/82)):**

@@ -3,6 +3,10 @@
  * document, `end` exclusive. Every part of the parsed model carries one, so
  * operations can edit exactly the bytes they target (architecture §5.2,
  * rule 2).
+ *
+ * Offsets count UTF-16 code units, as JavaScript string indices do, not
+ * bytes or code points: a character outside the Basic Multilingual Plane
+ * (such as an emoji) counts two. Convert before exposing ranges elsewhere.
  */
 export interface Range {
   start: number

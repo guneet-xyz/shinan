@@ -48,12 +48,17 @@ again
     expect(body.sections.map((s) => s.heading)).toEqual(["A", "B"])
   })
 
-  it("uses the heading's text, without Markdown", () => {
+  it("uses the heading's text, keeping emphasis marks, which anchors drop", () => {
     const body = parseBody("## The `ups` **model** [link](x/y)\n", 0)
     expect(body.sections[0]).toMatchObject({
-      heading: "The ups model link",
+      heading: "The ups **model** link",
       anchor: "the-ups-model-link",
     })
+  })
+
+  it("names a section with an empty heading", () => {
+    const body = parseBody("#\n\n#\n", 0)
+    expect(body.sections.map((s) => s.anchor)).toEqual(["section", "section-1"])
   })
 
   it("makes GitHub-style anchors, unique within the body", () => {

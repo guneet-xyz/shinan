@@ -14,6 +14,19 @@ export const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
  */
 export const factKeyPattern = /^[a-z][a-z0-9_]*(?:[.-][a-z0-9_]+)*$/
 
+const objectMembers: ReadonlySet<string> = new Set([
+  ...Object.getOwnPropertyNames(Object.prototype),
+  "prototype",
+])
+
+/**
+ * A relation attribute name (such as `path`): a fact key that is not the name
+ * of a JavaScript object member such as `constructor` or `__proto__`.
+ */
+export function isAttributeName(name: string): boolean {
+  return factKeyPattern.test(name) && !objectMembers.has(name)
+}
+
 /**
  * A task ID (tasks §3): the workspace's prefix of 1 to 5 letters, a hyphen,
  * and a number counting from 1. Until tasks exist (M3), only this form is

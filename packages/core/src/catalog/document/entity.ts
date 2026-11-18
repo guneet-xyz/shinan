@@ -92,7 +92,8 @@ export function resolveEntity(
         )
       }
     }
-    const check = document.groups[written.group]?.check ?? null
+    const check =
+      document.groups.find((g) => g.index === written.group)?.check ?? null
     return {
       ...fact,
       identity: factIdentityKey({
