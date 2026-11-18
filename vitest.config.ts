@@ -60,6 +60,10 @@ export default defineConfig({
       { extends: true, test: { name: "email", root: "packages/email" } },
       {
         extends: true,
+        test: { name: "markdown", root: "packages/markdown" },
+      },
+      {
+        extends: true,
         test: {
           name: "db",
           root: "packages/db",

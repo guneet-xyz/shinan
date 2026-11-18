@@ -1,5 +1,6 @@
-import type * as markdown from "mdast-util-from-markdown"
 import { describe, expect, it, vi } from "vitest"
+
+import type * as markdown from "@shinan/markdown"
 
 import { parseCatalogDocument } from "./parse.js"
 import type * as yaml from "./yaml.js"
@@ -8,13 +9,18 @@ import type * as yaml from "./yaml.js"
 // backstop: an unexpected error is reported as `read-failed`, never thrown.
 const fail = vi.hoisted(() => ({ body: false, yaml: false }))
 
-vi.mock("mdast-util-from-markdown", async (original) => {
+vi.mock("@shinan/markdown", async (original) => {
   const actual = await original<typeof markdown>()
   return {
     ...actual,
-    fromMarkdown: (...args: Parameters<typeof actual.fromMarkdown>) => {
-      if (fail.body) throw new Error("the Markdown reader broke")
-      return actual.fromMarkdown(...args)
+    createMarkdown: () => {
+      const md = actual.createMarkdown()
+      const parse = md.parse.bind(md)
+      md.parse = (...args: Parameters<typeof parse>) => {
+        if (fail.body) throw new Error("the Markdown reader broke")
+        return parse(...args)
+      }
+      return md
     },
   }
 })

@@ -1,12 +1,21 @@
 /**
- * A linear scan of a Markdown body that runs before micromark reads it.
- * micromark's time grows with the square of several shapes of input, so a
- * body past these limits is refused (catalog §2.1).
+ * A linear scan of a Markdown body that runs before the Markdown parser
+ * reads it; a body past these limits is refused (catalog §2.1).
+ *
+ * The limits were set when the body model used micromark, whose time grows
+ * with the square of these shapes. The parser is now markdown-it
+ * (`@shinan/markdown`), which reads every one of them in about linear time
+ * (`packages/markdown/src/index.test.ts`); the limits stay as a cheap guard
+ * for the server and the wiki alike. They do not bound how deep blocks nest
+ * across lines (lists nested by indentation): markdown-it stops reading,
+ * silently, past its nesting limit, so the body model watches for that
+ * itself after reading and refuses such a body (`body.ts`).
  *
  * **When unsure, count.** The scan does not try to parse Markdown exactly;
  * wherever a line could be one of the costly shapes, it is counted as one:
  *
- * - a line ends at `\n`, `\r\n` or a lone `\r`, as micromark sees lines;
+ * - a line ends at `\n`, `\r\n` or a lone `\r`, as Markdown parsers see
+ *   lines;
  * - a marker (`>`, `-`, `+`, `*`, or digits and `.` or `)`) counts whether a
  *   space, a tab or the end of the line follows it; a line whose first
  *   characters could be a marker but are followed by something else (`-x`,

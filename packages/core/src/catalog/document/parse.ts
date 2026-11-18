@@ -44,7 +44,7 @@ import type { ScalarValue, YamlEntry, YamlMap, YamlNode } from "./yaml.js"
  * parsed documents (the agent index) records it and is rebuilt when it
  * changes (architecture §5.2, M2-3).
  */
-export const parserVersion = 1
+export const parserVersion = 2
 
 /**
  * The largest document Shinan reads: 64 KiB of UTF-8, the form documents are

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest"
 
+import { growth, maxGrowth } from "@shinan/markdown/testing"
+
 import {
   dockyard,
   domainSchema,
@@ -530,20 +532,12 @@ describe("hostile input", () => {
     expect(d.problems[0]?.message).toContain("bytes")
   })
 
-  // Time on a busy machine varies by seconds (garbage collection, other
-  // processes), so instead of a tight wall-clock bound these check how time
-  // grows: from a quarter of the size to the full size, the best of up to
-  // three runs must grow well below quadratically (16 times). A loose
-  // absolute bound remains as a backstop.
-  const best = (body: string, runs = 3) => {
-    let fastest = Infinity
-    for (let i = 0; i < runs; i++) {
-      const started = performance.now()
-      parseCatalogDocument(front + body)
-      fastest = Math.min(fastest, performance.now() - started)
-    }
-    return fastest
-  }
+  // Instead of a wall-clock bound, these check how CPU time grows with size
+  // (`growth` from @shinan/markdown/testing): reading the full size once
+  // must cost well under twice reading a quarter of it four times, where
+  // quadratic reading costs about four times as much. A loose absolute
+  // bound remains as a backstop.
+  const read = (body: string) => parseCatalogDocument(front + body)
 
   const under = (repeated: string, count: number, size: number) =>
     (repeated.repeat(count) + fill("x\n\n", size)).slice(0, size)
@@ -601,12 +595,9 @@ describe("hostile input", () => {
       const d = parseCatalogDocument(front + full)
       expect(d.problems).toEqual([])
       expect(d.body.sections.map((s) => s.text).join("")).toBe(d.body.text)
-      const quarter = Math.max(best(make(Math.floor(room / 4))), 5)
-      let fastest = Infinity
-      for (let i = 0; i < 3 && fastest / quarter >= 8; i++)
-        fastest = Math.min(fastest, best(full, 1))
-      expect(fastest / quarter).toBeLessThan(8)
-      expect(fastest).toBeLessThan(30_000)
+      const measured = growth(make, read, room)
+      expect(measured.ratio).toBeLessThan(maxGrowth)
+      expect(measured.full).toBeLessThan(30_000)
     },
     120_000,
   )

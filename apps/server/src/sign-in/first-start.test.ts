@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest"
 
 import type * as Api from "@shinan/api-client"
-import { prepareSetupLink, shinan } from "@shinan/core"
+import { parserVersion, prepareSetupLink, shinan } from "@shinan/core"
 import { eq, schema } from "@shinan/db"
 
 import {
@@ -187,7 +187,7 @@ describe("first start", () => {
     const response = await op.request("/api/installation/catalog-index")
     expect(response.status).toBe(200)
     const health = (await response.json()) as Api.CatalogIndexHealth
-    expect(health.parserVersion).toBe(1)
+    expect(health.parserVersion).toBe(parserVersion)
     expect(Array.isArray(health.workspaces)).toBe(true)
 
     await op.request("/api/installation/allowlist", {
