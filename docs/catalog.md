@@ -1841,8 +1841,9 @@ approval and history mean nothing.
   which appears on the entity's timeline.
   **Proposed.** Reason: events are the glossary's single record of what
   happened; revisions let anyone see an entity as it was.
-- Revisions are not edited. A revert is a new proposal. **Proposed.** Reason:
-  the glossary's rule that events are not edited.
+- Revisions are not edited, except by purge (below). A revert is a new
+  proposal. **Proposed.** Reason: the glossary's rule that events are not
+  edited.
 - Retired entities stay readable, marked retired, linked to their replacement,
   and excluded from default search. **Proposed.** Reason: the `workspace`
   repository keeps retired entries (for example the Takezo machine) because
@@ -1860,6 +1861,34 @@ approval and history mean nothing.
     and agents' model providers, may still hold the content, so a purged
     secret must be rotated at its source. Reason: a purge cleans Shinan, not
     copies that already left it.
+  - **As built (M2-10, [#91](https://github.com/guneet-xyz/shinan/issues/91)), proposed:**
+    - **What is purged: a text, everywhere.** A workspace owner types the
+      exact text (4 to 10,000 characters, case-sensitive) and a reason.
+      Every occurrence is replaced by `(purged)` in every revision of every
+      document, in catalog proposals (their explanation, operations, related
+      task, validation findings, approval reasons, touched IDs and rejection
+      reason) and in timeline events. Reason: a leaked secret or a person's
+      details are a text, wherever they ended up; replacing only those bytes
+      keeps every document readable and every record in its shape, and it
+      keeps section credits (only the purged words change). The marker is
+      plain words in brackets, so YAML still reads it as text.
+    - **The latest text.** When a document's latest text held it, the purge
+      stores the cleaned text as a new catalog revision, credited to the
+      workspace owner and marked as the purge's (it has no proposal and
+      cannot be reverted). Reason: agents ask "what changed since revision
+      N" (§12.2) and must learn that the text they hold changed.
+    - **Waiting proposals** that held the text are rejected, naming the
+      purge: their operations no longer say what their author meant.
+    - **Shown first.** Before purging, the owner sees where the text is: how
+      many revision texts of how many documents, which current pages, how
+      many proposals (and waiting ones), how many events. If the agent index
+      holds it but no stored text does as written (YAML escapes, folded
+      lines), the owner is told to purge it as the text writes it, and
+      nothing is purged.
+    - **Recorded:** a `catalog.purged` event with who, why, the counts and
+      the documents and proposals it touched; a security-log entry with the
+      counts. Neither holds the text, and the reason may not repeat it.
+    - Mechanism: [architecture §4.4](architecture.md#44-purge).
 - How revisions are stored: [architecture](architecture.md).
 
 ## 10. The wiki

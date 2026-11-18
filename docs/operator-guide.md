@@ -409,6 +409,28 @@ suspected secrets and keys outside their type's schema; a change that does not
 grow the catalog always applies), then lower it again,
 and report it.
 
+## Catalog purge
+
+Workspace owners purge text from their catalog themselves, in workspace
+settings, Data ([catalog §9](catalog.md#9-history-and-purge)); operators
+cannot. A purge changes what Shinan stores, and asks PostgreSQL to vacuum
+the tables it changed, so a database dump no longer holds the text. It
+cannot reach copies outside the live rows: your backups of the database
+volume, PostgreSQL's write-ahead log, any PostgreSQL log that records
+statement parameters (the reference setup does not turn that on), and the
+bytes of deleted row versions, which stay in the database's files until
+PostgreSQL reuses the space. If a purge was for a leaked secret, make sure
+the secret was rotated, and treat those copies as holding it until they age
+out. To clear the database's files too, run this at a quiet moment (it
+locks the tables while it rewrites them):
+
+```sh
+docker compose exec -T postgres psql -U shinan -d shinan -c "vacuum full catalog_revision_documents, catalog_proposals, events, catalog_index_documents, catalog_index_facts, catalog_index_relations, catalog_index_discrepancies, catalog_index_sections, catalog_index_provenance"
+```
+
+Every `web` and `worker` process forgets parsed catalog text within a
+minute of a purge; nothing needs restarting.
+
 ## Stopping and removing
 
 `docker compose down` stops everything and keeps the data. `docker compose
