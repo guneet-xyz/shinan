@@ -217,6 +217,19 @@ drops it afterwards. Tests connect to it with `connectTestDatabase()` from
 `@shinan/db/testing`. Run one package's tests with, for example,
 `pnpm test --project db`.
 
+**On a busy machine** (several suites at once, as on a shared development
+host), tests get 20 s each and hooks 60 s, rather than Vitest's 5 s and 10 s,
+and the web tests wait 5 s for an element to appear. If tests still time out,
+set `SHINAN_TEST_TIMEOUT_SCALE` to multiply all three, from 1 to 10, for
+example `SHINAN_TEST_TIMEOUT_SCALE=3 pnpm test`; a test that hangs still
+fails, after at most 10 times its usual timeout. Running fewer test files at
+once also helps: `pnpm test --maxWorkers=1`, or one package at a time with
+`--project`. Tests that set their own timeout (property and scale tests) keep
+it; widen or replay property tests with `FC_RUNS` and `FC_SEED`. To see which
+tests are slow, run `pnpm test --reporter=verbose`, which prints each test's
+time; a test that takes more than a few seconds alone should set its own
+timeout, as the property tests do.
+
 Email tests (`email` and `core`) also need Mailpit, which `pnpm services:up`
 starts too; CI runs it as a service container. They send to `SMTP_HOST` and
 `SMTP_PORT` and read what arrived through Mailpit's API at `MAILPIT_URL`

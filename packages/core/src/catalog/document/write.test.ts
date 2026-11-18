@@ -120,7 +120,8 @@ describe("yamlScalar: canonical scalars", () => {
       }),
       { numRuns: 2000 },
     )
-  })
+    // 2,000 runs: about a second alone, 10 s or more on a busy machine.
+  }, 60_000)
 })
 
 describe("canonical blocks", () => {

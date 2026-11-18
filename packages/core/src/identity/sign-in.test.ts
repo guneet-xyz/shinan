@@ -299,7 +299,7 @@ describe("after the first start", () => {
             )
             expect(waiting.rows[0]!.count).toBe(1)
           },
-          { timeout: 3_000, interval: 20 },
+          { timeout: 10_000, interval: 20 },
         )
         await holder.query("commit")
         const opened = await opening

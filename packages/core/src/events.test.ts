@@ -160,7 +160,7 @@ describe("createPerson", () => {
           )
           expect(rows[0]!.count).toBe(1)
         },
-        { timeout: 3_000, interval: 20 },
+        { timeout: 10_000, interval: 20 },
       )
       await other.query("commit")
       await expect(attempt).rejects.toMatchObject({ rule: "handle-taken" })
