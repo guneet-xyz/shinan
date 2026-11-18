@@ -1269,6 +1269,72 @@ One proposal may change several entities and is applied all or nothing.
 **Proposed.** Reason: retiring a machine and moving its checkouts must not
 half-happen.
 
+**Proposed (M2-2, [#84](https://github.com/guneet-xyz/shinan/issues/84)):**
+the operations as Shinan applies them (`packages/core`,
+`applyOperations`). Each names its document by ID and states what it
+expects ([8.5](#85-conflicts)).
+
+| Operation             | What it does                                                                                                                                                                                                                                                                   |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `create-entity`       | A new entity with its fields, facts (each with its fact check) and body. The type comes from the ID.                                                                                                                                                                           |
+| `set-fact`            | Writes one fact: it replaces the current fact with the same identity, or is added beside the others ([4.2](#42-fact-identity-cardinality-and-current-facts)). A change of state names the fact it settles in `supersedes`, which goes in the same operation.                   |
+| `remove-fact`         | Removes one fact, named by its identity.                                                                                                                                                                                                                                       |
+| `recheck-facts`       | A new fact check for facts whose values did not change; they move to its group.                                                                                                                                                                                                |
+| `edit-body`           | The whole body, or one section named by its anchor (or the text before the first heading). A section expected to be absent is added at the end of the body; empty text removes a section.                                                                                      |
+| `set-field`           | An entity's `title`, `summary`, `status` (not to `retired`), `owner` and decision fields; a type schema document's `title`, `summary`, `status`, `owner`, `required` and `sections`; the start-here document's `title`, `summary` and `owner`. Null removes an optional field. |
+| `retire`              | Sets `status: retired` on an entity or type schema document, with an entity's `replaced_by`.                                                                                                                                                                                   |
+| `change-id`           | A new ID of the same type; the old ID is added to `aliases`. Changing back to a former ID puts the old one in its place in `aliases`.                                                                                                                                          |
+| `create-schema`       | A new type schema document, `schema/<type>`.                                                                                                                                                                                                                                   |
+| `set-schema-key`      | Adds, changes or removes one key of a type schema document.                                                                                                                                                                                                                    |
+| `create-start-here`   | The start-here document.                                                                                                                                                                                                                                                       |
+| `set-start-here-path` | Replaces the `people` or the `agents` path.                                                                                                                                                                                                                                    |
+
+How they are applied (**proposed**, M2-2):
+
+- **As text edits** ([architecture §5.2](architecture.md#52-the-invariant),
+  rule 2). An operation changes only the YAML entries, list items or body
+  sections it targets; every other byte, including comments, quoting,
+  indentation, flow or block style and `\r\n` line breaks, stays as it was.
+  A document whose frontmatter cannot be read is not edited.
+- **New content in one canonical style:** block maps and lists indented by
+  two spaces; one line per fact, in the short form or a flow map in the
+  order `to`, relation attributes, `value`, `via`, `note`, `task`,
+  `remove`, `accepted`; flow lists for lists of names (`aliases`,
+  `required`, `sections`) and flow maps for a key's options; a new field
+  in the order of [2.3](#23-entity-fields); a new group at the end of
+  `facts`. Text is written plain when YAML's core schema reads it back as
+  the same text, and double-quoted otherwise, so anything that would read
+  as a number, a boolean or null is quoted (`"1.10"`, `"true"`, `"null"`,
+  `"~"`); numbers are written as JavaScript writes them, which the parser
+  always reads back. New body text takes the document's line breaks.
+- **Facts move, never copy.** A fact that moves to another group (a
+  recheck, or a new check of a fact) keeps its own text, re-indented if it
+  is a block map; a multi-valued key that gains a second value becomes a
+  list, in the style of the map it is in. A fact written in a group with
+  a matching check replaces the old one where it stands. Keys, state maps
+  and groups left empty are removed, and so is `facts` when no group is
+  left. A group cannot hold two facts of one single-valued key, so such a
+  fact goes to another group even when the checks match.
+- **`by`** is written by Shinan from the request's actor (identity §8.7);
+  an operation never carries it.
+- **Settled unknowns and acceptance.** A known value removes the `unknown`
+  facts it settles ([4.2](#42-fact-identity-cardinality-and-current-facts)).
+  A fact that replaces one with the same value keeps its `accepted` (and
+  its `note`, if the operation gives none); when the facts or values of a
+  discrepancy change, `accepted` is removed from all its facts except one
+  the operation itself accepts ([4.7](#47-discrepancies)).
+- **Order:** operations on type schema documents apply first and those on
+  the start-here document last, otherwise in proposal order, so a proposal
+  can create a type and entities of it. Each operation sees the documents
+  as the earlier ones left them.
+- **Self-check:** an operation whose result would read with a problem the
+  document did not have before, or that would not read back as written, is
+  refused instead of stored. Validation ([8.3](#83-validation)) then runs
+  on the whole result.
+
+Reason: the Markdown stays the source of truth people wrote, while what
+Shinan adds looks the same everywhere and always reads back as written.
+
 ### 8.2 When catalog approval is needed
 
 **Decided (owner, O-3, [#25]):** only high-risk (gated) changes need catalog
@@ -1424,6 +1490,29 @@ latest revision. **Proposed.**
 - Reason: the `workspace` repository's rule ("resolve competing claims from
   evidence and observation time, not merge order"); per-fact operations make
   real conflicts rare.
+
+**Proposed (M2-2, [#84](https://github.com/guneet-xyz/shinan/issues/84)):**
+what each operation expects.
+
+- A fact operation names the [fact identity key](#42-fact-identity-cardinality-and-current-facts)
+  and either `absent: true` or the fact's current value and fact check. The
+  value is compared as text: a value as written (`128`, `true`), a
+  relation's target, or an `unknown` fact's note. The check is compared by
+  `checked` as written (null for no fact check), plus any of `by`, `scope`,
+  `source` and `limits` the operation gives. A `set-fact` names the
+  identity of the fact it writes; if the type schema now gives that fact
+  another identity (for example a key made single-valued), it conflicts.
+  `supersedes` names the fact a change of state settles, with its value and
+  check.
+- Field, body, schema-key and start-here operations expect the current
+  value: the field's value (or null for none), the section's or body's
+  exact text (or that the section is absent), the key's options, the
+  path's steps. `retire` expects the status; creating a document and
+  `change-id` expect no document to have the ID or alias.
+- A conflict and an operation that cannot apply as written are reported
+  apart (`conflict` and `invalid`), with the operation's position, so the
+  author knows whether to refresh the proposal or fix it. An operation
+  naming an entity's former ID is told its current ID.
 
 ### 8.6 Who sees and reviews proposals
 

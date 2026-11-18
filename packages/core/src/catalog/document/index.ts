@@ -8,6 +8,14 @@ export {
   notYetRecorded,
 } from "./analysis.js"
 export type { Discrepancy, Freshness, NotYetRecorded } from "./analysis.js"
+export { applyOperations, expectationOf, factValueText } from "./apply.js"
+export type {
+  ApplyContext,
+  ApplyResult,
+  DocumentChange,
+  OperationProblem,
+  OperationProblemCode,
+} from "./apply.js"
 export { referenceTarget } from "./body.js"
 export type { Body, BodyLink, Section } from "./body.js"
 export { readCatalog } from "./catalog.js"
@@ -67,6 +75,29 @@ export type {
   WorkspaceList,
   WrittenFact,
 } from "./model.js"
+export type {
+  CatalogOperation,
+  ChangeId,
+  CheckInput,
+  CreateEntity,
+  CreateSchema,
+  CreateStartHere,
+  DocumentField,
+  EditBody,
+  ExpectedCheck,
+  FactExpectation,
+  FactInput,
+  KeyOptions,
+  PresentFact,
+  RecheckFacts,
+  RemoveFact,
+  Retire,
+  SetFact,
+  SetField,
+  SetSchemaKey,
+  SetStartHerePath,
+  StartHereStepInput,
+} from "./operations.js"
 export {
   maxDocumentBytes,
   parseCatalogDocument,
