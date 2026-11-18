@@ -459,13 +459,13 @@ const blockingCases: [string, Record<string, string | null>, ProblemCode][] = [
     "secret",
   ],
   [
-    "a task status in a fact",
+    "a document longer than Shinan reads",
     {
-      "service/ingress": entity("service/ingress", {
-        facts: `${check()}    observed:\n      deployment.status: in progress\n`,
+      "machine/daedalus": entity("machine/daedalus", {
+        body: `${"Plain text. ".repeat(50_000)}\n`,
       }),
     },
-    "task-status",
+    "too-large",
   ],
 ]
 
@@ -621,12 +621,17 @@ const warningCases: [
     "start-here-discrepancy",
   ],
   [
-    "an owner who is not a current member",
+    "a task status in a fact",
     {
-      "machine/daedalus": entity("machine/daedalus", {
-        body: "# D\n\nChanged.\n",
+      "service/ingress": entity("service/ingress", {
+        facts: `${check()}    observed:\n      deployment.status: in progress\n`,
       }),
     },
+    "task-status",
+  ],
+  [
+    "an owner who is not a current member",
+    { "machine/new": entity("machine/new") },
     "owner-not-member",
     { now, memberHandles: new Set(["someone"]) },
   ],
@@ -644,11 +649,7 @@ describe("warning rules (catalog §8.3)", () => {
 
   it("does not warn about an owner who is a current member", () => {
     const result = change(
-      {
-        "machine/daedalus": entity("machine/daedalus", {
-          body: "# D\n\nChanged.\n",
-        }),
-      },
+      { "machine/new": entity("machine/new") },
       { context: { now, memberHandles: new Set(["guneet"]) } },
     )
     expect(result.problems).toEqual([])
@@ -704,5 +705,213 @@ describe("the parser and validation agree", () => {
       "key-not-in-schema",
       "reference-unresolved",
     ])
+  })
+})
+
+describe("which problems a change is charged with", () => {
+  it("does not charge a document's earlier warnings again", () => {
+    const recheck = musashi.replace(
+      "disk.data.free: 74 GiB",
+      "disk.data.free: 70 GiB",
+    )
+    const result = change({ "machine/musashi": recheck })
+    expect(result.problems).toEqual([])
+    expect(result).toMatchObject({ blocked: false, needsApproval: false })
+  })
+
+  it("charges a new warning in a written document", () => {
+    const result = change({
+      "machine/musashi": musashi.replace(
+        "disk.data.free: 74 GiB",
+        "disk.data.free: 74 GiB\n      ups.model: X1",
+      ),
+    })
+    expect(found(result)).toEqual([["key-not-in-schema", "machine/musashi"]])
+  })
+
+  it("compares secret warnings by the value, not the message", () => {
+    const withPassword = (value: string, extra = "") =>
+      entity("machine/daedalus", {
+        body: `Log in with password=${value} for now.${extra}\n`,
+      })
+    const accepted = { "machine/daedalus": withPassword("hunter22") }
+    const before = readCatalog(Object.values({ ...base, ...accepted }))
+    const run = (text: string) => {
+      const after = readCatalog(
+        Object.values({ ...base, "machine/daedalus": text }),
+      )
+      const changed = after.documents.filter((d) => d.text === text)
+      return validateChange({ before, after, changed }, context)
+    }
+    expect(run(withPassword("hunter22", " Edited.")).problems).toEqual([])
+    expect(run(withPassword("realpass")).problems.map((p) => p.code)).toEqual([
+      "secret-suspected",
+    ])
+  })
+
+  it("does not charge an unreadable document's problems to unrelated changes", () => {
+    const broken = "---\nid: [\n---\n# Broken\n"
+    const before = readCatalog([...Object.values(base), broken])
+    const text = entity("machine/daedalus", { body: "# D\n\nChanged.\n" })
+    const after = readCatalog([
+      ...Object.values({ ...base, "machine/daedalus": text }),
+      broken,
+    ])
+    const changed = after.documents.filter((d) => d.text === text)
+    expect(
+      validateChange({ before, after, changed }, context).problems,
+    ).toEqual([])
+    expect(validateCatalog(after, context).blocked).toBe(true)
+  })
+
+  it("blames a schema change only for problems a schema can cause", () => {
+    const added = domainSchema.replace("keys:\n", "keys:\n  dnssec: {}\n")
+    const result = change({
+      "schema/domain": added,
+      "person/guneet": null,
+      "person/guneet-two": base["person/guneet"]!.replace(
+        "person/guneet\ntype",
+        "person/guneet-two\ntype",
+      ),
+    })
+    const codes = result.problems.map((p) => p.code)
+    expect(codes).toContain("reference-unresolved")
+    expect(codes).not.toContain("schema-breaks-entities")
+  })
+
+  it("refuses a changed document that is not in the catalog after the change", () => {
+    const after = readCatalog(Object.values(base))
+    const stray = parseCatalogDocument(entity("machine/stray"))
+    expect(() =>
+      validateChange({ before: null, after, changed: [stray] }, context),
+    ).toThrow(/not in the catalog after the change/)
+  })
+
+  it("blocks a proposal text longer than Shinan reads", () => {
+    const result = change(
+      {},
+      { texts: [{ label: "Explanation", text: "x".repeat(600 * 1024) }] },
+    )
+    expect(result.problems.map((p) => p.code)).toEqual(["too-large"])
+  })
+})
+
+describe("no message repeats a secret (catalog §7.3)", () => {
+  const token = "ghp_0123456789abcdefghijABCDEFGHIJ012345"
+
+  it.each<[string, Record<string, string | null>]>([
+    [
+      "in a fact check's by",
+      {
+        "machine/daedalus": entity("machine/daedalus", {
+          facts: `${check("2026-11-14", `guneet ${token}`)}    observed:\n      role: dev\n`,
+        }),
+      },
+    ],
+    [
+      "in a type, and in a reference to it from another document",
+      {
+        "machine/daedalus": entity("machine/daedalus").replace(
+          "type: machine",
+          `type: ${token}`,
+        ),
+        "service/ingress": entity("service/ingress", {
+          facts: `${check()}    observed:\n      runs-on: machine/daedalus\n`,
+        }),
+      },
+    ],
+    [
+      "in an alias",
+      {
+        "machine/daedalus": entity("machine/daedalus", {
+          fields: `aliases: [${token}]\n`,
+        }),
+      },
+    ],
+    [
+      "in a planned fact's task",
+      {
+        "machine/daedalus": entity("machine/daedalus", {
+          facts: `  - planned:\n      role: { value: dev, task: ${token} }\n`,
+        }),
+      },
+    ],
+    [
+      "in a relation target",
+      {
+        "service/ingress": entity("service/ingress", {
+          facts: `${check()}    observed:\n      runs-on: ${token}\n`,
+        }),
+      },
+    ],
+    [
+      "in a body link",
+      {
+        "machine/daedalus": entity("machine/daedalus", {
+          body: `See [it](${token}).\n`,
+        }),
+      },
+    ],
+  ])("when it is %s", (_, documents) => {
+    const result = change(documents)
+    expect(result.problems.map((p) => p.code)).toContain("secret")
+    expect(result.problems.length).toBeGreaterThan(1)
+    for (const p of result.problems) expect(p.message).not.toContain(token)
+    expect(
+      result.problems.some(
+        (p) => p.code !== "secret" && p.message.includes("ghp_01…"),
+      ),
+    ).toBe(true)
+  })
+
+  it("in validateCatalog too", () => {
+    const text = entity("machine/daedalus", {
+      facts: `${check("2026-11-14", `guneet ${token}`)}    observed:\n      role: dev\n`,
+    })
+    const result = validateCatalog(
+      readCatalog(Object.values({ ...base, "machine/daedalus": text })),
+      context,
+    )
+    for (const p of result.problems) expect(p.message).not.toContain(token)
+  })
+})
+
+describe("the task-status rule (proposed)", () => {
+  it.each([
+    ["subscription.status: cancelled"],
+    ["registration.state: done"],
+    ["deployment.status: active"],
+  ])("lets %s pass", (fact) => {
+    const result = change({
+      "service/ingress": entity("service/ingress", {
+        facts: `${check()}    observed:\n      ${fact}\n`,
+      }),
+    })
+    expect(result.problems.map((p) => p.code)).not.toContain("task-status")
+  })
+
+  it.each([
+    ["review.state: In_Review"],
+    ["status: to do"],
+    ["work.status: verifying"],
+  ])("warns about %s", (fact) => {
+    const result = change({
+      "service/ingress": entity("service/ingress", {
+        facts: `${check()}    observed:\n      ${fact}\n`,
+      }),
+    })
+    expect(result.blocked).toBe(false)
+    expect(result.problems.map((p) => p.code)).toContain("task-status")
+  })
+})
+
+describe("messages that help", () => {
+  it("suggests https:// for a link that looks like a web address", () => {
+    const result = change({
+      "machine/daedalus": entity("machine/daedalus", {
+        body: "See [docs](www.example.com/guide).\n",
+      }),
+    })
+    expect(result.problems[0]?.message).toContain("https://")
   })
 })

@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto"
+
 import { discrepancies } from "./analysis.js"
 import type { Catalog } from "./catalog.js"
 import { dayMillis } from "./dates.js"
@@ -17,10 +19,12 @@ import type {
   SchemaDocument,
   StartHereDocument,
 } from "./model.js"
+import { maxDocumentLength } from "./parse.js"
 import { blocking, warning } from "./problems.js"
 import type { Problem, ProblemCode } from "./problems.js"
 import { anyTarget, taskTarget } from "./schemas.js"
-import { findSecrets } from "./secrets.js"
+import { excerpt, findSecrets } from "./secrets.js"
+import type { SecretFinding } from "./secrets.js"
 import type { Range } from "./source.js"
 
 /**
@@ -59,35 +63,70 @@ export interface Change {
 }
 
 /**
- * Validates a change: every problem in the documents it writes, and any new
- * problem it causes in documents it does not write (for example a reference
- * it breaks). A type schema change that adds problems to entities of its
- * type is blocked and lists them (catalog §3.9).
+ * Validates a change (catalog §8.3):
+ *
+ * - in the documents it writes, every blocking problem, and the warnings
+ *   they did not already have (an accepted warning is not charged again);
+ * - in documents it does not write, any problem it newly causes, such as a
+ *   reference it breaks;
+ * - a type schema change that adds problems a schema can cause to entities
+ *   of its type is blocked and lists them (catalog §3.9).
+ *
+ * No message repeats a secret-looking value found in the catalog or the
+ * change's text: each is cut to its excerpt.
  */
 export function validateChange(
   change: Change,
   context: ValidationContext,
 ): ValidationResult {
-  const after = problemsByDocument(change.after, context)
-  const before = change.before
-    ? problemsByDocument(change.before, context)
-    : new Map<CatalogDocument, Problem[]>()
+  const known = new Set(change.after.documents)
+  for (const document of change.changed)
+    if (!known.has(document))
+      throw new Error(
+        `A changed document is not in the catalog after the change: ${document.id ?? "(no ID)"}`,
+      )
+
+  const after = new Validation(change.after, context)
+  const before = change.before ? new Validation(change.before, context) : null
+  const beforeByText = new Map<string, Problem[][]>()
   const beforeById = new Map<string, Problem[]>()
-  for (const [document, problems] of before)
+  for (const [document, problems] of before?.byDocument ?? []) {
+    const list = beforeByText.get(document.text) ?? []
+    list.push(problems)
+    beforeByText.set(document.text, list)
     if (document.id !== null && !beforeById.has(document.id))
       beforeById.set(document.id, problems)
+  }
 
   const changed = new Set(change.changed)
   const problems: Problem[] = []
   const broken = new Map<string, string[]>()
-  for (const [document, found] of after) {
+  for (const [document, found] of after.byDocument) {
     if (changed.has(document)) {
-      problems.push(...found)
+      const earlier =
+        document.id === null ? [] : (beforeById.get(document.id) ?? [])
+      problems.push(
+        ...found.filter((p) => p.severity === "blocking"),
+        ...subtract(
+          found.filter((p) => p.severity === "warning"),
+          earlier.filter((p) => p.severity === "warning"),
+        ),
+      )
       continue
     }
-    const caused = subtract(found, beforeById.get(document.id ?? "") ?? [])
+    // An unwritten document's text is unchanged, so its earlier problems are
+    // found by text: this also works for documents with no readable ID.
+    const earlier =
+      beforeByText.get(document.text)?.shift() ??
+      (document.id === null ? undefined : beforeById.get(document.id)) ??
+      []
+    const caused = subtract(found, earlier)
     problems.push(...caused)
-    if (caused.length > 0 && document.kind === "entity" && document.type) {
+    if (
+      document.kind === "entity" &&
+      document.type &&
+      caused.some((p) => schemaCaused.has(p.code))
+    ) {
       const list = broken.get(document.type) ?? []
       list.push(document.id ?? "")
       broken.set(document.type, list)
@@ -115,11 +154,16 @@ export function validateChange(
     }
   }
 
-  for (const { label, text } of change.texts ?? [])
-    for (const finding of findSecrets(text))
-      problems.push(secretProblem(finding, null, `${label}: `))
+  for (const { label, text } of change.texts ?? []) {
+    if (text.length > maxDocumentLength)
+      problems.push(tooLarge(null, `${label}: `))
+    for (const finding of findSecrets(text)) {
+      after.secrets.push(finding.secret)
+      problems.push(after.secretProblem(finding, null, `${label}: `))
+    }
+  }
 
-  return result(problems)
+  return result(redact(problems, after.secrets))
 }
 
 /** Validates every document of a catalog, as if all were new. */
@@ -127,7 +171,8 @@ export function validateCatalog(
   catalog: Catalog,
   context: ValidationContext,
 ): ValidationResult {
-  return result([...problemsByDocument(catalog, context).values()].flat())
+  const v = new Validation(catalog, context)
+  return result(redact([...v.byDocument.values()].flat(), v.secrets))
 }
 
 function result(problems: Problem[]): ValidationResult {
@@ -138,10 +183,31 @@ function result(problems: Problem[]): ValidationResult {
   }
 }
 
+/**
+ * Problems a type schema can cause in an entity it does not write: what
+ * `schema-breaks-entities` counts (catalog §3.9).
+ */
+const schemaCaused: ReadonlySet<ProblemCode> = new Set([
+  "type-unknown",
+  "key-not-in-schema",
+  "cardinality",
+  "reference-type",
+  "identity-duplicate",
+  "fact-invalid",
+])
+
+/**
+ * What tells two problems apart when comparing before and after: the
+ * matched value for secret findings (a hash, never the value), the message
+ * otherwise.
+ */
+const fingerprints = new WeakMap<Problem, string>()
+
 /** The problems of `found` that `earlier` does not have, counting repeats. */
 function subtract(found: Problem[], earlier: Problem[]): Problem[] {
   const counts = new Map<string, number>()
-  const key = (p: Problem) => `${p.code}\u0000${p.severity}\u0000${p.message}`
+  const key = (p: Problem) =>
+    `${p.code}\u0000${p.severity}\u0000${fingerprints.get(p) ?? p.message}`
   for (const p of earlier) counts.set(key(p), (counts.get(key(p)) ?? 0) + 1)
   return found.filter((p) => {
     const n = counts.get(key(p)) ?? 0
@@ -151,18 +217,77 @@ function subtract(found: Problem[], earlier: Problem[]): Problem[] {
   })
 }
 
-function problemsByDocument(
-  catalog: Catalog,
-  context: ValidationContext,
-): Map<CatalogDocument, Problem[]> {
-  const v = new Validator(catalog, context)
-  const all = new Map<CatalogDocument, Problem[]>()
-  for (const document of catalog.documents)
-    all.set(document, v.document(document))
-  return all
+/**
+ * Cuts every secret-looking value to its excerpt in every message, so
+ * problems can be stored and shown (catalog §7.3). Done once, here, rather
+ * than in each message.
+ */
+function redact(problems: Problem[], secrets: readonly string[]): Problem[] {
+  const values = [...new Set(secrets)]
+    .filter((s) => s.length >= 4)
+    .sort((a, b) => b.length - a.length)
+  if (values.length === 0) return problems
+  return problems.map((p) => {
+    let message = p.message
+    for (const value of values)
+      if (message.includes(value))
+        message = message.split(value).join(excerpt(value))
+    return message === p.message ? p : { ...p, message }
+  })
 }
 
-/** Task statuses (tasks §7.2), which never belong in catalog facts. */
+function tooLarge(documentId: string | null, where = ""): Problem {
+  return blocking(
+    "too-large",
+    `${where}This text is longer than ${maxDocumentLength / 1024} KiB, the most a catalog document or proposal text may hold`,
+    documentId,
+  )
+}
+
+/** The problems of every document of one catalog, and the secret values found in them. */
+class Validation {
+  readonly byDocument = new Map<CatalogDocument, Problem[]>()
+  readonly secrets: string[] = []
+
+  constructor(catalog: Catalog, context: ValidationContext) {
+    const v = new Validator(catalog, context, this)
+    for (const document of catalog.documents)
+      this.byDocument.set(document, v.document(document))
+  }
+
+  secretProblem(
+    finding: SecretFinding,
+    documentId: string | null,
+    where = "",
+  ): Problem {
+    const problem =
+      finding.severity === "blocking"
+        ? blocking(
+            "secret",
+            `${where}This looks like a ${finding.kind} (${finding.excerpt}). Secret values never go in the catalog: record where the secret lives with \`secrets-in\`, then rotate it, since it may already have been seen`,
+            documentId,
+            documentId === null ? undefined : finding.range,
+          )
+        : warning(
+            "secret-suspected",
+            `${where}This may be a secret (${finding.kind}, ${finding.excerpt}); a person confirms it is not before it applies`,
+            documentId,
+            documentId === null ? undefined : finding.range,
+          )
+    fingerprints.set(
+      problem,
+      createHash("sha256").update(finding.secret).digest("base64url"),
+    )
+    return problem
+  }
+}
+
+/**
+ * Task workflow statuses (tasks §7.2) that mean little outside a task, so
+ * a fact holding one was probably copied from a task. Words with ordinary
+ * meanings (`done`, `cancelled`) are left out: `subscription.status:
+ * cancelled` is a real fact.
+ */
 const taskStatuses = new Set([
   "triage",
   "to do",
@@ -170,9 +295,6 @@ const taskStatuses = new Set([
   "in progress",
   "in review",
   "verifying",
-  "done",
-  "cancelled",
-  "canceled",
 ])
 
 const writtenActor =
@@ -189,6 +311,7 @@ class Validator {
   constructor(
     private readonly catalog: Catalog,
     private readonly context: ValidationContext,
+    private readonly validation: Validation,
   ) {
     this.now =
       typeof context.now === "number" ? context.now : context.now.getTime()
@@ -226,8 +349,10 @@ class Validator {
     this.uniqueNames(document, add)
     check.owner(document.owner, "owner")
     check.body()
-    for (const finding of findSecrets(document.text))
-      problems.push(secretProblem(finding, document.id))
+    for (const finding of findSecrets(document.text)) {
+      this.validation.secrets.push(finding.secret)
+      problems.push(this.validation.secretProblem(finding, document.id))
+    }
 
     if (document.kind === "entity") this.entity(document, check, add, problems)
     else if (document.kind === "schema") this.schema(document, problems)
@@ -340,8 +465,9 @@ class Validator {
       )
         add(
           "task-status",
-          `"${canonicalValue(fact.value)}" is a task status; task status stays on tasks, not in the catalog`,
+          `"${canonicalValue(fact.value)}" looks like a task status; task status stays on tasks, not in the catalog`,
           fact.valueRange,
+          "warning",
         )
     }
   }
@@ -534,7 +660,7 @@ class Checks {
       if (!this.v.resolve(link.reference))
         this.add(
           "reference-unresolved",
-          `The link to "${link.reference}" does not name an entity in this catalog`,
+          `The link to "${link.reference}" does not name an entity in this catalog${/^[^/]+\.[^/]+/.test(link.reference) ? "; for a web address, start it with https://" : ""}`,
           link.range,
         )
     }
@@ -645,24 +771,4 @@ function sameCheck(a: FactCheck | null, b: FactCheck | null): boolean {
     a.source === b.source &&
     a.limits === b.limits
   )
-}
-
-function secretProblem(
-  finding: ReturnType<typeof findSecrets>[number],
-  documentId: string | null,
-  where = "",
-): Problem {
-  return finding.severity === "blocking"
-    ? blocking(
-        "secret",
-        `${where}This looks like a ${finding.kind} (${finding.excerpt}). Secret values never go in the catalog: record where the secret lives with \`secrets-in\`, then rotate it, since it may already have been seen`,
-        documentId,
-        documentId === null ? undefined : finding.range,
-      )
-    : warning(
-        "secret-suspected",
-        `${where}This may be a secret (${finding.kind}, ${finding.excerpt}); a person confirms it is not before it applies`,
-        documentId,
-        documentId === null ? undefined : finding.range,
-      )
 }

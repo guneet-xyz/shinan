@@ -550,7 +550,9 @@ Describes a person for readers: responsibilities, areas they own, how to reach
 them for this work.
 
 - **Facts:** `member` (link to the member record, or none); responsibilities as
-  prose.
+  prose. **Proposed (M2-1):** the `member` fact holds the person's handle,
+  which is unique in the installation and never changes
+  ([identity §8.7](identity.md#87-how-an-actor-is-written-in-text)).
 - **Rules:** never copies sign-in, role, git host accounts or contact details
   that the identity records own; links to them. Personal data is kept to what
   the work needs. **Proposed** (glossary). Reason: one home for identity.
@@ -637,6 +639,8 @@ Rules (all **proposed**):
   the proposal lists the affected entities. Reason: a schema change affects
   every entity of the type and how agents read them.
 - **Retiring a type** is allowed only when it has no active entities.
+  **Proposed (M2-1):** nor deprecated ones, which are still in use; retired
+  entities may keep a retired type ([8.3](#83-validation)).
 - **Agents read schemas** through the agent index, so an agent creating a
   `domain` entity knows its keys.
 - Keys outside a type's schema are still allowed (treated as single-valued)
@@ -1151,23 +1155,33 @@ check before applying is much cheaper than cleaning up afterwards.
 - **Proposed (M2-1, [#82](https://github.com/guneet-xyz/shinan/issues/82)):**
   what is matched. The whole text of every document a proposal writes is
   checked (frontmatter and body), and the proposal's other text.
-  - **Blocked:** private key blocks (`-----BEGIN … PRIVATE KEY-----`); Shinan
-    agent tokens (the prefix from [identity §7.4](identity.md#74-handling)
-    followed by at least 20 letters and digits); GitHub, GitLab, Slack, AWS
-    access key, Google API, Stripe live, AI provider (`sk-…` with mixed
-    case and digits), npm, PyPI, Docker Hub, Hugging Face and SendGrid
-    tokens by their prefixes; URLs with a password (`scheme://user:pw@`),
-    unless the password is a placeholder such as `****` or `${PASSWORD}`.
+  - **Blocked:** private key blocks (`-----BEGIN … PRIVATE KEY-----`) and
+    `age` secret keys; Shinan agent tokens (the prefix from
+    [identity §7.4](identity.md#74-handling) followed by at least 20 letters
+    and digits); GitHub, GitLab, Slack (including app tokens), AWS access
+    key, Google API, Stripe live, AI provider (`sk-…` with mixed case and
+    digits), npm, PyPI, Docker Hub, Hugging Face and SendGrid tokens by their
+    prefixes; JSON Web Tokens; Slack and Discord webhook URLs; URLs with a
+    password (`scheme://user:pw@`, the user may be empty), unless the
+    password is a placeholder such as `****` or `${PASSWORD}`.
   - **Held for approval:** `password`, `secret`, `token`, `api_key` and
-    similar words followed by `=` or `:` and a value of four or more
-    characters that is not a placeholder; strings of 32 or more letters,
+    similar words, also inside names such as `DB_PASSWORD` or
+    `AWS_SECRET_ACCESS_KEY`, followed by `=` or `:` and a value of four or
+    more characters that is not a placeholder; strings of 32 or more letters,
     digits, `_`, `-`, `+` or `=` that mix upper and lower case with digits
-    and look random (about 4 bits of entropy per character). SSH public keys
-    and digests or fingerprints after `SHA256:` are not flagged, since host
+    and look random (about 4 bits of entropy per character). Prose such as
+    "The password: stored in Obscuro" is held too; a person confirms it.
+  - **Not flagged:** SSH public keys, and fingerprints, digests and
+    subresource-integrity hashes (`SHA256:…`, `sha512-…`), whole, since host
     key fingerprints may be recorded ([7.1](#71-everyone-in-a-workspace-sees-everything)).
-  - A finding names the kind and shows only the first few characters, so
-    validation results (which are stored with the proposal) never repeat a
-    secret.
+  - A finding names the kind and shows only the first few characters. Every
+    validation message is cut the same way wherever it would repeat a
+    secret-looking value (for example a token typed as a `type` or `by`), so
+    validation results, which are stored with the proposal, never repeat
+    one.
+  - Each document and each proposal text is at most 64 KiB
+    ([2.1](#21-one-document-per-entity-and-what-source-of-truth-means));
+    longer text is refused, so the check always reads all of it.
 
 Reason: blocking only near-certain matches costs almost nothing, while one
 leaked secret would have to be purged, rotated at its source, and chased
@@ -1282,7 +1296,7 @@ Blocking rules (the proposal cannot apply):
   ([3.9](#39-custom-types-and-type-schema-documents));
 - no near-certain credential anywhere ([7.3](#73-a-check-for-secret-looking-values));
 - no task status copied into facts (for example a `status` key holding a task
-  status value).
+  status value). **Proposed (M2-1):** a warning, not blocking; see below.
 
 Warning rules (the proposal needs catalog approval, with the reason shown):
 
@@ -1296,15 +1310,22 @@ Validation cannot prove a fact matches reality; only fact checks do.
 **Proposed (M2-1, [#82](https://github.com/guneet-xyz/shinan/issues/82)):**
 how the rules are applied.
 
-- **Which problems belong to a proposal.** Every problem in the documents it
-  writes, and any problem it newly causes in documents it does not write (for
-  example a reference broken by removing an ID without keeping it as an
-  alias). Problems a document already had are not charged to an unrelated
-  proposal. Reason: one old mistake must not block every later change.
-- **Type schema changes.** When a change to a type schema document adds any
-  problem, blocking or warning, to an entity of that type (a removed key
-  becomes a key outside the schema; a key made single-valued holds a list),
-  the change is blocked and lists the entities. Retiring a type is blocked
+- **Which problems belong to a proposal.** In the documents it writes, every
+  blocking problem, and the warnings those documents did not already have;
+  in documents it does not write, any problem it newly causes (for example a
+  reference broken by removing an ID without keeping it as an alias).
+  Reason: one old mistake must not block every later change, and a warning a
+  person already accepted (a key outside the schema, a value confirmed not to
+  be a secret) must not gate every later recheck ([8.2](#82-when-catalog-approval-is-needed)).
+  Secret warnings are compared by the value found, not the message, so a new
+  value is never taken for an accepted one. A document the change does not
+  write is compared with its earlier, identical text, so even a document
+  that no longer reads is never charged to others.
+- **Type schema changes.** When a change to a type schema document adds a
+  problem a schema can cause (an unknown or retired type, a key outside the
+  schema, a list on a single-valued key, a relation to a type no longer
+  allowed, a fact identity now shared, a long form that no longer fits) to an
+  entity of that type, the change is blocked and lists the entities. Retiring a type is blocked
   while active or deprecated entities use it; retired entities may keep a
   retired type. "Active type schema" therefore means one that is not retired.
 - **Details of the rules.** IDs and aliases are unique across all documents.
@@ -1315,8 +1336,7 @@ how the rules are applied.
   ([identity §8.7](identity.md#87-how-an-actor-is-written-in-text)). "Not in
   the future" allows five minutes of clock difference, and a date as soon as
   it has begun anywhere (UTC+14). `planned` facts name a task ID (its form only
-  until tasks exist) or an accepted `decision`. A task status is a value such
-  as `in progress` or `done` in a key ending in `status` or `state`. "Older
+  until tasks exist) or an accepted `decision`. "Older
   than the one it replaces" compares dates by day when either check has only a
   date.
 - **More warnings.** The start-here warnings of [section 11](#11-start-here)
@@ -1324,6 +1344,18 @@ how the rules are applied.
   and, when Shinan passes the current members, an owner whose `person` entity
   has no current `member` fact naming one ([2.3](#23-entity-fields)). The
   `member` fact holds the person's handle.
+- **Task status in facts: a warning, and narrow** (**proposed**; for the
+  owner's review). A fact is held for approval when its key ends in `status`
+  or `state` and its value is a task workflow word of
+  [tasks §7.2](tasks.md#72-statuses) that means little outside a task:
+  `triage`, `to do`, `in progress`, `in review` or `verifying`. `done` and
+  `cancelled` are left out. Reason: `subscription.status: cancelled` or
+  `registration.state: done` are real facts, and a false alarm must never
+  block a correct change.
+- **Size.** A document or proposal text longer than 64 KiB is refused
+  (`too-large`), as [2.1](#21-one-document-per-entity-and-what-source-of-truth-means)
+  sets for documents. Reason: it bounds the work of every check, and no
+  catalog document needs more.
 
 ### 8.4 Agents' documentation-impact obligation
 

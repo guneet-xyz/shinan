@@ -9,7 +9,7 @@ export type Severity = "blocking" | "warning"
 
 /** What a problem is about. Codes are stable: tests, the API and the screens use them. */
 export type ProblemCode =
-  /** The document is longer than Shinan reads (catalog §2.1). */
+  /** A document or proposal text is longer than Shinan reads (catalog §2.1). */
   | "too-large"
   /** The frontmatter is missing, is not YAML, or uses YAML outside the allowed subset (catalog §2.1). */
   | "frontmatter-invalid"
@@ -63,11 +63,11 @@ export type ProblemCode =
   | "schema-breaks-entities"
   /** A value that is almost certainly a credential (catalog §7.3). */
   | "secret"
-  /** A task status copied into a fact. */
-  | "task-status"
   // Warnings:
   /** A weaker sign of a secret (catalog §7.3). */
   | "secret-suspected"
+  /** A task workflow status, such as `in progress`, copied into a fact. */
+  | "task-status"
   /** A fact key that the type schema does not name (catalog §3.9). */
   | "key-not-in-schema"
   /** A new fact check is older than the one it replaces. */
