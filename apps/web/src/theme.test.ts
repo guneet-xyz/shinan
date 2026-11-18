@@ -1,5 +1,5 @@
-import { readFileSync } from "node:fs"
-import { join } from "node:path"
+import { readdirSync, readFileSync } from "node:fs"
+import { join, sep } from "node:path"
 import { describe, expect, it } from "vitest"
 
 /**
@@ -159,14 +159,24 @@ describe("the focus styles", () => {
   })
 })
 
+/**
+ * Every component and screen of the web app: the shadcn/ui components, the
+ * shell (`Layout.tsx`), the workspace layout and every page, including ones
+ * added later. Tests are left out.
+ */
 function componentSources(): string[] {
-  const dir = join(import.meta.dirname, "components", "ui")
-  return [
-    "badge",
-    "button",
-    "dropdown-menu",
-    "field",
-    "input",
-    "native-select",
-  ].map((file) => readFileSync(join(dir, `${file}.tsx`), "utf8"))
+  const files = (
+    readdirSync(import.meta.dirname, { recursive: true }) as string[]
+  ).filter((file) => file.endsWith(".tsx") && !file.endsWith(".test.tsx"))
+  // The scan covers what it must, however the folders change.
+  for (const required of [
+    "components/ui/button.tsx",
+    "components/ui/dialog.tsx",
+    "components/Layout.tsx",
+    "pages/workspace/WorkspaceLayout.tsx",
+  ])
+    expect(files.map((f) => f.split(sep).join("/"))).toContain(required)
+  return files.map((file) =>
+    readFileSync(join(import.meta.dirname, file), "utf8"),
+  )
 }

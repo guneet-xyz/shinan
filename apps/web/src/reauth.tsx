@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/dialog"
 
 import { ReauthContext } from "./action"
-import { useApi } from "./api"
+import { useApi, useResource } from "./api"
 import { ErrorAlert } from "./components/status"
 import { signInErrorMessage } from "./messages"
 import { leaveApp } from "./navigation"
@@ -56,6 +56,12 @@ function ReauthDialog(props: { email: string }) {
   const callbackURL = location.pathname + location.search
   const [sent, setSent] = useState(false)
   const [error, setError] = useState<unknown>()
+  // GitHub is offered only where the installation has it, as on the
+  // sign-in page.
+  const installation = useResource("installation", () => api.installation(), {
+    redirectToSignIn: false,
+  })
+  const github = installation.data?.signInMethods.github ?? false
 
   const sendLink = () => {
     setError(undefined)
@@ -91,9 +97,11 @@ function ReauthDialog(props: { email: string }) {
           <Button type="button" onClick={sendLink}>
             Email me a sign-in link
           </Button>
-          <Button type="button" variant="outline" onClick={useGitHub}>
-            Sign in with GitHub
-          </Button>
+          {github && (
+            <Button type="button" variant="outline" onClick={useGitHub}>
+              Sign in with GitHub
+            </Button>
+          )}
         </div>
       )}
       {error !== undefined && (
