@@ -1148,6 +1148,26 @@ check before applying is much cheaper than cleaning up afterwards.
   string: the proposal is held for catalog approval, with the matching text
   pointed out, so a person confirms it is not a secret.
 - The check is a safety net, not a guarantee; secrets stay the team's job.
+- **Proposed (M2-1, [#82](https://github.com/guneet-xyz/shinan/issues/82)):**
+  what is matched. The whole text of every document a proposal writes is
+  checked (frontmatter and body), and the proposal's other text.
+  - **Blocked:** private key blocks (`-----BEGIN … PRIVATE KEY-----`); Shinan
+    agent tokens (the prefix from [identity §7.4](identity.md#74-handling)
+    followed by at least 20 letters and digits); GitHub, GitLab, Slack, AWS
+    access key, Google API, Stripe live, AI provider (`sk-…` with mixed
+    case and digits), npm, PyPI, Docker Hub, Hugging Face and SendGrid
+    tokens by their prefixes; URLs with a password (`scheme://user:pw@`),
+    unless the password is a placeholder such as `****` or `${PASSWORD}`.
+  - **Held for approval:** `password`, `secret`, `token`, `api_key` and
+    similar words followed by `=` or `:` and a value of four or more
+    characters that is not a placeholder; strings of 32 or more letters,
+    digits, `_`, `-`, `+` or `=` that mix upper and lower case with digits
+    and look random (about 4 bits of entropy per character). SSH public keys
+    and digests or fingerprints after `SHA256:` are not flagged, since host
+    key fingerprints may be recorded ([7.1](#71-everyone-in-a-workspace-sees-everything)).
+  - A finding names the kind and shows only the first few characters, so
+    validation results (which are stored with the proposal) never repeat a
+    secret.
 
 Reason: blocking only near-certain matches costs almost nothing, while one
 leaked secret would have to be purged, rotated at its source, and chased
@@ -1272,6 +1292,38 @@ Warning rules (the proposal needs catalog approval, with the reason shown):
 - an external link does not respond (when link checking exists; **open**).
 
 Validation cannot prove a fact matches reality; only fact checks do.
+
+**Proposed (M2-1, [#82](https://github.com/guneet-xyz/shinan/issues/82)):**
+how the rules are applied.
+
+- **Which problems belong to a proposal.** Every problem in the documents it
+  writes, and any problem it newly causes in documents it does not write (for
+  example a reference broken by removing an ID without keeping it as an
+  alias). Problems a document already had are not charged to an unrelated
+  proposal. Reason: one old mistake must not block every later change.
+- **Type schema changes.** When a change to a type schema document adds any
+  problem, blocking or warning, to an entity of that type (a removed key
+  becomes a key outside the schema; a key made single-valued holds a list),
+  the change is blocked and lists the entities. Retiring a type is blocked
+  while active or deprecated entities use it; retired entities may keep a
+  retired type. "Active type schema" therefore means one that is not retired.
+- **Details of the rules.** IDs and aliases are unique across all documents.
+  References resolve through IDs and aliases, retired entities included;
+  `owner`, `decided_by` and `accepted` name `person` entities; a body link may
+  also name a type schema document (built-in types have one without a
+  document) or `start-here`. `by` is a written actor
+  ([identity §8.7](identity.md#87-how-an-actor-is-written-in-text)). "Not in
+  the future" allows five minutes of clock difference, and a date as soon as
+  it has begun anywhere (UTC+14). `planned` facts name a task ID (its form only
+  until tasks exist) or an accepted `decision`. A task status is a value such
+  as `in progress` or `done` in a key ending in `status` or `state`. "Older
+  than the one it replaces" compares dates by day when either check has only a
+  date.
+- **More warnings.** The start-here warnings of [section 11](#11-start-here)
+  (a step to a retired entity, or to one with discrepancies not accepted);
+  and, when Shinan passes the current members, an owner whose `person` entity
+  has no current `member` fact naming one ([2.3](#23-entity-fields)). The
+  `member` fact holds the person's handle.
 
 ### 8.4 Agents' documentation-impact obligation
 

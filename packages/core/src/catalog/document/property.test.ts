@@ -8,6 +8,7 @@ import type { FactState } from "./model.js"
 import { parseCatalogDocument as readDocument } from "./parse.js"
 import { builtInSchemas, keySchema } from "./schemas.js"
 import { slice } from "./source.js"
+import { validateCatalog } from "./validate.js"
 import { parseYaml } from "./yaml.js"
 
 /** Reads a document, failing the test on an unexpected read failure. */
@@ -436,6 +437,37 @@ describe("random valid entity documents", () => {
       )
     },
     timeout(300),
+  )
+
+  it(
+    "validate, with only keys outside the schema held for approval",
+    () => {
+      fc.assert(
+        fc.property(entity, (e) => {
+          const text = write(e, false)
+          const targets = new Set(
+            e.groups.flatMap((g) =>
+              g.states.flatMap(({ facts }) =>
+                facts.flat().flatMap((f) => (f.to ? [f.to] : [])),
+              ),
+            ),
+          )
+          const others = [...targets, "person/guneet"].map(
+            (id) =>
+              `---\nid: ${id}\ntype: ${id.split("/")[0]}\ntitle: T\nsummary: S.\nstatus: active\nowner: person/guneet\n---\n`,
+          )
+          const result = validateCatalog(readCatalog([text, ...others]), {
+            now: Date.UTC(2031, 0, 1),
+          })
+          expect(
+            result.problems.filter((p) => p.code !== "key-not-in-schema"),
+          ).toEqual([])
+          expect(result.blocked).toBe(false)
+        }),
+        runs(200),
+      )
+    },
+    timeout(200),
   )
 
   it(
