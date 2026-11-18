@@ -5,6 +5,7 @@ import {
   domainSchema,
   guneetDev,
   musashi,
+  noReadFailure,
 } from "../../../test/catalog-documents.js"
 import { agentTokenPrefix } from "../../tokens.js"
 import { readCatalog } from "./catalog.js"
@@ -94,6 +95,7 @@ function change(
     else merged[id] = text
   }
   const after = readCatalog(Object.values(merged))
+  for (const d of after.documents) noReadFailure(d)
   const changed = after.documents.filter((d) =>
     Object.values(documents).includes(d.text),
   )
