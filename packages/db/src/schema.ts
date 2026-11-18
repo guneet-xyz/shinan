@@ -793,6 +793,125 @@ export const rateLimits = pgTable("rate_limits", {
  * their own records about each revision.
  */
 
+/** Where a catalog proposal stands (catalog §8.1, domain model). */
+export const catalogProposalStates = [
+  "pending",
+  "applied",
+  "rejected",
+  "withdrawn",
+] as const
+export type CatalogProposalState = (typeof catalogProposalStates)[number]
+export const catalogProposalStateEnum = pgEnum(
+  "catalog_proposal_state",
+  catalogProposalStates,
+)
+
+/**
+ * A catalog proposal (catalog §8.1): a change to the catalog, made and
+ * reviewed inside Shinan, as a list of operations with their inline fact
+ * checks. It applies at once or waits for catalog approval (§8.2). The
+ * record is about the change, not catalog content (catalog §2.1): it is
+ * not rebuilt from the Markdown. Proposals that conflict or that validation
+ * blocks are not stored; their author is told why.
+ */
+export const catalogProposals = pgTable(
+  "catalog_proposals",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id),
+    /** Numbered from 1 in each workspace, for people to name it. */
+    number: integer("number").notNull(),
+    createdAt: createdAt(),
+    /** The author. */
+    ...actorColumns(),
+    /** Why, in a few sentences (catalog §8.1). */
+    explanation: text("explanation").notNull(),
+    /** The related task's ID, as text until tasks exist (M3). */
+    relatedTask: text("related_task"),
+    /** The operations as sent, with their inline fact checks. */
+    operations: jsonb("operations").$type<unknown[]>().notNull(),
+    /** The catalog revision it was made against. */
+    basedOnRevision: integer("based_on_revision").notNull(),
+    state: catalogProposalStateEnum("state").notNull().default("pending"),
+    /** Its approval classes (catalog §8.2). */
+    approvalClasses: text("approval_classes").array().notNull(),
+    /** Why it waits for catalog approval; empty when it applies on its own. */
+    approvalReasons: jsonb("approval_reasons").$type<string[]>().notNull(),
+    /** The catalog IDs of the documents it changes, before and after, to show it on them (catalog §8.6). */
+    touches: text("touches").array().notNull(),
+    /** Validation's findings on the text it would produce (catalog §8.3); never a secret's value. */
+    validation: jsonb("validation")
+      .$type<Record<string, unknown>[]>()
+      .notNull(),
+    /** A key the author chose, so a retried request is stored once; unique per author. */
+    idempotencyKey: text("idempotency_key"),
+    /** A hash of the request, to tell a retry from a different request with the same key. */
+    requestHash: text("request_hash").notNull(),
+    /**
+     * The revision it applied as. That revision names this proposal, which
+     * the database checks; a key in both directions would make the two
+     * tables' types depend on each other.
+     */
+    appliedRevision: integer("applied_revision"),
+    /** When it was applied, rejected or withdrawn, and by whom. */
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+    decidedByPersonId: uuid("decided_by_person_id"),
+    decidedByAgentId: uuid("decided_by_agent_id"),
+    decidedByLabel: text("decided_by_label"),
+    /** Why it was rejected (catalog §8.6). */
+    rejectionReason: text("rejection_reason"),
+  },
+  (t) => [
+    unique("catalog_proposals_workspace_id_id").on(t.workspaceId, t.id),
+    unique("catalog_proposals_workspace_id_number").on(t.workspaceId, t.number),
+    // Per author: an agent by itself, a person by themselves.
+    uniqueIndex("catalog_proposals_idempotency_key")
+      .on(
+        t.workspaceId,
+        sql`coalesce(${t.actorAgentId}, ${t.actorPersonId})`,
+        t.idempotencyKey,
+      )
+      .where(sql`${t.idempotencyKey} is not null`),
+    index("catalog_proposals_workspace_id_state").on(t.workspaceId, t.state),
+    foreignKey({
+      name: "catalog_proposals_actor_person_id_fk",
+      columns: [t.actorPersonId],
+      foreignColumns: [people.id],
+    }),
+    foreignKey({
+      name: "catalog_proposals_actor_agent_id_fk",
+      columns: [t.actorAgentId],
+      foreignColumns: [agents.id],
+    }),
+    foreignKey({
+      name: "catalog_proposals_decided_by_person_id_fk",
+      columns: [t.decidedByPersonId],
+      foreignColumns: [people.id],
+    }),
+    foreignKey({
+      name: "catalog_proposals_decided_by_agent_id_fk",
+      columns: [t.decidedByAgentId],
+      foreignColumns: [agents.id],
+    }),
+    actorCheck("catalog_proposals_actor_known", t),
+    check("catalog_proposals_number_positive", sql`${t.number} > 0`),
+    check(
+      "catalog_proposals_decided",
+      sql`(${t.state} = 'pending') = (${t.decidedAt} is null) and (${t.decidedAt} is null) = (${t.decidedByLabel} is null)`,
+    ),
+    check(
+      "catalog_proposals_applied_revision",
+      sql`(${t.state} = 'applied') = (${t.appliedRevision} is not null)`,
+    ),
+    check(
+      "catalog_proposals_rejection_reason",
+      sql`(${t.state} = 'rejected') = (${t.rejectionReason} is not null)`,
+    ),
+  ],
+)
+
 /**
  * A catalog revision: one applied change to a workspace's catalog, numbered
  * from 1 within the workspace. Every answer from the agent index names the
@@ -809,9 +928,35 @@ export const catalogRevisions = pgTable(
     number: integer("number").notNull(),
     createdAt: createdAt(),
     ...actorColumns(),
+    /**
+     * The catalog proposal it applied (M2-4). Null only for revisions stored
+     * before proposals existed: revisions are never edited, so these
+     * columns could not be filled in later.
+     */
+    proposalId: uuid("proposal_id"),
+    /** The revision the proposal was based on (architecture §5.3), for history and display. */
+    basedOnRevision: integer("based_on_revision"),
+    /** The person whose catalog approval applied it, if it needed one (catalog §8.2). */
+    approvedByPersonId: uuid("approved_by_person_id"),
+    /** That person's written form (identity §8.7), as it was at the time. */
+    approvedByLabel: text("approved_by_label"),
   },
   (t) => [
     primaryKey({ columns: [t.workspaceId, t.number] }),
+    foreignKey({
+      name: "catalog_revisions_proposal_fk",
+      columns: [t.workspaceId, t.proposalId],
+      foreignColumns: [catalogProposals.workspaceId, catalogProposals.id],
+    }),
+    foreignKey({
+      name: "catalog_revisions_approved_by_person_id_fk",
+      columns: [t.approvedByPersonId],
+      foreignColumns: [people.id],
+    }),
+    check(
+      "catalog_revisions_approver_labelled",
+      sql`(${t.approvedByPersonId} is null) = (${t.approvedByLabel} is null)`,
+    ),
     foreignKey({
       name: "catalog_revisions_actor_person_id_fk",
       columns: [t.actorPersonId],

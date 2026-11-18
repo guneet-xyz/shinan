@@ -52,22 +52,42 @@ export async function inWorkspace<A extends WorkspaceAction, T>(
       const actor = foreignAgent
         ? resolved
         : await withMembership(tx, resolved, id)
+      const requester = requesterFor(ctx.actor, actor)
       check(
         action,
         actor,
-        requesterFor(ctx.actor, actor),
+        requester,
         id,
         foreignAgent && ctx.actor.kind === "agent"
           ? { agentWorkspaceId: ctx.actor.workspaceId.toLowerCase() }
           : {},
       )
-      return work({
+      const scope = {
         ...scopeFields(ctx, tx, actor),
         action,
         workspaceId: id,
-      } as WorkspaceScope<A>)
+      } as WorkspaceScope<A>
+      requesters.set(scope, requester)
+      return work(scope)
     }, transaction),
   )
+}
+
+/** Who each checked scope's actor is, for `mayAlso`. */
+const requesters = new WeakMap<WorkspaceScope, Requester>()
+
+/**
+ * Whether a scope's actor may also take another action in the same
+ * workspace, by the same rules, without recording a refusal: for an
+ * operation whose effect depends on it, such as a person's own gated
+ * catalog edit applying at once (catalog §8.2).
+ */
+export function mayAlso(
+  scope: WorkspaceScope,
+  action: WorkspaceAction,
+): boolean {
+  const requester = requesters.get(scope)
+  return requester !== undefined && decide(rules[action], requester).allowed
 }
 
 /** How an operation's transaction runs, such as a read-only snapshot. */

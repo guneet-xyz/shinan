@@ -72,32 +72,34 @@ The server reads its settings from environment variables. A secret can
 instead be read from a file: set `NAME_FILE` to its path rather than `NAME`
 (for example `DATABASE_URL_FILE`, `SES_SECRET_ACCESS_KEY_FILE`).
 
-| Variable                       | Default                                              | Meaning                                                                                                 |
-| ------------------------------ | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `DATABASE_URL`                 | none (tests use the local service)                   | PostgreSQL connection string (secret)                                                                   |
-| `HOST`                         | `127.0.0.1`                                          | Address the `web` role listens on                                                                       |
-| `PORT`                         | `3000`                                               | Port the `web` role listens on                                                                          |
-| `INTERNAL_HOST`                | `127.0.0.1`                                          | Address of the internal listener for health checks (`/healthz`, `/readyz`); never route a proxy to it   |
-| `INTERNAL_PORT`                | `3001`                                               | Port of the internal listener                                                                           |
-| `SHINAN_TRUSTED_PROXIES`       | none                                                 | Reverse proxies (IP addresses or CIDR ranges) whose `X-Forwarded-For` gives the client's address        |
-| `NODE_ENV`                     | unset (`development` in `pnpm dev`)                  | `production` serves the built web app and requires SES and the sign-in settings                         |
-| `WEB_DIST_DIR`                 | `apps/web/dist` in production                        | Directory of the built web app to serve                                                                 |
-| `EMAIL_TRANSPORT`              | `smtp`, except in production (none)                  | `ses`, or `smtp` for the local mail catcher (not in production)                                         |
-| `EMAIL_FROM`                   | `shinan@localhost` for `smtp`                        | From address; required for `ses`                                                                        |
-| `EMAIL_FROM_NAME`              | `Shinan`                                             | From display name                                                                                       |
-| `SES_REGION`                   | none                                                 | AWS region of the SES identity, such as `us-east-1`                                                     |
-| `SES_ACCESS_KEY_ID`            | none (the AWS SDK's default chain)                   | Access key of the send-only IAM user (secret)                                                           |
-| `SES_SECRET_ACCESS_KEY`        | none (the AWS SDK's default chain)                   | Its secret key (secret)                                                                                 |
-| `SES_CONFIGURATION_SET`        | none                                                 | SES configuration set, such as `guneet-dev`                                                             |
-| `SMTP_HOST`                    | `127.0.0.1`                                          | Mail catcher host, for `smtp`                                                                           |
-| `SMTP_PORT`                    | `1025`                                               | Mail catcher port, for `smtp`                                                                           |
-| `SHINAN_URL`                   | `http://localhost:5173`, except in production (none) | The installation's public address (an origin, HTTPS in production): the base of every link Shinan sends |
-| `SHINAN_OPERATORS`             | none (required in production)                        | Installation operators' email addresses, separated by commas; they seed the email allowlist             |
-| `SHINAN_SESSION_SECRET`        | a fixed value only with `NODE_ENV=development`       | Signs sign-in cookies and encrypts sign-in state; at least 32 characters (secret)                       |
-| `GITHUB_CLIENT_ID`             | none (no GitHub sign-in)                             | The GitHub App's client ID, for sign-in                                                                 |
-| `GITHUB_CLIENT_SECRET`         | none                                                 | The GitHub App's client secret (secret)                                                                 |
-| `SIGN_IN_SESSION_IDLE_MINUTES` | `60`                                                 | A sign-in session ends after this long without activity                                                 |
-| `SIGN_IN_SESSION_MAX_HOURS`    | `24`                                                 | A sign-in session ends after this long in any case                                                      |
+| Variable                        | Default                                              | Meaning                                                                                                 |
+| ------------------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`                  | none (tests use the local service)                   | PostgreSQL connection string (secret)                                                                   |
+| `HOST`                          | `127.0.0.1`                                          | Address the `web` role listens on                                                                       |
+| `PORT`                          | `3000`                                               | Port the `web` role listens on                                                                          |
+| `INTERNAL_HOST`                 | `127.0.0.1`                                          | Address of the internal listener for health checks (`/healthz`, `/readyz`); never route a proxy to it   |
+| `INTERNAL_PORT`                 | `3001`                                               | Port of the internal listener                                                                           |
+| `SHINAN_TRUSTED_PROXIES`        | none                                                 | Reverse proxies (IP addresses or CIDR ranges) whose `X-Forwarded-For` gives the client's address        |
+| `NODE_ENV`                      | unset (`development` in `pnpm dev`)                  | `production` serves the built web app and requires SES and the sign-in settings                         |
+| `WEB_DIST_DIR`                  | `apps/web/dist` in production                        | Directory of the built web app to serve                                                                 |
+| `EMAIL_TRANSPORT`               | `smtp`, except in production (none)                  | `ses`, or `smtp` for the local mail catcher (not in production)                                         |
+| `EMAIL_FROM`                    | `shinan@localhost` for `smtp`                        | From address; required for `ses`                                                                        |
+| `EMAIL_FROM_NAME`               | `Shinan`                                             | From display name                                                                                       |
+| `SES_REGION`                    | none                                                 | AWS region of the SES identity, such as `us-east-1`                                                     |
+| `SES_ACCESS_KEY_ID`             | none (the AWS SDK's default chain)                   | Access key of the send-only IAM user (secret)                                                           |
+| `SES_SECRET_ACCESS_KEY`         | none (the AWS SDK's default chain)                   | Its secret key (secret)                                                                                 |
+| `SES_CONFIGURATION_SET`         | none                                                 | SES configuration set, such as `guneet-dev`                                                             |
+| `SMTP_HOST`                     | `127.0.0.1`                                          | Mail catcher host, for `smtp`                                                                           |
+| `SMTP_PORT`                     | `1025`                                               | Mail catcher port, for `smtp`                                                                           |
+| `SHINAN_URL`                    | `http://localhost:5173`, except in production (none) | The installation's public address (an origin, HTTPS in production): the base of every link Shinan sends |
+| `SHINAN_OPERATORS`              | none (required in production)                        | Installation operators' email addresses, separated by commas; they seed the email allowlist             |
+| `SHINAN_SESSION_SECRET`         | a fixed value only with `NODE_ENV=development`       | Signs sign-in cookies and encrypts sign-in state; at least 32 characters (secret)                       |
+| `GITHUB_CLIENT_ID`              | none (no GitHub sign-in)                             | The GitHub App's client ID, for sign-in                                                                 |
+| `GITHUB_CLIENT_SECRET`          | none                                                 | The GitHub App's client secret (secret)                                                                 |
+| `SIGN_IN_SESSION_IDLE_MINUTES`  | `60`                                                 | A sign-in session ends after this long without activity                                                 |
+| `SIGN_IN_SESSION_MAX_HOURS`     | `24`                                                 | A sign-in session ends after this long in any case                                                      |
+| `SHINAN_CATALOG_WORKERS`        | `1`                                                  | Catalog worker threads in the `web` process ([operator guide](docs/operator-guide.md#catalog-workers))  |
+| `SHINAN_CATALOG_WORKER_HEAP_MB` | `768`                                                | Each catalog worker's heap limit in MiB, at least 640                                                   |
 
 In development the worker sends email to Mailpit; open http://localhost:8025
 to read it. Email is queued as a job in the same transaction as the change

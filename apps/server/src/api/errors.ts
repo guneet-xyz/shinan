@@ -3,6 +3,7 @@ import type { ContentfulStatusCode } from "hono/utils/http-status"
 
 import type { ErrorBody } from "@shinan/api-client"
 import {
+  BusyError,
   ForbiddenError,
   InvalidInputError,
   NotFoundError,
@@ -56,6 +57,15 @@ function handleError(error: Error, c: Context, log: LimitedLog) {
       message: "You are not allowed to do that",
       reason: error.reason,
     })
+  }
+  if (error instanceof BusyError) {
+    const response = errorResponse(c, 429, {
+      error: "too-many-requests",
+      message: error.message,
+      rule: error.rule,
+    })
+    response.headers.set("retry-after", String(error.retryAfterSeconds))
+    return response
   }
   if (error instanceof InvalidInputError) {
     return errorResponse(c, 422, {

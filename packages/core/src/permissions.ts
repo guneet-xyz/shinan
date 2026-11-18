@@ -211,6 +211,31 @@ export const rules = deepFreeze({
     reauthentication: false,
   },
   /**
+   * Make catalog proposals, read them and withdraw one's own (catalog §8.1,
+   * §8.6; identity §5.1). Every member may; agents need `catalog:propose`
+   * (identity §7.2). The operation checks that a withdrawn proposal is the
+   * actor's own.
+   */
+  "catalog.propose": {
+    level: "workspace",
+    access: "write",
+    roles: ["owner", "contributor"],
+    agents: ["catalog:propose"],
+    reauthentication: false,
+  },
+  /**
+   * Approve or reject catalog proposals waiting for catalog approval
+   * (catalog §8.2, §8.6). Reserved for people (identity §6.3): an agent
+   * approving would be its person approving without looking.
+   */
+  "catalog.approve": {
+    level: "workspace",
+    access: "write",
+    roles: ["owner", "contributor"],
+    agents: "people",
+    reauthentication: false,
+  },
+  /**
    * Keep the agent index in step with the stored text: rebuild it, run the
    * daily round-trip check, and ask for rebuilds after the parser changed
    * (architecture §5.2, §5.3, §7). The worker and the operator's server

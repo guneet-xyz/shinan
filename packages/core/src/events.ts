@@ -1,6 +1,7 @@
 import { and, desc, eq, lt, schema } from "@shinan/db"
 import type { EventSubject } from "@shinan/db"
 
+import type { ResolvedActor } from "./actor.js"
 import { inWorkspace } from "./authorize.js"
 import type {
   Context,
@@ -19,7 +20,19 @@ export interface NewEvent {
   link?: string
   /** The same key in the same workspace is stored once. */
   idempotencyKey?: string
+  /**
+   * Who the event is credited to, when not the scope's actor: a catalog
+   * change is credited to its author even when a person's approval applied
+   * it (catalog §9).
+   */
+  credit?: EventCredit
 }
+
+/** The actor columns of an event. */
+export type EventCredit = Pick<
+  ResolvedActor,
+  "kind" | "personId" | "agentId" | "agentSessionId" | "label" | "confidence"
+>
 
 export type Event = typeof schema.events.$inferSelect
 
@@ -42,18 +55,19 @@ export async function appendEvent(
   if (rules[scope.action].access !== "write") {
     throw new Error(`${scope.action} is not a write action`)
   }
+  const credit = event.credit ?? scope.actor
   const [row] = await scope.tx
     .insert(schema.events)
     .values({
       workspaceId: scope.workspaceId,
       kind: event.kind,
       origin: scope.origin,
-      actorKind: scope.actor.kind,
-      actorPersonId: scope.actor.personId,
-      actorAgentId: scope.actor.agentId,
-      actorAgentSessionId: scope.actor.agentSessionId,
-      actorLabel: scope.actor.label,
-      confidence: scope.actor.confidence,
+      actorKind: credit.kind,
+      actorPersonId: credit.personId,
+      actorAgentId: credit.agentId,
+      actorAgentSessionId: credit.agentSessionId,
+      actorLabel: credit.label,
+      confidence: credit.confidence,
       subjects: event.subjects ?? [],
       summary: event.summary,
       data: event.data ?? {},

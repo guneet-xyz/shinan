@@ -3,6 +3,7 @@ import { serve } from "@hono/node-server"
 import {
   changeEmailOf,
   checkCatalogIndexes,
+  configureCatalogWorkers,
   endSessionsOf,
   NotFoundError,
   prepareSetupLink,
@@ -95,6 +96,7 @@ export async function runCommand(
 
 async function runWeb(env: Env): Promise<void> {
   const config = readWebConfig(env)
+  configureCatalogWorkers(config.catalogWorkers)
   const databaseUrl = readDatabaseUrl(env)
   const { db, pool } = createDatabase(databaseUrl)
   const jobs = await connectJobQueue(databaseUrl)

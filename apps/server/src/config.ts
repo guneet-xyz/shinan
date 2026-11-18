@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 
-import { isEmailAddress } from "@shinan/core"
+import { defaultWorkerOptions, isEmailAddress } from "@shinan/core"
 import type { EmailFrom } from "@shinan/email"
 
 import { parseTrustedProxies } from "./client-address.js"
@@ -43,6 +43,11 @@ export interface WebConfig {
   github: { clientId: string; clientSecret: string } | undefined
   /** Sign-in session limits (identity §3.3); operators may change them. */
   sessions: { idleMinutes: number; maxHours: number }
+  /**
+   * The catalog workers (architecture §5.3): how many, and each one's heap
+   * limit in MiB (`SHINAN_CATALOG_WORKERS`, `SHINAN_CATALOG_WORKER_HEAP_MB`).
+   */
+  catalogWorkers: { workers: number; heapMb: number }
 }
 
 const defaultWebDistDir = fileURLToPath(
@@ -132,7 +137,25 @@ export function readWebConfig(
         "SIGN_IN_SESSION_MAX_HOURS",
       ),
     },
+    catalogWorkers: readCatalogWorkers(env),
   }
+}
+
+function readCatalogWorkers(env: Env): WebConfig["catalogWorkers"] {
+  const workers = readWhole(
+    env.SHINAN_CATALOG_WORKERS ?? String(defaultWorkerOptions.workers),
+    "SHINAN_CATALOG_WORKERS",
+  )
+  const heapMb = readWhole(
+    env.SHINAN_CATALOG_WORKER_HEAP_MB ?? String(defaultWorkerOptions.heapMb),
+    "SHINAN_CATALOG_WORKER_HEAP_MB",
+  )
+  // Below this, a catalog at its limits may not fit (architecture §5.3).
+  if (heapMb < 640)
+    throw new SettingsError(
+      `SHINAN_CATALOG_WORKER_HEAP_MB must be at least 640, got "${heapMb}"`,
+    )
+  return { workers, heapMb }
 }
 
 /** An origin with no path, over HTTPS in production. */
