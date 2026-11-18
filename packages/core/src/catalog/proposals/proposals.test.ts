@@ -36,6 +36,7 @@ import { CatalogWorkers, replaceCatalogWorkers } from "./pool.js"
 import type { Prepare } from "./pool.js"
 import {
   approveCatalogProposal,
+  catalogLimits,
   checkCatalogSize,
   getCatalogProposal,
   listCatalogProposals,
@@ -1010,10 +1011,82 @@ describe("the catalog size limit", () => {
       RuleViolationError,
     )
     expect(() => checkCatalogSize(size(900, 4), limits)).toThrow(
-      /at most 3 documents/,
+      /to 4 documents, past 3\. A catalog holds at most 3 documents/,
     )
     expect(() => checkCatalogSize(size(900, 3, 900, 5001), limits)).toThrow(
       RuleViolationError,
+    )
+  })
+
+  it("says which limit the change passes, what counts, and how to make room", () => {
+    const big = { bytes: 2 ** 20, documents: 3, estimatedBytes: 2 ** 20 }
+    let message = ""
+    try {
+      checkCatalogSize(
+        {
+          bytesBefore: 2 ** 20,
+          bytes: 2 ** 20,
+          documentsBefore: 3,
+          documents: 3,
+          estimatedBefore: 2 ** 20,
+          estimated: 3 * 2 ** 20,
+        },
+        big,
+      )
+    } catch (error) {
+      message = (error as RuleViolationError).message
+    }
+    expect(message).toMatch(
+      /^This change would take .* to 3\.0 MiB in memory, past 1 MiB\./,
+    )
+    expect(message).not.toMatch(/documents, past|of text, past/)
+    expect(message).not.toMatch(/facts count most|Retire/)
+    for (const counted of ["problem", "suspected secret", "links", "facts"])
+      expect(message).toContain(counted)
+    for (const way of [
+      "edit-body",
+      "remove-fact",
+      "suspected secrets",
+      "keys outside their type's schema",
+      "task statuses",
+      "owners not linked",
+      "start-here steps",
+      "catalog §8.2",
+    ])
+      expect(message).toContain(way)
+    // A link that resolves nowhere is blocking, so no stored catalog has one.
+    expect(message).not.toContain("dead links")
+  })
+
+  it("reads above the limit for a change just past it", () => {
+    const real = catalogLimits
+    const within = {
+      bytesBefore: real.bytes,
+      bytes: real.bytes,
+      documentsBefore: real.documents,
+      documents: real.documents,
+      estimatedBefore: real.estimatedBytes,
+      estimated: real.estimatedBytes,
+    }
+    const messageOf = (size: Parameters<typeof checkCatalogSize>[0]) => {
+      try {
+        checkCatalogSize(size)
+      } catch (error) {
+        return (error as RuleViolationError).message
+      }
+      throw new Error("Not refused")
+    }
+    expect(() => checkCatalogSize(within)).not.toThrow()
+    expect(messageOf({ ...within, documents: real.documents + 1 })).toMatch(
+      /^This change would take the workspace's catalog to 20001 documents, past 20000\./,
+    )
+    expect(messageOf({ ...within, bytes: real.bytes + 100 })).toMatch(
+      /^This change would take the workspace's catalog to 50\.1 MiB of text, past 50 MiB\./,
+    )
+    expect(
+      messageOf({ ...within, estimated: real.estimatedBytes + 4096 }),
+    ).toMatch(
+      /^This change would take the workspace's catalog to 320\.1 MiB in memory, past 320 MiB\./,
     )
   })
 

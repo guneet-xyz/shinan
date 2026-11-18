@@ -731,17 +731,27 @@ export function checkCatalogSize(
     estimatedBytes: number
   } = catalogLimits,
 ): void {
-  const mib = (n: number) => Math.round(n / 1024 / 1024)
-  const past =
-    (size.documents > limits.documents &&
-      size.documents > size.documentsBefore) ||
-    (size.bytes > limits.bytes && size.bytes > size.bytesBefore) ||
-    (size.estimated > limits.estimatedBytes &&
-      size.estimated > size.estimatedBefore)
-  if (past)
+  // A limit in MiB, to one decimal when it is not whole; a size past it
+  // rounded up to one decimal, so it never reads as equal to the limit.
+  const mib = (n: number) => Number((n / 2 ** 20).toFixed(1)).toString()
+  const above = (n: number) => (Math.ceil((n / 2 ** 20) * 10) / 10).toFixed(1)
+  const past = [
+    size.documents > limits.documents &&
+      size.documents > size.documentsBefore &&
+      `${size.documents} documents, past ${limits.documents}`,
+    size.bytes > limits.bytes &&
+      size.bytes > size.bytesBefore &&
+      `${above(size.bytes)} MiB of text, past ${mib(limits.bytes)} MiB`,
+    size.estimated > limits.estimatedBytes &&
+      size.estimated > size.estimatedBefore &&
+      `${above(size.estimated)} MiB in memory, past ${mib(limits.estimatedBytes)} MiB`,
+  ].filter((p): p is string => p !== false)
+  if (past.length > 0)
     throw new RuleViolationError(
       "catalog-full",
-      `A workspace's catalog holds at most ${limits.documents} documents, ${mib(limits.bytes)} MiB of text and ${mib(limits.estimatedBytes)} MiB as Shinan holds it in memory (facts count most); this change would take it to ${size.documents} documents, ${mib(size.bytes)} MiB and ${mib(size.estimated)} MiB. Retire or shorten documents first.`,
+      `This change would take the workspace's catalog to ${past.join(" and ")}. ` +
+        `A catalog holds at most ${limits.documents} documents, ${mib(limits.bytes)} MiB of text and ${mib(limits.estimatedBytes)} MiB as Shinan holds it in memory with its validation, where text, facts, links, and each problem and suspected secret validation finds all count. ` +
+        "Changes that do not grow the catalog still apply. To make room, shorten documents (edit-body), remove facts no longer needed (remove-fact), and fix what validation warns about, such as suspected secrets, keys outside their type's schema, task statuses written as facts, owners not linked to a current member, and start-here steps to retired entities or entities with discrepancies (catalog §8.2).",
     )
 }
 
