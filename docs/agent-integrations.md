@@ -458,6 +458,13 @@ the field names and skill wording to this document. All **proposed**:
     a person. So `by` alone never labels text, and any future way of
     writing catalog text (an import, a raw edit) must keep that true;
   - a discrepancy: the least trusted of its facts;
+  - a catalog proposal's own text (explanation, operations, approval
+    reasons, validation warnings, and the problems of one that did not
+    apply): the least trusted of its author and every catalog document it
+    names, by ID or alias, since expectations copy those documents' text
+    and Shinan's reasons and warnings quote their IDs; a name no document
+    has is one the proposal creates, which only its author wrote. A
+    rejection's reason: the person who rejected it (M2-6);
   - what Shinan computes (freshness, revision numbers, the change list's
     records): `shinan`, with each ID in the change list labelled by its
     document;
@@ -523,18 +530,36 @@ Reason: together they cover the level 1 actions in the plan.
 - **Open:** whether the agent index is also offered as MCP resources
   ([question 5](#open-questions)).
 - **Proposed (M2-6, [#87](https://github.com/guneet-xyz/shinan/issues/87)):**
-  the tool names, built so far for the catalog's reads:
-  `workspace_context`, `search_catalog` (by text, by type and status, or an
-  entity's neighbours with `related_to`; each result says how many of its
-  facts are due for recheck or never checked), `get_entity` (optionally with
-  its type schema) and `catalog_lists` (discrepancies, due for recheck, known
-  unknowns, not yet recorded, type schemas, changes since a revision). The
-  writes follow with catalog proposals (M2-4): `propose_catalog_change`,
-  `record_fact_check`, `get_catalog_proposal`, `withdraw_catalog_proposal`
-  and `comment_on_catalog_proposal`. Every tool takes and returns the field
-  names of the [agent index format](catalog.md#124-the-index-format); OpenCode
-  shows them as `shinan_<tool>`. Each `catalog_lists` call is recorded in the
-  security log as a bulk read (`catalog.bulk-read`, [identity §11](identity.md#11-audit)).
+  the tool names, as built for the catalog:
+  - reads: `workspace_context`, `search_catalog` (by text, by type and
+    status, or an entity's neighbours with `related_to`; each result says
+    how many of its facts are due for recheck or never checked),
+    `get_entity` (optionally with its type schema), `catalog_lists`
+    (discrepancies, due for recheck, known unknowns, not yet recorded, type
+    schemas, changes since a revision) and `get_catalog_proposal`;
+  - writes, over M2-4's catalog proposals and with `catalog:propose`:
+    `propose_catalog_change` (explanation, operations, optional related
+    task, idempotency key), `record_fact_check` (one entity, the facts as
+    they are, the fact check; a proposal with one `recheck-facts`
+    operation) and `withdraw_catalog_proposal` (the agent's own waiting
+    proposal; repeating it is harmless). `comment_on_catalog_proposal`
+    comes with proposal comments (M2-4b,
+    [#86](https://github.com/guneet-xyz/shinan/issues/86)).
+
+  Every tool takes and returns the field names of the
+  [agent index format](catalog.md#124-the-index-format); the operations
+  inside a proposal are core's (catalog §8.1), checked by core, which
+  refuses unknown fields such as `by` or `accepted`. The tool descriptions
+  state the limits (50 operations, 100 facts, 4,000 characters of
+  explanation, 256 KiB). The idempotency key is required on the two
+  proposing tools, so every retry is safe (design rule 3). A write answers
+  `applied`, `pending`, `conflict`, `invalid`, `blocked` or `unchanged`
+  with the stored proposal or the problems; a full catalog worker queue or
+  an agent's proposal rate is a `busy` tool error with
+  `retry_after_seconds`, to send again with the same key. OpenCode shows
+  the tools as `shinan_<tool>`. Each `catalog_lists` call is recorded in
+  the security log as a bulk read (`catalog.bulk-read`,
+  [identity §11](identity.md#11-audit)).
 
 ## The CLI
 
@@ -618,10 +643,9 @@ as built:**
   serves every installation, so which fallback a project has belongs to that
   project's instructions. For the trial, the `workspace` repository's note
   says it ([trial start kit](build-plan-m2.md#313-m2-13-trial-start-kit)).
-- **The write tools** are described from M2-4's proposal API and M2-6's
-  planned tool names, marked **to be confirmed** in the skill itself, with
-  the instruction to follow each tool's own description where they differ;
-  M2-6's second PR finalises them.
+- **The write tools** are described as built in M2-6
+  (`references/changing.md`); a test applies the file's example proposal
+  through the MCP tool, so the two cannot drift apart.
 - **Serving** is in [architecture §10.2](architecture.md#102-web-hardening).
 
 ### Setting up OpenCode with a hand-made token
@@ -632,11 +656,11 @@ once (in a new tab, so the token stays on screen). It fills in the
 installation's own address and gives four steps:
 
 1. Make a token by hand in Your agents (read-only if the agent only reads).
-2. Store it on the machine from a terminal in bash or zsh, never the coding
+2. Store it on the machine from a terminal, in any shell, never the coding
    tool's chat, then paste the token and press Enter:
 
    ```sh
-   (umask 077; mkdir -p ~/.config/shinan && chmod 700 ~/.config/shinan && IFS= read -rs t && : > ~/.config/shinan/token && chmod 600 ~/.config/shinan/token && printf '%s\n' "$t" > ~/.config/shinan/token)
+   bash -c 'umask 077; mkdir -p ~/.config/shinan && chmod 700 ~/.config/shinan && IFS= read -rs t && : > ~/.config/shinan/token && chmod 600 ~/.config/shinan/token && printf "%s\n" "$t" > ~/.config/shinan/token'
    ```
 
    Reason ([requirement 3](#authentication-requirements)): `read -s` shows
@@ -645,8 +669,13 @@ installation's own address and gives four steps:
    shell builtin, so it is never in the process list either. The folder is
    700 and the file 600 even if they existed before (`cat >` or a plain
    redirect would keep an older file's mode), and the file is emptied and
-   locked down before the token goes in. A shell without `read -s`, such as
-   `dash`, stops at `read` and writes nothing.
+   locked down before the token goes in. The commands run in `bash`
+   whatever shell they are pasted into (checked in bash, zsh, dash, fish
+   and tcsh), so wherever bash is installed, a shell without `read -s`
+   never ends up reading the pasted token as a command line, or keeping it
+   in its history. Proposed
+   (M2-6, after the [#119](https://github.com/guneet-xyz/shinan/pull/119)
+   review).
 
 3. Add to `opencode.jsonc` in a folder above the projects that should use
    Shinan, or to `~/.config/opencode/opencode.jsonc` for every folder:

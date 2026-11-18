@@ -106,6 +106,7 @@ export type {
   SetStartHerePath,
   StartHereStepInput,
 } from "./operations.js"
+export { operationNames } from "./operations.js"
 export {
   maxDocumentBytes,
   parseCatalogDocument,

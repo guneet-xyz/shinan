@@ -1,10 +1,8 @@
 # Changing the catalog
 
-> **To be confirmed.** The write tools are new: their names and arguments
-> below may still change. If your tool list differs, follow each tool's own
-> description. If there are no write tools, or your token is read-only,
-> record the update you owe (what, why and the evidence) on your task or in
-> your report, and tell your person.
+The write tools need a full token. If your token is read-only, or Shinan is
+unavailable, record the update you owe (what, why and the evidence) on your
+task or in your report, and tell your person.
 
 ## When to propose
 
@@ -47,31 +45,52 @@ new catalog revision.
 
 - `propose_catalog_change`:
   - `explanation`: why, in a few sentences (at most 4,000 characters);
-  - `operations`: at most 50, naming at most 100 facts in all; split a
-    larger change into several proposals;
+  - `operations`: at most 50, naming at most 100 facts in all, 256 KiB in
+    all; split a larger change into several proposals;
   - `related_task` (optional): the task ID, such as `SHN-12`;
-  - `idempotency_key`: a key you choose for this proposal. If the call fails
-    on the way, send the same proposal with the same key: it is stored once.
-- `record_fact_check`: a recheck, when you checked facts at their source and
-  their values did not change: the entity, the facts as they are now, and
-  the fact check. It is a proposal with one `recheck-facts` operation.
-- `get_catalog_proposal`: a proposal's state, by ID.
-- `withdraw_catalog_proposal`: withdraws your own proposal while it waits.
-- `comment_on_catalog_proposal`: adds a comment, such as review findings.
+  - `idempotency_key`: a key you choose for this change, such as
+    `SHN-12-disk-resize`. If the call fails on the way, send the same
+    proposal with the same key: it is stored once, and you get it back.
+- `record_fact_check`: a recheck, when you checked facts of one entity at
+  their source and their values did not change: `document`, `facts` (each
+  as it is now, see expectations below), `check` (`checked`, `scope`,
+  `source`, `limits`), an optional `explanation` and `related_task`, and an
+  `idempotency_key`. It is a proposal with one `recheck-facts` operation. A
+  value that changed is a `set-fact` in `propose_catalog_change` instead.
+- `get_catalog_proposal`: a proposal by `id`, with its state, operations,
+  approval classes, the reasons it waits, warnings, and a rejection's
+  reason.
+- `withdraw_catalog_proposal`: withdraws your own proposal, by `id`, while
+  it waits. Repeating it is harmless.
+
+Every answer has an `outcome` and, once stored, the `proposal` with its
+`id`, `number` and `state`; a proposal that did not apply has `problems`
+instead, each with the `operation` position, a `code` and a `message`.
 
 ## Outcomes
 
-- `applied`: the change is a new catalog revision; mention its number.
-- `pending`: it waits for catalog approval. Tell your person, with the
-  proposal; do not send it again.
+- `applied`: the change is a new catalog revision (`applied_revision`);
+  mention its number.
+- `pending`: it waits for catalog approval; `approval_reasons` says why.
+  Tell your person, with the proposal's number; do not send it again.
+  Later, `get_catalog_proposal` shows `applied`, `rejected` (with
+  `rejection.reason`, from the person who rejected it) or `withdrawn`.
 - `conflict`: the entity changed since you read it, so an expectation no
-  longer holds. Read it again with `get_entity` and send a new proposal from
-  what is there now. Never overwrite another check without evidence.
+  longer holds. Read it again with `get_entity` and send a new proposal,
+  with a new key, from what is there now. Never overwrite another check
+  without evidence.
 - `invalid`: an operation cannot apply as written; each problem names the
-  operation by its position. Fix it and send the proposal again.
+  operation by its position. Fix it and send the proposal again, with a new
+  key.
 - `blocked`: validation refused the result, for example a link to an entity
   that does not exist, or a credential. Fix the cause.
 - `unchanged`: the catalog already says this; nothing to do.
+
+Tool errors: `busy` means Shinan is applying other proposals, or you sent
+many in a short time: send the same call, with the same key, after
+`retry_after_seconds`. `forbidden` means your token is read-only.
+`invalid-input` with `rule: too-complex` means the proposal took too long to
+apply: split it.
 
 ## Operations
 
@@ -100,12 +119,16 @@ it was observed), `note` (required for `unknown`), `task` (for `planned`)
 and `remove: true` (a planned removal).
 
 **Expectations.** For a fact that should not exist yet, `expect` is
-`{ "identity": "<identity>", "absent": true }`. For a fact that exists, it is
-the fact as `get_entity` returned it: its `identity`, its `value` as text
-(for a relation its `to`, for an `unknown` fact its `note`), its `check`
-(at least `checked`), and every long-form field it has (`via`, `note`,
-`task`, `remove`, `accepted`, `attributes`). A changed fact names the
-`planned` or `unknown` fact it settles in `supersedes`, in the same form.
+`{ "identity": "<identity>", "absent": true }`. For a fact that exists,
+build it from the fact as `get_entity` returned it, with only these fields:
+`identity`; `value` as text (`"128"`, `"true"`; for a relation its `to`,
+for an `unknown` fact its `note`); `check` with at least `checked` (any of
+`by`, `scope`, `source`, `limits` you add must match; `null` for a fact with
+no fact check); and every long-form field the fact has (`via`, `note`,
+`task`, `remove`, `accepted`, `attributes`). Leave out `key`, `state`,
+`freshness`, `label` and the other fields `get_entity` adds: an unknown
+field makes the operation `invalid`. A changed fact names the `planned` or
+`unknown` fact it settles in `supersedes`, in the same form.
 
 **Identity** is the key, the state and, where needed, what tells facts of
 the key apart, joined by `|`: `disk.data.size|observed`,

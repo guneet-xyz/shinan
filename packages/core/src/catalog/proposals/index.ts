@@ -25,3 +25,15 @@ export type {
   NotApplied,
   ProposalOutcome,
 } from "./proposals.js"
+export {
+  agentGetCatalogProposal,
+  agentProposeCatalogChange,
+  agentRecordFactCheck,
+  agentWithdrawCatalogProposal,
+} from "./agent.js"
+export type {
+  AgentProblemJson,
+  AgentProposalAnswer,
+  AgentProposalJson,
+  AgentRecheckInput,
+} from "./agent.js"

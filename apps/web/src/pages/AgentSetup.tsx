@@ -12,12 +12,15 @@ const linkClassName = "text-foreground underline underline-offset-4"
 const tokenFile = "~/.config/shinan/token"
 
 /**
- * Stores the token in bash or zsh: read without echo, so it is not on
- * screen, in scrollback or in history; written by the `printf` builtin, so
- * it is never in the process list; folder 700 and file 600 even if they
- * existed before, the file emptied and locked down before the token goes in.
+ * Stores the token, from any shell: the commands run in bash whatever the
+ * shell they are pasted into, so they behave the same everywhere bash is
+ * installed, and no other shell is left reading the pasted token as a
+ * command. The token is read without echo, so it is not on screen, in
+ * scrollback or in history; written by the `printf` builtin, so it is
+ * never in the process list; folder 700 and file 600 even if they existed
+ * before, the file emptied and locked down before the token goes in.
  */
-const storeTokenCommands = `(umask 077; mkdir -p ~/.config/shinan && chmod 700 ~/.config/shinan && IFS= read -rs t && : > ${tokenFile} && chmod 600 ${tokenFile} && printf '%s\\n' "$t" > ${tokenFile})`
+const storeTokenCommands = `bash -c 'umask 077; mkdir -p ~/.config/shinan && chmod 700 ~/.config/shinan && IFS= read -rs t && : > ${tokenFile} && chmod 600 ${tokenFile} && printf "%s\\n" "$t" > ${tokenFile}'`
 
 /**
  * OpenCode's configuration for Shinan (agent integrations, "Setting up
@@ -77,10 +80,11 @@ export function AgentSetup() {
           description="In a terminal on that machine, not in the coding tool's chat."
         >
           <p className="text-sm">
-            In bash or zsh, run this, then paste the token and press Enter.
-            Nothing is shown while you paste: the token stays off the screen,
-            out of your shell history and off every command line, and the file
-            is readable only by you, even if it was there before.
+            Run this in any shell (it uses bash, which almost every Linux and
+            macOS machine has), then paste the token and press Enter. Nothing is
+            shown while you paste: the token stays off the screen, out of your
+            shell history and off every command line, and the file is readable
+            only by you, even if it was there before.
           </p>
           <CodeBlock
             label="Commands to store the token"

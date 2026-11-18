@@ -852,8 +852,9 @@ sit behind NAT, firewalls or tailnets. The agent-facing parts of
   (`@modelcontextprotocol/server` 2.4), whose `createMcpHandler` serves the
   2026-07-28 revision and, statelessly, the 2025 `initialize` handshake from
   one per-request server. Each request passes, in order: the per-address
-  request limit (as `/api/agent`), the 64 KB body limit (M2-12 raises it for
-  writes), the `Origin` check (a request carrying any `Origin` but the
+  request limit (as `/api/agent`), a 512 KB body limit (larger than the
+  API's 64 KB, because one catalog proposal may hold 256 KiB of JSON; M2-12
+  reviews it), the `Origin` check (a request carrying any `Origin` but the
   installation's own is refused with 403), and `requireAgent`; the SDK then
   checks the 2026-07-28 headers against the body (400 when they disagree).
   Before the SDK, Shinan refuses a JSON array of messages (400: neither
@@ -873,6 +874,11 @@ sit behind NAT, firewalls or tailnets. The agent-facing parts of
   is logged by name, code and stack frames, and the process keeps serving;
   an uncaught exception is logged the same way and ends the process, for
   the container to restart.
+  The write tools (M2-6, second PR) call M2-4's `proposeCatalogChange`, so
+  every proposal from MCP is applied in a catalog worker with its time
+  limit ([5.3](#53-how-sync-works)), like one from the web app; a full
+  queue is a `busy` tool error the agent retries with the same idempotency
+  key.
   Checked with OpenCode v2.3.0 on Daedalus against a local server: with the
   default `protocol` it connects over 2025-11-25, and with
   `"protocol": "auto"` over 2026-07-28 (`server/discover`); both call the

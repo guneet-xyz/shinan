@@ -333,6 +333,12 @@ a second PR, so M2-2 and M2-3 can start earlier.
 - **Writes are retry-safe** (design rule 3) through the idempotency key.
 - **Security log:** agent index bulk reads (for example `catalog_lists` over
   the whole catalog) recorded as bulk reads; refusals recorded.
+- **As built** (M2-6, [#87](https://github.com/guneet-xyz/shinan/issues/87)):
+  every tool above except `comment_on_catalog_proposal`, which needs
+  proposal comments and comes with M2-4b
+  ([#86](https://github.com/guneet-xyz/shinan/issues/86)); and `/mcp`
+  reads bodies up to 512 KB, the limit proposed below for M2-12, because
+  one proposal may hold 256 KiB of JSON.
 - **Checklist items:** 10.4 (trust labels part), 10.5, 10.7.
 - **Tests:** an MCP client session against a test server for each tool and
   both protocol versions; a cookie-only request refused; a foreign `Origin`

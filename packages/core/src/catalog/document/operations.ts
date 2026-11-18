@@ -27,6 +27,32 @@ export type CatalogOperation =
   | CreateStartHere
   | SetStartHerePath
 
+/** Every operation's name, in the order of catalog §8.1's table. */
+export const operationNames = [
+  "create-entity",
+  "set-fact",
+  "remove-fact",
+  "recheck-facts",
+  "accept-discrepancy",
+  "edit-body",
+  "set-field",
+  "retire",
+  "change-id",
+  "create-schema",
+  "set-schema-key",
+  "create-start-here",
+  "set-start-here-path",
+] as const satisfies readonly CatalogOperation["op"][]
+
+// Fails to compile when an operation is missing from the list.
+const allNamed: Exclude<
+  CatalogOperation["op"],
+  (typeof operationNames)[number]
+> extends never
+  ? true
+  : never = true
+void allNamed
+
 /** A fact as an operation writes it (catalog §4.3). */
 export interface FactInput {
   key: string

@@ -46,7 +46,7 @@ describe("setting up OpenCode", () => {
     expect(
       screen.getByText(/umask 077/, { selector: "code" }).textContent,
     ).toBe(
-      "(umask 077; mkdir -p ~/.config/shinan && chmod 700 ~/.config/shinan && IFS= read -rs t && : > ~/.config/shinan/token && chmod 600 ~/.config/shinan/token && printf '%s\\n' \"$t\" > ~/.config/shinan/token)",
+      `bash -c 'umask 077; mkdir -p ~/.config/shinan && chmod 700 ~/.config/shinan && IFS= read -rs t && : > ~/.config/shinan/token && chmod 600 ~/.config/shinan/token && printf "%s\\n" "$t" > ~/.config/shinan/token'`,
     )
     expect(screen.getByText("opencode mcp list")).toBeTruthy()
   })
