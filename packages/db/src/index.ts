@@ -57,7 +57,10 @@ export const migrationsFolder = fileURLToPath(
   new URL("../migrations", import.meta.url),
 )
 
-export { NestedConnectionError } from "./nesting.js"
+export {
+  NestedConnectionError,
+  takeNestedConnectionRefusals,
+} from "./nesting.js"
 
 export function createDatabase(
   databaseUrl: string,
@@ -89,7 +92,10 @@ export function createDatabase(
   // has already logged it.
   pool.on("error", () => {})
   const db = drizzle({ client: pool, schema })
-  return { db: options.refuseNested ? refuseNestedConnections(db) : db, pool }
+  if (!options.refuseNested) return { db, pool }
+  // The pool handed back is the guarded one too.
+  const guarded = refuseNestedConnections(db)
+  return { db: guarded, pool: guarded.$client }
 }
 
 export interface DatabaseReadiness {
