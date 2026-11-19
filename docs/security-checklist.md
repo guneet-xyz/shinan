@@ -328,8 +328,8 @@ checked each item; this document cites them):
 
 ## Owner decisions for the M2 release
 
-The owner answered on 2026-11-19
-([#92](https://github.com/guneet-xyz/shinan/issues/92); M2-Q14 to M2-Q17 in
+The owner answered on 2026-11-19 (recorded on
+[#92](https://github.com/guneet-xyz/shinan/issues/92#issuecomment-6999453136); M2-Q14 to M2-Q17 in
 the [M2 build plan](build-plan-m2.md#71-answers)):
 
 - **The application's database role (6.7): accepted risk**, option B below,

@@ -666,7 +666,7 @@ to M2-Q17 at the M2 security review, M2-12
    [agent integrations, the skill](agent-integrations.md#the-skill). No
    decision record changes.
 10. **M2-Q14, the application's database role** (owner, 2026-11-19,
-    [#92](https://github.com/guneet-xyz/shinan/issues/92)): option B of the
+    [recorded on #92](https://github.com/guneet-xyz/shinan/issues/92#issuecomment-6999453136)): option B of the
     [security checklist](security-checklist.md#owner-decisions-for-the-m2-release).
     `web` and `worker` keep connecting as the role that owns the tables, and
     can turn off the append-only triggers, as an accepted risk for v0.3.0
@@ -674,12 +674,14 @@ to M2-Q17 at the M2 security review, M2-12
     first work of M3, before git host credentials or a second member's data
     are stored ([#156](https://github.com/guneet-xyz/shinan/issues/156)).
     Recorded as [D-057](decisions/D-057-app-database-role-accepted-risk.md).
-11. **M2-Q15, `web`'s memory limit** (owner, 2026-11-19): 1,536 MiB, with
+11. **M2-Q15, `web`'s memory limit** (owner, 2026-11-19,
+    [recorded on #92](https://github.com/guneet-xyz/shinan/issues/92#issuecomment-6999453136)): 1,536 MiB, with
     the catalog worker's 768 MiB heap. Recorded in
     [architecture §11.2](architecture.md#112-shinan-stack) and the
     deployment request ([infra/musashi#130](https://git.guneet.dev/infra/musashi/issues/130)).
     No decision record changes.
-12. **M2-Q16, M2's limits** (owner, 2026-11-19): all accepted as built:
+12. **M2-Q16, M2's limits** (owner, 2026-11-19,
+    [recorded on #92](https://github.com/guneet-xyz/shinan/issues/92#issuecomment-6999453136)): all accepted as built:
     - request bodies: 512 KB on `/mcp`, 272 KiB on the catalog proposal and
       repair routes, refused before they are read;
     - requests in flight: at most 8 per agent token or signed-in person, and
@@ -698,7 +700,8 @@ to M2-Q17 at the M2 security review, M2-12
     and [security checklist](security-checklist.md) 1.11. No decision
     record changes.
 
-13. **M2-Q17, M2's other choices built as proposed** (owner, 2026-11-19):
+13. **M2-Q17, M2's other choices built as proposed** (owner, 2026-11-19,
+    [recorded on #92](https://github.com/guneet-xyz/shinan/issues/92#issuecomment-6999453136)):
     all accepted as decided, as built. Among them:
     - the agent token's format (`shinan_agent_` and 43 letters and digits;
       [identity §7](identity.md#7-tokens));

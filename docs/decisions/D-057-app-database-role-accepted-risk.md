@@ -4,7 +4,7 @@ title: The application's database role can turn off the append-only triggers; an
 status: accepted
 date: 2026-11-19
 decided_by: owner
-evidence: "https://github.com/guneet-xyz/shinan/issues/92 (M2-Q14); https://github.com/guneet-xyz/shinan/pull/155"
+evidence: "Owner, in conversation on 2026-11-19; recorded on https://github.com/guneet-xyz/shinan/issues/92#issuecomment-6999453136 (M2-Q14)"
 supersedes: []
 superseded_by: []
 amends: []
@@ -13,8 +13,8 @@ amended_by: []
 
 # D-057: The application's database role can turn off the append-only triggers; an accepted risk for v0.3.0
 
-Status: **Accepted** by the owner on 2026-11-19
-([issue #92](https://github.com/guneet-xyz/shinan/issues/92), M2-Q14 in the
+Status: **Accepted** by the owner on 2026-11-19, in conversation (recorded on
+[issue #92](https://github.com/guneet-xyz/shinan/issues/92#issuecomment-6999453136); M2-Q14 in the
 [M2 build plan](../build-plan-m2.md#71-answers)): option B of the
 [security checklist](../security-checklist.md#owner-decisions-for-the-m2-release),
 as recommended.
@@ -92,6 +92,6 @@ None.
 
 ## History
 
-- 2026-11-19: accepted by the owner on issue #92 (M2-Q14), for the M2
-  release. Recorded in the M2-12 pull request that completes the security
+- 2026-11-19: accepted by the owner in conversation, for the M2 release,
+  and recorded on [issue #92](https://github.com/guneet-xyz/shinan/issues/92#issuecomment-6999453136) (M2-Q14). Recorded in the M2-12 pull request that completes the security
   checklist ([#155](https://github.com/guneet-xyz/shinan/pull/155)).
