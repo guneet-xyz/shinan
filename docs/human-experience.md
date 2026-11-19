@@ -865,7 +865,7 @@ An entity page shows, in order of importance:
     opened and compared with the current one. **Proposed.** Reason: with no
     Git mirror (N-5), the wiki is where people read a page's history.
 
-**Proposed (M2-7, [#88](https://github.com/guneet-xyz/shinan/issues/88)):**
+**Decided (owner, 2026-11-19, M2-Q16; M2-7, [#88](https://github.com/guneet-xyz/shinan/issues/88)):**
 details of the page as built.
 
 - **Owning sources** are the entity's repository, issue tracker and
@@ -900,8 +900,8 @@ details of the page as built.
   "Waiting for approval" step of a start-here path opens catalog review.
 - **A page that could not be read in full** lists what could not be read.
   For a workspace owner it links **Repair this page**; others are told a
-  workspace owner can repair it. **Proposed
-  ([#133](https://github.com/guneet-xyz/shinan/issues/133)):** the repair
+  workspace owner can repair it. **Decided
+  (owner, 2026-11-19, M2-Q16; [#133](https://github.com/guneet-xyz/shinan/issues/133)):** the repair
   page shows the problems and the page's whole stored text to correct, with
   an explanation. Saving replaces the whole text at once, as the owner's
   approval ([catalog §8.3](catalog.md#83-validation)). If it adds a problem,
@@ -938,7 +938,7 @@ where a recheck interval is set for its key in the type's schema. **Decided**
 - The same freshness display is used wherever a fact appears outside its page,
   for example in search results or a task's related entities. **Proposed.**
   Reason: a fact quoted without its age loses the trust signal.
-- **Proposed (M2-7):** the exact check (when, by whom, scope, source and
+- **Decided (owner, 2026-11-19, M2-Q16; M2-7):** the exact check (when, by whom, scope, source and
   what was not checked) is one step away, behind "How it was checked" on
   each fact. The one-line freshness summary is the same on the page and in
   the type index: facts, the oldest check, how many are due, never checked
@@ -970,7 +970,7 @@ where a recheck interval is set for its key in the type's schema. **Decided**
 **Proposed.** Reason: the `workspace` repository's catalog is navigated the
 same way (per-type indexes and links) and that works.
 
-**Proposed (M2-7):** until the Now screen exists (M3), opening a workspace
+**Decided (owner, 2026-11-19, M2-Q16; M2-7):** until the Now screen exists (M3), opening a workspace
 opens its wiki home: Start here, search, the types, the workspace-wide
 lists and recent changes. A type's index lists at most 1,000 entities, the
 first by ID, and says when there are more and that sorting then orders only
@@ -997,7 +997,7 @@ those. Search leaves retired entities out unless asked.
   and must not be refreshed mechanically, and the catalog's rule that every
   change, including a recheck, is a catalog proposal.
 
-**Proposed (M2-8, [#89](https://github.com/guneet-xyz/shinan/issues/89)):**
+**Decided (owner, 2026-11-19, M2-Q16; M2-8, [#89](https://github.com/guneet-xyz/shinan/issues/89)):**
 details of the editors as built.
 
 - **One path.** Every editor builds the operations agents send
@@ -1055,7 +1055,7 @@ for ("before saving, the screen says…").
   **Proposed.** Reason: with most changes applying at once (O-3), review after
   the fact is how people stay informed and correct mistakes.
 
-**Proposed (M2-8):** catalog review is in the wiki (`Review`). The waiting
+**Decided (owner, 2026-11-19, M2-Q16; M2-8):** catalog review is in the wiki (`Review`). The waiting
 list shows each proposal's number, author, what it touches and why it needs
 approval. A proposal's page shows its explanation, related task, kinds of
 change, validation's warnings and, per document, each fact before and
@@ -1079,7 +1079,7 @@ Recent changes link each revision to its proposal. A proposal whose agent
 has since been disabled, or whose member has left, says so where it is
 decided.
 
-**Proposed (M2-8, with M2-4b's operations):**
+**Decided (owner, 2026-11-19, M2-Q16; M2-8, with M2-4b's operations):**
 
 - **Comments** are listed on a proposal's page, oldest first, a page at a
   time, agents' marked as such and with hidden characters shown; anyone who
@@ -1119,7 +1119,7 @@ owned by the [Catalog](catalog.md) document; this section is how it is shown.
   whether the person has opened it, and whether it changed since they did.
   **Proposed.** Reason: the catalog keeps changing; a returning person should
   see what is new without rereading everything.
-- **Proposed (M2-7):** "opened" is recorded when a person opens a page, with
+- **Decided (owner, 2026-11-19, M2-Q16; M2-7):** "opened" is recorded when a person opens a page, with
   the catalog revision the page stood at; a step "changed since you opened
   it" when the page has a later revision. These records are personal, kept
   in a small table, never catalog content and never events.
@@ -1143,7 +1143,7 @@ owned by the [Catalog](catalog.md) document; this section is how it is shown.
   are told.
 - The page shows the total size of the agents' path and warns when it grows
   large. **Proposed.** Reason: every agent session reads all of it.
-  **Proposed (M2-7):** the preview is the agents' path exactly as an agent
+  **Decided (owner, 2026-11-19, M2-Q16; M2-7):** the preview is the agents' path exactly as an agent
   receives it in MCP's `workspace_context`: its steps, notes and the
   entities they name, with their trust labels, as the compact JSON the same
   code writes. Its size is that text's size in UTF-8, and the warning shows
@@ -1287,7 +1287,7 @@ types are not a setting: they are type schema documents in the catalog, changed
 through catalog proposals ([moving around the wiki](#moving-around-the-wiki)).
 Reason: one screen per thing the workspace owns.
 
-**As built (M2-10, [#91](https://github.com/guneet-xyz/shinan/issues/91)), proposed:**
+**As built (M2-10, [#91](https://github.com/guneet-xyz/shinan/issues/91)), decided (owner, 2026-11-19, M2-Q16):**
 the Data tab has **Purge catalog text** for workspace owners
 ([catalog §9](catalog.md#9-history-and-purge)). It first warns that a purge
 cleans Shinan, not copies that left it (exports, the host's backups, agents'
@@ -1310,7 +1310,7 @@ an entity page's history. Exports come with a later milestone.
 
 Screen details:
 
-- **Catalog settings** (**proposed**, M2-8): every member sees the tab.
+- **Catalog settings** (**decided**, owner, 2026-11-19, M2-Q16; M2-8): every member sees the tab.
   It says which changes wait for approval, lists the type schema
   documents (changed from their type's page) and links to catalog review.
   It shows the strict setting, on or off; a workspace owner turns it on
@@ -1351,7 +1351,7 @@ Screen details:
   already connected to another workspace cannot be added (owner, O-59, [#25]).
   Each repository shows its "turn new issues into tasks" setting, on by
   default (owner, NO-2, [#26]). **Proposed** wording.
-- **Agents.** **Proposed (M2-5):** the same rows as Your agents, with the
+- **Agents.** **Decided (owner, 2026-11-19, M2-Q16; M2-5):** the same rows as Your agents, with the
   member each agent acts for. On another member's agent a workspace owner is
   offered only Revoke token and Disable; their own agents have every action.
   "Last agent session seen" joins with agent sessions (M4). Like the other
@@ -1472,7 +1472,7 @@ Because tokens never expire, the last use is shown prominently so unused ones
 are easy to spot and revoke. **Proposed.** Reason: long-lived tokens (O-44)
 make revoking unused ones the main protection.
 
-**Proposed (M2-5, [#83](https://github.com/guneet-xyz/shinan/issues/83)),
+**Decided (owner, 2026-11-19, M2-Q16; M2-5, [#83](https://github.com/guneet-xyz/shinan/issues/83)),
 as built until browser approval arrives (M4):**
 
 - **Your agents** is its own page (`/account/agents`), linked from Your
@@ -1495,7 +1495,7 @@ as built until browser approval arrives (M4):**
   in again. The token is shown once, with a Copy button, a reminder that it
   will not be shown again, and how the coding tool sends it
   (`Authorization: Bearer`).
-- **Proposed (M2-9, [#90](https://github.com/guneet-xyz/shinan/issues/90)):**
+- **Decided (owner, 2026-11-19, M2-Q16; M2-9, [#90](https://github.com/guneet-xyz/shinan/issues/90)):**
   **Set up OpenCode** (`/account/agents/setup`), linked from the top of Your
   agents and from the token shown once (in a new tab, so the token stays on
   screen): four numbered steps (make a token, store it on the machine, add

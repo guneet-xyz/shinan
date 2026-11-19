@@ -53,7 +53,8 @@ D-050 to D-053 record the owner's answers to the integration review on
 [issue #26](https://github.com/guneet-xyz/shinan/issues/26) (NO-numbers).
 D-054 records a later owner decision made in conversation and reverses O-66.
 D-055 records a later owner decision on the web app's styling.
-D-056 records the owner's answer M2-Q2 to the [M2 build plan](../build-plan-m2.md#7-owner-answers).
+D-056 records the owner's answer M2-Q2 to the [M2 build plan](../build-plan-m2.md#7-owner-answers),
+and D-057 its answer M2-Q13, an accepted risk for the M2 release.
 The numbers are in each record's `evidence` field and in the mappings for
 [issue #25](#owner-answers-on-issue-25) and [issue #26](#owner-answers-on-issue-26).
 
@@ -115,6 +116,7 @@ The numbers are in each record's `evidence` field and in the mappings for
 | [D-054](D-054-public-image-registry-project.md)           | The `shinan` image project on `cr.guneet.dev` is public; Musashi pulls without a key                                  | Accepted | 2026-11-17 |                                | Architecture and operations; Build plan; Operator guide                                                           |
 | [D-055](D-055-tailwind-and-shadcn.md)                     | The web app uses Tailwind CSS and shadcn/ui components                                                                | Accepted | 2026-11-17 |                                | Architecture and operations; Build plan                                                                           |
 | [D-056](D-056-public-skill-path.md)                       | The skill is served without sign-in on a public path, `/skills/`                                                      | Accepted | 2026-11-17 |                                | Agent integrations; Identity, agents and permissions; Architecture and operations; Build plan                     |
+| [D-057](D-057-app-database-role-accepted-risk.md)         | The application's database role can turn off the append-only triggers; an accepted risk for v0.3.0                    | Accepted | 2026-11-19 |                                | Security checklist; Architecture and operations; M2 build plan                                                    |
 
 The full list of owning documents, with planned paths, is in each record.
 
@@ -470,3 +472,9 @@ None.
   the skill is served without sign-in at `/skills/`
   ([issue #79](https://github.com/guneet-xyz/shinan/issues/79)). It amends
   no record.
+- 2026-11-19: D-057 added for the owner's answer M2-Q13 to the M2 build
+  plan: the application's database role, which can turn off the append-only
+  triggers, is an accepted risk for v0.3.0, fixed first in M3
+  ([issue #92](https://github.com/guneet-xyz/shinan/issues/92),
+  [#156](https://github.com/guneet-xyz/shinan/issues/156)). It amends no
+  record.

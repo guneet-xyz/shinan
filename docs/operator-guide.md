@@ -254,12 +254,16 @@ you upgrade:
   don't limit request bodies below 512 KB ([reverse proxy](#reverse-proxy)).
   Caddy needs no change; nginx needs `proxy_buffering off` and a longer
   `proxy_read_timeout` for `/mcp`.
-- **Limits** (all **proposed**, and may change): `/mcp` takes bodies up to
-  512 KB and the catalog proposal routes 272 KiB; at most 8 requests in
-  flight per agent token or signed-in person, and 16 per address, on `/mcp`
-  and the proposal routes; 30 seconds to send a whole request; per agent,
-  600 requests a minute, and 60 catalog proposals and 60 comments in 10
-  minutes.
+- **Limits** (decided by the owner for 0.3): `/mcp` takes bodies up to
+  512 KB, and the catalog proposal and repair routes 272 KiB; at most 8
+  requests in flight per agent token or signed-in person, and 16 per
+  address, on `/mcp` and those routes (429 with `Retry-After: 1`); 30
+  seconds to send a whole request; per address, 300 requests a minute
+  (shared with `/api`, so every agent session on one machine shares it);
+  per agent token, 600 requests a minute; per agent, 60 catalog proposals
+  and 60 comments in 10 minutes. A rate-limited request gets 429 with
+  `Retry-After` set to the seconds left in its window: wait that long
+  ([agents](#agents-the-mcp-endpoint-tokens-and-the-skill)).
 - **Migrations** `0005` to `0012` only add tables, columns, indexes and
   triggers; `0012` replaces the append-only triggers on events and revision
   text with ones that let a purge's own transaction change their text, and
@@ -306,7 +310,10 @@ in the `Authorization` header, and load the agent skill from
   bodies are read.
   OpenCode (checked in its source, 2026-11-18) retries a 429 twice, after
   250 ms and 1 s, only while connecting and listing tools; a tool call that
-  gets 429 fails at once, and the agent sees the error and can call again.
+  gets 429 fails at once, and the agent sees the error. After a rate-limit
+  429 it should wait `Retry-After` seconds, up to a minute, before calling
+  again; after an in-flight 429 it can call again once an earlier call is
+  answered.
   Normal use, a few tool calls at a time, stays well below the cap.
   Agents' catalog proposals have their own limit (60 in 10 minutes).
 - **`/skills/`** serves only the skill's own files, the same for every

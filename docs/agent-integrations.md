@@ -441,7 +441,7 @@ the field names and skill wording to this document. All **proposed**:
   fact's author is its fact check's actor. Reason: a mechanical edit or a
   revert by a person must not make an agent's words look like the person's
   ([build plan M2-Q6](build-plan-m2.md#71-answers)).
-- **Proposed (M2-6, [#87](https://github.com/guneet-xyz/shinan/issues/87)):**
+- **Decided (owner, 2026-11-19, M2-Q16; M2-6, [#87](https://github.com/guneet-xyz/shinan/issues/87)):**
   how labels appear and what they rest on. A `label` object
   (`author_kind`, `author`, `instruction`) on a JSON object covers that
   object's own text fields; objects inside it carry their own. Every object
@@ -529,7 +529,7 @@ Reason: together they cover the level 1 actions in the plan.
   means agents **record verification**. No tool marks a task done.
 - **Open:** whether the agent index is also offered as MCP resources
   ([question 5](#open-questions)).
-- **Proposed (M2-6, [#87](https://github.com/guneet-xyz/shinan/issues/87)):**
+- **Decided (owner, 2026-11-19, M2-Q16; M2-6, [#87](https://github.com/guneet-xyz/shinan/issues/87)):**
   the tool names, as built for the catalog:
   - reads: `workspace_context`, `search_catalog` (by text, by type and
     status, or an entity's neighbours with `related_to`; each result says
@@ -604,7 +604,7 @@ All **proposed**:
   The `workspace` repository's own collaboration rules get a note at the start
   of the trial, in a separate change to that repository.
 
-**Proposed (M2-9, [#90](https://github.com/guneet-xyz/shinan/issues/90)),
+**Decided (owner, 2026-11-19, M2-Q16; M2-9, [#90](https://github.com/guneet-xyz/shinan/issues/90)),
 as built:**
 
 - **Source.** The skill is Markdown in `packages/skill/skill/shinan/`: a
@@ -652,7 +652,7 @@ as built:**
 
 ### Setting up OpenCode with a hand-made token
 
-**Proposed (M2-9), as built:** a signed-in page, **Set up OpenCode**
+**Decided (owner, 2026-11-19, M2-Q16; M2-9), as built:** a signed-in page, **Set up OpenCode**
 (`/account/agents/setup`), linked from Your agents and from the token shown
 once (in a new tab, so the token stays on screen). It fills in the
 installation's own address and gives four steps:
@@ -675,8 +675,8 @@ installation's own address and gives four steps:
    whatever shell they are pasted into (checked in bash, zsh, dash, fish
    and tcsh), so wherever bash is installed, a shell without `read -s`
    never ends up reading the pasted token as a command line, or keeping it
-   in its history. Proposed
-   (M2-6, after the [#119](https://github.com/guneet-xyz/shinan/pull/119)
+   in its history. Decided (owner, 2026-11-19, M2-Q16;
+   M2-6, after the [#119](https://github.com/guneet-xyz/shinan/pull/119)
    review).
 
 3. Add to `opencode.jsonc` in a folder above the projects that should use
