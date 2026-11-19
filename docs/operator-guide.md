@@ -235,8 +235,10 @@ you took in step 2.
 
 ### Upgrading from 0.2 to 0.3 (the catalog)
 
-0.3 adds the catalog, the agents' MCP endpoint and the agent skill. Before you
-upgrade:
+0.3 adds the catalog (agent index, wiki, catalog proposals and review,
+repair, purge), the agents' MCP endpoint, the agent skill and changing one's
+own email address. The release notes list every change; for operators, before
+you upgrade:
 
 - **Memory.** `web` now runs a [catalog worker](#catalog-workers) thread. The
   reference Compose file raises its limit from 512 MiB to 1,536 MiB
@@ -244,14 +246,24 @@ upgrade:
   `mem_limit` the same way. If the host is short of memory, a smaller ceiling
   works with a smaller heap: `SHINAN_CATALOG_WORKER_HEAP_MB=640` and 1,280 MiB.
 - **Settings.** `SHINAN_CATALOG_WORKERS` and `SHINAN_CATALOG_WORKER_HEAP_MB`
-  are new and optional (defaults 1 and 768).
+  are new and optional (defaults 1 and 768), and so is `SHINAN_WEB_MEMORY`
+  in the reference Compose file. No new secrets.
 - **Your proxy** must route every path: agents use `/mcp`, and OpenCode
   fetches `/skills/` without signing in. Don't buffer `/mcp` answers (some
   are short event streams) or time them out in under a few minutes, and
   don't limit request bodies below 512 KB ([reverse proxy](#reverse-proxy)).
   Caddy needs no change; nginx needs `proxy_buffering off` and a longer
   `proxy_read_timeout` for `/mcp`.
-- **Migrations** only add tables, columns, indexes and triggers. 0.2's code
+- **Limits** (all **proposed**, and may change): `/mcp` takes bodies up to
+  512 KB and the catalog proposal routes 272 KiB; at most 8 requests in
+  flight per agent token or signed-in person, and 16 per address, on `/mcp`
+  and the proposal routes; 30 seconds to send a whole request; per agent,
+  600 requests a minute, and 60 catalog proposals and 60 comments in 10
+  minutes.
+- **Migrations** `0005` to `0012` only add tables, columns, indexes and
+  triggers; `0012` replaces the append-only triggers on events and revision
+  text with ones that let a purge's own transaction change their text, and
+  nothing else. 0.2's code
   runs on the upgraded database: rolling back is setting the previous digest
   again, and the catalog and agents stay in the database, unused, until you
   upgrade again. Until then, agents' requests to `/mcp` get 404. 0.2 does
@@ -263,9 +275,12 @@ upgrade:
   database with `pg_restore --clean` leaves 0.3's tables behind. A failed
   `migrate` changes nothing: it applies all pending migrations in one
   transaction.
-- **The agent index** has nothing to rebuild on the first start, since the
-  catalog starts empty. From then on the worker checks it every night
-  ([the agent index](#the-agent-index)).
+- **The agent index.** On every start the worker asks for a rebuild of any
+  workspace whose index another release built or whose rebuild never
+  finished. On the first 0.3 start the catalog is empty, so there is
+  nothing to rebuild. From then on the worker checks the index every night
+  ([the agent index](#the-agent-index)); a rebuild gives the event loop back
+  every 50 ms, so email is not held up.
 
 ## Agents: the MCP endpoint, tokens and the skill
 
