@@ -53,8 +53,9 @@ recorded.
 
 - **Decided:** `/skills/` is an exception to "nothing without sign-in". It
   serves only the built skill files, never workspace content; anyone can read
-  Shinan's agent conventions, while the source repository stays private
-  ([D-011](D-011-private-repository-and-brand.md)).
+  Shinan's agent conventions. (Written while the source repository was
+  private, [D-011](D-011-private-repository-and-brand.md); it has been public
+  since [D-058](D-058-public-repository.md), owner, 2026-11-19.)
 - **Decided:** the [identity](../identity.md#10-protections-for-a-public-installation),
   [architecture](../architecture.md#102-web-hardening) and
   [agent integrations](../agent-integrations.md#the-skill) documents list the
@@ -85,3 +86,4 @@ None.
 
 - 2026-11-17: accepted by the owner with the M2 build plan; recorded on
   [issue #79](https://github.com/guneet-xyz/shinan/issues/79).
+- 2026-11-19: Consequences updated for [D-058](D-058-public-repository.md) (the repository is public; owner, in conversation, recorded on [issue #159](https://github.com/guneet-xyz/shinan/issues/159#issuecomment-7002059477)). Decision and Reasons unchanged.

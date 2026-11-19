@@ -8,7 +8,7 @@ evidence: https://github.com/guneet-xyz/shinan/issues/1
 supersedes: []
 superseded_by: []
 amends: []
-amended_by: []
+amended_by: [D-058]
 ---
 
 # D-011: Private repository, internal brand "Shinan", first deployment at `shinan.guneet.dev`
@@ -16,6 +16,7 @@ amended_by: []
 Status: **Accepted** by the owner on 2026-11-16, with the plan
 ([issue #1](https://github.com/guneet-xyz/shinan/issues/1),
 [PR #2](https://github.com/guneet-xyz/shinan/pull/2)).
+Amended by [D-058](D-058-public-repository.md): the repository is public.
 
 ## Context
 
@@ -41,7 +42,10 @@ Private repository, internal brand "Shinan", first deployment at
 ## Consequences
 
 - **Decided:** the repository's content is not copied to public places
-  ([AGENTS.md](../../AGENTS.md)).
+  ([AGENTS.md](../../AGENTS.md)). **No longer holds** (owner, 2026-11-19,
+  [D-058](D-058-public-repository.md)): the repository is public, and the
+  rule is now that secrets, credentials and private infrastructure details
+  never go in it.
 - **Decided:** the web app is served at `shinan.guneet.dev`
   ([plan, section 5](../plan.md#5-integration-points)); where it runs is
   [D-016](D-016-musashi-and-deployment-approval.md).
@@ -62,11 +66,13 @@ Private repository, internal brand "Shinan", first deployment at
 
 ## Related open questions
 
-- Licensing if the project is ever made public
-  ([plan, question 10](../plan.md#7-open-questions)).
+- Licensing now that the project is public
+  ([plan, question 10](../plan.md#7-open-questions);
+  [D-058](D-058-public-repository.md)).
 
 ## History
 
 - Recorded as accepted ("agreed in conversation with the owner") in the first
   plan draft (commit `5c3330c`, 2026-11-16).
 - Approved with the plan on 2026-11-16 (merge commit `248a2c5`).
+- 2026-11-19: amended by [D-058](D-058-public-repository.md) (owner, in conversation; recorded on [issue #159](https://github.com/guneet-xyz/shinan/issues/159#issuecomment-7002059477)). Decision and Reasons unchanged; maintained sections updated.

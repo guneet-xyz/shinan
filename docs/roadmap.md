@@ -106,13 +106,17 @@ its applications' data (per [architecture](architecture.md), from the
 
 ### Activity in candidate projects
 
-| Repository             | Host, visibility | Open issues                    | Created since 2026-11-01 | Issue authors other than the owner         |
-| ---------------------- | ---------------- | ------------------------------ | ------------------------ | ------------------------------------------ |
-| `guneet-xyz/shinan`    | GitHub, private  | 11 (document issues #3 to #13) | 12 PRs                   | none                                       |
-| `guneet-xyz/mon`       | GitHub, public   | 19                             | 20 PRs                   | none                                       |
-| `guneet-xyz/easyshell` | GitHub, public   | 28                             | 79 issues, 22 PRs        | one closed issue (#129, opened 2025-03-10) |
-| `cranklabs/walls`      | GitHub, public   | 10                             | 14 PRs                   | none                                       |
-| `guneet-xyz/dockyard`  | GitHub, public   | 0                              | 8 PRs                    | none                                       |
+| Repository             | Host, visibility                          | Open issues                    | Created since 2026-11-01 | Issue authors other than the owner         |
+| ---------------------- | ----------------------------------------- | ------------------------------ | ------------------------ | ------------------------------------------ |
+| `guneet-xyz/shinan`    | GitHub, private (public since; see below) | 11 (document issues #3 to #13) | 12 PRs                   | none                                       |
+| `guneet-xyz/mon`       | GitHub, public                            | 19                             | 20 PRs                   | none                                       |
+| `guneet-xyz/easyshell` | GitHub, public                            | 28                             | 79 issues, 22 PRs        | one closed issue (#129, opened 2025-03-10) |
+| `cranklabs/walls`      | GitHub, public                            | 10                             | 14 PRs                   | none                                       |
+| `guneet-xyz/dockyard`  | GitHub, public                            | 0                              | 8 PRs                    | none                                       |
+
+Note (owner, 2026-11-19): `guneet-xyz/shinan` is now public on purpose
+([D-058](decisions/D-058-public-repository.md)); the table keeps the
+visibility observed when it was written.
 
 In `infra/musashi` on Forgejo, 14 issues concern mon or easyshell rollouts
 (for example #49, #70, #91, #98 for mon and #21, #31, #46, #99 for
@@ -277,13 +281,13 @@ they cover both git hosts, multi-repository tasks, deployment approvals, high
 volume and work that needs a person, while keeping the most sensitive
 infrastructure as read-only context.
 
-| Project                                                                                             | What it tests                                                                                                                                                                                                                                                          |
-| --------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Shinan** (`guneet-xyz/shinan`, GitHub, private)                                                   | Daily use by the owner and agents; a private repository; Shinan used on its own development. Its GitHub issues and PRs remain if Shinan breaks.                                                                                                                        |
-| **mon** (`guneet-xyz/mon` on GitHub; `infra/musashi`, `infra/anzen`, `guneet/terraform` on Forgejo) | Tasks whose work spans both hosts and four repositories; two machines; several services (ingress, Obscuro, container registry, DNS); deployment approvals (9 rollout issues in `infra/musashi`).                                                                       |
-| **easyshell** (`guneet-xyz/easyshell` on GitHub; `infra/musashi` on Forgejo)                        | High volume (79 issues and 22 PRs created since 2026-11-01); work that needs a person (#50); releases through Dockyard rolled out on Forgejo.                                                                                                                          |
-| Walls (reserve)                                                                                     | A second GitHub organisation (`cranklabs`) and frequent cross-host releases. Adding it needs the GitHub App to cover `cranklabs`, which a private app owned by `guneet-xyz` cannot (per [git host integrations](git-hosts.md)); see [open questions](#open-questions). |
-| guneet.dev and Resume (reserve)                                                                     | A task across two repositories on one host; a merge that publishes (Resume). Both in `guneet-xyz`, so no app change.                                                                                                                                                   |
+| Project                                                                                             | What it tests                                                                                                                                                                                                                                                                                                |
+| --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Shinan** (`guneet-xyz/shinan`, GitHub, public)                                                    | Daily use by the owner and agents; Shinan used on its own development. (Chosen while the repository was private; it is public since [D-058](decisions/D-058-public-repository.md), owner, 2026-11-19, so the trial no longer tests a private repository.) Its GitHub issues and PRs remain if Shinan breaks. |
+| **mon** (`guneet-xyz/mon` on GitHub; `infra/musashi`, `infra/anzen`, `guneet/terraform` on Forgejo) | Tasks whose work spans both hosts and four repositories; two machines; several services (ingress, Obscuro, container registry, DNS); deployment approvals (9 rollout issues in `infra/musashi`).                                                                                                             |
+| **easyshell** (`guneet-xyz/easyshell` on GitHub; `infra/musashi` on Forgejo)                        | High volume (79 issues and 22 PRs created since 2026-11-01); work that needs a person (#50); releases through Dockyard rolled out on Forgejo.                                                                                                                                                                |
+| Walls (reserve)                                                                                     | A second GitHub organisation (`cranklabs`) and frequent cross-host releases. Adding it needs the GitHub App to cover `cranklabs`, which a private app owned by `guneet-xyz` cannot (per [git host integrations](git-hosts.md)); see [open questions](#open-questions).                                       |
+| guneet.dev and Resume (reserve)                                                                     | A task across two repositories on one host; a merge that publishes (Resume). Both in `guneet-xyz`, so no app change.                                                                                                                                                                                         |
 
 Not in the trial: Dockyard, Drawspace and Obscuro (overlap or low activity);
 Daedalus and Scripts (low activity; Daedalus appears as a `machine` entity

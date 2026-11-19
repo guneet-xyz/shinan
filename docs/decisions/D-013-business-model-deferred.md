@@ -36,9 +36,12 @@ No evidence yet of demand outside our own use.
 - **Decided:** building a business is not a goal of this phase
   ([plan, section 2](../plan.md#2-who-it-is-for)).
 - **Decided:** the repository stays private for now
-  ([D-011](D-011-private-repository-and-brand.md)).
-- **Open:** licensing if the project is ever made public
-  ([plan, question 10](../plan.md#7-open-questions)).
+  ([D-011](D-011-private-repository-and-brand.md)). **No longer holds**
+  (owner, 2026-11-19): the repository is public
+  ([D-058](D-058-public-repository.md)); licensing is still deferred.
+- **Open:** licensing, now that the project is public
+  ([plan, question 10](../plan.md#7-open-questions);
+  [D-058](D-058-public-repository.md)).
 - **Open:** what "proved itself" means. Owned by
   [roadmap and migration](../roadmap.md).
 
@@ -54,7 +57,7 @@ No evidence yet of demand outside our own use.
 
 ## Related open questions
 
-- Licensing if the project is ever made public
+- Licensing now that the project is public
   ([plan, question 10](../plan.md#7-open-questions)).
 
 ## History
@@ -62,3 +65,4 @@ No evidence yet of demand outside our own use.
 - Recorded as accepted ("agreed in conversation with the owner") in the first
   plan draft (commit `5c3330c`, 2026-11-16).
 - Approved with the plan on 2026-11-16 (merge commit `248a2c5`).
+- 2026-11-19: Consequences and Related open questions updated for [D-058](D-058-public-repository.md) (the repository is public; owner, in conversation, recorded on [issue #159](https://github.com/guneet-xyz/shinan/issues/159#issuecomment-7002059477)). Decision and Reasons unchanged.
