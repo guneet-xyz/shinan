@@ -114,7 +114,7 @@ lines, then a Markdown body.
   tools already use; the limited subset keeps documents easy to read and
   parse the same way everywhere. Nested values are allowed because facts carry
   state and provenance.
-- **Decided (owner, 2026-11-19, M2-Q16; M2-1, [#82](https://github.com/guneet-xyz/shinan/issues/82)):**
+- **Decided (owner, 2026-11-19, M2-Q17; M2-1, [#82](https://github.com/guneet-xyz/shinan/issues/82)):**
   how the subset is read. YAML 1.2's core schema, so `no`, `on` and dates stay
   text. Refused: anchors and aliases, tags, directives, `---` or `...` inside
   the frontmatter, duplicate keys, keys that are not plain text, and infinite
@@ -132,7 +132,7 @@ lines, then a Markdown body.
   [#113](https://github.com/guneet-xyz/shinan/issues/113)). Reason: every
   reader (the index, the export, a person) then agrees on what the text
   says, and code that keeps keys in plain objects cannot be misled.
-- **Decided (owner, 2026-11-19, M2-Q16; M2-1):** limits on what Shinan reads, checked before anything
+- **Decided (owner, 2026-11-19, M2-Q17; M2-1):** limits on what Shinan reads, checked before anything
   else. A document is at most 64 KiB of UTF-8 (65,536 bytes); the largest
   `workspace` repository document is about 19 KB. In the body:
   - a line may start with at most 32 nested quote or list markers;
@@ -170,7 +170,7 @@ lines, then a Markdown body.
   ([security checklist 10.8](security-checklist.md#10-features-not-built-yet);
   M2-4, M2-6).
 
-- **Decided (owner, 2026-11-19, M2-Q16; M2-1b, [#102](https://github.com/guneet-xyz/shinan/issues/102)):**
+- **Decided (owner, 2026-11-19, M2-Q17; M2-1b, [#102](https://github.com/guneet-xyz/shinan/issues/102)):**
   the body is read with markdown-it, in one shared configuration
   (`@shinan/markdown`) that the wiki renders with too, so the server and the
   wiki agree on what is a heading and what is a link: CommonMark plus
@@ -291,7 +291,7 @@ are not facts about the world, so they carry no fact state.
   the `workspace` repository's checker catches missing link targets, which has
   kept its entries consistent. The same links also work as relative paths in
   an [export](#22-export-the-exit-path).
-- **Decided (owner, 2026-11-19, M2-Q16; M2-1):** a body link, image or link definition is a reference
+- **Decided (owner, 2026-11-19, M2-Q17; M2-1):** a body link, image or link definition is a reference
   when its destination has no scheme (such as `https:`) and does not start
   with `/`, `.`, `#` or `?`; a `#section` part is ignored, so
   `[cautions](machine/musashi#cautions)` refers to `machine/musashi`. Reason:
@@ -537,7 +537,7 @@ A lasting decision with its reasoning, for example how releases are versioned.
 
 - **Fields beyond the common ones:** `decision_state`: `proposed`, `accepted`,
   `rejected` or `superseded`; `decided_on` (date); `decided_by`. **Decided
-  (owner, 2026-11-19, M2-Q16; M2-1):** `decision_state` is required on decisions; `decided_by` is a
+  (owner, 2026-11-19, M2-Q17; M2-1):** `decision_state` is required on decisions; `decided_by` is a
   reference to a `person` entity, or `unknown`; these fields are refused on
   other types.
 - **Relations:** `supersedes` another decision; `applies-to` entities (many);
@@ -560,12 +560,12 @@ catalog".
 - **Facts:** `enforcement`: `shinan` (Shinan enforces it), `git-host` (for
   example branch protection), or `convention` (people and agents follow it);
   for `shinan` and `git-host`, an `observed` fact that the enforcement is
-  actually in place. **Decided (owner, 2026-11-19, M2-Q16; M2-1):** both are the one key `enforcement`:
+  actually in place. **Decided (owner, 2026-11-19, M2-Q17; M2-1):** both are the one key `enforcement`:
   the `intended` fact says how the rule is meant to be enforced and an
   `observed` fact what was seen, so a difference shows as a
   [discrepancy](#47-discrepancies).
 - **Relations:** `applies-to` entity types, specific entities or the whole
-  workspace (many); `see-also` runbooks (many). **Decided (owner, 2026-11-19, M2-Q16; M2-1):** a type is
+  workspace (many); `see-also` runbooks (many). **Decided (owner, 2026-11-19, M2-Q17; M2-1):** a type is
   written as its schema document's ID (`applies-to: schema/machine`), the
   whole workspace as `workspace`; the same holds for runbooks and decisions.
 - **Body:** the rule; why; what it covers and does not; exceptions.
@@ -583,7 +583,7 @@ Describes a person for readers: responsibilities, areas they own, how to reach
 them for this work.
 
 - **Facts:** `member` (link to the member record, or none); responsibilities as
-  prose. **Decided (owner, 2026-11-19, M2-Q16; M2-1):** the `member` fact holds the person's handle,
+  prose. **Decided (owner, 2026-11-19, M2-Q17; M2-1):** the `member` fact holds the person's handle,
   which is unique in the installation and never changes
   ([identity §8.7](identity.md#87-how-an-actor-is-written-in-text)).
 - **Rules:** never copies sign-in, role, git host accounts or contact details
@@ -650,10 +650,10 @@ Rules (all **proposed**):
   Reason: these are exactly the properties the rest of this document needs;
   anything more is configuration nobody will read.
 - **Custom type names** are lowercase kebab-case, may not reuse a built-in
-  type name, and `schema` is reserved. **Decided (owner, 2026-11-19, M2-Q16; M2-1):** `workspace` and
+  type name, and `schema` is reserved. **Decided (owner, 2026-11-19, M2-Q17; M2-1):** `workspace` and
   `task` are reserved too, because `applies-to: workspace` and `from-task`
   give them their own meaning.
-- **Decided (owner, 2026-11-19, M2-Q16; M2-1), details of the key options:** `recheck` is a whole
+- **Decided (owner, 2026-11-19, M2-Q17; M2-1), details of the key options:** `recheck` is a whole
   number of days (`30d`); a relation is multi-valued unless `many: false`
   (as in [4.2](#42-fact-identity-cardinality-and-current-facts)); a relation
   attribute cannot be named like a fact's long-form field (`value`, `to`,
@@ -673,7 +673,7 @@ Rules (all **proposed**):
   the proposal lists the affected entities. Reason: a schema change affects
   every entity of the type and how agents read them.
 - **Retiring a type** is allowed only when it has no active entities.
-  **Decided (owner, 2026-11-19, M2-Q16; M2-1):** nor deprecated ones, which are still in use; retired
+  **Decided (owner, 2026-11-19, M2-Q17; M2-1):** nor deprecated ones, which are still in use; retired
   entities may keep a retired type ([8.3](#83-validation)).
 - **Agents read schemas** through the agent index, so an agent creating a
   `domain` entity knows its keys.
@@ -716,10 +716,10 @@ Relations are multi-valued unless the schema says otherwise.
 
 | Kind of key                                                                                     | A fact is identified by                                                                                                                                        |
 | ----------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Single-valued key, or single-valued relation (**decided**, owner, 2026-11-19, M2-Q16; M2-1)     | key + fact state + `via` (if given)                                                                                                                            |
-| Multi-valued key                                                                                | key + fact state (**decided**, owner, 2026-11-19, M2-Q16; M2-1) + value                                                                                        |
-| Multi-valued relation                                                                           | relation + fact state (**decided**, owner, 2026-11-19, M2-Q16; M2-1) + target + the attributes the schema names as identifying (for `checkout-on`, the `path`) |
-| `unknown` fact of a multi-valued key or relation (**decided**, owner, 2026-11-19, M2-Q16; M2-1) | key + fact state (and the target, for a relation that names one)                                                                                               |
+| Single-valued key, or single-valued relation (**decided**, owner, 2026-11-19, M2-Q17; M2-1)     | key + fact state + `via` (if given)                                                                                                                            |
+| Multi-valued key                                                                                | key + fact state (**decided**, owner, 2026-11-19, M2-Q17; M2-1) + value                                                                                        |
+| Multi-valued relation                                                                           | relation + fact state (**decided**, owner, 2026-11-19, M2-Q17; M2-1) + target + the attributes the schema names as identifying (for `checkout-on`, the `path`) |
+| `unknown` fact of a multi-valued key or relation (**decided**, owner, 2026-11-19, M2-Q17; M2-1) | key + fact state (and the target, for a relation that names one)                                                                                               |
 
 `via` is an optional short label for the means of observation, such as
 `filesystem` or `instance-metadata`. It is only needed when two different
@@ -737,7 +737,7 @@ Reasons for the parts marked M2-1
   different targets seen by different means are a discrepancy, as for any
   single-valued key.
 
-**A change of state** (**decided**, owner, 2026-11-19, M2-Q16; M2-1). Because the state is part of the
+**A change of state** (**decided**, owner, 2026-11-19, M2-Q17; M2-1). Because the state is part of the
 identity, writing a fact in a new state does not by itself replace the fact
 in the old one. A change of state (a `planned` fact becoming `intended` or
 `observed`, an `unknown` fact becoming known) is one operation that names the
@@ -745,7 +745,7 @@ identity it supersedes, removes that fact and sets the new one. Reason:
 replace-or-add stays a simple rule on identities, while plans and unknowns
 do not linger beside the facts that settled them.
 
-**Known values and `unknown` facts** (**decided**, owner, 2026-11-19, M2-Q16; M2-1; owner's direction
+**Known values and `unknown` facts** (**decided**, owner, 2026-11-19, M2-Q17; M2-1; owner's direction
 on [#95](https://github.com/guneet-xyz/shinan/pull/95)). Writing a known
 (`intended` or `observed`) value removes, in the same operation, an `unknown`
 fact it settles:
@@ -759,7 +759,7 @@ settle it; it stays until it is removed explicitly. Nothing is ever removed
 by omission. Reason: one known endpoint does not mean every endpoint is
 known.
 
-**The fact identity key** (**decided**, owner, 2026-11-19, M2-Q16; M2-1): every fact gets one line of
+**The fact identity key** (**decided**, owner, 2026-11-19, M2-Q17; M2-1): every fact gets one line of
 text naming its identity, derived when the document is read and never
 written in it. Operations, proposals, the agent index, MCP tools and the web
 editor name a fact by it. It is the key, the state, then `name=value` parts,
@@ -829,10 +829,10 @@ facts:
 - A fact appears in exactly one group. A recheck moves it to the new group.
   Groups left empty are dropped from the current document and remain in
   history.
-- **Decided (owner, 2026-11-19, M2-Q16; M2-1):** details of the long form. A relation's long form names
+- **Decided (owner, 2026-11-19, M2-Q17; M2-1):** details of the long form. A relation's long form names
   its target with `to`; any other field is a relation attribute (such as
   `path` or `item`) and holds one value. **Decided
-  (owner, 2026-11-19, M2-Q16; [#128](https://github.com/guneet-xyz/shinan/issues/128)):** an attribute
+  (owner, 2026-11-19, M2-Q17; [#128](https://github.com/guneet-xyz/shinan/issues/128)):** an attribute
   is never named like a fact check's field (`checked`, `by`, `scope`,
   `source`, `limits`); such a fact is invalid. Reason: `{ to: …, by: guneet,
 checked: 2020-01-01 }` under an agent's own fact check would read, in the
@@ -881,7 +881,7 @@ Rules:
   it; a known value settles an `unknown` fact automatically only for a
   single-valued key, or a relation naming the same target
   ([4.2](#42-fact-identity-cardinality-and-current-facts)). **Decided
-  (owner, 2026-11-19, M2-Q16; M2-1).**
+  (owner, 2026-11-19, M2-Q17; M2-1).**
 - A merged change that is not yet applied is `intended`; its absence in the
   world shows as a [discrepancy](#47-discrepancies) with the `observed` fact.
   **Proposed** (glossary test). Reason: drift between source and reality is
@@ -941,12 +941,12 @@ verdict: an old fact is not wrong, it is less certain.
   [agent integrations](agent-integrations.md); the catalog supplies the
   checked time and interval.
 - How freshness looks: [human experience](human-experience.md).
-- **Decided (owner, 2026-11-19, M2-Q16; M2-1, [#82](https://github.com/guneet-xyz/shinan/issues/82)):**
+- **Decided (owner, 2026-11-19, M2-Q17; M2-1, [#82](https://github.com/guneet-xyz/shinan/issues/82)):**
   how age is counted. A fact checked on a date counts from the start of that
   day in UTC; it is due once the interval has passed since then. Facts with
   no fact check (an `unknown` list) and `checked: null` are **not checked**.
 
-**Recheck intervals for built-in keys** (**decided**, owner, 2026-11-19, M2-Q16; M2-1; this settles
+**Recheck intervals for built-in keys** (**decided**, owner, 2026-11-19, M2-Q17; M2-1; this settles
 open question 2). Days; "none" means the age is shown but the fact is never
 marked due. Reason for each band: 7 days for values that change with use
 (free and used space); 14 to 30 days for things that change with routine work
@@ -1016,7 +1016,7 @@ Rules (**proposed**; reason: P5 and the `workspace` repository's practice):
   an observation shown to be wrong, with a note in the proposal; or recording
   that the difference is accepted, with a `note` and an owner. An accepted
   discrepancy stays visible but is not flagged as needing attention.
-  **Decided (owner, 2026-11-19, M2-Q16; M2-1):** acceptance is written on the facts: each fact of the
+  **Decided (owner, 2026-11-19, M2-Q17; M2-1):** acceptance is written on the facts: each fact of the
   discrepancy names the person who accepted it with
   `accepted: person/<handle>` and says why in its `note`. A discrepancy is
   accepted when all its facts carry `accepted`. A recheck that leaves every
@@ -1027,7 +1027,7 @@ Rules (**proposed**; reason: P5 and the `workspace` repository's practice):
   evidence; a routine recheck of an accepted difference (such as Musashi's
   lagging metadata) does not come back for approval every time, while new
   evidence is looked at again.
-  **Decided (owner, 2026-11-19, M2-Q16; M2-2, [#84](https://github.com/guneet-xyz/shinan/issues/84),
+  **Decided (owner, 2026-11-19, M2-Q17; M2-2, [#84](https://github.com/guneet-xyz/shinan/issues/84),
   raised in review of [#108](https://github.com/guneet-xyz/shinan/pull/108)):** `accepted` is never sent
   with a fact. Shinan writes it, as it writes `by`: an `accept-discrepancy`
   operation names the discrepancy's facts and the reason, and applies only
@@ -1067,7 +1067,7 @@ A known unknown leaves the list when a known value settles it (a
 single-valued key, or a relation naming the same target) or when it is
 removed explicitly; an `unknown` fact of a multi-valued key stays until it is
 removed explicitly ([4.2](#42-fact-identity-cardinality-and-current-facts),
-known values and `unknown` facts). **Decided (owner, 2026-11-19, M2-Q16; M2-1).**
+known values and `unknown` facts). **Decided (owner, 2026-11-19, M2-Q17; M2-1).**
 
 ## 5. Relations
 
@@ -1203,7 +1203,7 @@ check before applying is much cheaper than cleaning up afterwards.
   string: the proposal is held for catalog approval, with the matching text
   pointed out, so a person confirms it is not a secret.
 - The check is a safety net, not a guarantee; secrets stay the team's job.
-- **Decided (owner, 2026-11-19, M2-Q16; M2-1, [#82](https://github.com/guneet-xyz/shinan/issues/82)):**
+- **Decided (owner, 2026-11-19, M2-Q17; M2-1, [#82](https://github.com/guneet-xyz/shinan/issues/82)):**
   what is matched. The whole text of every document a proposal writes is
   checked (frontmatter and body), and the proposal's other text. Frontmatter
   values and keys are also checked as read, so a secret written with YAML
@@ -1290,7 +1290,7 @@ One proposal may change several entities and is applied all or nothing.
 **Proposed.** Reason: retiring a machine and moving its checkouts must not
 half-happen.
 
-**Decided (owner, 2026-11-19, M2-Q16; M2-2, [#84](https://github.com/guneet-xyz/shinan/issues/84)):**
+**Decided (owner, 2026-11-19, M2-Q17; M2-2, [#84](https://github.com/guneet-xyz/shinan/issues/84)):**
 the operations as Shinan applies them (`packages/core`,
 `applyOperations`). Each names its document by ID and states what it
 expects ([8.5](#85-conflicts)).
@@ -1316,11 +1316,11 @@ Lifecycle changes beyond `retire` have no operation: `set-field` never sets
 `retired`, never changes the status of a retired document, and never writes
 `replaced_by`. Bringing a retired entity back would need its own gated
 operation that also removes `replaced_by`; none is built, and
-**decided (owner, 2026-11-19, M2-Q16):** a retired entity stays retired. Reason: lifecycle changes are a gated class
+**decided (owner, 2026-11-19, M2-Q17):** a retired entity stays retired. Reason: lifecycle changes are a gated class
 ([8.2](#82-when-catalog-approval-is-needed)), and an active entity with a
 `replaced_by` would contradict [2.3](#23-entity-fields).
 
-How they are applied (**decided**, owner, 2026-11-19, M2-Q16; M2-2):
+How they are applied (**decided**, owner, 2026-11-19, M2-Q17; M2-2):
 
 - **As text edits** ([architecture §5.2](architecture.md#52-the-invariant),
   rule 2). An operation changes only the YAML entries, list items or body
@@ -1376,7 +1376,7 @@ How they are applied (**decided**, owner, 2026-11-19, M2-Q16; M2-2):
   schema.
 - **Malformed operations** (a missing or unknown field, a value of the
   wrong type) are refused before anything applies.
-- **Limits** (**decided**, owner, 2026-11-19, M2-Q15): at most 50 operations in a proposal, naming
+- **Limits** (**decided**, owner, 2026-11-19, M2-Q16): at most 50 operations in a proposal, naming
   at most 100 facts in all (one per `set-fact` and `remove-fact`, and each
   fact of a `create-entity`, `recheck-facts` or `accept-discrepancy`).
   Reason: each operation reads its document again after every edit, so the
@@ -1435,7 +1435,7 @@ have meant 4 to 5 approvals a day; gated approval meant close to none.
   [human experience](human-experience.md).
 - Settings and who may approve are owned by [identity](identity.md).
 
-**Decided (owner, 2026-11-19, M2-Q16; M2-4, [#86](https://github.com/guneet-xyz/shinan/issues/86)):**
+**Decided (owner, 2026-11-19, M2-Q17; M2-4, [#86](https://github.com/guneet-xyz/shinan/issues/86)):**
 how proposals are applied and classed (`packages/core`, `catalog/proposals`).
 
 - **Outcomes.** A proposal applies at once as a new catalog revision, or
@@ -1495,7 +1495,7 @@ how proposals are applied and classed (`packages/core`, `catalog/proposals`).
   within the limits, a 100-fact recheck of a 54 KB document, took about
   8 s on a busy development host); reading the stored catalog first is
   not counted ([architecture §5.3](architecture.md#53-how-sync-works)).
-- **A workspace's catalog** (**decided**, owner, 2026-11-19, M2-Q15) holds at most 20,000 documents, 50 MiB of text,
+- **A workspace's catalog** (**decided**, owner, 2026-11-19, M2-Q16) holds at most 20,000 documents, 50 MiB of text,
   and 320 MiB as Shinan estimates the memory it takes to hold it and its
   validation (text, facts, links, and every problem and suspected secret
   validation finds count: `estimatedBytes`,
@@ -1542,7 +1542,7 @@ how proposals are applied and classed (`packages/core`, `catalog/proposals`).
   approval is a person's judgement of the change itself, which the review
   screen shows with its author.
 
-**Decided (owner, 2026-11-19, M2-Q16; M2-4b, [#86](https://github.com/guneet-xyz/shinan/issues/86)):**
+**Decided (owner, 2026-11-19, M2-Q17; M2-4b, [#86](https://github.com/guneet-xyz/shinan/issues/86)):**
 the strict setting, bulk approval, recent changes and revert.
 
 - **The strict setting** is a workspace setting, off by default, that
@@ -1613,7 +1613,7 @@ Blocking rules (the proposal cannot apply):
   ([3.9](#39-custom-types-and-type-schema-documents));
 - no near-certain credential anywhere ([7.3](#73-a-check-for-secret-looking-values));
 - no task status copied into facts (for example a `status` key holding a task
-  status value). **Decided (owner, 2026-11-19, M2-Q16; M2-1):** a warning, not blocking; see below.
+  status value). **Decided (owner, 2026-11-19, M2-Q17; M2-1):** a warning, not blocking; see below.
 
 Warning rules (the proposal needs catalog approval, with the reason shown):
 
@@ -1624,7 +1624,7 @@ Warning rules (the proposal needs catalog approval, with the reason shown):
 
 Validation cannot prove a fact matches reality; only fact checks do.
 
-**Decided (owner, 2026-11-19, M2-Q16; M2-1, [#82](https://github.com/guneet-xyz/shinan/issues/82)):**
+**Decided (owner, 2026-11-19, M2-Q17; M2-1, [#82](https://github.com/guneet-xyz/shinan/issues/82)):**
 how the rules are applied.
 
 - **Which problems belong to a proposal.** In the documents it writes, every
@@ -1639,7 +1639,7 @@ how the rules are applied.
   write is compared with its earlier, identical text, so even a document
   that no longer reads is never charged to others.
 - **Repairing a document that reads with problems.** **Decided
-  (owner, 2026-11-19, M2-Q16; [#133](https://github.com/guneet-xyz/shinan/issues/133)):**
+  (owner, 2026-11-19, M2-Q17; [#133](https://github.com/guneet-xyz/shinan/issues/133)):**
   - **The problem.** A stored document can hold something the parser no
     longer reads, such as a reserved attribute name since parser version 4,
     or an object-member key. The unreadable fact drops out of the parsed
@@ -1701,7 +1701,7 @@ how the rules are applied.
   has no current `member` fact naming one ([2.3](#23-entity-fields)). The
   `member` fact holds the person's handle.
 - **Task status in facts: a warning, and narrow** (**decided**, owner,
-  2026-11-19, M2-Q16). A fact is held for approval when its key ends in `status`
+  2026-11-19, M2-Q17). A fact is held for approval when its key ends in `status`
   or `state` and its value is a task workflow word of
   [tasks §7.2](tasks.md#72-statuses) that means little outside a task:
   `triage`, `to do`, `in progress`, `in review` or `verifying`. `done` and
@@ -1712,7 +1712,7 @@ how the rules are applied.
   (`too-large`), as [2.1](#21-one-document-per-entity-and-what-source-of-truth-means)
   sets for documents. Reason: it bounds the work of every check, and no
   catalog document needs more.
-- **Cost** (**decided**, owner, 2026-11-19, M2-Q16; [#116](https://github.com/guneet-xyz/shinan/issues/116)).
+- **Cost** (**decided**, owner, 2026-11-19, M2-Q17; [#116](https://github.com/guneet-xyz/shinan/issues/116)).
   A proposal is validated against the validation of the revision it is based
   on, which the catalog worker keeps for each workspace's latest revision
   ([architecture §5.3](architecture.md#53-how-sync-works), "Kept
@@ -1769,7 +1769,7 @@ latest revision. **Proposed.**
   evidence and observation time, not merge order"); per-fact operations make
   real conflicts rare.
 
-**Decided (owner, 2026-11-19, M2-Q16; M2-2, [#84](https://github.com/guneet-xyz/shinan/issues/84)):**
+**Decided (owner, 2026-11-19, M2-Q17; M2-2, [#84](https://github.com/guneet-xyz/shinan/issues/84)):**
 what each operation expects.
 
 - A fact operation names the [fact identity key](#42-fact-identity-cardinality-and-current-facts)
@@ -1808,7 +1808,7 @@ what each operation expects.
   **Proposed.** Reason: agent review is cheap and is how documents in this
   repository are reviewed today; a comment informs the person without letting
   an agent approve.
-- **Decided (owner, 2026-11-19, M2-Q16; M2-4b, [#86](https://github.com/guneet-xyz/shinan/issues/86)):**
+- **Decided (owner, 2026-11-19, M2-Q17; M2-4b, [#86](https://github.com/guneet-xyz/shinan/issues/86)):**
   how. Waiting proposals appear on each entity they touch, in the agent
   index's `pending_proposals` ([12.4](#124-the-index-format)). Comments
   are kept with the proposal, in any state, up to 4,000 characters each,
@@ -1861,7 +1861,7 @@ approval and history mean nothing.
     and agents' model providers, may still hold the content, so a purged
     secret must be rotated at its source. Reason: a purge cleans Shinan, not
     copies that already left it.
-  - **As built (M2-10, [#91](https://github.com/guneet-xyz/shinan/issues/91)), decided (owner, 2026-11-19, M2-Q16):**
+  - **As built (M2-10, [#91](https://github.com/guneet-xyz/shinan/issues/91)), decided (owner, 2026-11-19, M2-Q17):**
     - **What is purged: a text, everywhere.** A workspace owner types the
       text (4 to 10,000 characters, case-sensitive) and a reason. Every
       occurrence is replaced by `(purged)` in every revision of every
@@ -1968,7 +1968,7 @@ same catalog pages and changed only with catalog approval. Details
   shape below). Validation warns when a step points
   to a retired entity or to one with discrepancies. Reason: P3; onboarding
   pages are where copies go stale fastest.
-- **Decided (owner, 2026-11-19, M2-Q16; M2-1, [#82](https://github.com/guneet-xyz/shinan/issues/82)):**
+- **Decided (owner, 2026-11-19, M2-Q17; M2-1, [#82](https://github.com/guneet-xyz/shinan/issues/82)):**
   the document's shape. Its ID is `start-here`; its fields are `title`
   (required), `summary`, `owner`, `imported_from`, and the two paths `people`
   and `agents` (both required, possibly empty). Each step is a map with
@@ -2072,7 +2072,7 @@ machines to check facts (P6).
 
 ### 12.4 The index format
 
-**Decided (owner, 2026-11-19, M2-Q16; M2-3, [#85](https://github.com/guneet-xyz/shinan/issues/85));
+**Decided (owner, 2026-11-19, M2-Q17; M2-3, [#85](https://github.com/guneet-xyz/shinan/issues/85));
 this settles open question 7.** The JSON the index answers with. MCP tools
 (M2-6) and the wiki's REST routes (M2-7) return these shapes; tool names and
 parameters stay with [agent integrations](agent-integrations.md). Field names
@@ -2150,7 +2150,7 @@ Choices the format implies, all **proposed**:
   agents search by names and values as often as by prose.
 - **Section credits** come from Shinan's records of who made each
   revision, compared with the document's history; never from claims in the
-  text. **Decided (owner, 2026-11-19, M2-Q16; M2-3, [#85](https://github.com/guneet-xyz/shinan/issues/85);
+  text. **Decided (owner, 2026-11-19, M2-Q17; M2-3, [#85](https://github.com/guneet-xyz/shinan/issues/85);
   stricter in [#110](https://github.com/guneet-xyz/shinan/issues/110)).**
   - **Unchanged sections keep their credits,** even when their anchor
     changes (deleting one of two `## Notes` sections renames the other from
@@ -2465,7 +2465,7 @@ What this document still needs from other documents:
    readability? ([2.5](#25-body))
 2. _Settled:_ recheck interval values for built-in keys are in
    [4.6](#46-freshness) (M2-1, [#82](https://github.com/guneet-xyz/shinan/issues/82);
-   decided by the owner on 2026-11-19, M2-Q16).
+   decided by the owner on 2026-11-19, M2-Q17).
    The number is kept so references to the later questions stay valid.
 3. Flagging gaps between intended and observed values of multi-valued keys.
    ([4.7](#47-discrepancies))
@@ -2476,7 +2476,7 @@ What this document still needs from other documents:
 6. More than one start-here path for larger workspaces. ([11](#11-start-here))
 7. _Settled:_ the agent index's JSON format is in
    [12.4](#124-the-index-format) (M2-3, [#85](https://github.com/guneet-xyz/shinan/issues/85);
-   decided by the owner on 2026-11-19, M2-Q16).
+   decided by the owner on 2026-11-19, M2-Q17).
 
 ## Decisions needed from the owner
 

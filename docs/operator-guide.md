@@ -257,12 +257,13 @@ you upgrade:
 - **Limits** (decided by the owner for 0.3): `/mcp` takes bodies up to
   512 KB, and the catalog proposal and repair routes 272 KiB; at most 8
   requests in flight per agent token or signed-in person, and 16 per
-  address, on `/mcp` and those routes (429 with `Retry-After: 1`); 30
-  seconds to send a whole request; per address, 300 requests a minute
-  (shared with `/api`, so every agent session on one machine shares it);
-  per agent token, 600 requests a minute; per agent, 60 catalog proposals
-  and 60 comments in 10 minutes. A rate-limited request gets 429 with
-  `Retry-After` set to the seconds left in its window: wait that long
+  address (an IPv6 address by its /64), on `/mcp` and those routes, with
+  429 and `Retry-After: 1` beyond that; 30 seconds to send a whole request.
+  Requests are rate limited per address (300 a minute, shared with `/api`
+  from that address; every agent session on one machine shares it) and per
+  token (600 a minute); a rate-limited request gets 429 with `Retry-After`
+  set to the seconds left in the minute. Each agent may send 60 catalog
+  proposals and 60 comments in 10 minutes
   ([agents](#agents-the-mcp-endpoint-tokens-and-the-skill)).
 - **Migrations** `0005` to `0012` only add tables, columns, indexes and
   triggers; `0012` replaces the append-only triggers on events and revision
@@ -315,7 +316,8 @@ in the `Authorization` header, and load the agent skill from
   again; after an in-flight 429 it can call again once an earlier call is
   answered.
   Normal use, a few tool calls at a time, stays well below the cap.
-  Agents' catalog proposals have their own limit (60 in 10 minutes).
+  Agents' catalog proposals and comments have their own limits (60 each in
+  10 minutes).
 - **`/skills/`** serves only the skill's own files, the same for every
   installation, with no workspace data
   ([D-056](decisions/D-056-public-skill-path.md)).

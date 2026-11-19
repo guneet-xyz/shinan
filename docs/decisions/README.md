@@ -54,7 +54,7 @@ D-050 to D-053 record the owner's answers to the integration review on
 D-054 records a later owner decision made in conversation and reverses O-66.
 D-055 records a later owner decision on the web app's styling.
 D-056 records the owner's answer M2-Q2 to the [M2 build plan](../build-plan-m2.md#7-owner-answers),
-and D-057 its answer M2-Q13, an accepted risk for the M2 release.
+and D-057 its answer M2-Q14, an accepted risk for the M2 release.
 The numbers are in each record's `evidence` field and in the mappings for
 [issue #25](#owner-answers-on-issue-25) and [issue #26](#owner-answers-on-issue-26).
 
@@ -472,7 +472,7 @@ None.
   the skill is served without sign-in at `/skills/`
   ([issue #79](https://github.com/guneet-xyz/shinan/issues/79)). It amends
   no record.
-- 2026-11-19: D-057 added for the owner's answer M2-Q13 to the M2 build
+- 2026-11-19: D-057 added for the owner's answer M2-Q14 to the M2 build
   plan: the application's database role, which can turn off the append-only
   triggers, is an accepted risk for v0.3.0, fixed first in M3
   ([issue #92](https://github.com/guneet-xyz/shinan/issues/92),
