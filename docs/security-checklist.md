@@ -204,7 +204,8 @@ code on `main`; the M1 items whose code M2 did not change keep their results.
   titles at the completion, checked by script), and the full `pnpm test`
   ran on `main` with PostgreSQL and Mailpit from the development Compose
   file: 1,570 tests in 89 files at `f1ec39c`, and 1,740 tests in 105 files
-  at `3d0bf3e` (2026-11-19), all passing.
+  at `3d0bf3e` and 1,742 with the completion's own changes on `8b3db7e`
+  (2026-11-19), all passing.
   CI runs the same suite on every pull request.
 - **Commands:** `pnpm audit --audit-level high` (8.2); the repository's
   Dependabot settings through the GitHub API (8.3). Both again on
