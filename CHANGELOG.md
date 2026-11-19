@@ -1,5 +1,51 @@
 # Changelog
 
+## [0.3.0](https://github.com/guneet-xyz/shinan/compare/v0.2.1...v0.3.0) (2026-11-19)
+
+
+### Features
+
+* agent index, search and the catalog revision store ([#107](https://github.com/guneet-xyz/shinan/issues/107)) ([59459b9](https://github.com/guneet-xyz/shinan/commit/59459b936c060e57aefa9c336ada37129faed6dd))
+* agents and hand-made agent tokens ([#96](https://github.com/guneet-xyz/shinan/issues/96)) ([6990282](https://github.com/guneet-xyz/shinan/commit/6990282dc5805350f08a924868dc314b9684f000))
+* catalog proposals, applied in a worker with a time limit, and catalog approval ([#112](https://github.com/guneet-xyz/shinan/issues/112)) ([ca2e572](https://github.com/guneet-xyz/shinan/commit/ca2e5725c37d7d309cfd59f76e44a2529783bf9c))
+* catalog purge for workspace owners ([#132](https://github.com/guneet-xyz/shinan/issues/132)) ([ba4e4bc](https://github.com/guneet-xyz/shinan/commit/ba4e4bc836532728be8eab4f11f0993ea7828358))
+* changing the catalog from the wiki, and catalog review ([#123](https://github.com/guneet-xyz/shinan/issues/123)) ([71b32f5](https://github.com/guneet-xyz/shinan/commit/71b32f5fd7466cc7d983cb80bfe1717753846d7d))
+* comments on catalog proposals, the strict setting, bulk approval, recent changes and revert ([#124](https://github.com/guneet-xyz/shinan/issues/124)) ([9759bbe](https://github.com/guneet-xyz/shinan/commit/9759bbe5e139cb91465862563e8eaa83197fed4c))
+* **core:** catalog document model, parser and fact identity keys ([#95](https://github.com/guneet-xyz/shinan/issues/95)) ([eb855b8](https://github.com/guneet-xyz/shinan/commit/eb855b8b1b6129882cea8afdc8236c3aea4ed94c))
+* **core:** catalog operations as text edits, with conflict checks ([#108](https://github.com/guneet-xyz/shinan/issues/108)) ([c698bef](https://github.com/guneet-xyz/shinan/commit/c698bef122b7ee99016e4b99d18e5b05d45111b0))
+* **core:** export the agent-token prefix ([#94](https://github.com/guneet-xyz/shinan/issues/94)) ([4989daa](https://github.com/guneet-xyz/shinan/commit/4989daa0f2cef74d1c97428a7eb596ccba0f1675))
+* **core:** read catalog bodies with markdown-it, shared with the wiki ([#105](https://github.com/guneet-xyz/shinan/issues/105)) ([6e240cf](https://github.com/guneet-xyz/shinan/commit/6e240cff4cfb56fff7430782dcc789913fc77cbd))
+* **core:** stricter written_by provenance for trust labels ([#111](https://github.com/guneet-xyz/shinan/issues/111)) ([826d2d9](https://github.com/guneet-xyz/shinan/commit/826d2d912641e872b817740642eda0cd257e77fe))
+* **core:** validate catalog documents and check for secrets ([#99](https://github.com/guneet-xyz/shinan/issues/99)) ([f7a1f8d](https://github.com/guneet-xyz/shinan/commit/f7a1f8dcca2b3e811e6f45038f87981de065e6d9))
+* MCP endpoint with the catalog read tools and trust labels ([#115](https://github.com/guneet-xyz/shinan/issues/115)) ([28036a9](https://github.com/guneet-xyz/shinan/commit/28036a90be464d55ea51b1dbfda7c27b7857fe64))
+* MCP write tools over catalog proposals ([#122](https://github.com/guneet-xyz/shinan/issues/122)) ([2464f84](https://github.com/guneet-xyz/shinan/commit/2464f84b5979f6ed7184d17f68c176e16cd9a146))
+* proposals waiting on an entity page, who approved each revision, and links to type schemas and Start here ([#134](https://github.com/guneet-xyz/shinan/issues/134)) ([887dbb2](https://github.com/guneet-xyz/shinan/commit/887dbb2c7ff5775c6256d35b09657e3b837e780e))
+* record invitations as expired when they expire ([#129](https://github.com/guneet-xyz/shinan/issues/129)) ([166c0f1](https://github.com/guneet-xyz/shinan/commit/166c0f1248fd2562093ab207f94babce5184d28c))
+* self-service email change, confirmed by a link to the new address ([#137](https://github.com/guneet-xyz/shinan/issues/137)) ([85e210c](https://github.com/guneet-xyz/shinan/commit/85e210cdade1c772a3a741964466c0876cc64e5e))
+* the agent skill at /skills/ and the OpenCode setup guide ([#119](https://github.com/guneet-xyz/shinan/issues/119)) ([19bc901](https://github.com/guneet-xyz/shinan/commit/19bc9015804de0769638c27a01c7b2b6d1a279de))
+* the wiki for reading the catalog ([#118](https://github.com/guneet-xyz/shinan/issues/118)) ([4814127](https://github.com/guneet-xyz/shinan/commit/4814127427549b4e1dfbfc0e0db197b132bb7da6))
+* **web:** comments, revert, the strict setting and bulk approval in the wiki ([#146](https://github.com/guneet-xyz/shinan/issues/146)) ([3d0bf3e](https://github.com/guneet-xyz/shinan/commit/3d0bf3eebab5c1ae5608077ed5d795f1f68d09ab))
+* workspace owners repair a catalog document that reads with problems ([#141](https://github.com/guneet-xyz/shinan/issues/141)) ([56c0cc9](https://github.com/guneet-xyz/shinan/commit/56c0cc96b1e54b30b69130a01a06d6b848b6e3e9))
+
+
+### Bug Fixes
+
+* **core:** reserve fact-check field names as relation attributes; deflake pool.test.ts ([#130](https://github.com/guneet-xyz/shinan/issues/130)) ([6a6d854](https://github.com/guneet-xyz/shinan/commit/6a6d8544adeb879c22befb3a6916132ff0602cac))
+* **core:** say which catalog limit a change passes, what counts, and how to make room ([#139](https://github.com/guneet-xyz/shinan/issues/139)) ([295a01a](https://github.com/guneet-xyz/shinan/commit/295a01a0a3bf3ccf2f41133bb6c82cdc012c0f6c))
+* **core:** text-edit follow-ups: comments, one-section edits, object member keys ([#114](https://github.com/guneet-xyz/shinan/issues/114)) ([b217650](https://github.com/guneet-xyz/shinan/commit/b217650ac0ea93befe657b55e2fcac62a99c25ce))
+* **deploy:** set the image's /app ownership and modes deterministically ([#104](https://github.com/guneet-xyz/shinan/issues/104)) ([0db0cf6](https://github.com/guneet-xyz/shinan/commit/0db0cf6ffac3ac8d1d7c69f85d7763174a23765c))
+* **server:** cap /mcp requests in flight; M2 security checklist rerun and deployment preparation ([#136](https://github.com/guneet-xyz/shinan/issues/136)) ([a2d731d](https://github.com/guneet-xyz/shinan/commit/a2d731d8955ddf177cf463769fc2a7f4e8272bb5))
+* **server:** give the repair route the proposal routes' request caps; complete the M2 security checklist and record the owner's answers ([#155](https://github.com/guneet-xyz/shinan/issues/155)) ([f1c086b](https://github.com/guneet-xyz/shinan/commit/f1c086bc812414cdf08528446c5d07ea36cda4c9))
+* **web:** offer GitHub in the sign-in-again dialog only where it is configured ([#127](https://github.com/guneet-xyz/shinan/issues/127)) ([1ae22ec](https://github.com/guneet-xyz/shinan/commit/1ae22ec42c9fc18991d9fd289cabcca18a92bf54))
+
+
+### Performance Improvements
+
+* **core:** give the event loop back between values while a purge matches ([#150](https://github.com/guneet-xyz/shinan/issues/150)) ([7d123b9](https://github.com/guneet-xyz/shinan/commit/7d123b954ff232a92b9da98c0f744b87666d4e4b))
+* **core:** give the event loop back during index rebuilds and checks ([#140](https://github.com/guneet-xyz/shinan/issues/140)) ([f1ec39c](https://github.com/guneet-xyz/shinan/commit/f1ec39cba3bd354aa4e6781c37ef11047d3b921c))
+* **core:** keep each workspace's validation in its catalog worker, and raise the catalog limits ([#125](https://github.com/guneet-xyz/shinan/issues/125)) ([acecaf1](https://github.com/guneet-xyz/shinan/commit/acecaf19e959d04b8dfbe6b57efbfffd5db17990))
+* **core:** validate a change from the base revision's validation, re-checking only what it can affect ([#120](https://github.com/guneet-xyz/shinan/issues/120)) ([a51bc59](https://github.com/guneet-xyz/shinan/commit/a51bc59ee7f366fcf32549fb407b4be87430d9b6))
+
 ## [0.2.1](https://github.com/guneet-xyz/shinan/compare/v0.2.0...v0.2.1) (2026-11-17)
 
 
