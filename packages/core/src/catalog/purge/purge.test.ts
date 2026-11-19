@@ -43,7 +43,11 @@ import {
   commentOnCatalogProposal,
   listCatalogProposalComments,
 } from "../proposals/review.js"
-import { getCatalogDocumentText, listCatalogHistory } from "../wiki.js"
+import {
+  editableOf,
+  getCatalogDocumentText,
+  listCatalogHistory,
+} from "../wiki.js"
 import { PurgeMatcher } from "./matcher.js"
 import {
   listCatalogPurges,
@@ -444,6 +448,26 @@ describe("purging catalog text", { timeout: 60_000 }, () => {
     expect(await listCatalogPurges(asContributor, workspaceId)).toEqual([
       listed,
     ])
+  })
+
+  it("forgets the editable forms this process read, so none holds the text", async () => {
+    await plant()
+    const text = `---
+id: machine/x
+type: machine
+title: X
+summary: Holds ${secret}.
+status: active
+owner: person/${owner.handle}
+---
+`
+    const read = editableOf(text)
+    expect(editableOf(text)).toBe(read)
+    await purgeCatalogText(asOwner, workspaceId, {
+      text: secret,
+      reason: "A passphrase was written into the catalog.",
+    })
+    expect(editableOf(text)).not.toBe(read)
   })
 
   it("is only for workspace owners who signed in again recently, never agents", async () => {

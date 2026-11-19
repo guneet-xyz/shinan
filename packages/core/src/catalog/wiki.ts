@@ -606,6 +606,16 @@ const editableCache = new Map<
 let editableCachedBytes = 0
 const editableCacheBytes = 16 * 1024 * 1024
 
+/**
+ * Empties the cache of editable forms, so that no text read before a purge
+ * stays in this process's memory (catalog §9). It is keyed by the text, so
+ * it never serves purged text; this only frees it.
+ */
+export function clearEditableCache(): void {
+  editableCache.clear()
+  editableCachedBytes = 0
+}
+
 export function editableOf(text: string): EditableDocument {
   const key = createHash("sha256").update(text).digest("base64url")
   const cached = editableCache.get(key)
