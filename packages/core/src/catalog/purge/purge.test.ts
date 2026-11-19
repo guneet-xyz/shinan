@@ -684,7 +684,7 @@ describe("purging catalog text", { timeout: 60_000 }, () => {
     expect(new PurgeMatcher(text).test(value)).toBe(false)
     const single = performance.now() - started
 
-    const documents = 6
+    const documents = 12
     await storeCatalogRevision(
       db,
       workspaceId,
@@ -719,10 +719,11 @@ describe("purging catalog text", { timeout: 60_000 }, () => {
     }
     const total = performance.now() - previewStarted
     // Without the pauses, each query's values are matched in one stretch:
-    // six values, at least. With them, about one value and the pause's
-    // budget.
+    // twelve values, at least. With them, about one value (a row can cost
+    // a little more than `single`) and the pause's budget. Half the
+    // documents leaves room either way, also on a busy machine.
     expect(total).toBeGreaterThan(documents * single)
-    expect(longest).toBeLessThan(3 * single + 50)
+    expect(longest).toBeLessThan((documents / 2) * single)
   })
 
   it("shows copies in encoded forms, and warns where purging changes a document's structure", async () => {

@@ -447,8 +447,8 @@ How:
   checked against the whitespace around it with running counts. So the
   full 10,000-character text (a key block) and repetitive values take
   milliseconds. Between values it gives the event loop back once matching
-  has held it for 50 ms, as rebuilds do (#149), so many large values never
-  hold the server's other requests for longer than one value takes. As a
+  has held it for 50 ms, as rebuilds do since #140 (#149), so many large
+  values hold the server's other requests for about one value at a time. As a
   backstop, matching for one preview or purge stops after 15 seconds in
   all (`purge-too-slow`).
 - **Derived data:** each document with purged text has its index rows
