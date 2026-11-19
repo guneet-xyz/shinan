@@ -23,7 +23,7 @@ recorded on [issue #161](https://github.com/guneet-xyz/shinan/issues/161#issueco
   shown to people as a wiki with a "start here" path; the plan names a "Wiki
   and onboarding" pillar ([plan §4](../plan.md#4-product-pillars)).
 - M2 built the wiki: entity pages, type indexes, editing forms and catalog
-  review ([human experience, the wiki](../human-experience.md#the-wiki)).
+  review ([human experience, the wiki](../human-experience.md#the-catalog)).
 - With the catalog in Git ([D-059](D-059-catalog-in-git-hosted-by-shinan.md)),
   the browser shows only `main`.
 
@@ -71,3 +71,5 @@ None.
   the Git-based catalog plan ([issue #161](https://github.com/guneet-xyz/shinan/issues/161)).
 - 2026-11-19: accepted by the owner with the plan ([PR #162](https://github.com/guneet-xyz/shinan/pull/162),
   answers GQ-1 to GQ-6 [on issue #161](https://github.com/guneet-xyz/shinan/issues/161#issuecomment-7007337638)).
+- 2026-11-19: the Context's link to human experience follows that section's
+  rename to "The catalog" (GC-10, [#172](https://github.com/guneet-xyz/shinan/issues/172)); no change of decision.

@@ -1281,7 +1281,7 @@ provenance from `index/`; GC-5 does not touch `index/`.
 ### GC-10: Documents: "catalog" everywhere, and what no package owns
 
 - The rename of "wiki" in every document (owner, GD-8), the glossary
-  ([domain model](domain-model.md#wiki-and-agent-index), "Catalog proposal
+  ([domain model](domain-model.md#catalog-pages-and-index), "Catalog proposal
   and approval", "Words to avoid"), plan.md "Later changes", roadmap §3.3,
   §4.3, §4.5, §5 and "Backups before migration", product overview's catalog
   passages.
