@@ -1,22 +1,21 @@
 ---
 id: D-061
-title: Pushes are authenticated by the agent token; commit authors are not trusted; a push log records who pushed
-status: proposed
+title: Pushes are authenticated by the agent token; commit authors are not trusted; a push log records who pushed; fact checks name the pusher
+status: accepted
 date: 2026-11-19
-decided_by:
-evidence:
+decided_by: owner
+evidence: "https://github.com/guneet-xyz/shinan/issues/161#issuecomment-7007337638"
 supersedes: []
 superseded_by: []
 amends: []
 amended_by: []
 ---
 
-# D-061: Pushes are authenticated by the agent token; commit authors are not trusted; a push log records who pushed
+# D-061: Pushes are authenticated by the agent token; commit authors are not trusted; a push log records who pushed; fact checks name the pusher
 
-Status: **Proposed.** The owner decided this in conversation on 2026-11-19
-(recorded on [issue #161](https://github.com/guneet-xyz/shinan/issues/161));
-the record is accepted when the owner approves the
-[Git-based catalog plan](../build-plan-git-catalog.md).
+Status: **Accepted** by the owner on 2026-11-19, in conversation, with the
+[Git-based catalog plan](../build-plan-git-catalog.md) ("Approve and start";
+recorded on [issue #161](https://github.com/guneet-xyz/shinan/issues/161#issuecomment-7007337638)).
 
 ## Context
 
@@ -37,11 +36,15 @@ commit under any name. Authentication is the token used to push: over HTTPS,
 the agent token is the password, supplied by a Git credential helper that
 reads the root-only token file, so agents never handle the token. Shinan keeps
 a push log recording which agent and which person pushed each push, with the
-commits, the ref, and the commits before and after.
+commits, the ref, and the commits before and after. A new or changed fact
+check's `by` must name the pusher, in the written form for the pushing agent
+and its person; otherwise the push is refused, with the reason.
 
 ## Reasons
 
-Owner's choice; no reason recorded.
+Owner's choice; no reason recorded. The last sentence is the owner's answer
+GQ-3 to the plan, against its recommendation not to match `by` to the
+pusher.
 
 ## Consequences
 
@@ -51,13 +54,21 @@ Owner's choice; no reason recorded.
   authentication, because Git's credential helpers supply credentials that
   way ([plan §2.2](../build-plan-git-catalog.md#22-how-shinan-serves-git));
   owned afterwards by [identity](../identity.md) §7.4.
-- Whether a fact check's `by` must name the pusher is open
-  ([plan, GQ-3](../build-plan-git-catalog.md#102-questions-for-the-owner)).
+- The `by` rule, what counts as a new or changed fact check, and its tests
+  are in the [plan §2.5](../build-plan-git-catalog.md#25-checks-on-push),
+  check 6. An agent cannot land another agent's new fact checks by merging
+  its branch into `main`; each agent pushes its own. The `by` written form is
+  [identity §8.7](../identity.md#87-how-an-actor-is-written-in-text)'s.
+- `web` passes the authenticated agent and person to the Git container,
+  which trusts them because of the service token
+  ([D-065](D-065-git-container-and-service-token.md)).
 
 ## Alternatives considered
 
 - **Implied:** trusting commit authors, or requiring signed commits. Not
   chosen: the owner made the token the only proof of who pushed.
+- **Recorded:** `by` checked only as a written actor, not matched to the
+  pusher (the plan's recommendation for GQ-3). Not chosen.
 
 ## Owning documents
 
@@ -68,9 +79,11 @@ Owner's choice; no reason recorded.
 
 ## Related open questions
 
-- [Plan, GQ-3](../build-plan-git-catalog.md#102-questions-for-the-owner).
+None.
 
 ## History
 
 - 2026-11-19: decided by the owner in conversation; proposed as this record in
   the Git-based catalog plan ([issue #161](https://github.com/guneet-xyz/shinan/issues/161)).
+- 2026-11-19: accepted by the owner with the plan ([PR #162](https://github.com/guneet-xyz/shinan/pull/162),
+  answers GQ-1 to GQ-6 [on issue #161](https://github.com/guneet-xyz/shinan/issues/161#issuecomment-7007337638)).

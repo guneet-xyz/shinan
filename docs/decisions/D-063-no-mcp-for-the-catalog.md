@@ -1,10 +1,10 @@
 ---
 id: D-063
 title: Agents read and change the catalog through Git and the skill, not MCP; MCP stays for tasks
-status: proposed
+status: accepted
 date: 2026-11-19
-decided_by:
-evidence:
+decided_by: owner
+evidence: "https://github.com/guneet-xyz/shinan/issues/161#issuecomment-7007337638"
 supersedes: []
 superseded_by: []
 amends: [D-014, D-006]
@@ -13,10 +13,9 @@ amended_by: []
 
 # D-063: Agents read and change the catalog through Git and the skill, not MCP; MCP stays for tasks
 
-Status: **Proposed.** The owner decided this in conversation on 2026-11-19
-(recorded on [issue #161](https://github.com/guneet-xyz/shinan/issues/161));
-the record is accepted when the owner approves the
-[Git-based catalog plan](../build-plan-git-catalog.md).
+Status: **Accepted** by the owner on 2026-11-19, in conversation, with the
+[Git-based catalog plan](../build-plan-git-catalog.md) ("Approve and start";
+recorded on [issue #161](https://github.com/guneet-xyz/shinan/issues/161#issuecomment-7007337638)).
 
 ## Context
 
@@ -68,3 +67,5 @@ None.
 
 - 2026-11-19: decided by the owner in conversation; proposed as this record in
   the Git-based catalog plan ([issue #161](https://github.com/guneet-xyz/shinan/issues/161)).
+- 2026-11-19: accepted by the owner with the plan ([PR #162](https://github.com/guneet-xyz/shinan/pull/162),
+  answers GQ-1 to GQ-6 [on issue #161](https://github.com/guneet-xyz/shinan/issues/161#issuecomment-7007337638)).

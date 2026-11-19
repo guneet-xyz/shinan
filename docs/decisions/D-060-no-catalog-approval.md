@@ -1,10 +1,10 @@
 ---
 id: D-060
 title: Catalog changes need no approval; Shinan's checks on push are the only gate
-status: proposed
+status: accepted
 date: 2026-11-19
-decided_by:
-evidence:
+decided_by: owner
+evidence: "https://github.com/guneet-xyz/shinan/issues/161#issuecomment-7007337638"
 supersedes: [D-024]
 superseded_by: []
 amends: []
@@ -13,10 +13,9 @@ amended_by: []
 
 # D-060: Catalog changes need no approval; Shinan's checks on push are the only gate
 
-Status: **Proposed.** The owner decided this in conversation on 2026-11-19
-(recorded on [issue #161](https://github.com/guneet-xyz/shinan/issues/161));
-the record is accepted when the owner approves the
-[Git-based catalog plan](../build-plan-git-catalog.md).
+Status: **Accepted** by the owner on 2026-11-19, in conversation, with the
+[Git-based catalog plan](../build-plan-git-catalog.md) ("Approve and start";
+recorded on [issue #161](https://github.com/guneet-xyz/shinan/issues/161#issuecomment-7007337638)).
 
 ## Context
 
@@ -56,8 +55,13 @@ were proposed by the coordinating agent and agreed by the owner
   the start-here document, owner answers O-3, O-18's approval part, O-46,
   M2-Q7, M2-Q8, M2-Q13) lapse; the checks on push are proposed in the
   [plan §2.5](../build-plan-git-catalog.md#25-checks-on-push).
-- What the owner can do when the secret check wrongly refuses a push is open
-  ([plan, GQ-2](../build-plan-git-catalog.md#102-questions-for-the-owner)).
+- **Decided (owner, GQ-2, [plan §10.2](../build-plan-git-catalog.md#102-owner-answers-to-the-questions)):** a workspace owner can allow
+  one exact value as "not a secret" in workspace settings, stored as its
+  hash and recorded in the security log, so a false positive of the secret
+  check does not block a correct push.
+- **Decided (owner, GQ-6):** review after the fact is `main`'s commit
+  history, with the pusher beside each commit
+  ([D-064](D-064-catalog-not-wiki.md)).
 
 ## Alternatives considered
 
@@ -73,11 +77,11 @@ were proposed by the coordinating agent and agreed by the owner
 
 ## Related open questions
 
-- [Plan, GQ-2 and GQ-6](../build-plan-git-catalog.md#102-questions-for-the-owner):
-  false positives of the secret check, and a recent-changes list for review
-  after the fact.
+None.
 
 ## History
 
 - 2026-11-19: decided by the owner in conversation; proposed as this record in
   the Git-based catalog plan ([issue #161](https://github.com/guneet-xyz/shinan/issues/161)).
+- 2026-11-19: accepted by the owner with the plan ([PR #162](https://github.com/guneet-xyz/shinan/pull/162),
+  answers GQ-1 to GQ-6 [on issue #161](https://github.com/guneet-xyz/shinan/issues/161#issuecomment-7007337638)).

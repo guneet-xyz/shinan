@@ -1,10 +1,10 @@
 ---
 id: D-059
 title: The catalog is stored in Git, one repository per workspace, hosted by Shinan
-status: proposed
+status: accepted
 date: 2026-11-19
-decided_by:
-evidence:
+decided_by: owner
+evidence: "https://github.com/guneet-xyz/shinan/issues/161#issuecomment-7007337638"
 supersedes: [D-022, D-043]
 superseded_by: []
 amends: [D-006]
@@ -13,10 +13,9 @@ amended_by: []
 
 # D-059: The catalog is stored in Git, one repository per workspace, hosted by Shinan
 
-Status: **Proposed.** The owner decided this in conversation on 2026-11-19
-(recorded on [issue #161](https://github.com/guneet-xyz/shinan/issues/161));
-the record is accepted when the owner approves the
-[Git-based catalog plan](../build-plan-git-catalog.md).
+Status: **Accepted** by the owner on 2026-11-19, in conversation, with the
+[Git-based catalog plan](../build-plan-git-catalog.md) ("Approve and start";
+recorded on [issue #161](https://github.com/guneet-xyz/shinan/issues/161#issuecomment-7007337638)).
 
 ## Context
 
@@ -81,10 +80,12 @@ Owner's choice: the M2 catalog "isn't working". No further reason recorded.
 
 ## Related open questions
 
-- Where Git runs, inside `web` or in its own container
-  ([plan, GQ-1](../build-plan-git-catalog.md#102-questions-for-the-owner)).
+None. Where Git runs was answered by the owner (GQ-1): in its own container
+([D-065](D-065-git-container-and-service-token.md)).
 
 ## History
 
 - 2026-11-19: decided by the owner in conversation; proposed as this record in
   the Git-based catalog plan ([issue #161](https://github.com/guneet-xyz/shinan/issues/161)).
+- 2026-11-19: accepted by the owner with the plan ([PR #162](https://github.com/guneet-xyz/shinan/pull/162),
+  answers GQ-1 to GQ-6 [on issue #161](https://github.com/guneet-xyz/shinan/issues/161#issuecomment-7007337638)).

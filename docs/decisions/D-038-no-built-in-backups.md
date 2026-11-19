@@ -42,6 +42,7 @@ Owner's choice; no reason recorded.
 
 ## Consequences
 
+- **Decided (owner, 2026-11-19, [D-059](D-059-catalog-in-git-hosted-by-shinan.md)):** the catalog's repositories are on a volume with no backup either; agents' clones are partial copies, not backups.
 - **Decided:** the roadmap notes this risk as a consideration before the
   `workspace` repository moves into Shinan.
 - Details: see [architecture and operations](../architecture.md) and
@@ -67,3 +68,4 @@ None.
 - 2026-11-16: accepted by the owner on issue #25. Recorded in the decision
   log's pull request as part of the issue #25 batch (see
   [README, history](README.md#history)).
+- 2026-11-19: related decisions D-059 to D-065 recorded ([Git-based catalog plan](../build-plan-git-catalog.md), accepted by the owner, [issue #161](https://github.com/guneet-xyz/shinan/issues/161#issuecomment-7007337638)). Decision and Reasons unchanged; maintained sections updated.

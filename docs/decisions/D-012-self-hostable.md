@@ -39,6 +39,7 @@ We self-host, and it is the clearest gap left by Port and Chartroom.
 
 ## Consequences
 
+- **Decided (owner, 2026-11-19, [D-059](D-059-catalog-in-git-hosted-by-shinan.md), [D-065](D-065-git-container-and-service-token.md)):** an installation also runs a Git container, whose volume holds the catalog; operators keep it as well as PostgreSQL.
 - **Decided:** self-hosting is covered by the architecture document
   ([plan, section 8](../plan.md#8-documents-to-write-next)).
 - Proposed refinements: see the domain model's
@@ -67,3 +68,4 @@ We self-host, and it is the clearest gap left by Port and Chartroom.
   2026-11-16).
 - Accepted when the owner's answers were recorded (commit `e46c560`) and
   approved with the plan on 2026-11-16 (merge commit `248a2c5`).
+- 2026-11-19: related decisions D-059 to D-065 recorded ([Git-based catalog plan](../build-plan-git-catalog.md), accepted by the owner, [issue #161](https://github.com/guneet-xyz/shinan/issues/161#issuecomment-7007337638)). Decision and Reasons unchanged; maintained sections updated.

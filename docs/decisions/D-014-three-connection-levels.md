@@ -8,7 +8,7 @@ evidence: https://github.com/guneet-xyz/shinan/issues/1
 supersedes: []
 superseded_by: []
 amends: []
-amended_by: []
+amended_by: [D-063]
 ---
 
 # D-014: Agents connect at three connection levels: MCP and skill, plugin, launcher
@@ -16,6 +16,8 @@ amended_by: []
 Status: **Accepted** by the owner on 2026-11-16, with the plan
 ([issue #1](https://github.com/guneet-xyz/shinan/issues/1),
 [PR #2](https://github.com/guneet-xyz/shinan/pull/2)).
+
+Amended by [D-063](D-063-no-mcp-for-the-catalog.md).
 
 ## Context
 
@@ -47,6 +49,7 @@ can follow session events and send messages into a running session.
 
 ## Consequences
 
+- **Decided (owner, 2026-11-19, [D-063](D-063-no-mcp-for-the-catalog.md)):** for the catalog, level 1 is Git and the skill, not MCP; MCP and the skill remain level 1 for tasks (M3).
 - **Decided:** agent sessions connected only through MCP are marked
   "self-reported" ([plan, section 4](../plan.md#4-product-pillars)).
 - **Decided:** agent sessions with a plugin get nudges live; others pick them
@@ -92,3 +95,4 @@ can follow session events and send messages into a running session.
 - Accepted when the owner's answers were recorded (commit `e46c560`) and
   approved with the plan on 2026-11-16 (merge commit `248a2c5`).
 - 2026-11-16: related decisions [D-031](D-031-agent-and-session-granularity.md), [D-032](D-032-no-writes-as-a-person-on-github.md) recorded from [issue #25](https://github.com/guneet-xyz/shinan/issues/25); maintained sections updated.
+- 2026-11-19: amended by D-063 ([Git-based catalog plan](../build-plan-git-catalog.md), accepted by the owner, [issue #161](https://github.com/guneet-xyz/shinan/issues/161#issuecomment-7007337638)). Decision and Reasons unchanged; maintained sections updated.

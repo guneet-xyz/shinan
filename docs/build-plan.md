@@ -111,7 +111,7 @@ their own package lists at each milestone review: M2's are in the
 [M2 build plan](build-plan-m2.md) (approved by the owner on 2026-11-17, [#79](https://github.com/guneet-xyz/shinan/issues/79)).
 M2's catalog storage and write path are being replaced by a Git-based catalog
 (owner, 2026-11-19); its packages are in the
-[Git-based catalog plan](build-plan-git-catalog.md) (proposed, [#161](https://github.com/guneet-xyz/shinan/issues/161)),
+[Git-based catalog plan](build-plan-git-catalog.md) (approved by the owner on 2026-11-19, [#161](https://github.com/guneet-xyz/shinan/issues/161)),
 built before M3.
 
 ## 6. Owner actions for M1

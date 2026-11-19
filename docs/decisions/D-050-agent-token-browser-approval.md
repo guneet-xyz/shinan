@@ -48,6 +48,7 @@ Owner's choice; no reason recorded.
 
 ## Consequences
 
+- **Decided (owner, 2026-11-19, [D-061](D-061-push-authentication-and-push-log.md)):** the one agent token also works at `/git/`, as the password of HTTP Basic authentication supplied by a Git credential helper.
 - **Decided:** identity owns the flow; architecture and agent integrations
   align with it (owner's answer).
 - Details: see [identity, agents and permissions](../identity.md),
@@ -80,3 +81,4 @@ None.
   in the decision log's integration-fix pull request (see
   [README, history](README.md#history)).
 - 2026-11-16: added Human experience to the owning documents (integration review I-77, [issue #26](https://github.com/guneet-xyz/shinan/issues/26#issuecomment-6918785395)).
+- 2026-11-19: related decisions D-059 to D-065 recorded ([Git-based catalog plan](../build-plan-git-catalog.md), accepted by the owner, [issue #161](https://github.com/guneet-xyz/shinan/issues/161#issuecomment-7007337638)). Decision and Reasons unchanged; maintained sections updated.

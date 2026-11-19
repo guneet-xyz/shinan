@@ -1,10 +1,10 @@
 ---
 id: D-062
 title: Catalog content carries no trust labels; it is information, never instructions
-status: proposed
+status: accepted
 date: 2026-11-19
-decided_by:
-evidence:
+decided_by: owner
+evidence: "https://github.com/guneet-xyz/shinan/issues/161#issuecomment-7007337638"
 supersedes: []
 superseded_by: []
 amends: []
@@ -13,10 +13,9 @@ amended_by: []
 
 # D-062: Catalog content carries no trust labels; it is information, never instructions
 
-Status: **Proposed.** The owner decided this in conversation on 2026-11-19
-(recorded on [issue #161](https://github.com/guneet-xyz/shinan/issues/161));
-the record is accepted when the owner approves the
-[Git-based catalog plan](../build-plan-git-catalog.md).
+Status: **Accepted** by the owner on 2026-11-19, in conversation, with the
+[Git-based catalog plan](../build-plan-git-catalog.md) ("Approve and start";
+recorded on [issue #161](https://github.com/guneet-xyz/shinan/issues/161#issuecomment-7007337638)).
 
 ## Context
 
@@ -39,14 +38,12 @@ information, never instructions.
 
 Owner's choice; no reason recorded.
 
-## Notes
-
-- Proposed: the plan reads this decision as covering the catalog. Whether
-  M3's task, outside-issue and nudge text keeps labels is asked in
-  [plan, GQ-4](../build-plan-git-catalog.md#102-questions-for-the-owner).
-
 ## Consequences
 
+- **Decided (owner, GQ-4, [plan §10.2](../build-plan-git-catalog.md#102-owner-answers-to-the-questions)):** this covers the catalog
+  only. Whether task, outside-issue and nudge text carries labels is decided
+  by the M3 plan; [agent integrations, trust labels](../agent-integrations.md#trust-labels)
+  stays as the design for them until then.
 - Section credits, word provenance and the labels in the index and its tests
   are removed ([plan §1.2](../build-plan-git-catalog.md#12-what-is-removed-from-m2));
   owner answer M2-Q6 lapses.
@@ -68,9 +65,11 @@ Owner's choice; no reason recorded.
 
 ## Related open questions
 
-- [Plan, GQ-4](../build-plan-git-catalog.md#102-questions-for-the-owner).
+- Trust labels for tasks, outside issues and nudges: the M3 plan.
 
 ## History
 
 - 2026-11-19: decided by the owner in conversation; proposed as this record in
   the Git-based catalog plan ([issue #161](https://github.com/guneet-xyz/shinan/issues/161)).
+- 2026-11-19: accepted by the owner with the plan ([PR #162](https://github.com/guneet-xyz/shinan/pull/162),
+  answers GQ-1 to GQ-6 [on issue #161](https://github.com/guneet-xyz/shinan/issues/161#issuecomment-7007337638)).

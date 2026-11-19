@@ -36,6 +36,7 @@ Trust in the catalog is the main differentiator.
 
 ## Consequences
 
+- **Decided (owner, 2026-11-19, [D-061](D-061-push-authentication-and-push-log.md)):** fact checks are written by agents in the text and pushed; a new or changed fact check's `by` must name the pusher.
 - **Decided:** fact states are intended, observed, proposed and unknown
   ([plan, section 4](../plan.md#4-product-pillars)).
 - **Decided:** every fact shows how fresh it is and where it came from
@@ -71,3 +72,4 @@ Trust in the catalog is the main differentiator.
 - Approved with the plan on 2026-11-16 (merge commit `248a2c5`).
 - 2026-11-16: related decisions [D-025](D-025-fact-state-planned.md) recorded from [issue #25](https://github.com/guneet-xyz/shinan/issues/25); maintained sections updated.
 - 2026-11-16: fixed the link to the glossary's "Fact check, source and freshness" section (integration review I-60, [issue #26](https://github.com/guneet-xyz/shinan/issues/26)).
+- 2026-11-19: related decisions D-059 to D-065 recorded ([Git-based catalog plan](../build-plan-git-catalog.md), accepted by the owner, [issue #161](https://github.com/guneet-xyz/shinan/issues/161#issuecomment-7007337638)). Decision and Reasons unchanged; maintained sections updated.

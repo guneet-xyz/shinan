@@ -1,10 +1,10 @@
 ---
 id: D-064
 title: '"Wiki" becomes "catalog"; people browse main as a file tree with pages and search, without editing for now'
-status: proposed
+status: accepted
 date: 2026-11-19
-decided_by:
-evidence:
+decided_by: owner
+evidence: "https://github.com/guneet-xyz/shinan/issues/161#issuecomment-7007337638"
 supersedes: []
 superseded_by: []
 amends: [D-006]
@@ -13,10 +13,9 @@ amended_by: []
 
 # D-064: "Wiki" becomes "catalog"; people browse `main` as a file tree with pages and search, without editing for now
 
-Status: **Proposed.** The owner decided this in conversation on 2026-11-19
-(recorded on [issue #161](https://github.com/guneet-xyz/shinan/issues/161));
-the record is accepted when the owner approves the
-[Git-based catalog plan](../build-plan-git-catalog.md).
+Status: **Accepted** by the owner on 2026-11-19, in conversation, with the
+[Git-based catalog plan](../build-plan-git-catalog.md) ("Approve and start";
+recorded on [issue #161](https://github.com/guneet-xyz/shinan/issues/161#issuecomment-7007337638)).
 
 ## Context
 
@@ -34,11 +33,14 @@ the record is accepted when the owner approves the
 browse the catalog as a file tree with navigation on the left, rendered
 Markdown pages and full-text search, not by types; simple and easy on the
 eyes. There is no human editing in the browser for now. Navigation and polish
-get their own improvement cycle later; the Git storage comes first.
+get their own improvement cycle later; the Git storage comes first. Recent
+changes is the commit history: the catalog shows `main`'s commit history,
+with the pusher from the push log beside each commit, and no separate list.
 
 ## Reasons
 
-Owner's choice; no reason recorded.
+Owner's choice; no reason recorded. The last sentence is the owner's answer
+GQ-6 to the plan ("Recent changes is the commit history").
 
 ## Consequences
 
@@ -61,10 +63,11 @@ Owner's choice; no reason recorded.
 
 ## Related open questions
 
-- [Plan, GQ-6](../build-plan-git-catalog.md#102-questions-for-the-owner): a
-  recent-changes list in this round.
+None.
 
 ## History
 
 - 2026-11-19: decided by the owner in conversation; proposed as this record in
   the Git-based catalog plan ([issue #161](https://github.com/guneet-xyz/shinan/issues/161)).
+- 2026-11-19: accepted by the owner with the plan ([PR #162](https://github.com/guneet-xyz/shinan/pull/162),
+  answers GQ-1 to GQ-6 [on issue #161](https://github.com/guneet-xyz/shinan/issues/161#issuecomment-7007337638)).
