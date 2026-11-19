@@ -710,7 +710,7 @@ installation's own address and gives four steps:
 
 It also says never to paste the token into a chat, issue, project file or
 command line, and to revoke it in Your agents if it leaks. The trial's
-machine-level layout on Daedalus is the [trial start kit](build-plan-m2.md#313-m2-13-trial-start-kit)'s.
+machine-level layout on Daedalus is in the [trial guide](trial.md#4-opencode-configuration-on-daedalus).
 
 ## Conventions agents follow
 
