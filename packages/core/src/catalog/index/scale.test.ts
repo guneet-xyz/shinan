@@ -1,5 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 
+import { sql } from "@shinan/db"
+
 import {
   asAgent,
   asPerson,
@@ -124,7 +126,8 @@ describe("a catalog of a few thousand entities", () => {
   it("applies a one-document revision without reading the rest", async () => {
     const [{ id }] = await db
       .execute<{ id: string }>(
-        `select document_id as id from catalog_index_documents where catalog_id = 'machine/m7'`,
+        // Only this workspace's: other tests use the same catalog IDs.
+        sql`select document_id as id from catalog_index_documents where workspace_id = ${workspaceId} and catalog_id = 'machine/m7'`,
       )
       .then((r) => r.rows as [{ id: string }])
     const started = performance.now()
@@ -190,7 +193,8 @@ describe("a catalog of a few thousand entities", () => {
     const ctx = asPerson(db, owner)
     const [{ id }] = await db
       .execute<{ id: string }>(
-        `select document_id as id from catalog_index_documents where catalog_id = 'machine/m11'`,
+        // Only this workspace's: other tests use the same catalog IDs.
+        sql`select document_id as id from catalog_index_documents where workspace_id = ${workspaceId} and catalog_id = 'machine/m11'`,
       )
       .then((r) => r.rows as [{ id: string }])
     await db.transaction((tx) =>
