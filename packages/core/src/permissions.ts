@@ -231,69 +231,6 @@ export const rules = deepFreeze({
     reauthentication: false,
   },
   /**
-   * Record that a person opened a catalog page in the wiki, for the
-   * start-here path's "opened" and "changed since you opened it" markers
-   * (human experience, start here for people). A personal record, not
-   * catalog content; agents do not read the wiki.
-   */
-  "catalog.mark-opened": {
-    level: "workspace",
-    access: "write",
-    roles: ["owner", "contributor"],
-    agents: "people",
-    reauthentication: false,
-  },
-  /**
-   * Make catalog proposals, read them and withdraw one's own (catalog §8.1,
-   * §8.6; identity §5.1). Every member may; agents need `catalog:propose`
-   * (identity §7.2). The operation checks that a withdrawn proposal is the
-   * actor's own.
-   */
-  "catalog.propose": {
-    level: "workspace",
-    access: "write",
-    roles: ["owner", "contributor"],
-    agents: ["catalog:propose"],
-    reauthentication: false,
-  },
-  /**
-   * Comment on catalog proposals (catalog §8.6; identity §5.1): every
-   * member, and agents with `catalog:propose`, such as an agent asked to
-   * review a proposal recording its findings.
-   */
-  "catalog.comment": {
-    level: "workspace",
-    access: "write",
-    roles: ["owner", "contributor"],
-    agents: ["catalog:propose"],
-    reauthentication: false,
-  },
-  /**
-   * Approve or reject catalog proposals waiting for catalog approval
-   * (catalog §8.2, §8.6). Reserved for people (identity §6.3): an agent
-   * approving would be its person approving without looking.
-   */
-  "catalog.approve": {
-    level: "workspace",
-    access: "write",
-    roles: ["owner", "contributor"],
-    agents: "people",
-    reauthentication: false,
-  },
-  /**
-   * Repair a catalog document that reads with problems by replacing its
-   * whole text (catalog §8.3): workspace owners only, with
-   * re-authentication, never agents. It goes through the proposal path and
-   * is recorded as the owner's approval.
-   */
-  "catalog.repair": {
-    level: "workspace",
-    access: "write",
-    roles: ["owner"],
-    agents: "people",
-    reauthentication: true,
-  },
-  /**
    * Purge catalog content (catalog §9; architecture §4.4): replace a text
    * with a marker wherever the catalog stores it, and see where it is
    * first. Workspace owners only, with re-authentication (identity §3.3,

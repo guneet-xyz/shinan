@@ -127,9 +127,9 @@ remaining risk in one place.
    finer levels, the workspace boundary must be absolute.
 3. **An agent never has more than its member.** Reason: it already uses that
    member's git host account (D-017), so trusting it with more makes no sense.
-4. **Only people change who can do what.** Agents cannot invite, change roles,
-   issue tokens or approve catalog proposals. Reason: a stolen or misled agent
-   must not be able to widen its own access or approve its own work.
+4. **Only people change who can do what.** Agents cannot invite, change roles
+   or issue tokens. Reason: a stolen or misled agent must not be able to widen
+   its own access.
 5. **Credentials are narrow and revocable at once.** Reason: tokens are
    long-lived (O-44), so fast, visible revocation is the main control.
 6. **Attribution says how sure it is.** Reason: D-017 makes certainty
@@ -429,37 +429,34 @@ Key: ✓ allowed; ✗ not allowed; "own" means only for themselves or their own
 agents. The agent column is the most an agent can do; it also never exceeds its
 member's role ([6.3](#63-what-an-agent-may-do)).
 
-| Action                                                                                                       | Workspace owner | Contributor                                                                                        | Agent                                                                     |
-| ------------------------------------------------------------------------------------------------------------ | --------------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| Read everything in the workspace: catalog (wiki, agent index), tasks, timelines, presence                    | ✓               | ✓                                                                                                  | ✓                                                                         |
-| Create, claim, update tasks and subtasks; add work links; record verification                                | ✓               | ✓                                                                                                  | ✓                                                                         |
-| Add or remove dependencies; move a subtask under another parent or make it top-level                         | ✓               | ✓                                                                                                  | ✓                                                                         |
-| Rank `to do` tasks                                                                                           | ✓               | ✓                                                                                                  | ✗ (agents read the order)                                                 |
-| Confirm or dismiss an unconfirmed link made by an outside actor's marker                                     | ✓               | ✓                                                                                                  | ✗                                                                         |
-| Confirm or dismiss an unconfirmed link from a member's closing reference                                     | ✓               | ✓                                                                                                  | ✓                                                                         |
-| Comment on tasks                                                                                             | ✓               | ✓                                                                                                  | ✗ (agents post progress updates)                                          |
-| Post progress updates on its task                                                                            | –               | –                                                                                                  | ✓                                                                         |
-| Send nudges                                                                                                  | ✓               | ✓                                                                                                  | ✗ (nudges come from people)                                               |
-| Withdraw a nudge before it is delivered                                                                      | own             | own                                                                                                | ✗                                                                         |
-| Release an agent session from a task (the session is told by a nudge)                                        | ✓               | ✓                                                                                                  | Only its own session (Release task)                                       |
-| Request a git host action on a task (reaches the requester's own agent sessions, N-3)                        | ✓               | ✓                                                                                                  | ✗                                                                         |
-| Accept or cancel tasks in `triage`; set `cancelled` or `on hold`                                             | ✓               | ✓                                                                                                  | ✗                                                                         |
-| Set or clear `needs a person`, with a summary                                                                | ✓               | ✓                                                                                                  | ✓ (O-7)                                                                   |
-| Set `awaiting deployment approval` (ask for approval)                                                        | ✓               | ✓                                                                                                  | ✓                                                                         |
-| Give a deployment approval in Shinan (with re-authentication)                                                | ✓               | ✓ only if the workspace setting "contributors may give deployment approval" is on (off by default) | Only to record one its own member gave in the agent's conversation (O-20) |
-| Make catalog proposals                                                                                       | ✓               | ✓                                                                                                  | ✓                                                                         |
-| Comment on catalog proposals                                                                                 | ✓               | ✓                                                                                                  | ✓ (with `catalog:propose`)                                                |
-| Approve gated catalog proposals                                                                              | ✓               | ✓                                                                                                  | ✗                                                                         |
-| Register agents; approve, view and revoke their tokens                                                       | own             | own                                                                                                | ✗                                                                         |
-| Disable any agent, revoke any token in the workspace                                                         | ✓               | ✗                                                                                                  | ✗                                                                         |
-| Invite people; withdraw invitations                                                                          | ✓               | ✗                                                                                                  | ✗                                                                         |
-| Change roles; remove members                                                                                 | ✓               | ✗                                                                                                  | ✗                                                                         |
-| Add, change or remove git host connections                                                                   | ✓               | ✗                                                                                                  | ✗                                                                         |
-| Change workspace settings, including the workspace's task flags                                              | ✓               | ✗                                                                                                  | ✗                                                                         |
-| Read the workspace security log                                                                              | ✓               | own entries                                                                                        | ✗                                                                         |
-| Correct the credit on an event from their own git host account                                               | own             | own                                                                                                | ✗                                                                         |
-| Purge, export or delete the workspace; import an export into an empty workspace (all with re-authentication) | ✓               | ✗                                                                                                  | ✗                                                                         |
-| Repair a catalog document by replacing its whole text (with re-authentication, catalog §8.3)                 | ✓               | ✗                                                                                                  | ✗                                                                         |
+| Action                                                                                                                        | Workspace owner          | Contributor                                                                                        | Agent                                                                     |
+| ----------------------------------------------------------------------------------------------------------------------------- | ------------------------ | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| Read everything in the workspace: catalog (wiki, agent index), tasks, timelines, presence                                     | ✓                        | ✓                                                                                                  | ✓                                                                         |
+| Create, claim, update tasks and subtasks; add work links; record verification                                                 | ✓                        | ✓                                                                                                  | ✓                                                                         |
+| Add or remove dependencies; move a subtask under another parent or make it top-level                                          | ✓                        | ✓                                                                                                  | ✓                                                                         |
+| Rank `to do` tasks                                                                                                            | ✓                        | ✓                                                                                                  | ✗ (agents read the order)                                                 |
+| Confirm or dismiss an unconfirmed link made by an outside actor's marker                                                      | ✓                        | ✓                                                                                                  | ✗                                                                         |
+| Confirm or dismiss an unconfirmed link from a member's closing reference                                                      | ✓                        | ✓                                                                                                  | ✓                                                                         |
+| Comment on tasks                                                                                                              | ✓                        | ✓                                                                                                  | ✗ (agents post progress updates)                                          |
+| Post progress updates on its task                                                                                             | –                        | –                                                                                                  | ✓                                                                         |
+| Send nudges                                                                                                                   | ✓                        | ✓                                                                                                  | ✗ (nudges come from people)                                               |
+| Withdraw a nudge before it is delivered                                                                                       | own                      | own                                                                                                | ✗                                                                         |
+| Release an agent session from a task (the session is told by a nudge)                                                         | ✓                        | ✓                                                                                                  | Only its own session (Release task)                                       |
+| Request a git host action on a task (reaches the requester's own agent sessions, N-3)                                         | ✓                        | ✓                                                                                                  | ✗                                                                         |
+| Accept or cancel tasks in `triage`; set `cancelled` or `on hold`                                                              | ✓                        | ✓                                                                                                  | ✗                                                                         |
+| Set or clear `needs a person`, with a summary                                                                                 | ✓                        | ✓                                                                                                  | ✓ (O-7)                                                                   |
+| Set `awaiting deployment approval` (ask for approval)                                                                         | ✓                        | ✓                                                                                                  | ✓                                                                         |
+| Give a deployment approval in Shinan (with re-authentication)                                                                 | ✓                        | ✓ only if the workspace setting "contributors may give deployment approval" is on (off by default) | Only to record one its own member gave in the agent's conversation (O-20) |
+| Change the catalog by pushing to its Git repository ([D-060](decisions/D-060-no-catalog-approval.md); built in GC-2 and GC-3) | ✗ (through their agents) | ✗ (through their agents)                                                                           | ✓ (with `catalog:write`)                                                  |
+| Register agents; approve, view and revoke their tokens                                                                        | own                      | own                                                                                                | ✗                                                                         |
+| Disable any agent, revoke any token in the workspace                                                                          | ✓                        | ✗                                                                                                  | ✗                                                                         |
+| Invite people; withdraw invitations                                                                                           | ✓                        | ✗                                                                                                  | ✗                                                                         |
+| Change roles; remove members                                                                                                  | ✓                        | ✗                                                                                                  | ✗                                                                         |
+| Add, change or remove git host connections                                                                                    | ✓                        | ✗                                                                                                  | ✗                                                                         |
+| Change workspace settings, including the workspace's task flags                                                               | ✓                        | ✗                                                                                                  | ✗                                                                         |
+| Read the workspace security log                                                                                               | ✓                        | own entries                                                                                        | ✗                                                                         |
+| Correct the credit on an event from their own git host account                                                                | own                      | own                                                                                                | ✗                                                                         |
+| Purge, export or delete the workspace; import an export into an empty workspace (all with re-authentication)                  | ✓                        | ✗                                                                                                  | ✗                                                                         |
 
 Notes:
 
@@ -470,10 +467,10 @@ Notes:
   O-8), so managing them is a workspace setting; a task is done when its
   subtasks, at any depth, are done and its delivering pull requests are merged
   (owner, O-21, N-1).
-- Only gated, high-risk catalog changes need approval (owner, O-3), and only
-  people approve them. **Decided (owner, O-46):** a person may approve a
-  proposal made by their own agent while one person uses Shinan; the approval
-  is recorded as the person's action, separate from the proposal.
+- Catalog changes need no approval: every push that passes Shinan's checks
+  applies (owner, GD-2, [D-060](decisions/D-060-no-catalog-approval.md),
+  superseding O-3 and O-46). People do not push; their agents do
+  ([Git-based catalog plan §2.14](build-plan-git-catalog.md#214-permissions-scopes-and-the-security-log)).
 - **Deployment approval in Shinan** is given by workspace owners, and by
   contributors only when the workspace setting "contributors may give
   deployment approval" is on. The setting is off by default and defined by
@@ -688,15 +685,13 @@ three of these allow:
 
 **Reserved for people** (no agent may do these, whatever the role or scopes):
 
-- approve or reject catalog proposals;
 - invite people, change roles, remove members;
 - register agents, approve or change tokens, or change scopes;
 - add or change git host connections or workspace settings;
 - read the workspace security log;
 - correct attribution;
 - send nudges, withdraw them, or request git host actions;
-- comment on tasks (agents post progress updates instead; they may comment on
-  catalog proposals);
+- comment on tasks (agents post progress updates instead);
 - rank `to do` tasks, or confirm links made by outside actors' markers;
 - release another agent session from a task (an agent may release only its
   own session);
@@ -795,15 +790,17 @@ rule.
 
 **Proposed** starting scopes:
 
-| Scope             | Allows                                                                                                                                |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `catalog:read`    | Read the catalog and the agent index                                                                                                  |
-| `catalog:propose` | Make and withdraw catalog proposals; comment on catalog proposals                                                                     |
-| `tasks:read`      | Read tasks, work links and timelines                                                                                                  |
-| `tasks:write`     | Create, claim and update tasks and subtasks; add work links; record verification; post progress updates; set the flags agents may set |
-| `presence`        | Report agent sessions and presence; receive nudges                                                                                    |
+| Scope           | Allows                                                                                                                                |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `catalog:read`  | Read the catalog: clone and fetch its Git repository                                                                                  |
+| `catalog:write` | Change the catalog by pushing to its Git repository                                                                                   |
+| `tasks:read`    | Read tasks, work links and timelines                                                                                                  |
+| `tasks:write`   | Create, claim and update tasks and subtasks; add work links; record verification; post progress updates; set the flags agents may set |
+| `presence`      | Report agent sessions and presence; receive nudges                                                                                    |
 
-A normal agent gets all five. A **read-only token** has only the two `read`
+`catalog:write` was `catalog:propose` in M2; a migration renamed the stored
+scopes, so tokens keep their access (Git-based catalog plan §2.14, GC-5). A
+normal agent gets all five. A **read-only token** has only the two `read`
 scopes; it is a choice of scopes offered when approving a token, not a role
 (N-11 removed only the viewer role). Reason: splitting reading from writing is the line that matters most when a
 long-lived token leaks. Because there is no restricted level (O-2), a `read`
@@ -1219,7 +1216,7 @@ kinds (**proposed**):
 | Agents and tokens    | Agents created, renamed, disabled; tokens approved and revoked (and why); each token's first and last use, network address and number of requests   |
 | Git hosts            | Git host accounts linked and unlinked; connections added, changed, removed; Forgejo addresses refused by the address checks                         |
 | Workspace            | Settings changed; exports; purges; deletion                                                                                                         |
-| Approvals and credit | Catalog approvals; deployment approvals, including who recorded them; attribution corrections                                                       |
+| Approvals and credit | Deployment approvals, including who recorded them; attribution corrections                                                                          |
 | Refusals             | Requests refused by the checks in [9.1](#91-how-every-request-is-checked), especially agents attempting reserved actions                            |
 | Operator             | Account resets and installation setting changes                                                                                                     |
 
@@ -1238,14 +1235,12 @@ kinds (**proposed**):
   summary, so no request is in two entries, and `totalRequests` those since
   the token was made. Agent and token entries are `agent.created`, `agent.renamed`,
   `agent.disabled`, `agent.enabled`, `agent-token.issued`,
-  `agent-token.revoked` and `agent-token.failed`. **Decided (owner, 2026-11-19, M2-Q17; M2-6):** an agent's read of a
-  workspace-wide catalog list (`catalog_lists` over MCP) is one
-  `catalog.bulk-read` entry per call, with the list, the page offset, the
-  number of items and the catalog revision; so is each page after the first
-  of a listing of every entity (`search_catalog` with no words, list
-  `entities`). **Decided (owner, 2026-11-19, M2-Q17; #133):** a workspace owner's repair of a catalog
-  document is recorded as their approval, `catalog-proposal.approved` with
-  `repair: true`, like any approval; the text is never in the entry.
+  `agent-token.revoked` and `agent-token.failed`. M2's `catalog.bulk-read` entries for the catalog MCP tools and its
+  `catalog-proposal.*` entries for catalog approvals and repairs are no
+  longer written: those tools and approvals are gone (GC-5); entries already
+  written stay. Fetches and pushes are recorded as the
+  [Git-based catalog plan §2.14](build-plan-git-catalog.md#214-permissions-scopes-and-the-security-log)
+  says (GC-2, GC-3).
   **Decided (owner, 2026-11-19, M2-Q17; M2-10):** a catalog purge is one `catalog.purged`
   entry with the purge's ID and number, the revision it stored and how
   many revision texts, documents, proposals and events it changed, never

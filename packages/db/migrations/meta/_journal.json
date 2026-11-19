@@ -92,6 +92,13 @@
       "when": 1795044042593,
       "tag": "0012_catalog_purge",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1795088239191,
+      "tag": "0013_catalog_write_scope",
+      "breakpoints": true
     }
   ]
 }

@@ -121,6 +121,11 @@ export {
   tokenScopes,
   unusedTokenDays,
 } from "./identity/agents.js"
+export {
+  catalogRepositoryUrl,
+  getAgentWorkspaceContext,
+} from "./identity/agent-context.js"
+export type { AgentWorkspaceContextAnswer } from "./identity/agent-context.js"
 export type {
   Agent,
   AgentAuthentication,
@@ -198,25 +203,17 @@ export type {
 export * from "./catalog/document/index.js"
 export * from "./catalog/index/index.js"
 export {
-  getAgentStartHerePreview,
   getCatalogDocumentText,
-  getCatalogEditable,
   listCatalogHistory,
-  listCatalogPagesOpened,
   listCatalogTypeIndex,
-  recordCatalogPageOpened,
   typeIndexLimit,
 } from "./catalog/wiki.js"
 export type {
-  AgentStartHerePreviewAnswer,
   CatalogDocumentTextAnswer,
-  CatalogEditableAnswer,
   CatalogHistoryAnswer,
   CatalogHistoryItemJson,
-  CatalogPageOpenedJson,
   FreshnessSummaryJson,
   TypeIndexAnswer,
   TypeIndexItemJson,
 } from "./catalog/wiki.js"
-export * from "./catalog/proposals/index.js"
 export * from "./catalog/purge/index.js"

@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto"
+
 import {
   and,
   createLimitedLog,
@@ -18,7 +20,6 @@ import { InvalidInputError, RuleViolationError } from "../../errors.js"
 import { appendEvent } from "../../events.js"
 import { recordSecurityEntry } from "../../security-log.js"
 import { parseCatalogDocument } from "../document/index.js"
-import type { CatalogOperation } from "../document/index.js"
 import { splitFrontmatter } from "../document/parse.js"
 import { excerpt } from "../document/secrets.js"
 import {
@@ -27,10 +28,7 @@ import {
   reindexDocuments,
 } from "../index/indexer.js"
 import { latestTexts } from "../index/store.js"
-import { catalogWorkers } from "../proposals/pool.js"
-import { hashOf } from "../proposals/proposals.js"
 import { appendCatalogRevision } from "../revisions.js"
-import { clearEditableCache } from "../wiki.js"
 import { PurgeMatcher, spaces } from "./matcher.js"
 
 /**
@@ -432,7 +430,8 @@ export async function purgeCatalogText(
       }
     },
   )
-  await forgetInThisProcess(workspaceId, purge.number)
+  // Forget the type schemas this process parsed from the purged text.
+  clearTypeSchemaCache()
   await vacuumPurged(ctx)
   return purge
 }
@@ -1058,7 +1057,7 @@ async function purgeProposals(
     if (!holdsJson(proposalFields(row), match)) continue
     const explanation = plain(row.explanation)
     const relatedTask = row.relatedTask === null ? null : plain(row.relatedTask)
-    const operations = mapStrings(row.operations, plain) as CatalogOperation[]
+    const operations = mapStrings(row.operations, plain) as unknown[]
     const pending = row.state === "pending"
     await tx
       .update(schema.catalogProposals)
@@ -1177,16 +1176,6 @@ async function purgeEvents(
   return purged
 }
 
-/** After a purge in this process: forget the workspace's parsed text here at once. */
-async function forgetInThisProcess(
-  workspaceId: string,
-  purges: number,
-): Promise<void> {
-  clearTypeSchemaCache()
-  clearEditableCache()
-  await catalogWorkers().forgetPurged(new Map([[workspaceId, purges]]))
-}
-
 const vacuumLog = createLimitedLog()
 
 /**
@@ -1212,9 +1201,8 @@ let seenPurges: number | null = null
 
 /**
  * Forgets catalog text this process parsed before a purge in another
- * process (catalog §9): stops the catalog workers of workspaces with new
- * purges and empties the type schema and editable-form caches. `watchCatalogPurges` runs it
- * every minute; the purging process does it at once.
+ * process (catalog §9): empties the type schema cache. `watchCatalogPurges`
+ * runs it every minute; the purging process does it at once.
  */
 export async function forgetPurgedCatalogText(ctx: Context): Promise<void> {
   const rows = await atInstallation(
@@ -1230,14 +1218,8 @@ export async function forgetPurgedCatalogText(ctx: Context): Promise<void> {
         .groupBy(schema.catalogPurges.workspaceId),
   )
   const total = rows.reduce((sum, row) => sum + row.count, 0)
-  if (seenPurges !== null && total !== seenPurges) {
-    clearTypeSchemaCache()
-    clearEditableCache()
-  }
+  if (seenPurges !== null && total !== seenPurges) clearTypeSchemaCache()
   seenPurges = total
-  await catalogWorkers().forgetPurged(
-    new Map(rows.map((row) => [row.workspaceId, row.count])),
-  )
 }
 
 const watchLog = createLimitedLog()
@@ -1262,4 +1244,26 @@ export function watchCatalogPurges(
   const timer = setInterval(() => void run(), intervalMs)
   timer.unref()
   return () => clearInterval(timer)
+}
+
+/**
+ * A stored proposal's request hash after a purge (M2's proposals stay in the
+ * database until GC-6 moves the catalog into Git): the same form M2 used,
+ * the request with every map's keys sorted.
+ */
+function hashOf(request: unknown): string {
+  return createHash("sha256")
+    .update(JSON.stringify(canonical(request)))
+    .digest("base64url")
+}
+
+function canonical(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonical)
+  if (typeof value === "object" && value !== null)
+    return Object.fromEntries(
+      Object.keys(value)
+        .sort()
+        .map((k) => [k, canonical((value as Record<string, unknown>)[k])]),
+    )
+  return value
 }

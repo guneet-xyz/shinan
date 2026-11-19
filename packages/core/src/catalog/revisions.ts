@@ -53,10 +53,11 @@ export interface AppliedRevision {
 /**
  * Stores a new catalog revision, the full text of each document it
  * changes, and indexes them, all in the caller's transaction (architecture
- * §5.2, rule 4). The caller (applying a catalog proposal, M2-4) has already
- * produced the text by text edits (rule 2), validated it and checked its
- * conflicts; this only stores and indexes. Revisions of one workspace are
- * numbered one at a time under the index lock.
+ * §5.2, rule 4). Its callers are purge (until GC-8 rewrites it for Git) and
+ * the tests' seam; M2's catalog proposals, which were its other caller, are
+ * gone (GC-5), and this store goes when GC-6 moves the catalog into Git.
+ * Revisions of one workspace are numbered one at a time under the index
+ * lock.
  */
 export async function appendCatalogRevision(
   tx: Transaction,

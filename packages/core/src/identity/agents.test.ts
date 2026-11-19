@@ -159,7 +159,7 @@ describe("createAgentToken", () => {
         access: "full",
         scopes: [
           "catalog:read",
-          "catalog:propose",
+          "catalog:write",
           "tasks:read",
           "tasks:write",
           "presence",

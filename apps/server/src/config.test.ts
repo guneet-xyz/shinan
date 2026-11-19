@@ -24,7 +24,6 @@ describe("readWebConfig", () => {
       operators: [],
       github: undefined,
       sessions: { idleMinutes: 60, maxHours: 24 },
-      catalogWorkers: { workers: 1, heapMb: 768 },
     })
     expect(config.sessionSecret.length).toBeGreaterThanOrEqual(32)
     expect(config.trustedProxies.any).toBe(false)
@@ -77,25 +76,6 @@ describe("readWebConfig", () => {
       github: { clientId: "Iv1.abc", clientSecret: "github-secret" },
       sessions: { idleMinutes: 30, maxHours: 12 },
     })
-  })
-
-  it("reads the catalog workers' number and heap limit", () => {
-    expect(
-      readWebConfig({
-        NODE_ENV: "development",
-        SHINAN_CATALOG_WORKERS: "2",
-        SHINAN_CATALOG_WORKER_HEAP_MB: "2048",
-      }).catalogWorkers,
-    ).toEqual({ workers: 2, heapMb: 2048 })
-    expect(() =>
-      readWebConfig({ NODE_ENV: "development", SHINAN_CATALOG_WORKERS: "0" }),
-    ).toThrow("SHINAN_CATALOG_WORKERS must be a whole number above 0")
-    expect(() =>
-      readWebConfig({
-        NODE_ENV: "development",
-        SHINAN_CATALOG_WORKER_HEAP_MB: "600",
-      }),
-    ).toThrow("SHINAN_CATALOG_WORKER_HEAP_MB must be at least 640")
   })
 
   it("reads the internal listener and trusted proxies", () => {

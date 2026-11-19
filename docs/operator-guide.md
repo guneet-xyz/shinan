@@ -28,8 +28,8 @@ not apply to anyone else's installation.
   Sign-in needs email, including the first start.
 - Optionally, a GitHub App for GitHub sign-in (see [below](#github-sign-in)).
 - Memory for the containers' limits: 2,432 MiB (about 2.4 GiB) while running
-  (PostgreSQL 512 MiB, `web` 1,536 MiB with its [catalog worker](#catalog-workers),
-  `worker` 384 MiB), and 2,688 MiB (about 2.6 GiB) while `migrate` (256 MiB)
+  (PostgreSQL 512 MiB, `web` 1,536 MiB, which the next release reviews
+  for the Git-based catalog, `worker` 384 MiB), and 2,688 MiB (about 2.6 GiB) while `migrate` (256 MiB)
   runs at each start.
 
 ## What runs
@@ -240,7 +240,8 @@ repair, purge), the agents' MCP endpoint, the agent skill and changing one's
 own email address. The release notes list every change; for operators, before
 you upgrade:
 
-- **Memory.** `web` now runs a [catalog worker](#catalog-workers) thread. The
+- **Memory.** `web` now runs a catalog worker thread (gone again after
+  0.3: the next release changes the catalog through Git). The
   reference Compose file raises its limit from 512 MiB to 1,536 MiB
   (`SHINAN_WEB_MEMORY`). If you copied the Compose file, raise `web`'s
   `mem_limit` the same way. If the host is short of memory, a smaller ceiling
@@ -316,8 +317,10 @@ in the `Authorization` header, and load the agent skill from
   again; after an in-flight 429 it can call again once an earlier call is
   answered.
   Normal use, a few tool calls at a time, stays well below the cap.
-  Agents' catalog proposals and comments have their own limits (60 each in
-  10 minutes).
+  `/mcp` serves one tool for now, `workspace_context`, which says who an
+  agent acts for, what its token allows and where the catalog repository
+  is; agents read and change the catalog through Git
+  ([D-063](decisions/D-063-no-mcp-for-the-catalog.md)).
 - **`/skills/`** serves only the skill's own files, the same for every
   installation, with no workspace data
   ([D-056](decisions/D-056-public-skill-path.md)).
@@ -408,34 +411,6 @@ docker compose run --rm --no-deps web catalog-index check [<workspace-id>]
 
 While a rebuild runs, agents and the wiki keep reading the old index, marked
 as behind.
-
-## Catalog workers
-
-The `web` process applies catalog proposals in worker threads, each keeping
-one workspace's catalog parsed and validated in memory
-([architecture §5.3](architecture.md#53-how-sync-works)). Two settings in
-`.env`:
-
-| Setting                         | Default | What it does                                                                                                                                          |
-| ------------------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `SHINAN_CATALOG_WORKERS`        | `1`     | Worker threads. With one, workspaces take turns, and switching workspaces reads the other catalog again; set 2 or more if several teams propose a lot |
-| `SHINAN_CATALOG_WORKER_HEAP_MB` | `768`   | Each worker's heap limit in MiB, at least 640. A catalog at its size limits ran within 384 MiB in every shape measured                                |
-
-Raise the `web` container's memory with them: `SHINAN_WEB_MEMORY` (default
-`1536m`) should be at least 768 MiB more than workers × heap.
-
-If a workspace's catalog no longer fits in its worker, or cannot be read in
-time, every proposal there fails with `catalog-too-large` or
-`catalog-unreadable`. The `web` log says so once an hour
-(`Catalog worker: workspace …`), and the workspace's security log records
-`catalog-worker.failed`. Catalog size limits are meant to make this
-impossible; if it happens, raise `SHINAN_CATALOG_WORKER_HEAP_MB` (and the
-container's memory) until proposals apply, have the workspace make room in
-its catalog as [catalog §8.2](catalog.md#82-when-catalog-approval-is-needed) says (shorten
-documents, remove facts no longer needed, fix the warnings it holds, such as
-suspected secrets and keys outside their type's schema; a change that does not
-grow the catalog always applies), then lower it again,
-and report it.
 
 ## Catalog purge
 

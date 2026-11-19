@@ -9,9 +9,10 @@ import type {
 
 /**
  * For other packages' tests and local screen checks only (not in the built
- * package): stores and indexes a catalog revision directly, as applying a
- * catalog proposal does, without the proposal. Production code changes the
- * catalog only through catalog proposals (catalog §8.1).
+ * package): stores and indexes a catalog revision directly in M2's revision
+ * store, which the index still reads until it is built from Git (GC-4).
+ * Production code no longer writes catalog content there, except purge
+ * (until GC-8); the catalog changes through Git (catalog §8.1).
  */
 export async function storeCatalogRevision(
   db: Database,

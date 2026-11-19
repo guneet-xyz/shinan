@@ -457,7 +457,7 @@ export const invitations = pgTable(
 /** Agent token scopes (identity §7.2). */
 export const agentScopes = [
   "catalog:read",
-  "catalog:propose",
+  "catalog:write",
   "tasks:read",
   "tasks:write",
   "presence",

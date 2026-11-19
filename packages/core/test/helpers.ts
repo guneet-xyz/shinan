@@ -60,7 +60,7 @@ export async function asAgent(
   workspaceId: string,
   scopes: readonly Scope[] = [
     "catalog:read",
-    "catalog:propose",
+    "catalog:write",
     "tasks:read",
     "tasks:write",
     "presence",

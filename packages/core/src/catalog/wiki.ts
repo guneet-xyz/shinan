@@ -1,36 +1,26 @@
-import { createHash } from "node:crypto"
-
-import { and, asc, desc, eq, inArray, lt, schema, sql } from "@shinan/db"
+import { and, asc, desc, eq, lt, schema, sql } from "@shinan/db"
 import type { ActorKind, Confidence, Transaction } from "@shinan/db"
 
 import { inWorkspace, snapshotRead } from "../authorize.js"
 import type { Context } from "../context.js"
 import { InvalidInputError, NotFoundError } from "../errors.js"
-import {
-  editableDocument,
-  entityStatuses,
-  parseCatalogDocument,
-  utf8Length,
-} from "./document/index.js"
-import type { EditableDocument, EntityStatus } from "./document/index.js"
-import { agentAnswerText, labelledStartHere } from "./index/agent.js"
+import { entityStatuses } from "./document/index.js"
+import type { EntityStatus } from "./document/index.js"
 import { summaryJson } from "./index/format.js"
 import type { CatalogAnswer, EntitySummaryJson } from "./index/format.js"
-import { answerFor, readCatalogStartHere } from "./index/queries.js"
+import { answerFor } from "./index/queries.js"
 
 /**
  * What the wiki reads besides the agent index's own queries (human
  * experience, the wiki): a page's history from the stored revisions, a
  * document's text at a revision for comparing, each type's entities with
- * their freshness summaries, and the per-person "opened" records behind
- * the start-here markers. Each read is one snapshot.
+ * their freshness summaries. Each read is one snapshot.
  */
 
 const documents = schema.catalogIndexDocuments
 const facts = schema.catalogIndexFacts
 const revisions = schema.catalogRevisions
 const revisionDocuments = schema.catalogRevisionDocuments
-const visits = schema.catalogPageVisits
 const proposals = schema.catalogProposals
 
 type DocumentRecord = typeof documents.$inferSelect
@@ -399,259 +389,4 @@ export async function listCatalogTypeIndex(
     },
     snapshotRead,
   )
-}
-
-/**
- * Records that the person opened a catalog page, at the revision it stands
- * at (human experience, start here for people). Opening it again
- * overwrites the record.
- */
-export async function recordCatalogPageOpened(
-  ctx: Context,
-  workspaceId: string,
-  input: { id: string },
-): Promise<void> {
-  await inWorkspace(ctx, workspaceId, "catalog.mark-opened", async (scope) => {
-    const row = await requireDocument(scope.tx, scope.workspaceId, input.id)
-    const personId = scope.actor.personId!
-    await scope.tx
-      .insert(visits)
-      .values({
-        workspaceId: scope.workspaceId,
-        personId,
-        documentId: row.documentId,
-        revision: row.revision,
-      })
-      .onConflictDoUpdate({
-        target: [visits.workspaceId, visits.personId, visits.documentId],
-        set: { revision: row.revision, openedAt: sql`now()` },
-      })
-  })
-}
-
-export interface CatalogPageOpenedJson {
-  /** The ID as asked for. */
-  id: string
-  /** The catalog revision that last changed the page. */
-  revision: number
-  /** The revision the page stood at when the person last opened it; null if they never did. */
-  opened_revision: number | null
-  opened_at: string | null
-}
-
-/**
- * Whether the person has opened each page, and whether it changed since:
- * the start-here markers. IDs that name no document are left out.
- */
-export async function listCatalogPagesOpened(
-  ctx: Context,
-  workspaceId: string,
-  input: { ids: readonly string[] },
-): Promise<{ items: CatalogPageOpenedJson[] }> {
-  return inWorkspace(
-    ctx,
-    workspaceId,
-    "catalog.mark-opened",
-    async (scope) => {
-      if (!Array.isArray(input.ids) || input.ids.length > 200)
-        throw new InvalidInputError("ids", "Ask for at most 200 pages at once")
-      const ids = [...new Set(input.ids.map((id) => idText(id)))]
-      if (ids.length === 0) return { items: [] }
-      const rows = await scope.tx
-        .select()
-        .from(documents)
-        .where(
-          and(
-            eq(documents.workspaceId, scope.workspaceId),
-            sql`(${inArray(documents.catalogId, ids)} or ${documents.aliases} && ${sql`array[${sql.join(
-              ids.map((id) => sql`${id}`),
-              sql`, `,
-            )}]::text[]`})`,
-          ),
-        )
-        .orderBy(asc(documents.documentId))
-      const byId = new Map<string, DocumentRecord>()
-      for (const row of rows)
-        if (row.catalogId && !byId.has(row.catalogId))
-          byId.set(row.catalogId, row)
-      for (const row of rows)
-        for (const alias of row.aliases)
-          if (!byId.has(alias)) byId.set(alias, row)
-      const found = ids.flatMap((id) => {
-        const row = byId.get(id)
-        return row ? [{ id, row }] : []
-      })
-      const opened =
-        found.length === 0
-          ? []
-          : await scope.tx
-              .select()
-              .from(visits)
-              .where(
-                and(
-                  eq(visits.workspaceId, scope.workspaceId),
-                  eq(visits.personId, scope.actor.personId!),
-                  inArray(
-                    visits.documentId,
-                    found.map((f) => f.row.documentId),
-                  ),
-                ),
-              )
-      return {
-        items: found.map(({ id, row }) => {
-          const visit = opened.find((v) => v.documentId === row.documentId)
-          return {
-            id,
-            revision: row.revision,
-            opened_revision: visit?.revision ?? null,
-            opened_at: visit ? visit.openedAt.toISOString() : null,
-          }
-        }),
-      }
-    },
-    snapshotRead,
-  )
-}
-
-export interface AgentStartHerePreviewAnswer extends CatalogAnswer {
-  /** The agents' path exactly as `workspace_context` gives it, trust labels included; null before the document exists. */
-  start_here: Record<string, unknown> | null
-  /** That path as agents receive it: compact JSON. */
-  text: string | null
-  /** The text's size in bytes of UTF-8. */
-  bytes: number
-}
-
-/**
- * "Preview as agent" (human experience, start here for agents): the
- * agents' path written out by the same code as MCP's `workspace_context`,
- * so what a person sees, and its size, is what an agent is given.
- */
-export async function getAgentStartHerePreview(
-  ctx: Context,
-  workspaceId: string,
-): Promise<AgentStartHerePreviewAnswer> {
-  return inWorkspace(
-    ctx,
-    workspaceId,
-    "catalog.read",
-    async (scope) => {
-      const answer = await readCatalogStartHere(scope.tx, scope.workspaceId, {
-        path: "agents",
-      })
-      const startHere = await labelledStartHere(
-        scope.tx,
-        scope.workspaceId,
-        answer.start_here,
-      )
-      const text = startHere ? agentAnswerText(startHere) : null
-      return {
-        catalog_revision: answer.catalog_revision,
-        index_behind: answer.index_behind,
-        start_here: startHere,
-        text,
-        bytes: text === null ? 0 : utf8Length(text),
-      }
-    },
-    snapshotRead,
-  )
-}
-
-export interface CatalogEditableAnswer extends CatalogAnswer {
-  /** The document's current ID (an alias asked for leads here). */
-  id: string
-  /** The revision that last changed it: the text the expectations come from. */
-  revision: number
-  document: EditableDocument
-}
-
-/**
- * A document as the wiki's editors write operations against it (human
- * experience, changing the catalog from the wiki): its fields, body, type
- * schema keys or start-here paths as written in its latest stored text,
- * so each operation expects exactly what is there (catalog §8.5).
- *
- * Reading a document takes up to a few hundred milliseconds of the main
- * thread for one full of facts, so the result is kept (`editableOf`): a
- * page is read once per revision, however often its editor opens.
- */
-export async function getCatalogEditable(
-  ctx: Context,
-  workspaceId: string,
-  input: { id: string },
-): Promise<CatalogEditableAnswer> {
-  return inWorkspace(
-    ctx,
-    workspaceId,
-    "catalog.read",
-    async (scope) => {
-      const answer = await answerFor(scope.tx, scope.workspaceId)
-      const row = await requireDocument(scope.tx, scope.workspaceId, input.id)
-      const [found] = await scope.tx
-        .select({
-          revision: revisionDocuments.revision,
-          text: revisionDocuments.text,
-        })
-        .from(revisionDocuments)
-        .where(
-          and(
-            eq(revisionDocuments.workspaceId, scope.workspaceId),
-            eq(revisionDocuments.documentId, row.documentId),
-          ),
-        )
-        .orderBy(desc(revisionDocuments.revision))
-        .limit(1)
-      if (!found) throw new NotFoundError()
-      return {
-        ...answer,
-        id: row.catalogId ?? "",
-        revision: found.revision,
-        document: editableOf(found.text),
-      }
-    },
-    snapshotRead,
-  )
-}
-
-/**
- * Editable forms already read, by a hash of the exact stored text: a
- * revision's text never changes, and purge (M2-10) changes the text, so
- * the key changes with it. The result depends on the text alone. At most
- * `editableCacheBytes` of text, the least recently used dropped first.
- */
-const editableCache = new Map<
-  string,
-  { bytes: number; editable: EditableDocument }
->()
-let editableCachedBytes = 0
-const editableCacheBytes = 16 * 1024 * 1024
-
-/**
- * Empties the cache of editable forms, so that no text read before a purge
- * stays in this process's memory (catalog §9). It is keyed by the text, so
- * it never serves purged text; this only frees it.
- */
-export function clearEditableCache(): void {
-  editableCache.clear()
-  editableCachedBytes = 0
-}
-
-export function editableOf(text: string): EditableDocument {
-  const key = createHash("sha256").update(text).digest("base64url")
-  const cached = editableCache.get(key)
-  if (cached) {
-    editableCache.delete(key)
-    editableCache.set(key, cached)
-    return cached.editable
-  }
-  const editable = editableDocument(parseCatalogDocument(text))
-  const bytes = utf8Length(text)
-  editableCache.set(key, { bytes, editable })
-  editableCachedBytes += bytes
-  for (const [oldest, entry] of editableCache) {
-    if (editableCachedBytes <= editableCacheBytes) break
-    editableCache.delete(oldest)
-    editableCachedBytes -= entry.bytes
-  }
-  return editable
 }
