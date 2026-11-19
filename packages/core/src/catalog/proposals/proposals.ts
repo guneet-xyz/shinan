@@ -57,7 +57,14 @@ export interface CatalogProposal {
   number: number
   state: CatalogProposalState
   createdAt: Date
-  author: { kind: ProposalRow["actorKind"]; label: string }
+  author: {
+    kind: ProposalRow["actorKind"]
+    label: string
+    /** The person who made it, or whose agent did. */
+    personId: string | null
+    /** The agent that made it; null for a person's own proposal. */
+    agentId: string | null
+  }
   explanation: string
   relatedTask: string | null
   operations: CatalogOperation[]
@@ -314,10 +321,11 @@ export async function submitProposal(
 
           const strict = await isStrict(scope)
           const gated = needsApproval(prepared.classes, strict)
-          const appliesNow =
-            mayApprove(scope) && !plan.approver.preview
-              ? true
-              : !gated && prepared.accepts.length === 0
+          const appliesNow = appliesAtOnce(
+            mayApprove(scope) && !plan.approver.preview,
+            prepared,
+            strict,
+          )
           if (appliesNow) checkAccepts(prepared, plan.approver.handle)
 
           const [{ next }] = (await scope.tx
@@ -380,7 +388,129 @@ export async function submitProposal(
     },
     // Counted in the turn, so a proposal refused as busy is not.
     ctx.actor.kind === "agent" ? ctx.actor.agentId : null,
+    "proposal",
     proposal.operations,
+  )
+}
+
+/**
+ * What a proposal would do, worked out like `proposeCatalogChange` but
+ * stored nowhere: whether it applies at once or waits for catalog approval,
+ * with the approval classes, the reasons and validation's warnings, or why
+ * it would not apply. The wiki shows this before a person saves a change
+ * (human experience, changing the catalog from the wiki).
+ *
+ * `asApproval`: the change is in a gated class but applies at once, as the
+ * person's own approval (catalog §8.2).
+ */
+export type PreviewOutcome =
+  | {
+      outcome: "applies" | "waits"
+      approvalClasses: ApprovalClass[]
+      approvalReasons: string[]
+      warnings: Problem[]
+      touches: string[]
+      asApproval: boolean
+    }
+  | NotApplied
+
+/**
+ * Checks a catalog proposal without making it (`PreviewOutcome`). It takes
+ * a turn in the workspace's queue like a proposal, which costs the same
+ * work, so it is bounded three ways: a person's checks have their own rate
+ * limit (`catalog-check`), an agent's count against its proposal limit,
+ * and checks take at most a small share of the queues
+ * (`checksPerWorkspace`, `checksTotal`), so they never crowd out proposals.
+ */
+export async function previewCatalogChange(
+  ctx: Context,
+  workspaceId: string,
+  input: unknown,
+): Promise<PreviewOutcome> {
+  const plan = await inWorkspace(
+    ctx,
+    workspaceId,
+    "catalog.propose",
+    async (scope) => ({
+      proposal: checkProposalInput(input),
+      actor: scope.actor,
+      approves: mayApprove(scope),
+      handle: await personHandle(scope),
+      strict: await isStrict(scope),
+    }),
+    snapshotRead,
+  )
+  // A person's checks are counted before they take a place in the queue,
+  // so a flood is refused, and recorded, at once; an agent's count as its
+  // proposals when their turn comes.
+  if (ctx.actor.kind === "person") await throttleChecks(ctx, ctx.actor.personId)
+  return inTurn(
+    ctx,
+    workspaceId,
+    "catalog.propose",
+    plan.actor,
+    async (base, prepare): Promise<Stored<PreviewOutcome>> => {
+      const prepared = await work(ctx, workspaceId, "catalog.propose", {
+        prepare,
+        base,
+        input: {
+          operations: plan.proposal.operations,
+          by: plan.actor.label,
+          explanation: plan.proposal.explanation,
+          approver: { handle: plan.handle, preview: !plan.approves },
+        },
+      })
+      if (prepared.outcome !== "ready") return { done: refusal(prepared) }
+      checkCatalogSize(prepared.size)
+      // The same decision as `submitProposal`'s, strict setting included.
+      const appliesNow = appliesAtOnce(plan.approves, prepared, plan.strict)
+      if (appliesNow) checkAccepts(prepared, plan.handle)
+      return {
+        done: {
+          outcome: appliesNow ? "applies" : "waits",
+          approvalClasses: prepared.classes,
+          approvalReasons: reasonsFor(prepared, plan.strict),
+          warnings: prepared.warnings,
+          touches: prepared.touches,
+          asApproval:
+            appliesNow && needsApproval(prepared.classes, plan.strict),
+        },
+      }
+    },
+    ctx.actor.kind === "agent" ? ctx.actor.agentId : null,
+    "check",
+  )
+}
+
+/** Counts a person's check against their limit (`rateLimits["catalog-check"]`). */
+async function throttleChecks(ctx: Context, personId: string): Promise<void> {
+  const outcome = await takeRateLimit(
+    { db: ctx.db, actor: shinan, request: ctx.request ?? {} },
+    "catalog-check",
+    { key: personId },
+  )
+  if (!outcome.allowed)
+    throw new BusyError(
+      "catalog-check-rate",
+      `You have checked ${rateLimits["catalog-check"].max} catalog changes in ${rateLimits["catalog-check"].windowSeconds / 60} minutes; check this one again later`,
+      outcome.retryAfterSeconds,
+    )
+}
+
+/**
+ * Whether a proposal applies when it is made: a person who may approve
+ * applies their own change, gated or not (catalog §8.2); anyone else's
+ * applies only outside the gated classes, and never when it accepts a
+ * discrepancy, which needs the approver's name.
+ */
+function appliesAtOnce(
+  approves: boolean,
+  prepared: Extract<Prepared, { outcome: "ready" }>,
+  strict: boolean,
+): boolean {
+  return (
+    approves ||
+    (!needsApproval(prepared.classes, strict) && prepared.accepts.length === 0)
   )
 }
 
@@ -683,31 +813,36 @@ async function inTurn<T>(
   actor: ResolvedActor,
   attempt: (base: Base, prepare: Prepare) => Promise<Stored<T>>,
   agentId: string | null,
+  kind: "proposal" | "check" = "proposal",
   operations?: Submission["operations"],
 ): Promise<T> {
   try {
-    return await catalogWorkers().run(workspaceId, async (prepare, turn) => {
-      if (agentId) await throttle(ctx, agentId)
-      for (let n = 1; ; n++) {
-        // The operations are worked out from the same snapshot as the base.
-        const base = await inWorkspace(
-          ctx,
-          workspaceId,
-          action,
-          async (scope) => {
-            const read = await readBase(scope)
-            return operations
-              ? { ...read, operations: await operations(scope) }
-              : read
-          },
-          snapshotRead,
-        )
-        await turn.purged(base.purges)
-        const stored = await attempt(base, prepare)
-        if ("done" in stored) return stored.done
-        if (n === attempts) throw changingTooFast()
-      }
-    })
+    return await catalogWorkers().run(
+      workspaceId,
+      async (prepare, turn) => {
+        if (agentId) await throttle(ctx, agentId)
+        for (let n = 1; ; n++) {
+          // The operations are worked out from the same snapshot as the base.
+          const base = await inWorkspace(
+            ctx,
+            workspaceId,
+            action,
+            async (scope) => {
+              const read = await readBase(scope)
+              return operations
+                ? { ...read, operations: await operations(scope) }
+                : read
+            },
+            snapshotRead,
+          )
+          await turn.purged(base.purges)
+          const stored = await attempt(base, prepare)
+          if ("done" in stored) return stored.done
+          if (n === attempts) throw changingTooFast()
+        }
+      },
+      kind,
+    )
   } catch (error) {
     if (
       error instanceof RuleViolationError &&
@@ -1268,7 +1403,12 @@ export function proposalOf(row: ProposalRow): CatalogProposal {
     number: row.number,
     state: row.state,
     createdAt: row.createdAt,
-    author: { kind: row.actorKind, label: row.actorLabel },
+    author: {
+      kind: row.actorKind,
+      label: row.actorLabel,
+      personId: row.actorPersonId,
+      agentId: row.actorAgentId,
+    },
     explanation: row.explanation,
     relatedTask: row.relatedTask,
     operations: row.operations as CatalogOperation[],

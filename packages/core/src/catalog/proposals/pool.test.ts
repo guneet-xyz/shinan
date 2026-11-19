@@ -216,6 +216,41 @@ describe("the catalog workers", { timeout: 120_000 }, () => {
     ).resolves.toMatchObject({ outcome: "ready" })
   })
 
+  it("give checks only a small share of the queues, so proposals still fit", async () => {
+    const { workers, load } = setUp({
+      queuePerWorkspace: 4,
+      checksPerWorkspace: 1,
+      checksTotal: 2,
+    })
+    const check = (workspace: string) =>
+      workers.run(
+        workspace,
+        (prepare) => prepare(documents, load, input),
+        "check",
+      )
+    const results = await Promise.allSettled([
+      check("w1"),
+      check("w1"),
+      workers.prepare("w1", documents, load, input),
+      workers.prepare("w1", documents, load, input),
+      check("w2"),
+      check("w3"),
+    ])
+    expect(results.map((r) => r.status)).toEqual([
+      "fulfilled",
+      "rejected",
+      "fulfilled",
+      "fulfilled",
+      "fulfilled",
+      "rejected",
+    ])
+    for (const result of results)
+      if (result.status === "rejected")
+        expect(result.reason).toMatchObject({ rule: "catalog-busy-checks" })
+    // Once they are done, checks fit again.
+    await expect(check("w1")).resolves.toMatchObject({ outcome: "ready" })
+  }, 30_000)
+
   it("stop a worker that runs out of memory, and start a new one", async () => {
     const big = Array.from({ length: 400 }, (_, i) => ({
       documentId: `m${i}`,

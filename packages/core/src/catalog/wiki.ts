@@ -1,11 +1,18 @@
+import { createHash } from "node:crypto"
+
 import { and, asc, desc, eq, inArray, lt, schema, sql } from "@shinan/db"
 import type { ActorKind, Confidence, Transaction } from "@shinan/db"
 
 import { inWorkspace, snapshotRead } from "../authorize.js"
 import type { Context } from "../context.js"
 import { InvalidInputError, NotFoundError } from "../errors.js"
-import { entityStatuses, utf8Length } from "./document/index.js"
-import type { EntityStatus } from "./document/index.js"
+import {
+  editableDocument,
+  entityStatuses,
+  parseCatalogDocument,
+  utf8Length,
+} from "./document/index.js"
+import type { EditableDocument, EntityStatus } from "./document/index.js"
 import { agentAnswerText, labelledStartHere } from "./index/agent.js"
 import { summaryJson } from "./index/format.js"
 import type { CatalogAnswer, EntitySummaryJson } from "./index/format.js"
@@ -528,4 +535,93 @@ export async function getAgentStartHerePreview(
     },
     snapshotRead,
   )
+}
+
+export interface CatalogEditableAnswer extends CatalogAnswer {
+  /** The document's current ID (an alias asked for leads here). */
+  id: string
+  /** The revision that last changed it: the text the expectations come from. */
+  revision: number
+  document: EditableDocument
+}
+
+/**
+ * A document as the wiki's editors write operations against it (human
+ * experience, changing the catalog from the wiki): its fields, body, type
+ * schema keys or start-here paths as written in its latest stored text,
+ * so each operation expects exactly what is there (catalog §8.5).
+ *
+ * Reading a document takes up to a few hundred milliseconds of the main
+ * thread for one full of facts, so the result is kept (`editableOf`): a
+ * page is read once per revision, however often its editor opens.
+ */
+export async function getCatalogEditable(
+  ctx: Context,
+  workspaceId: string,
+  input: { id: string },
+): Promise<CatalogEditableAnswer> {
+  return inWorkspace(
+    ctx,
+    workspaceId,
+    "catalog.read",
+    async (scope) => {
+      const answer = await answerFor(scope.tx, scope.workspaceId)
+      const row = await requireDocument(scope.tx, scope.workspaceId, input.id)
+      const [found] = await scope.tx
+        .select({
+          revision: revisionDocuments.revision,
+          text: revisionDocuments.text,
+        })
+        .from(revisionDocuments)
+        .where(
+          and(
+            eq(revisionDocuments.workspaceId, scope.workspaceId),
+            eq(revisionDocuments.documentId, row.documentId),
+          ),
+        )
+        .orderBy(desc(revisionDocuments.revision))
+        .limit(1)
+      if (!found) throw new NotFoundError()
+      return {
+        ...answer,
+        id: row.catalogId ?? "",
+        revision: found.revision,
+        document: editableOf(found.text),
+      }
+    },
+    snapshotRead,
+  )
+}
+
+/**
+ * Editable forms already read, by a hash of the exact stored text: a
+ * revision's text never changes, and purge (M2-10) changes the text, so
+ * the key changes with it. The result depends on the text alone. At most
+ * `editableCacheBytes` of text, the least recently used dropped first.
+ */
+const editableCache = new Map<
+  string,
+  { bytes: number; editable: EditableDocument }
+>()
+let editableCachedBytes = 0
+const editableCacheBytes = 16 * 1024 * 1024
+
+export function editableOf(text: string): EditableDocument {
+  const key = createHash("sha256").update(text).digest("base64url")
+  const cached = editableCache.get(key)
+  if (cached) {
+    editableCache.delete(key)
+    editableCache.set(key, cached)
+    return cached.editable
+  }
+  const editable = editableDocument(parseCatalogDocument(text))
+  const bytes = utf8Length(text)
+  editableCache.set(key, { bytes, editable })
+  editableCachedBytes += bytes
+  for (const [oldest, entry] of editableCache) {
+    if (editableCachedBytes <= editableCacheBytes) break
+    editableCache.delete(oldest)
+    editableCachedBytes -= entry.bytes
+  }
+  return editable
 }

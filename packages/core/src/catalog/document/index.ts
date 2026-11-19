@@ -166,3 +166,5 @@ export type {
   ValidationContext,
   ValidationResult,
 } from "./validate.js"
+export { editableDocument } from "./editable.js"
+export type { EditableDocument } from "./editable.js"

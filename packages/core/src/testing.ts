@@ -25,3 +25,6 @@ export async function storeCatalogRevision(
 }
 
 export type { RevisionActor, RevisionDocument }
+
+/** An agent of `person` in the workspace, with every scope, as a context. */
+export { asAgent } from "../test/helpers.js"

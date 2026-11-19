@@ -8,7 +8,7 @@ import type {
 } from "@shinan/api-client"
 
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
+import { Button, buttonVariants } from "@/components/ui/button"
 
 import { useApi, useResource } from "../../api"
 import { PageHeader, Section } from "../../components/page"
@@ -16,7 +16,7 @@ import { ErrorMessage, Loading } from "../../components/status"
 import { useWorkspace } from "../workspace/context"
 import { EntityLink, linkClass, MaybeLink } from "./facts"
 import { agentPathWarningBytes, sizeText, wikiPath } from "./format"
-import { IndexBehind, PageNotice } from "./notices"
+import { IndexBehind, PageNotice, SavedNotice } from "./notices"
 
 /**
  * Start here (catalog §11; human experience, start here and onboarding):
@@ -53,6 +53,15 @@ export function StartHerePage() {
         {document?.summary ??
           "The path through this workspace's catalog, for people and for agents."}
       </PageHeader>
+      <SavedNotice workspaceId={workspace.id} />
+      <div className="-mt-4 flex flex-wrap gap-2">
+        <Link
+          to={wikiPath(workspace.id, "/edit/start-here")}
+          className={buttonVariants({ variant: "outline" })}
+        >
+          {document ? "Suggest a change" : "Write Start here"}
+        </Link>
+      </div>
       <IndexBehind behind={people.index_behind || agents.index_behind} />
       {!document ? (
         <PageNotice>

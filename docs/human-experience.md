@@ -987,6 +987,46 @@ those. Search leaves retired entities out unless asked.
   and must not be refreshed mechanically, and the catalog's rule that every
   change, including a recheck, is a catalog proposal.
 
+**Proposed (M2-8, [#89](https://github.com/guneet-xyz/shinan/issues/89)):**
+details of the editors as built.
+
+- **One path.** Every editor builds the operations agents send
+  ([catalog §8.1](catalog.md#81-catalog-proposals)), each expecting what
+  the page held when the editor opened it. Field, body, type schema and
+  start-here expectations are read from the stored text (the `editable`
+  read), facts from the entity page. A page changed meanwhile conflicts;
+  the editor says so and asks to reload, and never overwrites. There is
+  no raw frontmatter editing (build plan M2-8).
+- **Check, then save.** "Check the change" asks Shinan what the change
+  would do, stored nowhere: applies at once or waits, the reasons it needs
+  approval, the kinds of change, and validation's warnings, or the
+  problems that stop it. "Save" is offered only after a check of exactly
+  what will be saved, and only when that check says it applies or waits; a
+  save carries one idempotency key per checked change, so a second click or
+  a retry never makes a second proposal. Checks are counted: a person has
+  120 in 10 minutes, an agent's count as its proposals, and checks never
+  take more than a quarter of a workspace's catalog queue. A member's own gated change applies at once as their
+  approval, and the check says so. Every change needs an explanation.
+- **Suggest a change** on an entity page: title, summary, owner, status
+  (active or deprecated) and a decision's fields; each fact kept, changed
+  or removed; new facts; the description as Markdown with a preview;
+  retiring (with a replacement) and a new ID. One fact check, written
+  once, covers every new or changed fact that says what is or should be.
+  A planned or unknown fact that becomes known settles the old one.
+- **Record a check** opens from the page or from a fact's row, with that
+  fact chosen; any of the page's observed and intended facts can be
+  added. When, what (scope) and how (source) are required.
+- **New entity** (from the wiki home or a type's page), **New type** (a
+  type schema document; naming a built-in type extends it) and changes to
+  a type schema (fields, keys kept, changed, removed or added, retiring).
+- **Start here** is written or changed from its page: the two paths step
+  by step (a page, a workspace list or a web address, each with why to
+  read it), in order, plus its fields and text.
+
+Reason: one path for every change keeps review, history and conflicts the
+same for people and agents; checking first is what the documents ask
+for ("before saving, the screen says…").
+
 ### Reviewing catalog changes
 
 **Catalog review** has two lists. **Proposed.**
@@ -1004,6 +1044,31 @@ those. Search leaves retired entities out unless asked.
   [Catalog](catalog.md) section 8.2).
   **Proposed.** Reason: with most changes applying at once (O-3), review after
   the fact is how people stay informed and correct mistakes.
+
+**Proposed (M2-8):** catalog review is in the wiki (`Review`). The waiting
+list shows each proposal's number, author, what it touches and why it needs
+approval. A proposal's page shows its explanation, related task, kinds of
+change, validation's warnings and, per document, each fact before and
+after with its fact check, fields before and after, and body text as
+removed and added lines. **Approve** is not offered on your own agent's
+proposal once the workspace has more than one member (owner, M2-Q8 in the
+[M2 build plan](build-plan-m2.md#71-answers)); **Reject** needs a reason;
+the author (or the person behind the agent) may **Withdraw**. Text written
+by others (explanations, fields, facts, evidence, body changes) shows hidden
+characters as visible markers like `⟨U+202E⟩`: every control and format
+character (including right-to-left overrides and the invisible tag
+characters that can hide instructions only a model reads), line and
+paragraph separators, and characters that draw as blank. A proposal holding
+any of them is flagged at the top of its page. Reason: a proposal must not
+disguise what it says, or carry text an agent reads but its reviewer cannot
+see. If a
+proposal no longer applies when approved, the approver is told why and it
+keeps waiting. A revert waiting for approval shows the text it puts back
+against the document's current text, and links the proposal it undoes.
+Recent changes link each revision to its proposal.
+Comments, Revert, the strict setting and bulk approval have their places
+on these screens and arrive with M2-4b
+([#86](https://github.com/guneet-xyz/shinan/issues/86)).
 
 If catalog accuracy slips during the trial, a workspace owner turns on the
 strict setting (owner, O-3, [#25]); while it is on, approval works in bulk
@@ -1219,6 +1284,10 @@ an entity page's history. Exports come with a later milestone.
 
 Screen details:
 
+- **Catalog settings** (**proposed**, M2-8): every member sees the tab.
+  It says which changes wait for approval, lists the type schema
+  documents (changed from their type's page) and links to catalog review.
+  The strict setting's switch is added there with M2-4b.
 - **Task ID prefix.** Changing it keeps every earlier prefix working as an
   alias forever, and it is never given to another workspace; the screen says
   so before saving. Old task IDs keep their old prefix. **Proposed**, following

@@ -10,9 +10,10 @@ import type {
   CatalogList,
   CatalogListItem,
   CatalogNotYetRecordedItem,
+  CatalogProposal,
 } from "@shinan/api-client"
 
-import { Button } from "@/components/ui/button"
+import { Button, buttonVariants } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
 
@@ -60,6 +61,26 @@ export function WikiHome() {
         The catalog of {workspace.name}: what exists, how it is set up, and how
         sure we are.
       </PageHeader>
+      <div className="-mt-4 flex flex-wrap gap-2">
+        <Link
+          to={wikiPath(workspace.id, "/new")}
+          className={buttonVariants({ variant: "outline" })}
+        >
+          New entity
+        </Link>
+        <Link
+          to={wikiPath(workspace.id, "/new-type")}
+          className={buttonVariants({ variant: "outline" })}
+        >
+          New type
+        </Link>
+        <Link
+          to={wikiPath(workspace.id, "/review")}
+          className={buttonVariants({ variant: "outline" })}
+        >
+          Catalog review
+        </Link>
+      </div>
       <IndexBehind behind={types.data?.index_behind ?? false} />
       <Section
         title="Start here"
@@ -402,14 +423,17 @@ export function ChangesPage() {
         upTo ??
         (await api.catalogChanges(workspace.id, { limit: 1 })).catalog_revision
       const since = Math.max(0, latest - pageSize)
-      const answer = await api.catalogChanges(workspace.id, {
-        since,
-        limit: pageSize,
-      })
+      const [answer, applied] = await Promise.all([
+        api.catalogChanges(workspace.id, { since, limit: pageSize }),
+        api.catalogProposals(workspace.id, { state: "applied", limit: 200 }),
+      ])
       return {
         ...answer,
         since,
         items: answer.items.filter((i) => i.revision <= latest).reverse(),
+        proposals: new Map(
+          applied.items.map((p) => [p.appliedRevision, p] as const),
+        ),
       }
     },
   )
@@ -428,7 +452,11 @@ export function ChangesPage() {
         <Rows>
           {changes.data.items.map((change) => (
             <li key={change.revision}>
-              <ChangeItem workspaceId={workspace.id} change={change} />
+              <ChangeItem
+                workspaceId={workspace.id}
+                change={change}
+                proposal={changes.data!.proposals.get(change.revision)}
+              />
             </li>
           ))}
         </Rows>
@@ -446,8 +474,12 @@ export function ChangesPage() {
   )
 }
 
-function ChangeItem(props: { workspaceId: string; change: CatalogChange }) {
-  const { change } = props
+function ChangeItem(props: {
+  workspaceId: string
+  change: CatalogChange
+  proposal: CatalogProposal | undefined
+}) {
+  const { change, proposal } = props
   return (
     <>
       <p className="text-sm">
@@ -455,7 +487,20 @@ function ChangeItem(props: { workspaceId: string; change: CatalogChange }) {
         <span className="text-muted-foreground">
           · {formatTime(change.at)} · {change.changed_by}
         </span>
+        {proposal && (
+          <>
+            {" "}
+            ·{" "}
+            <Link
+              to={wikiPath(props.workspaceId, `/proposals/${proposal.id}`)}
+              className={linkClass}
+            >
+              catalog proposal {proposal.number}
+            </Link>
+          </>
+        )}
       </p>
+      {proposal && <RevertAction proposal={proposal} />}
       <ul className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
         {change.documents.map((d, i) => (
           <li key={`${d.id ?? "?"}:${i}`}>
@@ -483,4 +528,14 @@ function ChangeItem(props: { workspaceId: string; change: CatalogChange }) {
       </ul>
     </>
   )
+}
+
+/**
+ * Revert (human experience, reviewing catalog changes): one action that
+ * makes a new proposal restoring the earlier values (catalog §8.2). Slot
+ * for M2-4b, which adds revert; until then nothing is shown.
+ */
+export function RevertAction(props: { proposal: CatalogProposal }) {
+  void props
+  return null
 }

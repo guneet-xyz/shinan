@@ -1534,7 +1534,7 @@ function time(name: string, value: string): string {
 }
 
 /** The fields each kind of document lets `set-field` change, and whether each is required. */
-const settable: Record<
+export const settable: Record<
   CatalogDocument["kind"],
   Partial<Record<DocumentField, { required: boolean; list?: true }>>
 > = {
@@ -1568,7 +1568,8 @@ const decisionFields: ReadonlySet<string> = new Set([
   "decided_by",
 ])
 
-function currentField(
+/** A field's value as `set-field` expects it; undefined when it has a form no operation expects. */
+export function currentField(
   document: CatalogDocument,
   name: string,
 ): string | string[] | null | undefined {
@@ -2026,6 +2027,7 @@ function startHereText(operation: CreateStartHere): Written {
   return { text: documentText(entries, operation.body), entries }
 }
 
+/** A start-here step as `set-start-here-path` compares it. */
 function stepInput(step: {
   target:
     | { kind: "entity"; id: string }

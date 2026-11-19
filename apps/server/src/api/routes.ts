@@ -49,6 +49,7 @@ import {
   revokeAgentToken,
   shinan,
   startSetup,
+  throttleAddress,
   withdrawInvitation,
 } from "@shinan/core"
 import type {
@@ -70,10 +71,19 @@ import type { Database } from "@shinan/db"
 
 import { clientAddress, noTrustedProxies } from "../client-address.js"
 import type { TrustedProxies } from "../client-address.js"
+import { limitInFlight } from "../in-flight.js"
 import { rateLimited, sameOriginOnly } from "../security.js"
 import { isSafeReturnPath } from "../sign-in/paths.js"
 import { requireAgent } from "./agent-auth.js"
 import type { AgentEnv } from "./agent-auth.js"
+import {
+  catalogProposalRoutes,
+  isProposalPath,
+  lengthRequired,
+  proposalBodyLimit,
+  proposalInFlight,
+  tooManyInFlight,
+} from "./catalog-proposals.js"
 import {
   catalogRepairRoutes,
   isRepairPath,
@@ -227,8 +237,33 @@ export function createApi({
         message: "The request is too large",
       }),
   })
-  const limitRequestBody: MiddlewareHandler = (c, next) =>
-    isRepairPath(c.req.path) ? limitRepairBody(c, next) : limitBody(c, next)
+  // Catalog proposals may carry a whole document (catalog §8.1).
+  const limitProposalBody = bodyLimit({
+    maxSize: proposalBodyLimit,
+    onError: (c) =>
+      errorResponse(c, 413, {
+        error: "payload-too-large",
+        message: "The request is too large",
+      }),
+  })
+  // Per address, for the routes that take large bodies, before any is read.
+  const proposalsPerAddress = limitInFlight({
+    max: proposalInFlight.perAddress,
+    // An IPv6 address by its /64, as the rate limits count it.
+    key: (c) => throttleAddress(requestInfo(c).networkAddress),
+    refuse: tooManyInFlight,
+  })
+  const limitRequestBody: MiddlewareHandler = async (c, next) => {
+    if (isRepairPath(c.req.path)) return limitRepairBody(c, next)
+    if (!isProposalPath(c.req.path)) return limitBody(c, next)
+    const undeclared = lengthRequired(c)
+    if (undeclared) return undeclared
+    return proposalsPerAddress(c, async () => {
+      // The body limit answers 413 by returning it.
+      const refused = await limitProposalBody(c, next)
+      if (refused instanceof Response && refused !== c.res) c.res = refused
+    })
+  }
   api.use("*", limitRequestBody)
 
   // Public: the sign-in and invitation pages show the installation's name
@@ -662,6 +697,7 @@ export function createApi({
   catalogRoutes(signedIn, ctx)
   catalogReviewRoutes(signedIn, ctx)
   catalogRepairRoutes(signedIn, ctx)
+  catalogProposalRoutes(signedIn, ctx)
 
   api.route("/", signedIn)
   api.all("*", (c) =>

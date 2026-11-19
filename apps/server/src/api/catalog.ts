@@ -6,6 +6,7 @@ import {
   getAgentStartHerePreview,
   getCatalogChanges,
   getCatalogDocumentText,
+  getCatalogEditable,
   getCatalogEntity,
   getCatalogList,
   getCatalogStartHere,
@@ -145,6 +146,15 @@ export function catalogRoutes(
   app.get(`${base}/start-here/agent-preview`, async (c) => {
     const answer: Api.AgentStartHerePreviewAnswer =
       await getAgentStartHerePreview(ctx(c), workspaceId(c))
+    return c.json(answer)
+  })
+
+  app.get(`${base}/editable`, async (c) => {
+    const answer: Api.CatalogEditableAnswer = await getCatalogEditable(
+      ctx(c),
+      workspaceId(c),
+      { id: requiredQuery(c, "id") },
+    )
     return c.json(answer)
   })
 

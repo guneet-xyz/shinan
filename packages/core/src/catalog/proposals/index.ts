@@ -13,6 +13,7 @@ export {
   catalogLimits,
   getCatalogProposal,
   listCatalogProposals,
+  previewCatalogChange,
   proposeCatalogChange,
   rejectCatalogProposal,
   rejectionReasonLimit,
@@ -25,6 +26,7 @@ export type {
   CatalogProposalState,
   ListProposalsInput,
   NotApplied,
+  PreviewOutcome,
   ProposalOutcome,
 } from "./proposals.js"
 export {

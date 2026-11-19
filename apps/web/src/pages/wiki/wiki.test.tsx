@@ -888,7 +888,12 @@ describe("repairing a page", () => {
             number: 4,
             state: "applied" as const,
             createdAt: "2026-11-18T10:00:00.000Z",
-            author: { kind: "person" as const, label: "guneet" },
+            author: {
+              kind: "person" as const,
+              label: "guneet",
+              personId: null,
+              agentId: null,
+            },
             explanation: "Drop the unreadable contact fact.",
             relatedTask: null,
             operations: [],
@@ -937,6 +942,7 @@ describe("repairing a page", () => {
           problems: [
             {
               code: "reference-unresolved",
+              severity: "blocking" as const,
               message: '`owner` names "person/nobody", which is not an entity',
               documentId: "machine/musashi",
             },
