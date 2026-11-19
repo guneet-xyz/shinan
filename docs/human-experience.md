@@ -1090,8 +1090,11 @@ decided.
   already reverted links its revert; one a later change built on says it
   cannot be reverted in one step.
 - **Bulk approval** shows on catalog review while the strict setting is on:
-  the chosen proposals, or all of a task's that were shown, are approved or
-  (with a reason) rejected together, and each one's result is listed.
+  the chosen proposals (each named with its author), or all of a task's
+  that were shown, are approved or (with a reason) rejected together, and
+  each one's result is listed. A task is not offered for approval when all
+  of its proposals are your own agents' and another member must approve
+  them.
 
 If catalog accuracy slips during the trial, a workspace owner turns on the
 strict setting (owner, O-3, [#25]); while it is on, approval works in bulk

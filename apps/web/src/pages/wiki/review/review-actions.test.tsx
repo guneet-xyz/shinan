@@ -248,6 +248,45 @@ describe("bulk approval", () => {
     )
   })
 
+  it("names each proposal's author, and offers no task approval you cannot give", async () => {
+    const yours = (p: CatalogProposal) => ({
+      ...p,
+      author: { ...p.author, personId: account.person.id },
+    })
+    const fake = fakeApi({
+      catalogSettings: () => Promise.resolve({ strict: true }),
+      // Two members: your agents' proposals are another member's to approve.
+      catalogProposals: () =>
+        Promise.resolve({
+          items: [
+            yours(proposal()),
+            yours(second),
+            proposal({
+              id: "44444444-4444-4444-8444-444444444444",
+              number: 7,
+              relatedTask: "SHN-13",
+              touches: ["service/registry"],
+            }),
+          ],
+        }),
+    })
+    renderApp(`/w/${workspaceId}/wiki/review`, fake)
+    const bulk = (
+      await screen.findByRole("heading", { name: "Approve or reject several" })
+    ).closest("section")!
+    expect(
+      within(bulk).getByLabelText(
+        `Catalog proposal 5: machine/musashi, by ${account.person.handle} via opencode-daedalus (an agent); your agent's, so another member approves it`,
+      ),
+    ).toBeTruthy()
+    expect(
+      within(bulk).queryByRole("button", { name: "Approve all of SHN-12" }),
+    ).toBeNull()
+    expect(
+      within(bulk).getByRole("button", { name: "Approve all of SHN-13" }),
+    ).toBeTruthy()
+  })
+
   it("rejects the chosen ones with a reason", async () => {
     const fake = api(true)
     renderApp(`/w/${workspaceId}/wiki/review`, fake)

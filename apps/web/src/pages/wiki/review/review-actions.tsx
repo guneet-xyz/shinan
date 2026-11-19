@@ -11,6 +11,7 @@ import type {
 
 import { Button } from "@/components/ui/button"
 
+import { useAccount } from "../../../account"
 import { useAction } from "../../../action"
 import { useApi, useResource } from "../../../api"
 import { Actions, Rows, Section } from "../../../components/page"
@@ -145,8 +146,12 @@ export function BulkApproval(props: {
 }) {
   const api = useApi()
   const { workspace } = useWorkspace()
+  const { account } = useAccount()
   const settings = useResource(`catalog-settings:${workspace.id}`, () =>
     api.catalogSettings(workspace.id),
+  )
+  const members = useResource(`members:${workspace.id}`, () =>
+    api.members(workspace.id),
   )
   const [chosen, setChosen] = useState<ReadonlySet<string>>(new Set())
   const [reason, setReason] = useState("")
@@ -155,13 +160,24 @@ export function BulkApproval(props: {
   const acting = useAction()
   if (!settings.data?.strict || props.waiting.length === 0) return null
 
-  const tasks = new Map<string, number>()
+  // Your own agents' proposals are approved by another member once the
+  // workspace has more than one (M2-Q8); a task whose proposals are all
+  // yours to leave is not offered for approval.
+  const approvable = (p: CatalogProposal) =>
+    !(
+      p.author.kind === "agent" &&
+      p.author.personId === account.person.id &&
+      (members.data?.length ?? 2) > 1
+    )
+  const tasks = new Map<string, { seenUpTo: number; approvable: boolean }>()
   for (const p of props.waiting)
-    if (p.relatedTask)
-      tasks.set(
-        p.relatedTask,
-        Math.max(tasks.get(p.relatedTask) ?? 0, p.number),
-      )
+    if (p.relatedTask) {
+      const was = tasks.get(p.relatedTask)
+      tasks.set(p.relatedTask, {
+        seenUpTo: Math.max(was?.seenUpTo ?? 0, p.number),
+        approvable: (was?.approvable ?? false) || approvable(p),
+      })
+    }
   const approve = (selection: CatalogBulkSelection) =>
     acting.run(async () => {
       const answer = await api.bulkApproveCatalogProposals(
@@ -197,7 +213,7 @@ export function BulkApproval(props: {
         {props.waiting.map((p) => (
           <CheckboxField
             key={p.id}
-            label={`Catalog proposal ${p.number}: ${visible(p.touches.join(", "))}`}
+            label={`Catalog proposal ${p.number}: ${visible(p.touches.join(", "))}, by ${visible(p.author.label)}${p.author.kind === "agent" ? " (an agent)" : ""}${approvable(p) ? "" : "; your agent's, so another member approves it"}`}
             checked={chosen.has(p.id)}
             onChange={(on) =>
               setChosen((set) => {
@@ -219,17 +235,19 @@ export function BulkApproval(props: {
           Approve{" "}
           {chosen.size === 1 ? "1 proposal" : `${chosen.size} proposals`}
         </Button>
-        {[...tasks].map(([task, seenUpTo]) => (
-          <Button
-            key={task}
-            type="button"
-            variant="outline"
-            disabled={acting.pending}
-            onClick={() => approve({ relatedTask: task, seenUpTo })}
-          >
-            Approve all of {visible(task)}
-          </Button>
-        ))}
+        {[...tasks]
+          .filter(([, t]) => t.approvable)
+          .map(([task, { seenUpTo }]) => (
+            <Button
+              key={task}
+              type="button"
+              variant="outline"
+              disabled={acting.pending}
+              onClick={() => approve({ relatedTask: task, seenUpTo })}
+            >
+              Approve all of {visible(task)}
+            </Button>
+          ))}
       </Actions>
       <AreaField
         label="Reason to reject the chosen ones"
