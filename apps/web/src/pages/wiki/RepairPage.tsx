@@ -124,7 +124,7 @@ function RepairForm(props: {
   return (
     <Section
       title="Corrected text"
-      description={`Revision ${props.stored.revision}. Saving replaces the whole text at once, as your approval, and the security log records it. It is refused if it adds a problem the page did not already have; problems it already had may stay.`}
+      description={`Revision ${props.stored.revision}. Saving replaces the whole text at once, as your approval, and the security log records it. It is refused if it adds a problem the page did not already have; problems it already had may stay. Keep others' fact checks as they are (you may remove facts from them): a fact check that names you says you checked those facts yourself.`}
     >
       <form onSubmit={submit}>
         <FieldGroup>

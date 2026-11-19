@@ -908,6 +908,9 @@ describe("repairing a page", () => {
     renderApp(repairPath, fake)
     const text = await screen.findByLabelText("The page's whole text")
     expect(screen.getByText(/cannot name an attribute/)).toBeTruthy()
+    expect(
+      screen.getByText(/a fact check that names you says you checked/),
+    ).toBeTruthy()
     const save = screen.getByRole("button", { name: "Save the repair" })
     expect((save as HTMLButtonElement).disabled).toBe(true)
     await userEvent.clear(text)

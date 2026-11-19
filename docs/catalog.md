@@ -1662,8 +1662,9 @@ how the rules are applied.
     a fact check credited to anyone but the repairing owner must be one the
     earlier text had, field for field, covering only facts it covered
     there. The owner may remove facts from it, or put facts under a fact
-    check naming themselves. Reason: otherwise a repair could make a fact
-    look checked by another member or an agent.
+    check naming themselves, which says they checked those facts
+    themselves; the repair page and the refusal say so. Reason: otherwise a
+    repair could make a fact look checked by another member or an agent.
   - **Text PostgreSQL cannot store** (a NUL character, an unpaired
     surrogate) in the text, explanation or idempotency key is refused as
     input (`text-characters`), as everywhere.
