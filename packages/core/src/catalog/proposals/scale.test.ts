@@ -14,7 +14,7 @@ import type { Person } from "../../identity/people.js"
 import { createWorkspace } from "../../identity/workspaces.js"
 import type { CatalogOperation } from "../document/index.js"
 import { CatalogWorkers, replaceCatalogWorkers } from "./pool.js"
-import type { Prepare } from "./pool.js"
+import type { Prepare, Turn } from "./pool.js"
 import { listCatalogProposals, proposeCatalogChange } from "./proposals.js"
 import type { ProposalOutcome } from "./proposals.js"
 
@@ -172,18 +172,20 @@ const rename = (i: number): CatalogOperation => ({
 class SlowReading extends CatalogWorkers {
   override run<T>(
     workspace: string,
-    work: (prepare: Prepare) => Promise<T>,
+    work: (prepare: Prepare, turn: Turn) => Promise<T>,
   ): Promise<T> {
-    return super.run(workspace, (prepare) =>
-      work((documents, load, input) =>
-        prepare(
-          documents,
-          async (wanted) => {
-            await new Promise((resolve) => setTimeout(resolve, slowReadMs))
-            return load(wanted)
-          },
-          input,
-        ),
+    return super.run(workspace, (prepare, turn) =>
+      work(
+        (documents, load, input) =>
+          prepare(
+            documents,
+            async (wanted) => {
+              await new Promise((resolve) => setTimeout(resolve, slowReadMs))
+              return load(wanted)
+            },
+            input,
+          ),
+        turn,
       ),
     )
   }

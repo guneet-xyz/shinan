@@ -12,12 +12,20 @@ import {
   getCatalogTypeSchema,
   listCatalogHistory,
   listCatalogPagesOpened,
+  listCatalogPurges,
   listCatalogTypeIndex,
   listCatalogTypeSchemas,
+  previewCatalogPurge,
+  purgeCatalogText,
   recordCatalogPageOpened,
   searchCatalog,
 } from "@shinan/core"
-import type { CatalogList, Context, EntityStatus } from "@shinan/core"
+import type {
+  CatalogList,
+  CatalogPurge,
+  Context,
+  EntityStatus,
+} from "@shinan/core"
 
 import { BadRequestError } from "./errors.js"
 import type { SignedInEnv } from "./sign-in.js"
@@ -187,6 +195,45 @@ export function catalogRoutes(
     await recordCatalogPageOpened(ctx(c), workspaceId(c), { id })
     return c.body(null, 204)
   })
+
+  // Catalog purge (catalog §9; M2-10): the text comes in the body, never in
+  // the address, and no answer or error repeats it. Core checks the fields.
+  app.post(`${base}/purge/preview`, async (c) => {
+    const body = await purgeBody(c)
+    const answer: Api.CatalogPurgePreview = await previewCatalogPurge(
+      ctx(c),
+      workspaceId(c),
+      { text: body.text },
+    )
+    return c.json(answer)
+  })
+
+  app.post(`${base}/purge`, async (c) => {
+    const body = await purgeBody(c)
+    const purge = await purgeCatalogText(ctx(c), workspaceId(c), {
+      text: body.text,
+      reason: body.reason,
+    })
+    return c.json(purgeJson(purge))
+  })
+
+  app.get(`${base}/purges`, async (c) => {
+    const purges = await listCatalogPurges(ctx(c), workspaceId(c))
+    return c.json(purges.map(purgeJson))
+  })
+}
+
+async function purgeBody(
+  c: HonoContext,
+): Promise<{ text?: unknown; reason?: unknown }> {
+  const body: unknown = await c.req.json().catch(() => null)
+  if (typeof body !== "object" || body === null)
+    throw new BadRequestError("The body must be a JSON object")
+  return body
+}
+
+function purgeJson(purge: CatalogPurge): Api.CatalogPurge {
+  return { ...purge, createdAt: purge.createdAt.toISOString() }
 }
 
 function requiredQuery(c: HonoContext, name: string): string {

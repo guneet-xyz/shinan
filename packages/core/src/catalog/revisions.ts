@@ -23,13 +23,25 @@ export interface RevisionDocument {
 }
 
 /** What a revision came from, recorded with it (architecture §5.3). */
-export interface RevisionSource {
+export type RevisionSource = ProposalSource | PurgeSource
+
+/** A catalog proposal applied. */
+export interface ProposalSource {
   /** The catalog proposal it applies (M2-4). */
   proposalId: string
   /** The revision the proposal was made against. */
   basedOnRevision: number
   /** The person whose catalog approval applied it, if it needed one. */
   approvedBy?: { personId: string; label: string }
+}
+
+/**
+ * A purge (catalog §9), storing the latest text of the documents whose
+ * latest text it changed, so the revision number tells agents and the
+ * catalog workers that the text changed.
+ */
+export interface PurgeSource {
+  purgeId: string
 }
 
 export interface AppliedRevision {
@@ -52,6 +64,13 @@ export async function appendCatalogRevision(
   actor: RevisionActor,
   documents: readonly RevisionDocument[],
   source?: RevisionSource,
+  options: {
+    /**
+     * False when the caller derives the documents' index rows itself in
+     * the same transaction, as a purge does (`reindexDocuments`).
+     */
+    index?: boolean
+  } = {},
 ): Promise<AppliedRevision> {
   if (documents.length === 0)
     throw new Error("A catalog revision changes at least one document")
@@ -91,10 +110,14 @@ export async function appendCatalogRevision(
     actorAgentSessionId: actor.agentSessionId,
     actorLabel: actor.label,
     confidence: actor.confidence,
-    proposalId: source?.proposalId ?? null,
-    basedOnRevision: source?.basedOnRevision ?? null,
-    approvedByPersonId: source?.approvedBy?.personId ?? null,
-    approvedByLabel: source?.approvedBy?.label ?? null,
+    ...(source && "purgeId" in source
+      ? { purgeId: source.purgeId }
+      : {
+          proposalId: source?.proposalId ?? null,
+          basedOnRevision: source?.basedOnRevision ?? null,
+          approvedByPersonId: source?.approvedBy?.personId ?? null,
+          approvedByLabel: source?.approvedBy?.label ?? null,
+        }),
   })
 
   if (given.length > 0) {
@@ -134,6 +157,7 @@ export async function appendCatalogRevision(
     })),
   )
 
+  if (options.index === false) return { revision, documentIds }
   await indexRevision(
     tx,
     workspaceId,

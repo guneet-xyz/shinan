@@ -1244,6 +1244,12 @@ kinds (**proposed**):
   `entities`). **Proposed (#133):** a workspace owner's repair of a catalog
   document is recorded as their approval, `catalog-proposal.approved` with
   `repair: true`, like any approval; the text is never in the entry.
+  **Proposed (M2-10):** a catalog purge is one `catalog.purged`
+  entry with the purge's ID and number, the revision it stored and how
+  many revision texts, documents, proposals and events it changed, never
+  the purged text or the reason (which is free text, kept on the timeline).
+  A purge, and seeing where a text is before purging it, need a workspace
+  owner who signed in again recently; agents are refused.
 - **Decided (owner, O-47, N-8, N-13, [#25](https://github.com/guneet-xyz/shinan/issues/25)):**
   the security log is kept forever, and no security-log entry can ever be
   purged, by anyone: neither installation-level entries nor a workspace's

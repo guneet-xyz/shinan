@@ -472,6 +472,15 @@ const registryCache = new Map<
 const registryCacheSize = 32
 
 /**
+ * Empties the cache of parsed type schemas, so that no text parsed before a
+ * purge stays in this process's memory (catalog §9). The cache is keyed by
+ * the text, so it never serves purged text; this only frees it.
+ */
+export function clearTypeSchemaCache(): void {
+  registryCache.clear()
+}
+
+/**
  * Derives a whole workspace's index from its stored text alone: the latest
  * text of every document, read with the type schemas of the same revision,
  * and each document's history for its section credits. Calls `sink` with
@@ -584,6 +593,101 @@ export async function rebuildWorkspaceIndex(
     })
     .where(eq(schema.catalogIndexState.workspaceId, workspaceId))
   return { revision, documents }
+}
+
+/**
+ * Derives again, from their stored history, the index rows of documents
+ * whose stored text was rewritten in place by a purge (catalog §9): the
+ * replay a rebuild does, for those documents only, and the index's
+ * revision brought up to the latest. A document's rows depend only on its
+ * own history and the type schemas, so when a type schema document is
+ * among them the whole workspace is rebuilt instead; so it is when they
+ * are more than a quarter of the catalog (and over 50), where a rebuild is
+ * quicker.
+ * Holds the index lock.
+ */
+export async function reindexDocuments(
+  tx: Transaction,
+  workspaceId: string,
+  documentIds: readonly string[],
+  batchSize = 200,
+): Promise<void> {
+  await lockIndexState(tx, workspaceId)
+  if (documentIds.length === 0) return
+  const t = schema.catalogIndexDocuments
+  const schemas = await tx
+    .select({ documentId: t.documentId })
+    .from(t)
+    .where(and(eq(t.workspaceId, workspaceId), eq(t.kind, "schema")))
+  const ids = new Set(documentIds)
+  const [{ total }] = (await tx
+    .select({ total: sql<number>`count(*)::int` })
+    .from(schema.catalogDocuments)
+    .where(eq(schema.catalogDocuments.workspaceId, workspaceId))) as [
+    { total: number },
+  ]
+  if (
+    schemas.some((s) => ids.has(s.documentId)) ||
+    ids.size > Math.max(total / 4, 50)
+  ) {
+    await rebuildWorkspaceIndex(tx, workspaceId)
+    return
+  }
+  const { registry } = await registryFor(
+    tx,
+    workspaceId,
+    new Map(schemas.map((s) => [s.documentId, { kind: "schema" }])),
+    new Map(),
+  )
+  const sorted = [...ids].sort()
+  const pause = pauser()
+  for (let i = 0; i < sorted.length; i += batchSize) {
+    const history = await textHistory(
+      tx,
+      workspaceId,
+      sorted.slice(i, i + batchSize),
+    )
+    const authors = await revisionAuthors(tx, workspaceId, [
+      ...new Set(history.map((h) => h.revision)),
+    ])
+    const rows: DocumentRows[] = []
+    let start = 0
+    while (start < history.length) {
+      const documentId = history[start]!.documentId
+      let end = start
+      while (end < history.length && history[end]!.documentId === documentId)
+        end++
+      const own = history.slice(start, end)
+      const { attribution, provenance, document } = await replay(
+        own,
+        authors,
+        pause,
+      )
+      // A document that has become a type schema document changes how
+      // others are read: rebuild everything.
+      if (document?.kind === "schema") {
+        await rebuildWorkspaceIndex(tx, workspaceId)
+        return
+      }
+      rows.push(
+        deriveDocumentRows({
+          workspaceId,
+          documentId,
+          revision: own[own.length - 1]!.revision,
+          document: document!,
+          registry,
+          attribution,
+          provenance,
+        }),
+      )
+      start = end
+    }
+    await replaceRows(tx, workspaceId, rows)
+  }
+  await tx
+    .update(schema.catalogIndexState)
+    .set({ revision: await latestRevision(tx, workspaceId) })
+    .where(eq(schema.catalogIndexState.workspaceId, workspaceId))
 }
 
 /**

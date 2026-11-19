@@ -210,6 +210,7 @@ const history: CatalogHistoryAnswer = {
       changed_by: "guneet",
       changed_by_kind: "person",
       confidence: "recorded",
+      purge: 2,
     },
     {
       revision: 3,
@@ -217,6 +218,7 @@ const history: CatalogHistoryAnswer = {
       changed_by: "guneet via opencode-daedalus",
       changed_by_kind: "agent",
       confidence: "recorded",
+      purge: null,
     },
   ],
   next_before: null,
@@ -906,6 +908,9 @@ describe("repairing a page", () => {
     renderApp(repairPath, fake)
     const text = await screen.findByLabelText("The page's whole text")
     expect(screen.getByText(/cannot name an attribute/)).toBeTruthy()
+    expect(
+      screen.getByText(/a fact check that names you says you checked/),
+    ).toBeTruthy()
     const save = screen.getByRole("button", { name: "Save the repair" })
     expect((save as HTMLButtonElement).disabled).toBe(true)
     await userEvent.clear(text)

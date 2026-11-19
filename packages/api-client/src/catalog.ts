@@ -296,6 +296,8 @@ export interface CatalogHistoryItem {
   changed_by: string
   changed_by_kind: ActorKind
   confidence: Confidence
+  /** The purge that stored this revision with purged text replaced by a marker; null for a change. */
+  purge: number | null
 }
 
 export interface CatalogHistoryAnswer extends CatalogAnswer {

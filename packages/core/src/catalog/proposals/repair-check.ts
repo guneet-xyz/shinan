@@ -40,8 +40,8 @@ export function repairCheckProblems(
         code: "operation-invalid",
         message:
           same.length === 0
-            ? `A fact check credited to ${group.check.by === undefined ? "nobody" : `"${group.check.by}"`} that the earlier text does not have: in a repair, a new or changed fact check names you (${by}) as \`by\`, since nobody types another's name`
-            : `The fact check credited to "${group.check.by}" covers facts it did not cover before: put them in a fact check that names you (${by}) as \`by\``,
+            ? `A fact check credited to ${group.check.by === undefined ? "nobody" : `"${group.check.by}"`} that the earlier text does not have: in a repair, a new or changed fact check names you (${by}) as \`by\`, since nobody types another's name. Naming yourself says you checked those facts yourself; otherwise keep the fact check as it was`
+            : `The fact check credited to "${group.check.by}" covers facts it did not cover before: put them in a fact check that names you (${by}) as \`by\`, which says you checked them yourself`,
         documentId: after.id,
       })
     }

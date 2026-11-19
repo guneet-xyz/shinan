@@ -637,8 +637,8 @@ const actorCheck = (
 
 /**
  * Append-only record of what happened in a workspace (architecture §4.3). A
- * database trigger refuses updates, deletes and truncation; purge
- * (architecture §4.4) will narrow that when it is built.
+ * database trigger refuses updates, deletes and truncation, except that a
+ * purge may replace the summary and data (architecture §4.4).
  */
 export const events = pgTable(
   "events",
@@ -954,6 +954,68 @@ export const catalogProposals = pgTable(
   ],
 )
 
+/** How many records a catalog purge changed, by kind: counts only, never the text. */
+export interface CatalogPurgeCounts {
+  /** Stored texts of document revisions. */
+  revisionTexts: number
+  /** Documents with any purged revision text. */
+  documents: number
+  /** Documents whose latest text changed, stored again in the purge's revision. */
+  latestDocuments: number
+  /** Catalog proposals. */
+  proposals: number
+  /** Waiting catalog proposals it rejected. */
+  rejectedProposals: number
+  /** Events (timeline entries). */
+  events: number
+  /** Comments on catalog proposals. */
+  comments: number
+}
+
+const xid8 = customType<{ data: string }>({ dataType: () => "xid8" })
+
+/**
+ * A purge of catalog content (catalog §9; architecture §4.4): who replaced
+ * a text with a marker wherever the catalog stored it, when and why, never
+ * the text itself. Numbered from 1 within the workspace. Append-only: a
+ * trigger refuses deletes, and updates other than its counts in the
+ * transaction that made it.
+ */
+export const catalogPurges = pgTable(
+  "catalog_purges",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id),
+    number: integer("number").notNull(),
+    createdAt: createdAt(),
+    ...actorColumns(),
+    /** Why, in the workspace owner's words; checked not to hold the purged text. */
+    reason: text("reason").notNull(),
+    counts: jsonb("counts").$type<CatalogPurgeCounts>().notNull(),
+    /**
+     * The transaction that made it. The triggers on events and revision
+     * text allow a purge's updates only in that transaction (migration
+     * `0010_catalog_purge`).
+     */
+    transactionId: xid8("transaction_id")
+      .notNull()
+      .default(sql`pg_current_xact_id()`),
+  },
+  (t) => [
+    unique("catalog_purges_workspace_id_id").on(t.workspaceId, t.id),
+    unique("catalog_purges_workspace_id_number").on(t.workspaceId, t.number),
+    foreignKey({
+      name: "catalog_purges_actor_person_id_fk",
+      columns: [t.actorPersonId],
+      foreignColumns: [people.id],
+    }),
+    actorCheck("catalog_purges_actor_known", t),
+    check("catalog_purges_number_positive", sql`${t.number} > 0`),
+  ],
+)
+
 /**
  * A comment on a catalog proposal (catalog §8.6): members and agents
  * comment, and an agent asked to review a proposal records its findings
@@ -1014,7 +1076,7 @@ export const catalogProposalComments = pgTable(
  * from 1 within the workspace. Every answer from the agent index names the
  * revision it was built from (catalog §12.2). Its author is credited the
  * way events are. Never edited (catalog §9); a database trigger refuses
- * updates and deletes, which purge (M2-10) will narrow.
+ * updates and deletes.
  */
 export const catalogRevisions = pgTable(
   "catalog_revisions",
@@ -1037,9 +1099,23 @@ export const catalogRevisions = pgTable(
     approvedByPersonId: uuid("approved_by_person_id"),
     /** That person's written form (identity §8.7), as it was at the time. */
     approvedByLabel: text("approved_by_label"),
+    /**
+     * The purge that stored this revision: the latest text of the documents
+     * it changed, with the purged text replaced (catalog §9).
+     */
+    purgeId: uuid("purge_id"),
   },
   (t) => [
     primaryKey({ columns: [t.workspaceId, t.number] }),
+    foreignKey({
+      name: "catalog_revisions_purge_fk",
+      columns: [t.workspaceId, t.purgeId],
+      foreignColumns: [catalogPurges.workspaceId, catalogPurges.id],
+    }),
+    check(
+      "catalog_revisions_one_source",
+      sql`${t.proposalId} is null or ${t.purgeId} is null`,
+    ),
     foreignKey({
       name: "catalog_revisions_proposal_fk",
       columns: [t.workspaceId, t.proposalId],
@@ -1100,7 +1176,8 @@ export const catalogDocuments = pgTable(
 /**
  * The full Markdown text of each document a revision changed (architecture
  * §5.3). The latest text of a document is the one at its
- * `current_revision`. Never edited, like revisions.
+ * `current_revision`. Never edited, like revisions, except by a purge,
+ * which may replace the text alone (catalog §9).
  */
 export const catalogRevisionDocuments = pgTable(
   "catalog_revision_documents",

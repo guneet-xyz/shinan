@@ -559,6 +559,7 @@ export function History() {
                 <span className="font-medium">Revision {item.revision}</span>{" "}
                 <span className="text-muted-foreground">
                   · {formatTime(item.at)} · {item.changed_by}
+                  {item.purge !== null && ` · purge ${item.purge}`}
                 </span>
               </span>
               {i === 0 && item.revision === entity.revision ? (

@@ -87,6 +87,11 @@ export interface CatalogHistoryItemJson {
   changed_by: string
   changed_by_kind: ActorKind
   confidence: Confidence
+  /**
+   * The number of the purge that stored this revision (catalog §9): the
+   * latest text with purged text replaced by a marker. Null for a change.
+   */
+  purge: number | null
 }
 
 export interface CatalogHistoryAnswer extends CatalogAnswer {
@@ -137,6 +142,7 @@ export async function listCatalogHistory(
           changedBy: revisions.actorLabel,
           kind: revisions.actorKind,
           confidence: revisions.confidence,
+          purge: schema.catalogPurges.number,
         })
         .from(revisionDocuments)
         .innerJoin(
@@ -144,6 +150,13 @@ export async function listCatalogHistory(
           and(
             eq(revisions.workspaceId, revisionDocuments.workspaceId),
             eq(revisions.number, revisionDocuments.revision),
+          ),
+        )
+        .leftJoin(
+          schema.catalogPurges,
+          and(
+            eq(schema.catalogPurges.workspaceId, revisions.workspaceId),
+            eq(schema.catalogPurges.id, revisions.purgeId),
           ),
         )
         .where(
@@ -168,6 +181,7 @@ export async function listCatalogHistory(
           changed_by: r.changedBy,
           changed_by_kind: r.kind,
           confidence: r.confidence,
+          purge: r.purge,
         })),
         next_before:
           rows.length > limit ? shown[shown.length - 1]!.revision : null,

@@ -1662,8 +1662,9 @@ how the rules are applied.
     a fact check credited to anyone but the repairing owner must be one the
     earlier text had, field for field, covering only facts it covered
     there. The owner may remove facts from it, or put facts under a fact
-    check naming themselves. Reason: otherwise a repair could make a fact
-    look checked by another member or an agent.
+    check naming themselves, which says they checked those facts
+    themselves; the repair page and the refusal say so. Reason: otherwise a
+    repair could make a fact look checked by another member or an agent.
   - **Text PostgreSQL cannot store** (a NUL character, an unpaired
     surrogate) in the text, explanation or idempotency key is refused as
     input (`text-characters`), as everywhere.
@@ -1813,7 +1814,7 @@ what each operation expects.
   index's `pending_proposals` ([12.4](#124-the-index-format)). Comments
   are kept with the proposal, in any state, up to 4,000 characters each,
   from members and from agents whose token has `catalog:propose`; they
-  are not edited, and purge (M2-10) can remove one. A comment may carry an
+  are not edited, and purge (M2-10) can replace text in one. A comment may carry an
   idempotency key, kept per author, so a retry is stored once; an agent
   sends at most 60 comments in 10 minutes. Each comment is an event whose
   summary does not repeat its text, since an agent's comment is outside
@@ -1841,8 +1842,9 @@ approval and history mean nothing.
   which appears on the entity's timeline.
   **Proposed.** Reason: events are the glossary's single record of what
   happened; revisions let anyone see an entity as it was.
-- Revisions are not edited. A revert is a new proposal. **Proposed.** Reason:
-  the glossary's rule that events are not edited.
+- Revisions are not edited, except by purge (below). A revert is a new
+  proposal. **Proposed.** Reason: the glossary's rule that events are not
+  edited.
 - Retired entities stay readable, marked retired, linked to their replacement,
   and excluded from default search. **Proposed.** Reason: the `workspace`
   repository keeps retired entries (for example the Takezo machine) because
@@ -1860,6 +1862,56 @@ approval and history mean nothing.
     and agents' model providers, may still hold the content, so a purged
     secret must be rotated at its source. Reason: a purge cleans Shinan, not
     copies that already left it.
+  - **As built (M2-10, [#91](https://github.com/guneet-xyz/shinan/issues/91)), proposed:**
+    - **What is purged: a text, everywhere.** A workspace owner types the
+      text (4 to 10,000 characters, case-sensitive) and a reason. Every
+      occurrence is replaced by `(purged)` in every revision of every
+      document, in catalog proposals (their explanation, operations, related
+      task, validation findings, approval reasons, touched IDs and rejection
+      reason), in comments on proposals (their text, and their idempotency
+      key, cleared), and in timeline events. Reason: a leaked secret or a person's
+      details are a text, wherever they ended up; replacing only those bytes
+      keeps every document readable and every record in its shape, and it
+      keeps section credits (only the purged words change). The marker is
+      plain words in brackets, so YAML still reads it as text.
+    - **Whitespace does not have to match.** Any run of whitespace in the
+      text matches any run of whitespace, and inside a long word (20
+      characters or more without a space, as keys and tokens are) a line
+      break may stand between any two characters. The preview counts
+      separately the places found across a line break, so the owner looks
+      at them. Reason: an address or a name in a Markdown paragraph is
+      wrapped across lines, indented, or written with other line endings,
+      and a long secret can be split by an editor; the purge must find them
+      as the owner knows them, without a short word matching the ends of
+      two unrelated words on two lines.
+    - **The latest text.** When a document's latest text held it, the purge
+      stores the cleaned text as a new catalog revision, credited to the
+      workspace owner and marked as the purge's (it has no proposal and
+      cannot be reverted). Reason: agents ask "what changed since revision
+      N" (§12.2) and must learn that the text they hold changed.
+    - **Waiting proposals** that held the text are rejected, naming the
+      purge: their operations no longer say what their author meant.
+    - **Shown first.** Before purging, the owner sees where the text is: how
+      many revision texts of how many documents, which current pages, how
+      many proposals (and waiting ones), how many events. Also shown:
+      - copies in other forms the purge does not reach: URL-encoded,
+        percent-encoded character by character, with HTML entities, or with
+        JSON or YAML escapes, each to purge in its turn;
+      - pages whose structure the purge changes: the text is in the page's
+        ID or an alias, ends at a frontmatter key, or spans lines of the
+        frontmatter. Removing the text comes first; the page may then read
+        with problems, to repair;
+      - pages whose agent index holds the text while their stored text
+        writes it differently (YAML escapes): the purge refuses, naming
+        them, until it is purged as the stored text writes it.
+    - **Afterwards** the owner is told which pages now read with problems
+      they did not have, to repair, and to look again a minute later: a
+      proposal being worked out during the purge, or sent again afterwards
+      by an agent, carries its own copy of the text and can bring it back.
+    - **Recorded:** a `catalog.purged` event with who, why, the counts and
+      the documents and proposals it touched; a security-log entry with the
+      counts. Neither holds the text, and the reason may not repeat it.
+    - Mechanism: [architecture §4.4](architecture.md#44-purge).
 - How revisions are stored: [architecture](architecture.md).
 
 ## 10. The wiki

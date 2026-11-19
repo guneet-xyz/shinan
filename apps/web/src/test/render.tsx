@@ -202,6 +202,9 @@ export function fakeApi(overrides: Partial<ApiClient> = {}): Fake {
     "catalogPagesOpened",
     "markCatalogPageOpened",
     "repairCatalogDocument",
+    "previewCatalogPurge",
+    "purgeCatalogText",
+    "catalogPurges",
   ]
   const fake = {} as Record<string, unknown>
   for (const name of names) {

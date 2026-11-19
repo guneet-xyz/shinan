@@ -36,7 +36,7 @@ import type {
   Problem,
 } from "../document/index.js"
 import { lockIndexState } from "../index/indexer.js"
-import { latestRevision } from "../index/store.js"
+import { latestRevision, purgeCount } from "../index/store.js"
 import { appendCatalogRevision } from "../revisions.js"
 import type { RevisionSource } from "../revisions.js"
 import { isGated } from "./classify.js"
@@ -309,10 +309,7 @@ export async function submitProposal(
                 proposal: proposalOf(existing),
               },
             }
-          if (
-            (await latestRevision(scope.tx, scope.workspaceId)) !==
-            base.revision
-          )
+          if (await catalogMoved(scope.tx, scope.workspaceId, base))
             return { moved: true }
 
           const strict = await isStrict(scope)
@@ -445,10 +442,7 @@ export async function approveCatalogProposal(
           await lockIndexState(scope.tx, scope.workspaceId)
           const current = await pendingProposal(scope, proposalId, true)
           await checkNotOwnAgent(scope, current)
-          if (
-            (await latestRevision(scope.tx, scope.workspaceId)) !==
-            base.revision
-          )
+          if (await catalogMoved(scope.tx, scope.workspaceId, base))
             return { moved: true }
           checkAccepts(prepared, scope.actor.label)
           const applied = await apply(scope, current, prepared, {
@@ -632,6 +626,8 @@ export type ProposalScope = WriteScope & {
 /** The latest revision a proposal is worked out against. */
 interface Base {
   revision: number
+  /** The workspace's number of purges, read with the revision (catalog §9). */
+  purges: number
   documents: LatestDocument[]
   memberHandles: string[]
   /** A submission's operations, worked out from the same snapshot. */
@@ -650,9 +646,28 @@ async function readBase(scope: ProposalScope): Promise<Base> {
     .orderBy(asc(d.id))
   return {
     revision: await latestRevision(scope.tx, scope.workspaceId),
+    purges: await purgeCount(scope.tx, scope.workspaceId),
     documents,
     memberHandles: await currentMemberHandles(scope.tx, scope.workspaceId),
   }
+}
+
+/**
+ * Whether the catalog moved on from `base` before the storing transaction
+ * took the index lock: another process stored a revision, or a purge
+ * rewrote stored text (catalog §9), so the work is done again on the
+ * stored text as it is now. Every path that stores work done in a turn
+ * checks this, after `lockIndexState`.
+ */
+export async function catalogMoved(
+  tx: Transaction,
+  workspaceId: string,
+  base: Pick<Base, "revision" | "purges">,
+): Promise<boolean> {
+  return (
+    (await latestRevision(tx, workspaceId)) !== base.revision ||
+    (await purgeCount(tx, workspaceId)) !== base.purges
+  )
 }
 
 /**
@@ -671,7 +686,7 @@ async function inTurn<T>(
   operations?: Submission["operations"],
 ): Promise<T> {
   try {
-    return await catalogWorkers().run(workspaceId, async (prepare) => {
+    return await catalogWorkers().run(workspaceId, async (prepare, turn) => {
       if (agentId) await throttle(ctx, agentId)
       for (let n = 1; ; n++) {
         // The operations are worked out from the same snapshot as the base.
@@ -687,6 +702,7 @@ async function inTurn<T>(
           },
           snapshotRead,
         )
+        await turn.purged(base.purges)
         const stored = await attempt(base, prepare)
         if ("done" in stored) return stored.done
         if (n === attempts) throw changingTooFast()
@@ -772,7 +788,10 @@ async function work(
   )
 }
 
-/** Stored texts at given revisions; never edited, so any snapshot agrees. */
+/**
+ * Stored texts at given revisions. Only a purge edits them, and work done
+ * across a purge is not stored (`catalogMoved`), so any snapshot will do.
+ */
 async function textsAt(
   tx: Transaction,
   workspaceId: string,
@@ -1175,7 +1194,12 @@ function securityDetails(row: ProposalRow): Record<string, unknown> {
   }
 }
 
-function hashOf(request: unknown): string {
+/**
+ * A hash of a proposal's request, to tell a retry from a different request
+ * with the same idempotency key. A purge computes it again from the purged
+ * request, so it says nothing about the purged text.
+ */
+export function hashOf(request: unknown): string {
   return createHash("sha256")
     .update(JSON.stringify(canonical(request)))
     .digest("base64url")

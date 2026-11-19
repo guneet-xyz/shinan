@@ -99,3 +99,18 @@ export async function latestRevision(
     .where(eq(schema.catalogRevisions.workspaceId, workspaceId))
   return row?.latest ?? 0
 }
+
+/**
+ * How many purges the workspace has had (catalog §9). A purge rewrites
+ * stored text in place, so work done on text read before it is done again.
+ */
+export async function purgeCount(
+  tx: Transaction,
+  workspaceId: string,
+): Promise<number> {
+  const [row] = await tx
+    .select({ count: sql<number>`count(*)::int` })
+    .from(schema.catalogPurges)
+    .where(eq(schema.catalogPurges.workspaceId, workspaceId))
+  return row?.count ?? 0
+}

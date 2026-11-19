@@ -33,7 +33,7 @@ import { getCatalogEntity } from "../index/queries.js"
 import { appendCatalogRevision } from "../revisions.js"
 import { agentWithdrawCatalogProposal } from "./agent.js"
 import { CatalogWorkers, replaceCatalogWorkers } from "./pool.js"
-import type { Prepare } from "./pool.js"
+import type { Prepare, Turn } from "./pool.js"
 import {
   approveCatalogProposal,
   catalogLimits,
@@ -914,9 +914,9 @@ describe("taking turns", () => {
     class Racing extends CatalogWorkers {
       override run<T>(
         workspace: string,
-        work: (prepare: Prepare) => Promise<T>,
+        work: (prepare: Prepare, turn: Turn) => Promise<T>,
       ): Promise<T> {
-        return super.run(workspace, (prepare) =>
+        return super.run(workspace, (prepare, turn) =>
           work(async (...args) => {
             const result = await prepare(...args)
             if (!raced) {
@@ -943,7 +943,7 @@ describe("taking turns", () => {
               )
             }
             return result
-          }),
+          }, turn),
         )
       }
     }

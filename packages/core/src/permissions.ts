@@ -294,6 +294,19 @@ export const rules = deepFreeze({
     reauthentication: true,
   },
   /**
+   * Purge catalog content (catalog §9; architecture §4.4): replace a text
+   * with a marker wherever the catalog stores it, and see where it is
+   * first. Workspace owners only, with re-authentication (identity §3.3,
+   * §5.1, O-50); never agents.
+   */
+  "catalog.purge": {
+    level: "workspace",
+    access: "write",
+    roles: ["owner"],
+    agents: "people",
+    reauthentication: true,
+  },
+  /**
    * Keep the agent index in step with the stored text: rebuild it, run the
    * daily round-trip check, and ask for rebuilds after the parser changed
    * (architecture §5.2, §5.3, §7). The worker and the operator's server

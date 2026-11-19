@@ -8,7 +8,7 @@
     "dev": "pnpm --parallel --filter \"./apps/*\" dev",
     "format:check": "prettier --check .",
     "format:write": "prettier --write .",
-    "lint": "eslint .",
+    "lint": "NODE_OPTIONS=--max-old-space-size=4096 eslint .",
     "services:down": "docker compose -f deploy/compose.dev.yml down",
     "services:up": "docker compose -f deploy/compose.dev.yml up -d --wait",
     "start": "pnpm --filter @shinan/server start",

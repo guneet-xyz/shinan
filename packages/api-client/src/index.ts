@@ -300,6 +300,61 @@ export interface SecurityLogEntry extends ActorFields {
   details: Record<string, unknown>
 }
 
+/** How many records a catalog purge changed, by kind (catalog §9). */
+export interface CatalogPurgeCounts {
+  revisionTexts: number
+  documents: number
+  latestDocuments: number
+  proposals: number
+  rejectedProposals: number
+  events: number
+  comments: number
+}
+
+/** Where a text is in a workspace's catalog, before purging it. */
+export interface CatalogPurgePreview {
+  /** Stored document texts that hold it, counting each revision. */
+  revisionTexts: number
+  documents: number
+  /** Catalog IDs of documents whose latest text holds it. */
+  latestDocuments: string[]
+  proposals: number
+  /** Waiting catalog proposals that hold it: the purge rejects them. */
+  waitingProposals: number
+  events: number
+  /** Comments on catalog proposals that hold it. */
+  comments: number
+  /** Catalog IDs of documents whose index holds it while their text writes it differently. */
+  writtenDifferently: string[]
+  /** Stored texts (and current pages) where a match crosses a line break. */
+  acrossLines: { revisionTexts: number; latestDocuments: string[] }
+  /** Copies in encoded forms the purge does not reach; `text` is the form to purge. */
+  alsoWrittenAs: {
+    form: "url" | "percent" | "html" | "escaped"
+    text: string
+    revisionTexts: number
+    proposals: number
+    events: number
+    comments: number
+  }[]
+  /** Where purging would change a document's structure. */
+  structure: { id: string; where: "id" | "alias" | "key" | "frontmatter" }[]
+}
+
+/** A catalog purge: who, when, why and how much, never the purged text. */
+export interface CatalogPurge {
+  id: string
+  number: number
+  createdAt: string
+  purgedBy: string
+  reason: string
+  /** The catalog revision that stored the cleaned latest text, if any. */
+  revision: number | null
+  counts: CatalogPurgeCounts
+  /** Documents the purge left reading with new problems: only in the purge's own answer. */
+  newProblems?: { id: string; problems: string[] }[]
+}
+
 export type InvitationState =
   "pending" | "accepted" | "declined" | "expired" | "withdrawn"
 
@@ -811,6 +866,21 @@ export function createApiClient(options: ApiClientOptions = {}) {
           approval: options.approval,
         })}`,
       ),
+
+    // Catalog purge (M2-10): the text goes in request bodies only, never
+    // in an address.
+    previewCatalogPurge: (workspaceId: string, text: string) =>
+      request<CatalogPurgePreview>(
+        "POST",
+        `${catalog(workspaceId)}/purge/preview`,
+        { text },
+      ),
+    purgeCatalogText: (
+      workspaceId: string,
+      input: { text: string; reason: string },
+    ) => request<CatalogPurge>("POST", `${catalog(workspaceId)}/purge`, input),
+    catalogPurges: (workspaceId: string) =>
+      request<CatalogPurge[]>("GET", `${catalog(workspaceId)}/purges`),
   }
 }
 

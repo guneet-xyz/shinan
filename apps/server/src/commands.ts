@@ -14,6 +14,7 @@ import {
   setupLinkHours,
   shinan,
   syncOperators,
+  watchCatalogPurges,
 } from "@shinan/core"
 import {
   checkDatabase,
@@ -102,6 +103,9 @@ async function runWeb(env: Env): Promise<void> {
   const { db, pool } = createDatabase(databaseUrl)
   const jobs = await connectJobQueue(databaseUrl)
   let signIn: SignIn | undefined
+  // This process keeps catalog text parsed; it forgets it after a purge
+  // in another process (catalog §9).
+  const stopWatchingPurges = watchCatalogPurges({ db, actor: shinan })
   try {
     await syncOperators({ db, actor: shinan }, { emails: config.operators })
     await announceSetupLink(db, config)
@@ -134,6 +138,7 @@ async function runWeb(env: Env): Promise<void> {
       },
     ])
   } finally {
+    stopWatchingPurges()
     await closeWeb({ signIn, jobs, pool })
   }
   console.info(`${productName} web stopped`)
@@ -313,6 +318,8 @@ async function runWorker(env: Env): Promise<void> {
   const emailConfig = readEmailConfig(env)
   const emailSender = createEmailSender(emailConfig)
   const { db, pool } = createDatabase(databaseUrl)
+  // Rebuilds and checks keep type schemas parsed (catalog §9).
+  const stopWatchingPurges = watchCatalogPurges({ db, actor: shinan })
   try {
     const worker = await startWorker({ databaseUrl, db, emailSender })
     console.info(
@@ -321,6 +328,7 @@ async function runWorker(env: Env): Promise<void> {
     await waitForShutdown()
     await worker.stop()
   } finally {
+    stopWatchingPurges()
     await emailSender.close()
     await pool.end()
   }

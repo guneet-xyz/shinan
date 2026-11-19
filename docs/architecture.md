@@ -412,6 +412,69 @@ Reason: "never edited" keeps history trustworthy, but a leaked secret or a
 lawful deletion request must still be removable; a visible, attributed purge
 keeps both. A secret that reached Shinan must also be rotated at its source.
 
+**As built for the catalog (M2-10, [#91](https://github.com/guneet-xyz/shinan/issues/91); catalog content only in M2, owner, M2-Q4), proposed.**
+What a purge removes and records is in [catalog §9](catalog.md#9-history-and-purge).
+How:
+
+- **One transaction, under the workspace's index lock** (the lock catalog
+  proposals take to store a revision), so no revision is stored halfway
+  through a purge.
+- **Where the text is rewritten:** `catalog_revision_documents.text` (every
+  revision, in place); `catalog_proposals` (the request and what Shinan
+  stored about it; the request hash is computed again and the idempotency
+  key cleared); comments on proposals (`catalog_proposal_comments.text`,
+  the idempotency key cleared); `events.summary` and `events.data`. The
+  list lives in one place in core (`purgeTargets`); a later table holding
+  catalog text joins it.
+- **The append-only triggers are narrowed, not removed** (migration
+  `0010_catalog_purge`): an update of `events` may change only `summary` and
+  `data`, and an update of `catalog_revision_documents` only `text`, and
+  only in the transaction that recorded a purge of the row's workspace in
+  `catalog_purges` (matched by transaction ID). Deletes, truncation and
+  updates of `catalog_revisions` stay refused. `catalog_purges` is
+  append-only itself: no row is ever deleted, and the only update is the
+  purge filling in its own counts, in its own transaction, so every
+  transaction that rewrote history leaves its record. The security log's
+  triggers are untouched (D-049).
+- **Matching:** whitespace-insensitive ([catalog §9](catalog.md#9-history-and-purge)).
+  Candidates are found in SQL by a regular expression on the text's first
+  64 characters other than whitespace, with any whitespace (or JSON's
+  escapes of it) between them, a superset. Each is then matched and
+  rewritten in the application by one matcher (`PurgeMatcher`), used for
+  the preview, the purge and its check afterwards, in time linear in the
+  value and the text: the value's characters other than whitespace are
+  searched with the Knuth-Morris-Pratt algorithm, and each place found is
+  checked against the whitespace around it with running counts. So the
+  full 10,000-character text (a key block) and repetitive values take
+  milliseconds. As a backstop, matching for one preview or purge stops
+  after 15 seconds in all (`purge-too-slow`).
+- **Derived data:** each document with purged text has its index rows
+  derived again from its purged history, as a rebuild does (section credits
+  and word provenance replayed); the purge revision is not indexed first.
+  When a type schema document held the text, or the documents are more than
+  a quarter of the catalog (and over 50), the whole index is rebuilt
+  instead, which is then quicker. The purge then checks that the text is
+  nowhere left, in stored records or the index, and otherwise rolls back.
+  D-006 holds afterwards (`purge.test.ts` compares with a rebuild). Measured
+  on Daedalus with 5,000 entities: a few seconds for a text on one page; a
+  text on every page takes about as long as a rebuild.
+- **Text kept in memory:** catalog workers and the type schema cache keep
+  parsed text. The purging process forgets the workspace's at once; every
+  `web` and `worker` process checks for new purges each minute and stops
+  that workspace's catalog worker (after its turn, if one is running). Work
+  a catalog proposal did on text read before a purge is never stored: the
+  storing transaction sees the purge and the proposal is worked out again
+  on the purged text.
+- **Earlier row versions:** PostgreSQL keeps a row's earlier version until
+  vacuum clears it, so the purge asks for a vacuum of the tables it changed
+  right after (best effort; autovacuum does it otherwise), and a database
+  dump then has no trace of the text (`purge.test.ts` reads every table;
+  checked with `pg_dump` too). The bytes of deleted row versions stay in the
+  database's files until the space is reused, and the write-ahead log and
+  the host's backups may hold the text: the purge screen says copies outside
+  Shinan's control remain, and the [operator guide](operator-guide.md#catalog-purge)
+  says how to clear the files with `VACUUM FULL`.
+
 ## 5. Catalog Markdown and agent index
 
 The [catalog document](catalog.md) owns the schema, fact format, catalog
@@ -486,8 +549,8 @@ indexing (**Proposed**).
     revision is numbered from 1 in each workspace and credited like an event;
     the full text of each document it changed is stored with it, and a
     document's latest text is the one at its current revision. The database
-    refuses updates and deletes of revisions and their text, as for events;
-    purge (M2-10) narrows that. M2-3 adds these tables because the index is
+    refuses updates and deletes of revisions and their text, as for events,
+    except a purge's rewrite of the text ([4.4](#44-purge)). M2-3 adds these tables because the index is
     built from them; catalog proposals and approval (M2-4) add their own
     records and call one function, inside the apply transaction, that stores
     a revision and indexes it.
