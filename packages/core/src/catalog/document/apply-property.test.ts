@@ -97,12 +97,19 @@ const text = fc
   .filter((s) => s.trim() !== "")
 /**
  * `text` as one paragraph of a body: no line breaks or `#`, which would
- * start new blocks, and every `[` escaped, so nothing in it is a link, an
- * image or a link reference definition (`[a]:a`, #151). Without `(` or `<`
- * in the alphabet, `[` is the only way the text could make one.
+ * start new blocks. Every `[` is escaped, so nothing in it is a link, an
+ * image or a link reference definition (`[a]:a`, #151): without `(` or `<`
+ * in the alphabet, `[` is the only way the text could make one. Every
+ * backtick is escaped too, so the text never opens a code fence it does not
+ * close (three backticks at its start), which would swallow the sections
+ * after it. The alphabet has no `\` or `~`, so an escape stays one and no
+ * other fence can open.
  */
 function paragraphOf(text: string): string {
-  return text.replace(/[\r\n#]/g, " ").replaceAll("[", "\\[")
+  return text
+    .replace(/[\r\n#]/g, " ")
+    .replaceAll("[", "\\[")
+    .replaceAll("`", "\\`")
 }
 const value: fc.Arbitrary<Scalar> = fc.oneof(
   text,
