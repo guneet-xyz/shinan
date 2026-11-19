@@ -393,6 +393,48 @@ describe("revert on recent changes", () => {
     expect(await screen.findByText(/waiting for catalog approval/)).toBeTruthy()
   })
 
+  it("keeps saying it was reverted once the list shows the revert", async () => {
+    const fake = api({})
+    fake.revertCatalogProposal.mockImplementation(() => {
+      fake.recentCatalogChanges.mockResolvedValue({
+        items: [
+          {
+            revision: 8,
+            proposal: applied,
+            approvedBy: null,
+            revertible: false,
+            revertedBy: { id: "r9", number: 9, state: "applied" },
+          },
+        ],
+        nextCursor: null,
+      })
+      return Promise.resolve({
+        outcome: "applied",
+        proposal: proposal({
+          id: "r9",
+          number: 9,
+          state: "applied",
+          revertsProposalId: applied.id,
+        }),
+      })
+    })
+    renderApp(`/w/${workspaceId}/wiki/changes`, fake)
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Revert catalog proposal 4" }),
+    )
+    await userEvent.click(
+      screen.getByRole("button", { name: "Revert catalog proposal 4" }),
+    )
+    await waitFor(() =>
+      expect(fake.recentCatalogChanges.mock.calls.length).toBeGreaterThan(1),
+    )
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(
+      (await screen.findByText(/^Reverted as/)).closest("[role=status]")
+        ?.textContent,
+    ).toBe("Reverted as catalog proposal 9.")
+  })
+
   it("says when a change cannot be reverted, or already was", async () => {
     renderApp(`/w/${workspaceId}/wiki/changes`, api({ revertible: false }))
     expect(

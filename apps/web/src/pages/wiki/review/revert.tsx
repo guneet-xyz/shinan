@@ -38,19 +38,7 @@ export function RevertAction(props: {
   const [idempotencyKey] = useState(() => crypto.randomUUID())
   const reverting = useAction()
 
-  if (change.revertedBy)
-    return (
-      <p className="text-sm text-muted-foreground">
-        Reverted by{" "}
-        <Link
-          to={wikiPath(workspace.id, `/proposals/${change.revertedBy.id}`)}
-          className={linkClass}
-        >
-          catalog proposal {change.revertedBy.number}
-        </Link>{" "}
-        ({stateWords[change.revertedBy.state]}).
-      </p>
-    )
+  // Said until the page is left, even once the list shows the revert.
   if (outcome && "proposal" in outcome)
     return (
       <p role="status" className="text-sm">
@@ -64,6 +52,19 @@ export function RevertAction(props: {
         {outcome.outcome === "pending"
           ? ", waiting for catalog approval."
           : "."}
+      </p>
+    )
+  if (change.revertedBy)
+    return (
+      <p className="text-sm text-muted-foreground">
+        Reverted by{" "}
+        <Link
+          to={wikiPath(workspace.id, `/proposals/${change.revertedBy.id}`)}
+          className={linkClass}
+        >
+          catalog proposal {change.revertedBy.number}
+        </Link>{" "}
+        ({stateWords[change.revertedBy.state]}).
       </p>
     )
   if (!change.revertible)
