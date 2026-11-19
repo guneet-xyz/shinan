@@ -1,4 +1,5 @@
 import { RuleViolationError } from "../../errors.js"
+import { pauser } from "../index/pause.js"
 
 /** Whitespace, the same characters in JavaScript and in PostgreSQL. */
 export const spaces =
@@ -40,7 +41,8 @@ export interface PurgeMatch {
  * characters other than whitespace are searched for the text's (with the
  * Knuth-Morris-Pratt algorithm), and each place found is checked against
  * the whitespace around it with counts kept per position. All matching
- * for one preview or purge stops after `matchingLimitMs`.
+ * for one preview or purge stops after `matchingLimitMs`, and callers give
+ * the event loop back between the values they match (`pause`).
  */
 export class PurgeMatcher {
   /** The text's words, split at whitespace. */
@@ -51,6 +53,7 @@ export class PurgeMatcher {
   private readonly spans: { start: number; end: number; long: boolean }[]
   private readonly failure: Int32Array
   private spentMs = 0
+  private readonly yieldNow = pauser()
 
   constructor(readonly text: string) {
     this.words = []
@@ -82,6 +85,15 @@ export class PurgeMatcher {
       if (p.charCodeAt(i) === p.charCodeAt(k)) k++
       this.failure[i] = k
     }
+  }
+
+  /**
+   * Gives the event loop back once matching has held it for a while (#149):
+   * call it between the values of one preview or purge, so many large
+   * values never hold the server's other requests for long.
+   */
+  pause(): Promise<void> {
+    return this.yieldNow()
   }
 
   /** Each place `value` holds the text, from the start, not overlapping. */

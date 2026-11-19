@@ -446,8 +446,11 @@ How:
   searched with the Knuth-Morris-Pratt algorithm, and each place found is
   checked against the whitespace around it with running counts. So the
   full 10,000-character text (a key block) and repetitive values take
-  milliseconds. As a backstop, matching for one preview or purge stops
-  after 15 seconds in all (`purge-too-slow`).
+  milliseconds. Between values it gives the event loop back once matching
+  has held it for 50 ms, as rebuilds do since #140 (#149), so many large
+  values hold the server's other requests for about one value at a time. As a
+  backstop, matching for one preview or purge stops after 15 seconds in
+  all (`purge-too-slow`).
 - **Derived data:** each document with purged text has its index rows
   derived again from its purged history, as a rebuild does (section credits
   and word provenance replayed); the purge revision is not indexed first.

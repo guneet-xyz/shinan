@@ -234,18 +234,23 @@ export async function previewCatalogPurge(
           .sort(),
         acrossLines: {
           revisionTexts: found.acrossLines.length,
-          latestDocuments: latest
-            .filter((l) => match.matches(l.text).some((m) => m.acrossLines))
+          latestDocuments: (
+            await kept(match, latest, (l) =>
+              match.matches(l.text).some((m) => m.acrossLines),
+            )
+          )
             .map((l) => name(l.documentId))
             .sort(),
         },
         alsoWrittenAs: await encodedForms(tx, workspace, match.text),
-        structure: latest.flatMap((l) =>
-          structureAt(l.text, match).map((where) => ({
-            id: name(l.documentId),
-            where,
-          })),
-        ),
+        structure: (
+          await mapped(match, latest, (l) =>
+            structureAt(l.text, match).map((where) => ({
+              id: name(l.documentId),
+              where,
+            })),
+          )
+        ).flat(),
       }
     },
     snapshotRead,
@@ -583,6 +588,37 @@ async function catalogIds(
   return new Map(rows.map((r) => [r.documentId, r.catalogId]))
 }
 
+/**
+ * `fn` of each row, in order, giving the event loop back between rows
+ * once matching has held it for a while (#149).
+ */
+async function mapped<T, R>(
+  match: PurgeMatcher,
+  rows: readonly T[],
+  fn: (row: T) => R,
+): Promise<R[]> {
+  const result: R[] = []
+  for (const row of rows) {
+    await match.pause()
+    result.push(fn(row))
+  }
+  return result
+}
+
+/** The rows `keep` keeps, as `mapped` goes through them. */
+async function kept<T>(
+  match: PurgeMatcher,
+  rows: readonly T[],
+  keep: (row: T) => boolean,
+): Promise<T[]> {
+  const result: T[] = []
+  for (const row of rows) {
+    await match.pause()
+    if (keep(row)) result.push(row)
+  }
+  return result
+}
+
 /** The text as it appears inside a JSON string, as PostgreSQL writes jsonb. */
 function inJson(text: string): string {
   return JSON.stringify(text).slice(1, -1)
@@ -644,20 +680,24 @@ async function find(
   /** Documents whose index rows hold it. */
   index: string[]
 }> {
-  const holding = (await revisionCandidates(tx, workspaceId, match)).flatMap(
-    ({ documentId, revision, text }) => {
-      const found = match.matches(text)
-      return found.length === 0
-        ? []
-        : [
-            {
-              documentId,
-              revision,
-              acrossLines: found.some((m) => m.acrossLines),
-            },
-          ]
-    },
-  )
+  const holding = (
+    await mapped(
+      match,
+      await revisionCandidates(tx, workspaceId, match),
+      ({ documentId, revision, text }) => {
+        const found = match.matches(text)
+        return found.length === 0
+          ? []
+          : [
+              {
+                documentId,
+                revision,
+                acrossLines: found.some((m) => m.acrossLines),
+              },
+            ]
+      },
+    )
+  ).flat()
   const revisionTexts = holding.map(({ documentId, revision }) => ({
     documentId,
     revision,
@@ -666,13 +706,19 @@ async function find(
     .filter((h) => h.acrossLines)
     .map(({ documentId, revision }) => ({ documentId, revision }))
 
-  const proposals = (await proposalCandidates(tx, workspaceId, match, false))
-    .filter((row) => holdsJson(proposalFields(row), match))
-    .map((row) => ({ id: row.id, state: row.state }))
+  const proposals = (
+    await kept(
+      match,
+      await proposalCandidates(tx, workspaceId, match, false),
+      (row) => holdsJson(proposalFields(row), match),
+    )
+  ).map((row) => ({ id: row.id, state: row.state }))
 
-  const events = (await eventCandidates(tx, workspaceId, match))
-    .filter((row) => holdsJson({ summary: row.summary, data: row.data }, match))
-    .map((row) => row.id)
+  const events = (
+    await kept(match, await eventCandidates(tx, workspaceId, match), (row) =>
+      holdsJson({ summary: row.summary, data: row.data }, match),
+    )
+  ).map((row) => row.id)
 
   const index = new Set<string>()
   for (const table of purgeTargets.index.tables) {
@@ -697,12 +743,16 @@ async function find(
     const rows = await tx.execute<{ document_id: string; row: unknown }>(
       sql`select document_id, ${row} as row from ${table} where workspace_id = ${workspaceId} and ${mayHold(match, sql`${row}::text`, true)}`,
     )
-    for (const found of rows.rows)
-      if (holdsJson(found.row, match)) index.add(found.document_id)
+    for (const found of await kept(match, rows.rows, (r) =>
+      holdsJson(r.row, match),
+    ))
+      index.add(found.document_id)
   }
-  const comments = (await commentCandidates(tx, workspaceId, match))
-    .filter((row) => commentHolds(row, match))
-    .map((row) => row.id)
+  const comments = (
+    await kept(match, await commentCandidates(tx, workspaceId, match), (row) =>
+      commentHolds(row, match),
+    )
+  ).map((row) => row.id)
 
   return {
     revisionTexts,
@@ -774,9 +824,16 @@ async function purgeRevisionTexts(
   match: PurgeMatcher,
 ): Promise<{ documentId: string; revision: number }[]> {
   const r = schema.catalogRevisionDocuments
-  const changed = (await revisionCandidates(tx, workspaceId, match))
-    .filter((row) => match.test(row.text))
-    .map((row) => ({ ...row, text: match.replace(row.text, purgeMarker) }))
+  const changed = (
+    await mapped(
+      match,
+      await revisionCandidates(tx, workspaceId, match),
+      (row) =>
+        match.test(row.text)
+          ? [{ ...row, text: match.replace(row.text, purgeMarker) }]
+          : [],
+    )
+  ).flat()
   // A few hundred at a time, each batch in one statement.
   for (let i = 0; i < changed.length; i += 200)
     await tx.execute(
@@ -807,9 +864,9 @@ async function latestHolding(
       and(eq(r.documentId, d.id), eq(r.revision, d.currentRevision)),
     )
     .where(and(eq(d.workspaceId, workspaceId), mayHold(match, sql`${r.text}`)))
-  return rows
-    .filter((row) => match.test(row.text))
-    .sort((a, b) => (a.documentId < b.documentId ? -1 : 1))
+  return (await kept(match, rows, (row) => match.test(row.text))).sort(
+    (a, b) => (a.documentId < b.documentId ? -1 : 1),
+  )
 }
 
 /**
@@ -996,6 +1053,7 @@ async function purgeProposals(
   const findings = (s: string) =>
     cut.length > 6 ? plain(s).split(cut).join(purgeMarker) : plain(s)
   for (const row of await proposalCandidates(tx, workspaceId, match)) {
+    await match.pause()
     if (!holdsJson(proposalFields(row), match)) continue
     const explanation = plain(row.explanation)
     const relatedTask = row.relatedTask === null ? null : plain(row.relatedTask)
@@ -1084,6 +1142,7 @@ async function purgeComments(
   const purged: { id: string; proposalId: string }[] = []
   const c = schema.catalogProposalComments
   for (const row of await commentCandidates(tx, workspaceId, match)) {
+    await match.pause()
     if (!commentHolds(row, match)) continue
     await tx
       .update(c)
@@ -1103,6 +1162,7 @@ async function purgeEvents(
   const purged: number[] = []
   const plain = (s: string) => match.replace(s, purgeMarker)
   for (const row of await eventCandidates(tx, workspaceId, match)) {
+    await match.pause()
     if (!holdsJson({ summary: row.summary, data: row.data }, match)) continue
     await tx
       .update(schema.events)
