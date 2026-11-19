@@ -608,9 +608,9 @@ People type secrets; agents never handle them. Agents prepare every step.
 Decided by the owner on 2026-11-17 ("Approve and start",
 [issue #79](https://github.com/guneet-xyz/shinan/issues/79)). The labels
 M2-Q1 to M2-Q5 name the questions this plan asked; M2-Q6 came up during
-M2-3, M2-Q7 and M2-Q8 during M2-4, M2-Q9 to M2-Q11 during M2-13
+M2-3, M2-Q7 and M2-Q8 during M2-4, M2-Q9 to M2-Q11 and M2-Q13 during M2-13
 ([7.3](#73-answers-on-the-trial-start-kit)), and M2-Q12 during M2-9
-(2026-11-18).
+(2026-11-18 and 2026-11-19).
 
 ### 7.1 Answers
 
@@ -686,9 +686,9 @@ in the same PR.
 
 ### 7.3 Answers on the trial start kit
 
-Decided by the owner on 2026-11-18, on the questions the
-[trial guide](trial.md) asked in [PR #101](https://github.com/guneet-xyz/shinan/pull/101)
-(M2-Q9 to M2-Q11):
+Decided by the owner on the questions the [trial guide](trial.md) asked in
+[PR #101](https://github.com/guneet-xyz/shinan/pull/101): M2-Q9 to M2-Q11 on
+2026-11-18, M2-Q13 on 2026-11-19.
 
 1. **M2-Q9, deployments of the trial projects:** the trial catalog also gets
    `service/shinan`, `service/mon-private`, `service/mon-public` and
@@ -708,6 +708,13 @@ Decided by the owner on 2026-11-18, on the questions the
 3. **M2-Q11, the start-here document:** written after seeding, with one
    approval, so its steps can point to the trial entities
    ([section 4](#4-starting-the-catalog-part-of-the-trial)).
+4. **M2-Q13, the strict setting at trial start** (2026-11-19): **off.** Only
+   gated changes need catalog approval from the start, as O-3 decided; the
+   owner checks the seeded entities right after seeding (section 4, step 5),
+   and the first R6 sample is taken from them, so a bad seeding run is the
+   signal to switch strict on early. Reason: seeding is all ungated changes,
+   and strict on would put a bulk approval between each of the four
+   dependent seeding sessions for little gain. No decision record changes.
 
 ## 8. What this plan does not do
 

@@ -148,7 +148,9 @@ and the deployment request M2-12 prepared is ready in `infra/musashi`.
    deployment approval.
 9. **From then on:** [section 6](#6-during-the-trial).
 
-**The strict setting at trial start: off (recommended).** The strict setting
+**The strict setting at trial start: off** (decided, owner, 2026-11-19,
+M2-Q13, [build plan §7.3](build-plan-m2.md#73-answers-on-the-trial-start-kit)).
+The strict setting
 (workspace settings, **Catalog settings**; off by default) holds every agent
 proposal that is more than a recheck for catalog approval
 ([catalog §8.2](catalog.md#82-when-catalog-approval-is-needed)). The owner
@@ -161,7 +163,7 @@ owner. Turning it on just for seeding would be the other choice: each seeding
 session's proposals would then wait, and the owner would clear them with bulk
 approval (at most 50 at a time) before the next session, whose relations
 point to them. That adds an owner step between sessions and is not needed
-while O-3 stands. A bad seeding run still reaches strict early: the first R6
+while O-3 stands, which is why the owner chose off. A bad seeding run still reaches strict early: the first R6
 sample comes from the seeded entities ([6.4](#64-what-to-record)), and a
 slip there is O-3's signal to switch it on.
 
