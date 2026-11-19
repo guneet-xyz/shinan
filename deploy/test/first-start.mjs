@@ -4,8 +4,10 @@
 // §12): migrations run, the one-time setup link appears in the `web` log,
 // the operator claims the installation through the email it sends, and the
 // containers run as the reference file says. It also checks that the image's
-// own files are not writable by the user it runs as. Email goes to a local mail
-// catcher and HTTPS comes from a proxy with a self-signed certificate
+// own files, Git's included, are not writable by the user it runs as, that
+// the image has no shell, and that Git works inside it without one
+// (deploy/test/git-in-image.mjs). Email goes to a local mail catcher and
+// HTTPS comes from a proxy with a self-signed certificate
 // (deploy/test/compose.test.yml).
 //
 //   docker build -f deploy/Dockerfile -t shinan:local .
@@ -16,7 +18,13 @@
 // it creates is removed at the end unless --keep is given.
 import { execFileSync, spawnSync } from "node:child_process"
 import { randomBytes } from "node:crypto"
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -165,11 +173,13 @@ async function request(path, init = {}) {
 }
 
 /**
- * Walks /app inside the image as its own user, on a writable root file
- * system and without a network, and lists what that user could write and
- * what is not owned by root or is writable by its group or everyone. What
- * it cannot read (a directory it cannot list, a file it cannot open for
- * reading) is listed too, so a broken image fails a check.
+ * Walks /app and Git's files inside the image as its own user, on a
+ * writable root file system and without a network, and lists what that
+ * user could write and what is not owned by root or is writable by its
+ * group or everyone. What it cannot read (a directory it cannot list, a
+ * file it cannot open for reading) is listed too, so a broken image fails a
+ * check. It also lists the programs that must run and cannot, and any
+ * shell or interpreter besides Node.js that is present.
  */
 function writableAppFiles() {
   const walk = `
@@ -193,8 +203,14 @@ function writableAppFiles() {
         loose.push(p + " " + stat.uid + ":" + stat.gid + " " + (stat.mode & 0o7777).toString(8))
       for (const e of entries) visit(path.join(p, e))
     }
-    visit("/app")
-    console.log(JSON.stringify({ uid: process.getuid(), checked, writable, loose, unreadable }))`
+    const libraries = fs.readdirSync("/usr/lib").filter((d) => d.endsWith("-linux-gnu"))
+      .flatMap((d) => fs.readdirSync("/usr/lib/" + d).filter((f) => f.startsWith("libpcre2-8.so.")).map((f) => "/usr/lib/" + d + "/" + f))
+    for (const p of ["/app", "/usr/bin/git", "/usr/lib/git-core", ...libraries]) visit(p)
+    const programs = ["/usr/bin/git", "/usr/lib/git-core/git", "/usr/lib/git-core/git-http-backend", "/app/packages/git/hooks/pre-receive"]
+    const notRunnable = programs.filter((p) => { try { fs.accessSync(p, fs.constants.X_OK); return false } catch { return true } })
+    const shells = ["/bin/sh", "/bin/bash", "/bin/dash", "/usr/bin/sh", "/usr/bin/bash", "/usr/bin/dash", "/bin/busybox", "/usr/bin/perl", "/usr/bin/python3"]
+      .filter((p) => { try { fs.lstatSync(p); return true } catch { return false } })
+    console.log(JSON.stringify({ uid: process.getuid(), checked, writable, loose, unreadable, libraries, notRunnable, shells }))`
   return JSON.parse(
     execFileSync(
       "docker",
@@ -214,6 +230,43 @@ function writableAppFiles() {
   )
 }
 
+/**
+ * Runs deploy/test/git-in-image.mjs inside the image, as the reference
+ * Compose file runs a role: its own user, a read-only root file system with
+ * a /tmp, no capabilities and no network.
+ */
+function gitInImage() {
+  const script = readFileSync(
+    fileURLToPath(new URL("git-in-image.mjs", import.meta.url)),
+    "utf8",
+  )
+  return JSON.parse(
+    execFileSync(
+      "docker",
+      [
+        "run",
+        "--rm",
+        "--read-only",
+        "--tmpfs",
+        "/tmp",
+        "--cap-drop",
+        "ALL",
+        "--security-opt",
+        "no-new-privileges:true",
+        "--network",
+        "none",
+        "--entrypoint",
+        "/nodejs/bin/node",
+        image,
+        "--input-type=module",
+        "-e",
+        script,
+      ],
+      { encoding: "utf8" },
+    ),
+  )
+}
+
 async function healthy() {
   return inspect("web", "{{.State.Health.Status}}") === "healthy"
 }
@@ -222,14 +275,14 @@ async function run() {
   const files = writableAppFiles()
   check(
     files.unreadable.length === 0,
-    "the image's user can list every directory and read every file under /app" +
+    "the image's user can list every directory and read every file under /app and of Git" +
       (files.unreadable.length
         ? ` (not: ${files.unreadable.slice(0, 5).join(", ")})`
         : ""),
   )
   check(
     files.uid === 65532 && files.checked > 1000 && files.writable.length === 0,
-    `the image's ${files.checked} files and directories under /app are not writable by its user` +
+    `the image's ${files.checked} files and directories under /app and of Git are not writable by its user` +
       (files.writable.length
         ? ` (writable: ${files.writable.slice(0, 5).join(", ")})`
         : ""),
@@ -240,6 +293,56 @@ async function run() {
       (files.loose.length
         ? ` (not: ${files.loose.slice(0, 5).join(", ")})`
         : ""),
+  )
+
+  check(
+    files.libraries.length > 0 && files.notRunnable.length === 0,
+    "git, git http-backend and the hook are there and the image's user can run them" +
+      (files.notRunnable.length
+        ? ` (not: ${files.notRunnable.join(", ")})`
+        : ""),
+  )
+  check(
+    files.shells.length === 0,
+    "the image has no shell and no interpreter but Node.js" +
+      (files.shells.length ? ` (found: ${files.shells.join(", ")})` : ""),
+  )
+
+  const git = gitInImage()
+  check(
+    git.binary === "/usr/bin/git" && /^git version 2\./.test(git.version),
+    `@shinan/git runs the image's Git (${git.version})`,
+  )
+  check(
+    git.tree.join(",") === "100644 README.md,100644 machine/musashi.md" &&
+      git.diff.join(",") === "added machine/musashi.md" &&
+      git.history.join(",") === "Second,First" &&
+      git.newCommits.join(",") === "true" &&
+      git.catFile === "musashi\n",
+    "it lists a tree, diffs two trees, lists new commits and a history, and reads objects",
+  )
+  check(
+    git.hook.exitCode === 1 &&
+      git.hook.stderr ===
+        "Shinan: pushes are not open yet. Nothing was changed.",
+    "Git starts the Node.js hook without a shell, and it refuses pushes",
+  )
+  check(
+    git.advertisement.contentType ===
+      "application/x-git-upload-pack-advertisement" &&
+      git.advertisement.service &&
+      git.advertisement.main &&
+      git.fetch.nak &&
+      git.fetch.pack,
+    "git http-backend advertises refs and answers a fetch with a pack",
+  )
+  check(
+    git.push.unpacked &&
+      git.push.declined &&
+      git.push.hookMessage &&
+      git.push.mainUnchanged &&
+      git.push.objectsDropped,
+    "git http-backend takes a push to the hook, which refuses it: main is unchanged and the pushed objects are gone",
   )
 
   console.info(`Starting ${project} in ${dir}`)
