@@ -779,7 +779,7 @@ the token.
 **Setup on a machine (accepted with the plan; GC-9 checks it), shown on the setup page that replaces "Set up
 OpenCode":**
 
-1. **Token file:** as today ([agent integrations](agent-integrations.md#setting-up-opencode-with-a-hand-made-token),
+1. **Token file:** as today ([agent integrations](agent-integrations.md#setting-up-an-agent-with-a-hand-made-token),
    step 2): `~/.config/shinan/token`, mode `0600` in a `0700` folder, written
    by the person. Existing tokens keep working.
 2. **Credential helper,** scoped to the installation's address, with any
@@ -797,6 +797,14 @@ OpenCode":**
    only `get`, so it never stores anything. GC-9 checks on Daedalus that no
    other helper (a global `credential.helper`) is also asked, and that Git's
    trace output redacts the header.
+
+   **Changed by GC-9 (proposed in its PR):** the check found that a helper
+   configured later than these lines (later in the global file, or in a
+   repository's configuration) is still asked and, after a successful
+   fetch, told the token; `store` then saves it in plain text. The same
+   two values therefore go into the clone's own configuration, with
+   `git clone -c`, which Git reads last
+   ([agent integrations](agent-integrations.md#setting-up-an-agent-with-a-hand-made-token)).
 
 3. **Clone location:** one clone per machine and workspace, never edited
    directly, with a worktree per agent session or task. On Daedalus,

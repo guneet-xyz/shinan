@@ -372,19 +372,15 @@ export function TokenShownOnce(props: {
           </Button>
         </div>
         <p className="text-muted-foreground">
-          The coding tool sends it as the header{" "}
-          <code className="font-mono text-foreground">
-            Authorization: Bearer &lt;token&gt;
-          </code>
-          . Keep it in a file only you can read, never in a project file, chat
-          or issue.{" "}
+          Keep it in a file only you can read, never in a project file, chat or
+          issue: Git reads it from there for the agent.{" "}
           <Link
-            to="/account/agents/setup"
+            to={`/account/agents/setup?agent=${encodeURIComponent(issued.agent.id)}`}
             target="_blank"
             rel="noopener"
             className="text-foreground underline underline-offset-4"
           >
-            How to set up OpenCode (opens in a new tab)
+            How to set up the agent (opens in a new tab)
           </Link>
         </p>
         <div>

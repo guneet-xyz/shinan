@@ -51,7 +51,7 @@ export function YourAgents() {
           to="/account/agents/setup"
           className="text-foreground underline underline-offset-4"
         >
-          Set up OpenCode
+          Set up an agent
         </Link>
       </PageHeader>
       {issued && (

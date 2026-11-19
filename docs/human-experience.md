@@ -1496,15 +1496,18 @@ as built until browser approval arrives (M4):**
   by name), the machine, an optional name ("OpenCode on Daedalus" is
   suggested) and the access (full or read-only), then asks the person to sign
   in again. The token is shown once, with a Copy button, a reminder that it
-  will not be shown again, and how the coding tool sends it
-  (`Authorization: Bearer`).
+  will not be shown again, and a link to set the agent up, which Git then
+  reads it for (GC-9).
 - **Decided (owner, 2026-11-19, M2-Q17; M2-9, [#90](https://github.com/guneet-xyz/shinan/issues/90)):**
-  **Set up OpenCode** (`/account/agents/setup`), linked from the top of Your
-  agents and from the token shown once (in a new tab, so the token stays on
-  screen): four numbered steps (make a token, store it on the machine, add
-  the configuration, check it) with this installation's addresses filled in
-  and Copy buttons, then how to keep the token safe. Its content is owned by
-  [agent integrations](agent-integrations.md#setting-up-opencode-with-a-hand-made-token).
+  **Set up an agent** (`/account/agents/setup`, "Set up OpenCode" until
+  GC-9), linked from the top of Your agents and from the token shown once
+  (in a new tab, so the token stays on screen, filled in for that agent):
+  five numbered steps (make a token, store it on the machine, clone the
+  catalog with Git's credential helper, configure OpenCode, check it) with this installation's
+  addresses, the agent's workspace and its written form filled in, an agent
+  picker when the person has several, and Copy buttons, then how to keep
+  the token safe. Its content is owned by
+  [agent integrations](agent-integrations.md#setting-up-an-agent-with-a-hand-made-token).
   Reason: like the device setup guide, it is product help, the same for
   every workspace.
 - "Sign out everywhere" on Your account has an unticked option to also

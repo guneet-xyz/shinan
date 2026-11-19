@@ -232,7 +232,7 @@ bash -c 'umask 077; mkdir -p ~/.config/shinan && chmod 700 ~/.config/shinan && I
   one newline, which OpenCode drops (4.4).
 
 Agent integrations explains the reasons
-([Setting up OpenCode](agent-integrations.md#setting-up-opencode-with-a-hand-made-token)).
+([Setting up OpenCode](agent-integrations.md#setting-up-an-agent-with-a-hand-made-token)).
 Then check, without printing the token:
 
 ```sh

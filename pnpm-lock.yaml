@@ -278,6 +278,9 @@ importers:
       '@shinan/markdown':
         specifier: workspace:*
         version: link:../../packages/markdown
+      '@shinan/skill':
+        specifier: workspace:*
+        version: link:../../packages/skill
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -385,7 +388,11 @@ importers:
         specifier: ~15.0.3
         version: 15.0.3
 
-  packages/skill: {}
+  packages/skill:
+    devDependencies:
+      '@shinan/core':
+        specifier: workspace:*
+        version: link:../core
 
 packages:
 

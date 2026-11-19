@@ -1484,13 +1484,22 @@ refused (`by-not-first-pusher`).
 ### 8.4 Agents' documentation-impact obligation
 
 When an agent's work changes or checks a durable fact that the catalog
-records, the agent pushes the update before it reports the work as done, or
-records on the task exactly what update is pending and why. **Proposed.**
-Reason: this is the `workspace` repository's "documentation-impact check", the
-habit that keeps that catalog current. The obligation is scoped to the task,
-not a duty to refresh everything, and it never authorizes extra access (P6).
-During the trial, agents also make the matching proposal in Shinan when they
-update a trial entity in the `workspace` repository (owner, O-72, [#25]).
+records, the agent pushes the update to `main` before it reports the work as
+done, or records on the task exactly what update is pending and why.
+**Proposed.** Reason: this is the `workspace` repository's
+"documentation-impact check", the habit that keeps that catalog current. The
+obligation is scoped to the task, not a duty to refresh everything, and it
+never authorizes extra access (P6). The fact checks it writes are its own:
+`by` names the pushing agent and its person, and `checked` is the real time
+of the check, never rounded ([#158](https://github.com/guneet-xyz/shinan/issues/158));
+since a push may not add fact checks naming anyone else, an agent never
+lands another agent's fact checks by merging its branch (owner, GQ-3,
+[D-061](decisions/D-061-push-authentication-and-push-log.md)). How agents do
+this with Git is the skill's ([agent integrations](agent-integrations.md#the-skill),
+GC-9). During the trial, agents also push the matching change to Shinan when
+they update a trial entity in the `workspace` repository (owner, O-72,
+[#25]; O-72 stands with "a catalog proposal" read as "a push to the
+catalog", [plan §6](build-plan-git-catalog.md#6-decision-records)).
 How tasks show this, and whether it is part of "done", is owned by
 [tasks](tasks.md); how agents are reminded, by
 [agent integrations](agent-integrations.md).
