@@ -95,6 +95,15 @@ const text = fc
     maxLength: 24,
   })
   .filter((s) => s.trim() !== "")
+/**
+ * `text` as one paragraph of a body: no line breaks or `#`, which would
+ * start new blocks, and every `[` escaped, so nothing in it is a link, an
+ * image or a link reference definition (`[a]:a`, #151). Without `(` or `<`
+ * in the alphabet, `[` is the only way the text could make one.
+ */
+function paragraphOf(text: string): string {
+  return text.replace(/[\r\n#]/g, " ").replaceAll("[", "\\[")
+}
 const value: fc.Arbitrary<Scalar> = fc.oneof(
   text,
   fc.integer({ min: -100_000, max: 100_000 }),
@@ -767,7 +776,7 @@ function operationFor(
     case 6: {
       const sections = document.body.sections
       const section = pick(sections, c.a)
-      const replacement = `## Note ${c.b % 100}\n\n${c.text.replace(/[\r\n#]/g, " ")}\n`
+      const replacement = `## Note ${c.b % 100}\n\n${paragraphOf(c.text)}\n`
       if (c.flag || !section)
         return {
           operation: {
@@ -780,7 +789,7 @@ function operationFor(
         }
       const name = section.anchor
       // A section keeps its heading; the text before the first heading has none.
-      const paragraph = `${c.text.replace(/[\r\n#]/g, " ")}\n`
+      const paragraph = `${paragraphOf(c.text)}\n`
       const text =
         section.heading === null
           ? paragraph
