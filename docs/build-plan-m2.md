@@ -480,10 +480,11 @@ hand (M2-5).
     mon's clone (`/mnt/projects/mon/mon`), following Daedalus's worktree
     convention in the `workspace` catalog. They contain no secret.
   - **Token file:** `/root/.config/shinan/token`, owned by root, mode `0600`
-    in a `0700` folder, written by the owner (owner action). If a `{file:…}`
-    reference inside a longer string does not work, the file holds the whole
-    header value (`Bearer …`) and the header is exactly `{file:…}`, the form
-    the OpenCode docs show.
+    in a `0700` folder, written by the owner (owner action). A `{file:…}`
+    reference inside a longer string works (checked with OpenCode v2.3.0,
+    [trial guide §4.4](trial.md#44-opencode-behaviour-this-relies-on)), so
+    the file holds only the token and the header is `Bearer {file:…}`, as
+    on the Set up OpenCode page.
   - **Limits:** sessions started outside these folders, such as in the
     canonical checkout `/root/shinan`, do not get Shinan. Trial work therefore
     starts in `/mnt/projects/<project>` or a task worktree there, as
@@ -602,8 +603,9 @@ People type secrets; agents never handle them. Agents prepare every step.
 Decided by the owner on 2026-11-17 ("Approve and start",
 [issue #79](https://github.com/guneet-xyz/shinan/issues/79)). The labels
 M2-Q1 to M2-Q5 name the questions this plan asked; M2-Q6 came up during
-M2-3, M2-Q7 and M2-Q8 during M2-4, and M2-Q12 during M2-9 (2026-11-18;
-M2-Q9 to M2-Q11 are taken by answers recorded in other open changes).
+M2-3, M2-Q7 and M2-Q8 during M2-4, M2-Q9 to M2-Q11 during M2-13
+([7.3](#73-answers-on-the-trial-start-kit)), and M2-Q12 during M2-9
+(2026-11-18).
 
 ### 7.1 Answers
 

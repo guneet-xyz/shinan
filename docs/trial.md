@@ -9,11 +9,10 @@ detail people and agents need to carry them out. It covers the **catalog part**
 of the trial, which starts with milestone M2. The task part (M3) and the
 presence part (M4) are added when those milestones are built.
 
-Items marked **to be confirmed** depend on packages that are not merged yet
-(M2-6 [#87](https://github.com/guneet-xyz/shinan/issues/87), M2-9
-[#90](https://github.com/guneet-xyz/shinan/issues/90) and M2-12
-[#92](https://github.com/guneet-xyz/shinan/issues/92)), and are checked
-before the trial starts.
+Every path, tool name, command and limit here was checked against what M2
+built (`main` at `3d0bf3e`, 2026-11-19): the MCP server (M2-6), the skill and
+the **Set up OpenCode** page (M2-9), the catalog's limits (M2-4) and the
+operator guide (M2-12).
 
 ## Contents
 
@@ -70,9 +69,8 @@ The steps follow [build plan M2 §4](build-plan-m2.md#4-starting-the-catalog-par
 **Owner** marks a step only the owner can do: a deployment approval, a secret,
 or a catalog approval. Agents prepare everything else.
 
-**Before step 1:** M2-9 (the skill) and M2-12 (security review and the
-deployment request) are merged, the M2 release is published, and the
-deployment request in `infra/musashi` is ready.
+**Before step 1:** all M2 packages are merged; the M2 release is published
+and the deployment request M2-12 prepared is ready in `infra/musashi`.
 
 1. **Owner: approve the M2 deployment** to Musashi
    ([D-039](decisions/D-039-deploy-as-needed.md), [D-016](decisions/D-016-musashi-and-deployment-approval.md)),
@@ -84,12 +82,17 @@ deployment request in `infra/musashi` is ready.
    1. Open **Your agents** (`/account/agents`) and go to **Create a token by
       hand**.
    2. Choose the trial workspace, coding tool **OpenCode**, machine
-      **Daedalus** (the handle becomes `opencode-daedalus`), name
-      **OpenCode on Daedalus**, access **Full**, and select **Create token**.
-      Sign in again when asked.
-   3. The token is shown once. On Daedalus, as root, write it to the token
-      file with the commands in [4.2](#42-the-token-file-owner). Do not paste
-      it into an agent session, an issue or any other file.
+      **Daedalus** (the handle becomes `opencode-daedalus`) and access
+      **Full**. Leave **Name** empty to take the name the form suggests,
+      **OpenCode on Daedalus**. Select **Create token** and sign in again
+      when asked.
+   3. The token is shown once, with a link to **Set up OpenCode**
+      (`/account/agents/setup`). On Daedalus, as root, store it with the
+      command in [4.2](#42-the-token-file-owner), the same one that page
+      shows. Steps 3 and 4 of that page are replaced on Daedalus by
+      [4.3](#43-the-configuration-files) and [4.5](#45-checking-the-setup).
+      Do not paste the token into an agent session, an issue or any other
+      file.
 
    Agents never see, copy or relay the token
    ([authentication requirement 3](agent-integrations.md#authentication-requirements)).
@@ -137,6 +140,21 @@ deployment request in `infra/musashi` is ready.
    deployment approval.
 9. **From then on:** [section 6](#6-during-the-trial).
 
+**The strict setting at trial start: off (recommended).** The strict setting
+(workspace settings, **Catalog settings**; off by default) holds every agent
+proposal that is more than a recheck for catalog approval
+([catalog §8.2](catalog.md#82-when-catalog-approval-is-needed)). The owner
+decided that only gated changes need approval from the start of the trial,
+switching to strict if accuracy slips (O-3, R6), so the trial starts with it
+off. The seeded entities are still reviewed: in step 7 the owner reads them
+in the wiki, where **recent changes** lists every proposal that applied on its
+own, with **Revert**. Leaving it off also keeps seeding moving without the
+owner. Turning it on just for seeding would be the other choice: each seeding
+session's proposals would then wait, and the owner would clear them with bulk
+approval (at most 50 at a time) before the next session, whose relations
+point to them. That adds an owner step between sessions and is not needed
+while O-3 stands.
+
 ## 4. OpenCode configuration on Daedalus
 
 Decided (owner, M2-Q3, implementing O-38): Shinan's MCP server and skill are
@@ -164,33 +182,40 @@ is already Daedalus's convention.
 
 ### 4.2 The token file (owner)
 
-As root on Daedalus, in zsh (Daedalus's shell). `read -s` keeps the token off
-the screen, and `printf` is a shell builtin, so the token never appears in a
-command line or the shell history:
+As root on Daedalus, in a terminal (not an agent session), run this, then paste
+the token and press Enter. Nothing is shown while you paste. It is the command
+the **Set up OpenCode** page shows (M2-9, [#119](https://github.com/guneet-xyz/shinan/pull/119);
+final form from [#122](https://github.com/guneet-xyz/shinan/pull/122)); as
+root, `~/.config/shinan/token` is `/root/.config/shinan/token`.
 
 ```sh
-umask 077
-mkdir -p /root/.config/shinan
-chmod 0700 /root/.config/shinan
-read -rs 'token?Shinan token: '
-printf '%s\n' "$token" > /root/.config/shinan/token
-unset token
-chmod 0600 /root/.config/shinan/token
+bash -c 'umask 077; mkdir -p ~/.config/shinan && chmod 700 ~/.config/shinan && IFS= read -rs t && : > ~/.config/shinan/token && chmod 600 ~/.config/shinan/token && printf "%s\n" "$t" > ~/.config/shinan/token'
 ```
 
-In bash, the `read` line is `read -rsp 'Shinan token: ' token`. Then check,
-without printing the token:
+- It runs in bash whatever shell it is pasted into, so a shell without
+  `read -s` never reads the pasted token as a command or keeps it in its
+  history.
+- The token is read without echo, so it is not on screen, in scrollback or
+  terminal logs; `printf` is a bash builtin, so it is never on a command line
+  or in the process list.
+- The folder ends at 700 and the file at 600 even if they existed before; the
+  file is emptied and locked down before the token is written, and ends with
+  one newline, which OpenCode drops (4.4).
+
+Agent integrations explains the reasons
+([Setting up OpenCode](agent-integrations.md#setting-up-opencode-with-a-hand-made-token)).
+Then check, without printing the token:
 
 ```sh
 stat -c '%a %U %n' /root/.config/shinan /root/.config/shinan/token
 grep -cxE 'shinan_agent_[A-Za-z0-9]{43}' /root/.config/shinan/token
 ```
 
-The first command shows `700 root` and `600 root`; the second prints `1`
-(the token format of [identity §7.4](identity.md#74-handling)). The file holds
-only the token: OpenCode reads it into the header described below. If a token
-is ever replaced, the same commands overwrite the file; run `opencode reload`
-afterwards.
+The first command shows `700 root` and `600 root`; the second prints `1`: an
+agent token is `shinan_agent_` followed by 43 letters and digits, 56
+characters in all ([identity §7.4](identity.md#74-handling)). If a token is
+ever replaced, the same command overwrites the file; OpenCode uses the new
+token on its next connection, and `opencode reload` forces it.
 
 ### 4.3 The configuration files
 
@@ -234,17 +259,22 @@ The same content in all three files:
   `"protocol": "auto"` later changes nothing else.
 - The comment does not contain a file reference on purpose, so nothing in it
   is ever substituted.
-- The endpoint is `/mcp` (M2-6). Tools appear as `shinan_<tool>`, or as
-  `tools.shinan.<tool>` under OpenCode's Code Mode. The read tools are
-  `workspace_context`, `search_catalog`, `get_entity` and `catalog_lists`
-  (M2-6, [PR #115](https://github.com/guneet-xyz/shinan/pull/115)). The write
-  tools follow in M2-6's second PR as `propose_catalog_change`,
-  `record_fact_check`, `get_catalog_proposal`, `withdraw_catalog_proposal`
-  and `comment_on_catalog_proposal` (**to be confirmed** when it merges).
-- **To be confirmed** with M2-9: the skill catalog URL
-  `https://shinan.guneet.dev/skills/` (with `index.json` there,
-  [D-056](decisions/D-056-public-skill-path.md)) and the skill's ID, which
-  agents load, from M2-9's `index.json` (expected `shinan`).
+- This is the **Set up OpenCode** page's configuration with this
+  installation's address, plus the comment. The page writes the token path
+  as `~/.config/shinan/token`; the absolute path here is the same file for
+  root and does not depend on whose home OpenCode resolves.
+- The endpoint is `https://<installation>/mcp` (M2-6,
+  [#115](https://github.com/guneet-xyz/shinan/pull/115) and
+  [#122](https://github.com/guneet-xyz/shinan/pull/122)). Its tools appear
+  as `shinan_<tool>`, or as `tools.shinan.<tool>` under OpenCode's Code Mode:
+  - read (any token): `workspace_context`, `search_catalog`, `get_entity`,
+    `catalog_lists`, `get_catalog_proposal`;
+  - write (a full token): `propose_catalog_change`, `record_fact_check`,
+    `withdraw_catalog_proposal`, `comment_on_catalog_proposal`.
+- The skill catalog is `https://<installation>/skills/`, served without
+  sign-in with its `index.json` ([D-056](decisions/D-056-public-skill-path.md));
+  it holds one skill, ID **`shinan`** (M2-9,
+  [#119](https://github.com/guneet-xyz/shinan/pull/119)).
 
 ### 4.4 OpenCode behaviour this relies on
 
@@ -279,9 +309,9 @@ From each folder below, run `opencode mcp list` (twice if the first run says
 | `/root`, `/root/shinan`, `/root/workspace`                | `shinan` not listed   |
 | Another project's folder, such as `/mnt/projects/musashi` | `shinan` not listed   |
 
-Then, from a trial folder, an agent session loads the skill and calls the
-context tool (`workspace_context`); the
-answer names the agent `opencode-daedalus` and the trial workspace. Record the
+Then, from a trial folder, an agent session loads the `shinan` skill and
+calls `workspace_context`; the answer names the agent `opencode-daedalus`
+(OpenCode on Daedalus) and the trial workspace. Record the
 results in [#93](https://github.com/guneet-xyz/shinan/issues/93).
 
 ### 4.6 If the token leaks or the trial pauses
@@ -324,6 +354,12 @@ agents).
 | `project/shinan`             | `catalog/projects/shinan.md`                                            | 4. Projects     |
 | `project/mon`                | `catalog/projects/mon.md`                                               | 4. Projects     |
 | `project/easyshell`          | `catalog/projects/easyshell.md`                                         | 4. Projects     |
+
+Rechecked against the `workspace` repository at `e3daaba` (2026-11-19, read
+only): the 13 map entries exist and are all `active`, the other entries there
+are outside the trial, and the four deployments still have no entry of their
+own, so their map stays the project entries' deployment parts. Seeding reads
+the entries again at the `origin/main` of the day (5.3).
 
 Every entity has `owner: person/guneet` and keeps the entry's status
 (`active`). The old IDs (`musashi`, `shinan` and so on) are not added as
@@ -383,8 +419,7 @@ service/tailscale`) are not written, because their targets do not exist.
 7. **Dated history stays in the body**; current-state claims become facts
    ([catalog §2.5](catalog.md#25-body)).
 8. **No `imported_from`:** trial entities are not imports.
-9. **Propose** through `propose_catalog_change` (from M2-6's second PR,
-   name **to be confirmed**) with an explanation naming the map entry's path and revision, and
+9. **Propose** through `propose_catalog_change` with an explanation naming the map entry's path and revision, and
    check the answer: applied, or waiting for approval and why. A validation
    warning (for example a secret-looking value) holds the proposal for the
    owner; fix the cause rather than asking for approval where possible.
@@ -393,6 +428,26 @@ Each session ends with a short report in its issue: the entities created, the
 facts recorded as `unknown` and why, the relations left out, and anything in
 the map entry that the owning source contradicted (a trial finding,
 [6.3](#63-trial-findings)).
+
+### 5.4 Limits an agent may hit
+
+As built in M2 (catalog §8 and the [operator guide](operator-guide.md#agents-the-mcp-endpoint-tokens-and-the-skill)).
+Seeding 17 entities, one proposal or a few per entity, stays far below all of
+them; they matter for a session that tries to do everything in one call.
+
+| Limit                                                                                                     | What happens                                                                                                                                                                                  | What the agent does                                                                                    |
+| --------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| One proposal: at most 50 operations naming at most 100 facts, an explanation of 4,000 characters, 256 KiB | Refused before anything is stored                                                                                                                                                             | Split the change into several proposals (for example one per entity)                                   |
+| A proposal that takes more than 20 seconds to apply                                                       | Stopped; error `invalid-input`, rule `too-complex`                                                                                                                                            | Split it                                                                                               |
+| 60 catalog proposals (and 60 comments) per agent in 10 minutes                                            | Tool error `busy`, with `retry_after_seconds`                                                                                                                                                 | Send the same call, with the **same idempotency key**, after that many seconds                         |
+| Other proposals for the workspace are being applied                                                       | Tool error `busy` ("send this one again in a few seconds")                                                                                                                                    | The same: same key, after `retry_after_seconds`                                                        |
+| 600 MCP requests a minute per token; 8 requests in flight per token, 16 per address                       | HTTP 429 with `Retry-After: 1`, before the body is read. OpenCode retries a 429 twice (250 ms, then 1 s) only while connecting and listing tools; a **tool call** that gets 429 fails at once | Call the tool again; in practice only parallel calls (many tool calls at once) reach the in-flight cap |
+| A catalog of at most 20,000 documents and 50 MiB of text                                                  | Error `catalog-full`                                                                                                                                                                          | Not reachable by the trial catalog                                                                     |
+
+The skill tells agents the same
+(`references/changing.md` in [`packages/skill`](../packages/skill/skill/shinan/)).
+A `busy` error or a 429 is not a trial finding by itself; repeated ones that
+block work are.
 
 ## 6. During the trial
 
@@ -524,7 +579,7 @@ For work on a trial project:
   configured for sessions started in `/mnt/projects/shinan`,
   `/mnt/projects/mon` and `/mnt/projects/easyshell` and their task worktrees:
   its MCP server (`shinan`) and skill load there and nowhere else. Load the
-  skill before using the catalog. Never read, print or copy the token.
+  `shinan` skill before using the catalog. Never read, print or copy the token.
 - **Keep both in step.** Whenever you update a trial entity here, also make a
   catalog proposal in Shinan with the same change, checked at the owning
   source, within two days. The trial entities are the three projects above,
