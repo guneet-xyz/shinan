@@ -14,7 +14,7 @@ const classWords: Record<ApprovalClass, string> = {
 }
 
 export function classNames(c: ApprovalClass): string {
-  return classWords[c]
+  return classWords[c] ?? c
 }
 
 export const stateWords: Record<CatalogProposalState, string> = {

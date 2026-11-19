@@ -8,7 +8,11 @@ import {
   useSearchParams,
 } from "react-router"
 
-import type { CatalogFact, CatalogHistoryAnswer } from "@shinan/api-client"
+import type {
+  ApprovalClass,
+  CatalogFact,
+  CatalogHistoryAnswer,
+} from "@shinan/api-client"
 
 import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
@@ -23,6 +27,7 @@ import { useWorkspace } from "../workspace/context"
 import { EntityPageContext, useEntityPage } from "./context"
 import { diffLines } from "./diff"
 import type { DiffLine } from "./diff"
+import { classNames } from "./edit/words"
 import { EntityLink, FactRow, linkClass, MaybeLink } from "./facts"
 import {
   entityPath,
@@ -252,12 +257,50 @@ export function EntityHeader(props: { actions?: ReactNode }) {
 }
 
 /**
- * Pending catalog proposals for this entity (human experience, item 2).
- * Proposals arrive with M2-4 (#112); until then there are none to show, and
- * M2-7 adds the list as a follow-up once they exist.
+ * Pending catalog proposals for this entity (human experience, item 2;
+ * catalog §8.6): those changing its ID or a former one, oldest first,
+ * from the entity answer's `pending_proposals` (catalog §12.4). Nothing
+ * when there are none.
  */
 export function PendingProposals() {
-  return null
+  const { workspaceId, entity } = useEntityPage()
+  const items = entity.pending_proposals
+  if (items.length === 0) return null
+  return (
+    <Section
+      title="Waiting for approval"
+      description="Proposed changes to this page that a person has not approved yet. The page shows the catalog as it is now."
+    >
+      <ul className="flex flex-col divide-y rounded-lg border">
+        {items.map((p) => (
+          <li
+            key={p.proposal_id}
+            className="flex flex-col gap-1 p-3 text-sm sm:p-4"
+          >
+            <p>
+              <Link
+                to={wikiPath(workspaceId, `/proposals/${p.proposal_id}`)}
+                className={linkClass}
+              >
+                Catalog proposal {p.number}
+              </Link>{" "}
+              <span className="text-muted-foreground">
+                · {formatTime(p.created_at)} · {p.author}
+                {p.author_kind === "agent" && " (an agent)"}
+                {p.related_task && ` · ${p.related_task}`}
+              </span>
+            </p>
+            <p className="text-muted-foreground">
+              Kind of change:{" "}
+              {p.approval_classes
+                .map((c) => classNames(c as ApprovalClass))
+                .join(", ")}
+            </p>
+          </li>
+        ))}
+      </ul>
+    </Section>
+  )
 }
 
 /** Facts that disagree, both sides with their evidence; neither shown as right. */
@@ -562,7 +605,23 @@ export function History() {
                 <span className="text-muted-foreground">
                   · {formatTime(item.at)} · {item.changed_by}
                   {item.purge !== null && ` · purge ${item.purge}`}
+                  {item.approved_by && ` · approved by ${item.approved_by}`}
                 </span>
+                {item.proposal && (
+                  <>
+                    {" "}
+                    <span className="text-muted-foreground">·</span>{" "}
+                    <Link
+                      to={wikiPath(
+                        workspaceId,
+                        `/proposals/${item.proposal.id}`,
+                      )}
+                      className={cn(linkClass, "text-sm")}
+                    >
+                      catalog proposal {item.proposal.number}
+                    </Link>
+                  </>
+                )}
               </span>
               {i === 0 && item.revision === entity.revision ? (
                 <span className="text-xs text-muted-foreground">current</span>

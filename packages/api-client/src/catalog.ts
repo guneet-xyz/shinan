@@ -247,6 +247,8 @@ export interface CatalogChange {
   at: string
   changed_by: string
   changed_by_kind: string
+  /** Who gave catalog approval, when the change needed one. */
+  approved_by: string | null
   documents: { id: string | null; kind: string | null }[]
 }
 
@@ -298,6 +300,10 @@ export interface CatalogHistoryItem {
   confidence: Confidence
   /** The purge that stored this revision with purged text replaced by a marker; null for a change. */
   purge: number | null
+  /** Who gave catalog approval, when it needed one. */
+  approved_by: string | null
+  /** The catalog proposal it applied. */
+  proposal: { id: string; number: number } | null
 }
 
 export interface CatalogHistoryAnswer extends CatalogAnswer {
