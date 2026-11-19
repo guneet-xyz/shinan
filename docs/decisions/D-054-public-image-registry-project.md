@@ -36,7 +36,8 @@ Status: **Accepted** by the owner on 2026-11-17, in conversation (recorded on
   `shinan/shinan`, and with it lists the tags `latest`, `v0.1` and `v0.1.0`
   without any credentials.
 - The source repository `guneet-xyz/shinan` is private
-  ([D-011](D-011-private-repository-and-brand.md)).
+  ([D-011](D-011-private-repository-and-brand.md)). **No longer true**
+  (owner, 2026-11-19): it is public ([D-058](D-058-public-repository.md)).
 
 ## Decision
 
@@ -48,10 +49,17 @@ image registry only; the source repository stays private (D-011).
 
 Owner's choice: simpler than storing a pull key on Musashi.
 
+## Notes
+
+- Sourced fact (owner, 2026-11-19): the Decision's "the source repository
+  stays private (D-011)" no longer holds; the repository is public
+  ([D-058](D-058-public-repository.md)). The image project stays public.
+
 ## Consequences
 
 - **Decided:** anyone can download the image, and with it Shinan's built
-  server and web code, while the source repository is private. The provenance
+  server and web code. (Written while the source repository was private; it
+  has been public since D-058, owner, 2026-11-19.) The provenance
   and SBOM attached to each image (the release commit, the build steps and
   the list of dependencies) are public too.
 - **Decided:** the push key is unchanged: the repository secrets
@@ -86,3 +94,4 @@ None.
 
 - 2026-11-17: accepted by the owner in conversation; recorded in
   [issue #73](https://github.com/guneet-xyz/shinan/issues/73).
+- 2026-11-19: Context, Notes and Consequences updated for [D-058](D-058-public-repository.md) (the repository is public; owner, in conversation, recorded on [issue #159](https://github.com/guneet-xyz/shinan/issues/159#issuecomment-7002059477)). Decision and Reasons unchanged.

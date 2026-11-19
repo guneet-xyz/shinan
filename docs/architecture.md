@@ -1365,20 +1365,27 @@ From the `workspace` repository's catalog and `infra/musashi` (read 2026-11-16):
 
 **Proposed** flow:
 
-1. Work merges to `main` of the private `guneet-xyz/shinan` repository through
+1. Work merges to `main` of the `guneet-xyz/shinan` repository (public,
+   [D-058](decisions/D-058-public-repository.md)) through
    reviewed PRs; GitHub Actions runs tests (with PostgreSQL) on every PR.
 2. A release (release-please, as mon and Walls use) builds `arm64` and `amd64`
    images on native runners and pushes them to a public `shinan` project on
    `cr.guneet.dev` with build provenance attestations, using a project-scoped
    push key in GitHub secrets (mon's model). The project is public
    (**Decided**, owner, [D-054](decisions/D-054-public-image-registry-project.md),
-   reversing O-66), so anyone can download the image and its provenance while
-   the source repository stays private (D-011). The CLI and plugin are released
-   with checksums and attestations. GitHub offers `ubuntu-24.04-arm` runners to
-   private repositories, drawing on included minutes and then per-minute
-   charges
+   reversing O-66), so anyone can download the image and its provenance. The
+   CLI and plugin are released with checksums and attestations. GitHub offers
+   `ubuntu-24.04-arm` runners to private repositories, drawing on included
+   minutes and then per-minute charges
    ([GitHub docs](https://docs.github.com/en/actions/reference/runners/github-hosted-runners),
    checked 2026-11-16).
+
+   Note (owner, 2026-11-19): this step was written while the source repository
+   was private (D-011). It is now public
+   ([D-058](decisions/D-058-public-repository.md)), and standard GitHub-hosted
+   runners are free in public repositories
+   ([GitHub Actions billing](https://docs.github.com/en/billing/concepts/product-billing/github-actions),
+   checked 2026-11-19).
 
    As built (M1-7, `.github/workflows/release.yml`): after the full CI suite
    passes on the release commit, each architecture is built on its own runner
@@ -1390,6 +1397,9 @@ From the `workspace` repository's catalog and `infra/musashi` (read 2026-11-16):
    `REGISTRY_PASSWORD` (the push key). GitHub's own artifact attestations are
    not used: for a private repository they need GitHub Enterprise Cloud, so
    mon uses them only because it is public. The CLI and plugin come later.
+   Now that this repository is public too (D-058, 2026-11-19), GitHub's
+   artifact attestations are available to it; whether to adopt them is
+   **open**.
 
 3. A PR to `infra/musashi` pins the new digests and updates the stack README.
    Changing Compose files does not deploy anything (Musashi's rules).
@@ -1607,6 +1617,10 @@ What it means today:
 4. **Resource use.** Real memory, disk and revision growth on Musashi, measured
    during the proof of concept. ([11.2](#112-shinan-stack), [5.3](#53-how-sync-works))
 5. **CI cost.** GitHub Actions minutes for ARM64 builds in a private repository.
+   Note (owner, 2026-11-19): the repository is public
+   ([D-058](decisions/D-058-public-repository.md)), and standard
+   GitHub-hosted runners are free in public repositories, so this applies only
+   to larger runners.
 6. **Uploads.** Confirm no attachments are needed in the first version.
 7. **Retention numbers.** Raw webhooks 14 days, job records 7 days,
    notification records 90 days.

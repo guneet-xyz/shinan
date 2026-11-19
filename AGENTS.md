@@ -20,7 +20,9 @@ phase**. Read these before doing anything else:
 - Commit messages and PR titles use Conventional Commits.
 - Never deploy, change DNS, or create or read credentials. Prepare the change
   and ask for the owner's approval; people type secrets.
-- The repository is private. Do not copy its content to public places.
+- The repository is public ([D-058](docs/decisions/D-058-public-repository.md)).
+  Never put secrets, credentials or private infrastructure details in it:
+  not in code, documents, issues, PRs, commit messages or CI logs.
 
 ## Writing code
 
