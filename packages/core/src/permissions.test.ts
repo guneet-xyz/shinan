@@ -339,6 +339,23 @@ describe("decide", () => {
       ).toEqual({ allowed: false, reason: "people-only" })
     })
 
+    it("reserves repairing a document for workspace owners who signed in again recently", () => {
+      expect(allowed("catalog.repair", owner)).toEqual({ allowed: true })
+      expect(
+        allowed("catalog.repair", { ...owner, reauthenticated: false }),
+      ).toEqual({ allowed: false, reason: "reauthentication" })
+      expect(allowed("catalog.repair", contributor)).toEqual({
+        allowed: false,
+        reason: "role",
+      })
+      expect(
+        allowed("catalog.repair", {
+          ...ownersAgent,
+          scopes: ["catalog:read", "catalog:propose"],
+        }),
+      ).toEqual({ allowed: false, reason: "people-only" })
+    })
+
     it("lets only Shinan keep the index in step", () => {
       expect(allowed("catalog-index.maintain", { kind: "shinan" })).toEqual({
         allowed: true,

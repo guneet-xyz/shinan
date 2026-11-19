@@ -19,6 +19,7 @@ import type {
 import { classifyChange, touchedIds } from "./classify.js"
 import type { ApprovalClass } from "./classify.js"
 import { estimatedBytes } from "./estimate.js"
+import { repairCheckProblems } from "./repair-check.js"
 
 /** The latest revision of one stored document, already parsed. */
 export interface StoredDocument {
@@ -43,6 +44,11 @@ export interface PrepareInput {
    * the rest of the proposal is checked before it waits for approval.
    */
   approver?: { handle: string; preview: boolean }
+  /**
+   * A workspace owner's repair (catalog §8.3): validation charges the
+   * documents it writes only with problems they did not already have.
+   */
+  repair?: boolean
 }
 
 /** One document the change writes, ready for `appendCatalogRevision`. */
@@ -165,6 +171,11 @@ export function prepareChangeIncrementally(
   if (!result.applied)
     return { prepared: { outcome: "problems", problems: result.problems } }
   if (result.changes.length === 0) return { prepared: { outcome: "unchanged" } }
+  if (input.repair) {
+    const problems = repairCheckProblems(result.changes, input.by)
+    if (problems.length > 0)
+      return { prepared: { outcome: "problems", problems } }
+  }
 
   const context = validationContext(input, kept.secretScans)
   const base = kept.base
@@ -179,6 +190,7 @@ export function prepareChangeIncrementally(
       after: result.after,
       changed: result.changes.map((c) => c.after),
       texts: [{ label: "The explanation", text: input.explanation }],
+      ...(input.repair ? { repair: true } : {}),
     },
     context,
     before,

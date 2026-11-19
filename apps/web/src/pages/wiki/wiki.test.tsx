@@ -8,7 +8,14 @@ import type {
   CatalogHistoryAnswer,
 } from "@shinan/api-client"
 
-import { currentPath, fakeApi, renderApp, workspaceId } from "../../test/render"
+import {
+  currentPath,
+  fakeApi,
+  reauthenticationRequired,
+  renderApp,
+  workspace,
+  workspaceId,
+} from "../../test/render"
 
 const answer = { catalog_revision: 7, index_behind: false }
 
@@ -816,5 +823,154 @@ describe("moving around the wiki", () => {
       "Revision 2",
       "Revision 1",
     ])
+  })
+})
+
+describe("repairing a page", () => {
+  const broken: CatalogEntity = {
+    ...musashi,
+    problems: [
+      {
+        code: "fact-invalid",
+        message:
+          '"by" cannot name an attribute: it is a field of a fact check, which says who checked the facts in its group, and when',
+      },
+    ],
+  }
+  const stored = `---\nid: machine/musashi\ntype: machine\nfacts:\n  - observed:\n      contact: { to: person/guneet, by: someone }\n---\n`
+  const repairPath = `/w/${workspaceId}/wiki/repair/machine/musashi`
+  const repairApi = (extra: Parameters<typeof fakeApi>[0] = {}) =>
+    fakeApi({
+      catalogEntity: () => Promise.resolve({ ...answer, entity: broken }),
+      catalogHistory: () => Promise.resolve(history),
+      catalogText: () =>
+        Promise.resolve({
+          ...answer,
+          id: "machine/musashi",
+          kind: "entity",
+          revision: 7,
+          at: "2026-11-16T10:00:00.000Z",
+          changed_by: "guneet",
+          changed_by_kind: "person",
+          text: stored,
+        }),
+      ...extra,
+    })
+
+  it("is offered to workspace owners on a page that reads with problems", async () => {
+    renderApp(entityPath, repairApi())
+    const link = await screen.findByRole("link", { name: "Repair this page" })
+    expect(link.getAttribute("href")).toBe(repairPath)
+  })
+
+  it("is not offered to contributors", async () => {
+    renderApp(
+      entityPath,
+      repairApi({
+        workspace: () => Promise.resolve({ ...workspace, role: "contributor" }),
+      }),
+    )
+    expect(
+      await screen.findByText(/A workspace owner can repair it/),
+    ).toBeTruthy()
+    expect(screen.queryByRole("link", { name: "Repair this page" })).toBeNull()
+  })
+
+  it("saves the corrected whole text against the revision it read", async () => {
+    const fake = repairApi({
+      repairCatalogDocument: () =>
+        Promise.resolve({
+          outcome: "applied" as const,
+          proposal: {
+            id: "p1",
+            number: 4,
+            state: "applied" as const,
+            createdAt: "2026-11-18T10:00:00.000Z",
+            author: { kind: "person" as const, label: "guneet" },
+            explanation: "Drop the unreadable contact fact.",
+            relatedTask: null,
+            operations: [],
+            basedOnRevision: 7,
+            approvalClasses: ["body-and-bookkeeping"],
+            approvalReasons: [],
+            warnings: [],
+            touches: ["machine/musashi"],
+            appliedRevision: 8,
+            decidedAt: "2026-11-18T10:00:00.000Z",
+            decidedBy: "guneet",
+            rejectionReason: null,
+            revertsProposalId: null,
+          },
+        }),
+    })
+    renderApp(repairPath, fake)
+    const text = await screen.findByLabelText("The page's whole text")
+    expect(screen.getByText(/cannot name an attribute/)).toBeTruthy()
+    const save = screen.getByRole("button", { name: "Save the repair" })
+    expect((save as HTMLButtonElement).disabled).toBe(true)
+    await userEvent.clear(text)
+    await userEvent.type(text, "---{enter}id: machine/musashi{enter}---{enter}")
+    await userEvent.type(
+      screen.getByLabelText("Why (explanation)"),
+      "Drop the unreadable contact fact.",
+    )
+    await userEvent.click(save)
+    expect(fake.repairCatalogDocument).toHaveBeenCalledWith(workspaceId, {
+      id: "machine/musashi",
+      revision: 7,
+      text: "---\nid: machine/musashi\n---\n",
+      explanation: "Drop the unreadable contact fact.",
+    })
+    expect(await screen.findByText(/Repaired as revision 8/)).toBeTruthy()
+  })
+
+  it("shows why a repair was refused, and asks to sign in again", async () => {
+    const fake = repairApi({
+      repairCatalogDocument: () =>
+        Promise.resolve({
+          outcome: "blocked" as const,
+          problems: [
+            {
+              code: "reference-unresolved",
+              message: '`owner` names "person/nobody", which is not an entity',
+              documentId: "machine/musashi",
+            },
+          ],
+        }),
+    })
+    renderApp(repairPath, fake)
+    await userEvent.type(
+      await screen.findByLabelText("The page's whole text"),
+      "x",
+    )
+    await userEvent.type(screen.getByLabelText("Why (explanation)"), "Fix.")
+    await userEvent.click(
+      screen.getByRole("button", { name: "Save the repair" }),
+    )
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "person/nobody",
+    )
+
+    fake.repairCatalogDocument.mockImplementation(() =>
+      Promise.reject(reauthenticationRequired()),
+    )
+    await userEvent.click(
+      screen.getByRole("button", { name: "Save the repair" }),
+    )
+    expect(
+      await screen.findByRole("heading", { name: "Sign in again to continue" }),
+    ).toBeTruthy()
+  })
+
+  it("is for workspace owners only", async () => {
+    renderApp(
+      repairPath,
+      repairApi({
+        workspace: () => Promise.resolve({ ...workspace, role: "contributor" }),
+      }),
+    )
+    expect(
+      await screen.findByText("Only workspace owners repair pages."),
+    ).toBeTruthy()
   })
 })

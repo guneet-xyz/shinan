@@ -7,6 +7,7 @@ import { useWorkspace } from "../workspace/context"
 import { EntityPage } from "./EntityPage"
 import { wikiPath } from "./format"
 import { ChangesPage, ListPage, SearchPage, WikiHome } from "./pages"
+import { RepairPage } from "./RepairPage"
 import { StartHerePage } from "./StartHerePage"
 import { TypePage } from "./TypePage"
 
@@ -48,6 +49,7 @@ export default function WikiRoutes() {
         <Route path="types/:type" element={<TypePage />} />
         <Route path="lists/:list" element={<ListPage />} />
         <Route path="e/*" element={<EntityPage />} />
+        <Route path="repair/*" element={<RepairPage />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </div>

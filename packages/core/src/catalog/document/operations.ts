@@ -30,7 +30,8 @@ export type CatalogOperation =
 
 /**
  * Every operation's name that a proposal may send, in the order of catalog
- * §8.1's table. `restore-document` is left out: only a revert makes it.
+ * §8.1's table. `restore-document` is left out: only a revert and a
+ * workspace owner's repair make it.
  */
 export const operationNames = [
   "create-entity",
@@ -327,10 +328,11 @@ export interface SetStartHerePath {
 }
 
 /**
- * Puts back a document's earlier text whole: what a revert does (catalog
- * §8.2). Shinan makes it from stored revisions; proposals from agents and
- * the API cannot send it. It expects the document to be exactly as the
- * reverted proposal left it, by the SHA-256 of its text (hex).
+ * Replaces a document's whole text. A revert puts back an earlier text
+ * (catalog §8.2), made by Shinan from stored revisions; a workspace owner's
+ * repair writes a corrected text (§8.3). Proposals from agents and the API
+ * cannot send it. It expects the document to be exactly as it was read, by
+ * the SHA-256 of its text (hex).
  */
 export interface RestoreDocument {
   op: "restore-document"

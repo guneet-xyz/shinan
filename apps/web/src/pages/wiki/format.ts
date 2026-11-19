@@ -10,6 +10,11 @@ export function entityPath(workspaceId: string, id: string): string {
   return `/w/${workspaceId}/wiki/e/${id.split("/").map(encodeURIComponent).join("/")}`
 }
 
+/** The page where a workspace owner repairs a document's text (catalog §8.3). */
+export function repairPath(workspaceId: string, id: string): string {
+  return `/w/${workspaceId}/wiki/repair/${id.split("/").map(encodeURIComponent).join("/")}`
+}
+
 export function wikiPath(workspaceId: string, path = ""): string {
   return `/w/${workspaceId}/wiki${path}`
 }

@@ -65,3 +65,5 @@ export type {
   RecentCatalogChange,
   RecentCatalogChangesInput,
 } from "./review.js"
+export { repairCatalogDocument } from "./repair.js"
+export type { RepairInput } from "./repair.js"

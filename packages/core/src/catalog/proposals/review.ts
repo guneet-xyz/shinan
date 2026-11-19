@@ -891,7 +891,8 @@ function checkExplanation(explanation: unknown): string {
   return explanation
 }
 
-function checkKey(key: unknown): string | null {
+/** An idempotency key as a request sends it, checked. */
+export function checkKey(key: unknown): string | null {
   if (key === undefined || key === null) return null
   if (
     typeof key !== "string" ||

@@ -354,9 +354,10 @@ export function buildTypeRegistry(
           }
         : null
       for (const attribute of relation?.identifiedBy ?? []) {
-        if (attributeNameProblem(attribute) !== null)
+        const reason = attributeNameProblem(attribute)
+        if (reason !== null)
           problem(
-            `"${attribute}" cannot name a relation attribute`,
+            `identified_by of "${definition.key}": ${reason}`,
             definition.range,
           )
       }

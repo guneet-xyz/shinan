@@ -778,6 +778,23 @@ export function createApiClient(options: ApiClientOptions = {}) {
         `${catalog(workspaceId)}/proposals/${encodeURIComponent(proposalId)}/revert`,
         options,
       ),
+    // A workspace owner's repair of a document that reads with problems
+    // (catalog §8.3): its whole text, replacing the text at `revision`.
+    repairCatalogDocument: (
+      workspaceId: string,
+      input: {
+        id: string
+        revision: number
+        text: string
+        explanation: string
+        idempotencyKey?: string
+      },
+    ) =>
+      request<CatalogProposalOutcome>(
+        "POST",
+        `${catalog(workspaceId)}/proposals/repair`,
+        input,
+      ),
     recentCatalogChanges: (
       workspaceId: string,
       options: {
