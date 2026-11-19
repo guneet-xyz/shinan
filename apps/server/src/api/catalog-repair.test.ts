@@ -8,6 +8,7 @@ import { connectTestDatabase } from "@shinan/db/testing"
 
 import { insertPerson } from "../../test/people.js"
 import { as, testSignIn } from "../../test/sign-in.js"
+import { proposalInFlight } from "./catalog-proposals.js"
 import { createApi } from "./routes.js"
 
 const { db, pool } = connectTestDatabase()
@@ -87,22 +88,26 @@ const repair = (
   body: Record<string, unknown>,
   who: Person = owner,
   reauthenticated = true,
-) =>
-  api.request(`/workspaces/${workspaceId}/catalog/proposals/repair`, {
+) => {
+  const text = JSON.stringify({
+    id: "machine/musashi",
+    revision: 1,
+    text: musashi(""),
+    explanation: "Drop the unreadable contact fact.",
+    ...body,
+  })
+  return api.request(`/workspaces/${workspaceId}/catalog/proposals/repair`, {
     method: "POST",
     headers: {
       origin: "http://shinan.test",
       "content-type": "application/json",
+      // As browsers send it: the route refuses a body of undeclared size.
+      "content-length": String(Buffer.byteLength(text)),
       ...as(who, { reauthenticated }),
     },
-    body: JSON.stringify({
-      id: "machine/musashi",
-      revision: 1,
-      text: musashi(""),
-      explanation: "Drop the unreadable contact fact.",
-      ...body,
-    }),
+    body: text,
   })
+}
 
 describe("repairing a catalog document over the API", () => {
   it("is for workspace owners who signed in again recently", async () => {
@@ -157,11 +162,114 @@ describe("repairing a catalog document over the API", () => {
         headers: {
           origin: "http://shinan.test",
           "content-type": "application/json",
+          "content-length": "2",
           ...as(owner),
         },
         body: "[]",
       },
     )
     expect(answer.status).toBe(422)
+  })
+})
+
+describe("repair requests: size and requests in flight", () => {
+  const path = () => `/workspaces/${workspaceId}/catalog/proposals/repair`
+  /** As if from this network address, as Node's socket gives it. */
+  const from = (address: string) => ({
+    incoming: { socket: { remoteAddress: address } },
+  })
+
+  it("refuses a body of undeclared size, as the proposal routes do", async () => {
+    const response = await api.request(path(), {
+      method: "POST",
+      headers: {
+        origin: "http://shinan.test",
+        "content-type": "application/json",
+        ...as(owner),
+      },
+      body: new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode("{}"))
+          controller.close()
+        },
+      }),
+      duplex: "half",
+    })
+    expect(response.status).toBe(411)
+    expect(await response.json()).toMatchObject({ error: "length-required" })
+  })
+
+  it("lets one address have only a few at once, whoever sends them", async () => {
+    const third = await insertPerson(db, "third")
+    const open: ReadableStreamDefaultController<Uint8Array>[] = []
+    const body = '{"id":"machine/musashi"}'
+    const slow = async (who: Person, address: string) =>
+      api.request(
+        path(),
+        {
+          method: "POST",
+          headers: {
+            origin: "http://shinan.test",
+            "content-type": "application/json",
+            "content-length": String(body.length),
+            ...as(who),
+          },
+          body: new ReadableStream<Uint8Array>({
+            start(controller) {
+              open.push(controller)
+              controller.enqueue(new TextEncoder().encode(body.slice(0, 10)))
+            },
+          }),
+          duplex: "half",
+        },
+        from(address),
+      )
+    // Two people from one address, each below their own cap of 8.
+    const half = proposalInFlight.perAddress / 2
+    const held = [
+      ...Array.from({ length: half }, () => slow(owner, "192.0.2.7")),
+      ...Array.from({ length: half }, () => slow(contributor, "192.0.2.7")),
+    ]
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    // A third person, with room of their own, from the same address.
+    const refused = await api.request(
+      path(),
+      {
+        method: "POST",
+        headers: {
+          origin: "http://shinan.test",
+          "content-type": "application/json",
+          "content-length": "2",
+          ...as(third),
+        },
+        body: "{}",
+      },
+      from("192.0.2.7"),
+    )
+    expect(refused.status).toBe(429)
+    expect(refused.headers.get("retry-after")).toBe("1")
+    // The same person from another address is not held up.
+    const elsewhere = await api.request(
+      path(),
+      {
+        method: "POST",
+        headers: {
+          origin: "http://shinan.test",
+          "content-type": "application/json",
+          "content-length": "2",
+          ...as(third),
+        },
+        body: "{}",
+      },
+      from("198.51.100.7"),
+    )
+    expect(elsewhere.status).not.toBe(429)
+
+    for (const controller of open) {
+      controller.enqueue(new TextEncoder().encode(body.slice(10)))
+      controller.close()
+    }
+    const answers = await Promise.all(held)
+    expect(answers.every((r) => r.status !== 429)).toBe(true)
   })
 })

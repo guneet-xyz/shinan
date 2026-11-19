@@ -412,7 +412,7 @@ Reason: "never edited" keeps history trustworthy, but a leaked secret or a
 lawful deletion request must still be removable; a visible, attributed purge
 keeps both. A secret that reached Shinan must also be rotated at its source.
 
-**As built for the catalog (M2-10, [#91](https://github.com/guneet-xyz/shinan/issues/91); catalog content only in M2, owner, M2-Q4), proposed.**
+**As built for the catalog (M2-10, [#91](https://github.com/guneet-xyz/shinan/issues/91); catalog content only in M2, owner, M2-Q4), decided (owner, 2026-11-19, M2-Q17).**
 What a purge removes and records is in [catalog §9](catalog.md#9-history-and-purge).
 How:
 
@@ -546,7 +546,7 @@ indexing (**Proposed**).
   from (catalog document), so agents and plugins can cache and ask "what changed
   since revision N". **Proposed.**
 - **As built (M2-3, [#85](https://github.com/guneet-xyz/shinan/issues/85)),
-  proposed:**
+  decided (owner, 2026-11-19, M2-Q17):**
   - **Storage.** Each document has a stable ID of its own, because its
     catalog ID lives in its text and can change (catalog §2.4). A catalog
     revision is numbered from 1 in each workspace and credited like an event;
@@ -618,7 +618,7 @@ indexing (**Proposed**).
     at `/api/installation/catalog-index`; workspaces whose index is behind
     get a rebuild instead. The text → parse → apply no operations → text half
     of rule 5 joins the job when operations as text edits (M2-2) land.
-  - **Sharing the worker's event loop** (**proposed**,
+  - **Sharing the worker's event loop** (**decided**, owner, 2026-11-19, M2-Q17;
     [#135](https://github.com/guneet-xyz/shinan/issues/135)). Rebuilds and
     the daily check run in the `worker` process beside every other job
     (email, invitations, clean-ups), so they give the event loop back
@@ -639,7 +639,7 @@ indexing (**Proposed**).
     yields are cheaper and simpler than moving the rebuild to a worker
     thread, which would need the database reads moved there too.
 - **As built (M2-4, [#86](https://github.com/guneet-xyz/shinan/issues/86)),
-  proposed:**
+  decided (owner, 2026-11-19, M2-Q17):**
   - **Proposals and revisions.** A catalog proposal is stored with its
     operations, author, explanation, approval classes and state. A
     revision records the proposal it applied, the revision that proposal
@@ -668,7 +668,8 @@ indexing (**Proposed**).
     one workspace's catalog parsed, by document and revision; turns take
     the workers first come first served across workspaces, and a workspace
     without a worker takes over the one least recently used. Numbers, all
-    **proposed**:
+    **decided** (owner,
+    2026-11-19, M2-Q16):
     - **Loading is not charged to a proposal.** Stored texts a worker has
       not parsed (after a start, a restart, a switch of workspace or a
       change) are read in short reads of 100 and parsed in batches of at
@@ -964,7 +965,7 @@ sit behind NAT, firewalls or tailnets. The agent-facing parts of
   actor, Shinan) and whether it may be treated as an instruction. Field names
   and skill wording are owned by [agent integrations](agent-integrations.md).
 - **As built (M2-6, [#87](https://github.com/guneet-xyz/shinan/issues/87)),
-  proposed:** `/mcp` uses the official TypeScript SDK's v2 packages
+  decided (owner, 2026-11-19, M2-Q17):** `/mcp` uses the official TypeScript SDK's v2 packages
   (`@modelcontextprotocol/server` 2.4), whose `createMcpHandler` serves the
   2026-07-28 revision and, statelessly, the 2025 `initialize` handshake from
   one per-request server. Each request passes, in order: the per-address
@@ -974,7 +975,7 @@ sit behind NAT, firewalls or tailnets. The agent-facing parts of
   carrying any `Origin` but the installation's own is refused with 403),
   `requireAgent`, and at most 8 requests in flight per token; over either
   in-flight cap the answer is 429 before the body is read, and Node gives a
-  client 30 seconds to send a whole request (**proposed**, M2-12: slow
+  client 30 seconds to send a whole request (**decided**, owner, 2026-11-19, M2-Q16; M2-12: slow
   senders otherwise held about 0.63 MiB of memory per stalled body for up
   to 300 seconds). The SDK then checks the 2026-07-28 headers against the
   body (400 when they disagree). Answers to the 2025 handshake's requests
@@ -986,7 +987,8 @@ sit behind NAT, firewalls or tailnets. The agent-facing parts of
   it serves (400; an `initialize` asking for an older revision is offered
   2025-11-25), and `subscriptions/listen` (an in-band "method not found":
   Shinan sends no change notifications, so a listening stream would only
-  hold a connection and memory open; proposed until a tool needs
+  hold a connection and memory open; decided (owner, 2026-11-19,
+  M2-Q17) until a tool needs
   notifications, which would then come with a per-agent cap and a maximum
   lifetime). 2026-07-28 answers are single JSON bodies
   (`responseMode: "json"`); 2025-11-25 answers are one Server-Sent Events
@@ -1213,7 +1215,7 @@ As built in M1-6 (details and tests in the [checklist](security-checklist.md)):
   database and is not rate limited), `/api/installation`
   (the installation's name and sign-in methods, for the sign-in pages), the
   first-start setup and the sign-in link confirm page.
-- **The skill at `/skills/`** (proposed, M2-9,
+- **The skill at `/skills/`** (decided, owner, 2026-11-19, M2-Q17; M2-9,
   [#90](https://github.com/guneet-xyz/shinan/issues/90); the public path is
   [D-056](decisions/D-056-public-skill-path.md)). The `web` role reads the
   skill's files from `packages/skill` when it starts and serves them from
@@ -1315,8 +1317,8 @@ From the `workspace` repository's catalog and `infra/musashi` (read 2026-11-16):
 - **Proposed:** names follow Musashi's rules; three fixed `/24` subnets from the
   unused `10.88.0.0/16` range, recorded in the machine entry at deployment.
 - **Proposed** starting memory limits: web 512 MiB, worker 384 MiB, PostgreSQL
-  512 MiB; estimates to be measured during the proof of concept. **M2-4:**
-  web 1,536 MiB, for its one catalog worker (heap up to 768 MiB, §5.3); the
+  512 MiB; estimates to be measured during the proof of concept.
+  **Decided (owner, 2026-11-19, M2-Q15):** web 1,536 MiB, for its one catalog worker (heap up to 768 MiB, §5.3); the
   `infra/musashi` stack's change is drafted for the M2 deployment request
   ([infra/musashi#130](https://git.guneet.dev/infra/musashi/issues/130),
   draft PR [#131](https://git.guneet.dev/infra/musashi/pulls/131); M2-12).

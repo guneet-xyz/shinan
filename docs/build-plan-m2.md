@@ -609,7 +609,8 @@ Decided by the owner on 2026-11-17 ("Approve and start",
 [issue #79](https://github.com/guneet-xyz/shinan/issues/79)). The labels
 M2-Q1 to M2-Q5 name the questions this plan asked; M2-Q6 came up during
 M2-3, M2-Q7 and M2-Q8 during M2-4, M2-Q9 to M2-Q11 and M2-Q13 during M2-13
-([7.3](#73-answers-on-the-trial-start-kit)), and M2-Q12 during M2-9
+([7.3](#73-answers-on-the-trial-start-kit)), M2-Q12 during M2-9, and M2-Q14
+to M2-Q17 at the M2 security review, M2-12
 (2026-11-18 and 2026-11-19).
 
 ### 7.1 Answers
@@ -664,22 +665,84 @@ M2-3, M2-Q7 and M2-Q8 during M2-4, M2-Q9 to M2-Q11 and M2-Q13 during M2-13
    ([3.13](#313-m2-13-trial-start-kit)). Recorded in
    [agent integrations, the skill](agent-integrations.md#the-skill). No
    decision record changes.
+10. **M2-Q14, the application's database role** (owner, 2026-11-19,
+    [recorded on #92](https://github.com/guneet-xyz/shinan/issues/92#issuecomment-6999453136)): option B of the
+    [security checklist](security-checklist.md#owner-decisions-for-the-m2-release).
+    `web` and `worker` keep connecting as the role that owns the tables, and
+    can turn off the append-only triggers, as an accepted risk for v0.3.0
+    (checklist 6.7). Running them as a non-owner, non-superuser role is the
+    first work of M3, before git host credentials or a second member's data
+    are stored ([#156](https://github.com/guneet-xyz/shinan/issues/156)).
+    Recorded as [D-057](decisions/D-057-app-database-role-accepted-risk.md).
+11. **M2-Q15, `web`'s memory limit** (owner, 2026-11-19,
+    [recorded on #92](https://github.com/guneet-xyz/shinan/issues/92#issuecomment-6999453136)): 1,536 MiB, with
+    the catalog worker's 768 MiB heap. Recorded in
+    [architecture §11.2](architecture.md#112-shinan-stack) and the
+    deployment request ([infra/musashi#130](https://git.guneet.dev/infra/musashi/issues/130)).
+    No decision record changes.
+12. **M2-Q16, M2's limits** (owner, 2026-11-19,
+    [recorded on #92](https://github.com/guneet-xyz/shinan/issues/92#issuecomment-6999453136)): all accepted as built:
+    - request bodies: 512 KB on `/mcp`, 272 KiB on the catalog proposal and
+      repair routes, refused before they are read;
+    - requests in flight: at most 8 per agent token or signed-in person, and
+      16 per network address (an IPv6 address by its /64), on `/mcp` and
+      those routes;
+    - 30 seconds to send a whole request;
+    - rate limits: 600 requests a minute per agent token and 300 per
+      address; per agent, 60 catalog proposals and 60 comments in 10
+      minutes;
+    - per catalog, 20,000 documents, 50 MiB of text and an estimate of
+      320 MiB; per proposal, 50 operations and 100 facts.
+
+    Recorded in [catalog §8.1 and §8.2](catalog.md#81-catalog-proposals),
+    [architecture §5.3 and §8.1](architecture.md#53-how-sync-works),
+    [identity §10](identity.md#10-protections-for-a-public-installation)
+    and [security checklist](security-checklist.md) 1.11. No decision
+    record changes.
+
+13. **M2-Q17, M2's other choices built as proposed** (owner, 2026-11-19,
+    [recorded on #92](https://github.com/guneet-xyz/shinan/issues/92#issuecomment-6999453136)):
+    all accepted as decided, as built. Among them:
+    - the agent token's format (`shinan_agent_` and 43 letters and digits;
+      [identity §7](identity.md#7-tokens));
+    - the recheck intervals of built-in keys ([catalog §4.6](catalog.md#46-freshness));
+    - the 64 KiB document limit and the nesting limits on what Shinan reads
+      ([catalog §2.1](catalog.md#21-one-document-per-entity-and-what-source-of-truth-means));
+    - task status in facts as a narrow warning only ([catalog §8.3](catalog.md#83-validation));
+    - a known value removing the `unknown` facts it settles, and acceptance
+      written on a discrepancy's facts and kept by a recheck that leaves
+      the values as they are ([catalog §4.2, §4.7](catalog.md#47-discrepancies));
+    - a discrepancy accepted only through a person's approval
+      (`accept-discrepancy`; `accepted` is never sent);
+    - no operation that brings a retired entity back;
+    - waiting proposals from a disabled agent or a member who left still
+      approved or rejected ([catalog §8.2](catalog.md#82-when-catalog-approval-is-needed));
+    - a confirmed email change keeping the person's agent tokens, with
+      alerts that name both addresses in full ([identity §3.4](identity.md#34-recovery));
+    - changing `SHINAN_URL` stopping every agent token;
+    - purge by exact text ([catalog §9](catalog.md#9-history-and-purge)).
+
+    The documents' "proposed" labels for M2's choices now read "Decided
+    (owner, 2026-11-19, M2-Q17)", or M2-Q15 and M2-Q16 for the memory limit
+    and the limits; nothing they describe changed. The strict setting's
+    state at trial start is M2-Q13 ([7.3](#73-answers-on-the-trial-start-kit)).
+    No decision record changes.
 
 ### 7.2 Defaults for open questions in the documents
 
 Accepted by the owner with the answers above. Each can be changed later
 without changing stored catalog text.
 
-| Open question                                                                       | Default for M2                                   |
-| ----------------------------------------------------------------------------------- | ------------------------------------------------ |
-| Body embeds of fact values (catalog 1)                                              | Not supported. Raw Markdown stays readable.      |
-| Recheck intervals for built-in keys (catalog 2)                                     | Proposed per key in the M2-1 PR, reviewed there. |
-| Flagging gaps between intended and observed values of multi-valued keys (catalog 3) | Not flagged.                                     |
-| Shinan enforcing `policy` entities beyond its own settings (catalog 4)              | No.                                              |
-| External link checking (catalog 5)                                                  | Not built.                                       |
-| More than one start-here path (catalog 6)                                           | One per workspace.                               |
-| Agent index JSON schema (catalog 7)                                                 | Written by M2-3 into the catalog document.       |
-| The agent index as MCP resources (agent integrations 5)                             | Not offered; tools only.                         |
+| Open question                                                                       | Default for M2                              |
+| ----------------------------------------------------------------------------------- | ------------------------------------------- |
+| Body embeds of fact values (catalog 1)                                              | Not supported. Raw Markdown stays readable. |
+| Recheck intervals for built-in keys (catalog 2)                                     | Per key in catalog 4.6; decided (M2-Q17).   |
+| Flagging gaps between intended and observed values of multi-valued keys (catalog 3) | Not flagged.                                |
+| Shinan enforcing `policy` entities beyond its own settings (catalog 4)              | No.                                         |
+| External link checking (catalog 5)                                                  | Not built.                                  |
+| More than one start-here path (catalog 6)                                           | One per workspace.                          |
+| Agent index JSON schema (catalog 7)                                                 | Written by M2-3 into the catalog document.  |
+| The agent index as MCP resources (agent integrations 5)                             | Not offered; tools only.                    |
 
 The packages that settle these update the owning documents' open questions
 in the same PR.

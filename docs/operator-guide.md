@@ -235,8 +235,10 @@ you took in step 2.
 
 ### Upgrading from 0.2 to 0.3 (the catalog)
 
-0.3 adds the catalog, the agents' MCP endpoint and the agent skill. Before you
-upgrade:
+0.3 adds the catalog (agent index, wiki, catalog proposals and review,
+repair, purge), the agents' MCP endpoint, the agent skill and changing one's
+own email address. The release notes list every change; for operators, before
+you upgrade:
 
 - **Memory.** `web` now runs a [catalog worker](#catalog-workers) thread. The
   reference Compose file raises its limit from 512 MiB to 1,536 MiB
@@ -244,14 +246,29 @@ upgrade:
   `mem_limit` the same way. If the host is short of memory, a smaller ceiling
   works with a smaller heap: `SHINAN_CATALOG_WORKER_HEAP_MB=640` and 1,280 MiB.
 - **Settings.** `SHINAN_CATALOG_WORKERS` and `SHINAN_CATALOG_WORKER_HEAP_MB`
-  are new and optional (defaults 1 and 768).
+  are new and optional (defaults 1 and 768), and so is `SHINAN_WEB_MEMORY`
+  in the reference Compose file. No new secrets.
 - **Your proxy** must route every path: agents use `/mcp`, and OpenCode
   fetches `/skills/` without signing in. Don't buffer `/mcp` answers (some
   are short event streams) or time them out in under a few minutes, and
   don't limit request bodies below 512 KB ([reverse proxy](#reverse-proxy)).
   Caddy needs no change; nginx needs `proxy_buffering off` and a longer
   `proxy_read_timeout` for `/mcp`.
-- **Migrations** only add tables, columns, indexes and triggers. 0.2's code
+- **Limits** (decided by the owner for 0.3): `/mcp` takes bodies up to
+  512 KB, and the catalog proposal and repair routes 272 KiB; at most 8
+  requests in flight per agent token or signed-in person, and 16 per
+  address (an IPv6 address by its /64), on `/mcp` and those routes, with
+  429 and `Retry-After: 1` beyond that; 30 seconds to send a whole request.
+  Requests are rate limited per address (300 a minute, shared with `/api`
+  from that address; every agent session on one machine shares it) and per
+  token (600 a minute); a rate-limited request gets 429 with `Retry-After`
+  set to the seconds left in the minute. Each agent may send 60 catalog
+  proposals and 60 comments in 10 minutes
+  ([agents](#agents-the-mcp-endpoint-tokens-and-the-skill)).
+- **Migrations** `0005` to `0012` only add tables, columns, indexes and
+  triggers; `0012` replaces the append-only triggers on events and revision
+  text with ones that let a purge's own transaction change their text, and
+  nothing else. 0.2's code
   runs on the upgraded database: rolling back is setting the previous digest
   again, and the catalog and agents stay in the database, unused, until you
   upgrade again. Until then, agents' requests to `/mcp` get 404. 0.2 does
@@ -263,9 +280,12 @@ upgrade:
   database with `pg_restore --clean` leaves 0.3's tables behind. A failed
   `migrate` changes nothing: it applies all pending migrations in one
   transaction.
-- **The agent index** has nothing to rebuild on the first start, since the
-  catalog starts empty. From then on the worker checks it every night
-  ([the agent index](#the-agent-index)).
+- **The agent index.** On every start the worker asks for a rebuild of any
+  workspace whose index another release built or whose rebuild never
+  finished. On the first 0.3 start the catalog is empty, so there is
+  nothing to rebuild. From then on the worker checks the index every night
+  ([the agent index](#the-agent-index)); a rebuild gives the event loop back
+  every 50 ms, so email is not held up.
 
 ## Agents: the MCP endpoint, tokens and the skill
 
@@ -291,9 +311,13 @@ in the `Authorization` header, and load the agent skill from
   bodies are read.
   OpenCode (checked in its source, 2026-11-18) retries a 429 twice, after
   250 ms and 1 s, only while connecting and listing tools; a tool call that
-  gets 429 fails at once, and the agent sees the error and can call again.
+  gets 429 fails at once, and the agent sees the error. After a rate-limit
+  429 it should wait `Retry-After` seconds, up to a minute, before calling
+  again; after an in-flight 429 it can call again once an earlier call is
+  answered.
   Normal use, a few tool calls at a time, stays well below the cap.
-  Agents' catalog proposals have their own limit (60 in 10 minutes).
+  Agents' catalog proposals and comments have their own limits (60 each in
+  10 minutes).
 - **`/skills/`** serves only the skill's own files, the same for every
   installation, with no workspace data
   ([D-056](decisions/D-056-public-skill-path.md)).

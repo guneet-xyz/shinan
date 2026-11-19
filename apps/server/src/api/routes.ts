@@ -253,14 +253,17 @@ export function createApi({
     key: (c) => throttleAddress(requestInfo(c).networkAddress),
     refuse: tooManyInFlight,
   })
+  // The repair route takes a whole document too, so it gets the same
+  // 411 and the same cap per address as the proposal routes.
   const limitRequestBody: MiddlewareHandler = async (c, next) => {
-    if (isRepairPath(c.req.path)) return limitRepairBody(c, next)
-    if (!isProposalPath(c.req.path)) return limitBody(c, next)
+    const repair = isRepairPath(c.req.path)
+    if (!repair && !isProposalPath(c.req.path)) return limitBody(c, next)
     const undeclared = lengthRequired(c)
     if (undeclared) return undeclared
+    const limitLarge = repair ? limitRepairBody : limitProposalBody
     return proposalsPerAddress(c, async () => {
       // The body limit answers 413 by returning it.
-      const refused = await limitProposalBody(c, next)
+      const refused = await limitLarge(c, next)
       if (refused instanceof Response && refused !== c.res) c.res = refused
     })
   }
