@@ -1,7 +1,11 @@
+import { useState } from "react"
 import { Link } from "react-router"
 
+import { Button } from "@/components/ui/button"
+
+import { useAction } from "../../action"
 import { useApi, useResource } from "../../api"
-import { Section } from "../../components/page"
+import { Actions, Confirm, Section } from "../../components/page"
 import { ErrorMessage, Loading } from "../../components/status"
 import { linkClass } from "../wiki/facts"
 import { wikiPath } from "../wiki/format"
@@ -83,10 +87,85 @@ export function CatalogSettings() {
 
 /**
  * The strict setting (catalog §8.2): a workspace owner turns it on when
- * catalog accuracy slips, and then every change except rechecks waits for
- * approval. Slot for M2-4b, which adds the setting; until then nothing is
- * shown, and the workspace works as with the setting off.
+ * catalog accuracy slips, and then every change except a recheck waits for
+ * a person's approval, and approval works in bulk. Every member sees it;
+ * only owners change it, after a recent sign-in.
  */
 export function StrictSetting() {
-  return null
+  const api = useApi()
+  const { workspace } = useWorkspace()
+  const settings = useResource(`catalog-settings:${workspace.id}`, () =>
+    api.catalogSettings(workspace.id),
+  )
+  const [confirming, setConfirming] = useState(false)
+  const changing = useAction()
+  if (settings.error) return <ErrorMessage error={settings.error} />
+  if (!settings.data) return <Loading />
+  const strict = settings.data.strict
+  const owner = workspace.role === "owner"
+  return (
+    <div className="flex flex-col gap-3 rounded-lg border p-3 text-sm sm:p-4">
+      <p>
+        <span className="font-medium">
+          Strict setting: {strict ? "on" : "off"}.
+        </span>{" "}
+        {strict
+          ? "Every change except a recheck waits for a person's approval; catalog review approves them in bulk."
+          : "Turn it on if catalog accuracy slips: then every change except a recheck waits for a person's approval."}
+      </p>
+      {owner && !confirming && (
+        <Actions>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setConfirming(true)}
+          >
+            {strict
+              ? "Turn the strict setting off…"
+              : "Turn the strict setting on…"}
+          </Button>
+        </Actions>
+      )}
+      {owner && confirming && (
+        <Confirm>
+          <p>
+            {strict
+              ? "Changes outside the gated classes will apply at once again, for agents too. What already waits stays waiting."
+              : "From now on, agents' changes wait for a member's approval, except rechecks. Members' own changes still apply at once, as their approval."}
+          </p>
+          <Actions>
+            <Button
+              type="button"
+              disabled={changing.pending}
+              onClick={() =>
+                changing.run(
+                  () => api.setCatalogStrict(workspace.id, !strict),
+                  () => {
+                    setConfirming(false)
+                    settings.reload()
+                  },
+                )
+              }
+            >
+              {strict ? "Turn it off" : "Turn it on"}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                setConfirming(false)
+                changing.clear()
+              }}
+            >
+              Cancel
+            </Button>
+          </Actions>
+        </Confirm>
+      )}
+      {!owner && (
+        <p className="text-muted-foreground">A workspace owner changes it.</p>
+      )}
+      {changing.error !== undefined && <ErrorMessage error={changing.error} />}
+    </div>
+  )
 }

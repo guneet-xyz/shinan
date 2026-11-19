@@ -1075,10 +1075,26 @@ see. If a
 proposal no longer applies when approved, the approver is told why and it
 keeps waiting. A revert waiting for approval shows the text it puts back
 against the document's current text, and links the proposal it undoes.
-Recent changes link each revision to its proposal.
-Comments, Revert, the strict setting and bulk approval have their places
-on these screens and arrive with M2-4b
-([#86](https://github.com/guneet-xyz/shinan/issues/86)).
+Recent changes link each revision to its proposal. A proposal whose agent
+has since been disabled, or whose member has left, says so where it is
+decided.
+
+**Proposed (M2-8, with M2-4b's operations):**
+
+- **Comments** are listed on a proposal's page, oldest first, a page at a
+  time, agents' marked as such and with hidden characters shown; anyone who
+  may propose comments, once per click.
+- **Revert** is on each change in Recent changes while every document it
+  wrote is still as it left it; it asks first, takes an optional reason,
+  and makes one revert proposal (which may wait, like any change). A change
+  already reverted links its revert; one a later change built on says it
+  cannot be reverted in one step.
+- **Bulk approval** shows on catalog review while the strict setting is on:
+  the chosen proposals (each named with its author), or all of a task's
+  that were shown, are approved or (with a reason) rejected together, and
+  each one's result is listed. A task is not offered for approval when all
+  of its proposals are your own agents' and another member must approve
+  them.
 
 If catalog accuracy slips during the trial, a workspace owner turns on the
 strict setting (owner, O-3, [#25]); while it is on, approval works in bulk
@@ -1297,7 +1313,8 @@ Screen details:
 - **Catalog settings** (**proposed**, M2-8): every member sees the tab.
   It says which changes wait for approval, lists the type schema
   documents (changed from their type's page) and links to catalog review.
-  The strict setting's switch is added there with M2-4b.
+  It shows the strict setting, on or off; a workspace owner turns it on
+  or off after confirming (and a recent sign-in), and other members see it.
 - **Task ID prefix.** Changing it keeps every earlier prefix working as an
   alias forever, and it is never given to another workspace; the screen says
   so before saving. Old task IDs keep their old prefix. **Proposed**, following
