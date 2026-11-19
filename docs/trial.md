@@ -1,13 +1,22 @@
 # Trial guide
 
 Status: **Proposed** (M2-13, [#93](https://github.com/guneet-xyz/shinan/issues/93)).
-This guide is the how-to for the trial of Shinan on its own projects. The
-[roadmap](roadmap.md#4-proof-of-concept) owns the rules of the trial and the
-[M2 build plan](build-plan-m2.md#4-starting-the-catalog-part-of-the-trial)
-owns the order of the start steps; this guide links to them and adds the
-detail people and agents need to carry them out. It covers the **catalog part**
-of the trial, which starts with milestone M2. The task part (M3) and the
-presence part (M4) are added when those milestones are built.
+
+> **Paused (owner, 2026-11-19).** The catalog part of the trial is paused
+> until the [Git-based catalog](build-plan-git-catalog.md) replaces M2's
+> catalog. It then restarts on the Git setup
+> ([plan §4.4](build-plan-git-catalog.md#44-restarting-the-trial)): a
+> credential helper and a clone instead of the MCP configuration, pushes
+> instead of catalog proposals, and no catalog approval. Package GC-12
+> rewrites this guide; until then the steps below describe M2 and are not
+> to be followed.
+> This guide is the how-to for the trial of Shinan on its own projects. The
+> [roadmap](roadmap.md#4-proof-of-concept) owns the rules of the trial and the
+> [M2 build plan](build-plan-m2.md#4-starting-the-catalog-part-of-the-trial)
+> owns the order of the start steps; this guide links to them and adds the
+> detail people and agents need to carry them out. It covers the **catalog part**
+> of the trial, which starts with milestone M2. The task part (M3) and the
+> presence part (M4) are added when those milestones are built.
 
 Every path, tool name, command and limit here was checked against what M2
 built (`main` at `3d0bf3e`, 2026-11-19): the MCP server (M2-6), the skill and

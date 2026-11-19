@@ -1,12 +1,12 @@
 ---
 id: D-024
 title: Only gated catalog changes need approval, from the start of the trial
-status: accepted
-date: 2026-11-16
+status: superseded
+date: 2026-11-19
 decided_by: owner
 evidence: "https://github.com/guneet-xyz/shinan/issues/25 (O-3, O-46)"
 supersedes: []
-superseded_by: []
+superseded_by: [D-060]
 amends: []
 amended_by: []
 ---
@@ -18,6 +18,8 @@ Status: **Accepted** by the owner on 2026-11-16
 O-3 accepted as recommended;
 [batch 6](https://github.com/guneet-xyz/shinan/issues/25#issuecomment-6912093727):
 O-46 accepted as recommended).
+
+Superseded by [D-060](D-060-no-catalog-approval.md) on 2026-11-19.
 
 ## Context
 
@@ -43,6 +45,7 @@ Owner's choice; no reason recorded.
 
 ## Consequences
 
+- **Superseded (owner, 2026-11-19, [D-060](D-060-no-catalog-approval.md)):** catalog changes need no approval; Shinan's checks on push are the only gate, and undo is a revert.
 - Which classes are gated: see the [catalog](../catalog.md).
 - When "accuracy slips" is measured: see [roadmap and migration](../roadmap.md).
 - Revisit self-approval when a second member joins: see
@@ -70,3 +73,4 @@ None.
 - 2026-11-16: accepted by the owner on issue #25. Recorded in the decision
   log's pull request as part of the issue #25 batch (see
   [README, history](README.md#history)).
+- 2026-11-19: superseded by [D-060](D-060-no-catalog-approval.md) ([Git-based catalog plan](../build-plan-git-catalog.md), accepted by the owner, [issue #161](https://github.com/guneet-xyz/shinan/issues/161#issuecomment-7007337638)). Decision and Reasons unchanged.

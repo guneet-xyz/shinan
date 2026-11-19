@@ -220,6 +220,14 @@ truth for the catalog, and a review at each milestone stops scope creep.
 | M3. Tasks and git hosts | Tasks and subtasks, work links, calculated status, GitHub and Forgejo git host connections, reconciliation, outside issues become tasks, timeline, readiness report | Task part of the trial, including cross-project coordination |
 | M4. Presence            | OpenCode plugin: agent sessions, presence, attaching an agent session to a task                                                                                     | Presence part of the trial; trial fully running              |
 
+**M2 revised (owner, 2026-11-19):** M2's catalog storage, proposals and
+approval, the wiki's editing and the catalog MCP tools are being replaced by a
+catalog stored in Git, hosted by Shinan, which agents push to without catalog
+approval, and shown to people as the "catalog" (no longer "wiki"). The
+[Git-based catalog plan](build-plan-git-catalog.md) (approved by
+the owner on 2026-11-19, [#161](https://github.com/guneet-xyz/shinan/issues/161)) is built and deployed
+before M3. Its package GC-10 updates this section and §4.3, §4.5 and §5.
+
 **Screens (proposed):** each phase 1 screen in [human experience](human-experience.md)
 ships with the milestone that delivers its feature. M1: your account and
 workspace settings. M2: wiki, start here, catalog review and recent changes,
@@ -308,6 +316,13 @@ to a member. This is a known gap (proposed; reason: inventing outside traffic
 would not show anything real).
 
 ### 4.3 The catalog during the trial
+
+**Paused (owner, 2026-11-19):** the catalog part of the trial is paused until
+the [Git-based catalog](build-plan-git-catalog.md) is deployed, and then
+restarts on it ([plan §4.4](build-plan-git-catalog.md#44-restarting-the-trial)).
+Below, "catalog proposal" becomes a push to the catalog, and the catalog
+approval paragraph has lapsed: catalog changes need no approval
+([D-060](decisions/D-060-no-catalog-approval.md), accepted 2026-11-19).
 
 **Decided (D-018):** Shinan starts empty, and the `workspace` repository
 stays the source of truth for the catalog until Shinan is judged ready.

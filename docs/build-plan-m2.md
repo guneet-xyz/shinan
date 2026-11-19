@@ -4,6 +4,14 @@ Status: **approved by the owner on 2026-11-17**
 ([issue #79](https://github.com/guneet-xyz/shinan/issues/79)), with the
 answers in [section 7](#7-owner-answers).
 
+> **Being replaced (2026-11-19).** The owner decided that the catalog this
+> plan built is not working and that it moves to Git: one repository per
+> workspace, hosted by Shinan, with no catalog approval. The
+> [Git-based catalog plan](build-plan-git-catalog.md) (approved by the
+> owner on 2026-11-19, [#161](https://github.com/guneet-xyz/shinan/issues/161))
+> says what is removed and kept. This plan stays as the record of what M2
+> built. The trial is paused until the Git-based catalog is deployed.
+
 This plan splits milestone M2 into work packages, in the same way and under
 the same process as M1 ([build plan](build-plan.md), §4). Where the documents
 left a choice open, it says what it proposes and why; the owner's answers to

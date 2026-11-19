@@ -46,6 +46,7 @@ control. No other reason recorded.
 
 ## Consequences
 
+- **Decided (owner, 2026-11-19, [D-060](D-060-no-catalog-approval.md)):** the check for secret-looking values runs on every push to the catalog repository, on every branch; a workspace owner may allow one exact value as "not a secret".
 - **Decided:** plan question 3 is answered for now: workspace-wide visibility.
 - Details: see the [catalog](../catalog.md),
   [identity, agents and permissions](../identity.md) and
@@ -74,3 +75,4 @@ None.
 - 2026-11-16: accepted by the owner on issue #25. Recorded in the decision
   log's pull request as part of the issue #25 batch (see
   [README, history](README.md#history)).
+- 2026-11-19: related decisions D-059 to D-065 recorded ([Git-based catalog plan](../build-plan-git-catalog.md), accepted by the owner, [issue #161](https://github.com/guneet-xyz/shinan/issues/161#issuecomment-7007337638)). Decision and Reasons unchanged; maintained sections updated.

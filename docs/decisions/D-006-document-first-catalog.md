@@ -8,7 +8,7 @@ evidence: https://github.com/guneet-xyz/shinan/issues/1
 supersedes: []
 superseded_by: []
 amends: []
-amended_by: [D-022]
+amended_by: [D-022, D-059, D-063, D-064]
 ---
 
 # D-006: The catalog is document-first, with a generated agent index
@@ -16,7 +16,7 @@ amended_by: [D-022]
 Status: **Accepted** by the owner on 2026-11-16, with the plan
 ([issue #1](https://github.com/guneet-xyz/shinan/issues/1),
 [PR #2](https://github.com/guneet-xyz/shinan/pull/2)).
-Amended by [D-022](D-022-catalog-storage-and-git-mirror.md).
+Amended by [D-022](D-022-catalog-storage-and-git-mirror.md), [D-059](D-059-catalog-in-git-hosted-by-shinan.md), [D-063](D-063-no-mcp-for-the-catalog.md) and [D-064](D-064-catalog-not-wiki.md).
 
 ## Context
 
@@ -42,6 +42,7 @@ repository already works well.
 
 ## Consequences
 
+- **Decided (owner, 2026-11-19, [D-059](D-059-catalog-in-git-hosted-by-shinan.md), [D-063](D-063-no-mcp-for-the-catalog.md), [D-064](D-064-catalog-not-wiki.md)):** the Markdown is stored as files on `main` of one Git repository per workspace, hosted by Shinan (replacing D-022's storage); the generated index stays, for search and the catalog pages, while agents read the documents from their clone rather than through MCP; people see the catalog (no longer called the wiki) as a file tree, rendered pages, search and commit history.
 - **Decided:** the agent index is generated from the Markdown
   ([plan, section 4](../plan.md#4-product-pillars)).
 - **Decided:** the catalog is shown to people as a wiki with a "start here"
@@ -81,3 +82,4 @@ repository already works well.
   approved with the plan on 2026-11-16 (merge commit `248a2c5`).
 - 2026-11-16: amended by [D-022](D-022-catalog-storage-and-git-mirror.md) (owner answers on [issue #25](https://github.com/guneet-xyz/shinan/issues/25)). Decision and Reasons unchanged; maintained sections updated.
 - 2026-11-16: related decision [D-043](D-043-no-git-mirror-for-now.md) recorded from batch 12 on [issue #25](https://github.com/guneet-xyz/shinan/issues/25#issuecomment-6913152214); maintained sections updated.
+- 2026-11-19: amended by D-059, D-063 and D-064 ([Git-based catalog plan](../build-plan-git-catalog.md), accepted by the owner, [issue #161](https://github.com/guneet-xyz/shinan/issues/161#issuecomment-7007337638)). Decision and Reasons unchanged; maintained sections updated.
