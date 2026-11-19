@@ -44,6 +44,7 @@ import {
   listCatalogProposalComments,
 } from "../proposals/review.js"
 import { getCatalogDocumentText, listCatalogHistory } from "../wiki.js"
+import { PurgeMatcher } from "./matcher.js"
 import {
   listCatalogPurges,
   previewCatalogPurge,
@@ -672,6 +673,56 @@ describe("purging catalog text", { timeout: 60_000 }, () => {
     })
     expect(performance.now() - started).toBeLessThan(10_000)
     expect(await tablesHolding(lines[3]!)).toEqual([])
+  })
+
+  it("gives the event loop back between the values it matches (#149)", async () => {
+    // A contrived worst case: many words of the text, then a word that
+    // breaks them, over and over, so every place found fails late.
+    const text = "a ".repeat(4999) + "a"
+    const value = ("a ".repeat(4997) + "aa ").repeat(2)
+    const started = performance.now()
+    expect(new PurgeMatcher(text).test(value)).toBe(false)
+    const single = performance.now() - started
+
+    const documents = 6
+    await storeCatalogRevision(
+      db,
+      workspaceId,
+      {
+        kind: "person",
+        personId: owner.id,
+        agentId: null,
+        agentSessionId: null,
+        label: owner.handle,
+        confidence: "recorded",
+      },
+      Array.from({ length: documents }, (_, i) => ({
+        text: `---\nid: machine/m${i}\ntype: machine\ntitle: M${i}\nsummary: A host.\nowner: ${person}\n---\n\n${value}\n`,
+      })),
+    )
+
+    // How long the event loop is held at most while the preview matches.
+    let longest = 0
+    let last = performance.now()
+    const probe = setInterval(() => {
+      const now = performance.now()
+      longest = Math.max(longest, now - last)
+      last = now
+    }, 5)
+    const previewStarted = performance.now()
+    try {
+      expect(
+        await previewCatalogPurge(asOwner, workspaceId, { text }),
+      ).toMatchObject({ revisionTexts: 0, writtenDifferently: [] })
+    } finally {
+      clearInterval(probe)
+    }
+    const total = performance.now() - previewStarted
+    // Without the pauses, each query's values are matched in one stretch:
+    // six values, at least. With them, about one value and the pause's
+    // budget.
+    expect(total).toBeGreaterThan(documents * single)
+    expect(longest).toBeLessThan(3 * single + 50)
   })
 
   it("shows copies in encoded forms, and warns where purging changes a document's structure", async () => {
