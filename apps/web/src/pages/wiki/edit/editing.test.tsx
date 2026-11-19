@@ -672,6 +672,11 @@ describe("New entity, new type and Start here", () => {
         },
       ],
     })
+    // The new page, as it will read: an entity read under another ID
+    // would move the page to that ID.
+    fake.catalogEntity.mockImplementation((_w, id) =>
+      Promise.resolve({ ...answer, entity: { ...musashi, id } }),
+    )
     renderApp(`/w/${workspaceId}/wiki/new?type=machine`, fake)
     await userEvent.type(
       await screen.findByLabelText("Name in its ID"),
