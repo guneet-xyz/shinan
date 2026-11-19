@@ -30,6 +30,7 @@ import { latestTexts } from "../index/store.js"
 import { catalogWorkers } from "../proposals/pool.js"
 import { hashOf } from "../proposals/proposals.js"
 import { appendCatalogRevision } from "../revisions.js"
+import { clearEditableCache } from "../wiki.js"
 import { PurgeMatcher, spaces } from "./matcher.js"
 
 /**
@@ -1182,6 +1183,7 @@ async function forgetInThisProcess(
   purges: number,
 ): Promise<void> {
   clearTypeSchemaCache()
+  clearEditableCache()
   await catalogWorkers().forgetPurged(new Map([[workspaceId, purges]]))
 }
 
@@ -1211,7 +1213,7 @@ let seenPurges: number | null = null
 /**
  * Forgets catalog text this process parsed before a purge in another
  * process (catalog §9): stops the catalog workers of workspaces with new
- * purges and empties the type schema cache. `watchCatalogPurges` runs it
+ * purges and empties the type schema and editable-form caches. `watchCatalogPurges` runs it
  * every minute; the purging process does it at once.
  */
 export async function forgetPurgedCatalogText(ctx: Context): Promise<void> {
@@ -1228,7 +1230,10 @@ export async function forgetPurgedCatalogText(ctx: Context): Promise<void> {
         .groupBy(schema.catalogPurges.workspaceId),
   )
   const total = rows.reduce((sum, row) => sum + row.count, 0)
-  if (seenPurges !== null && total !== seenPurges) clearTypeSchemaCache()
+  if (seenPurges !== null && total !== seenPurges) {
+    clearTypeSchemaCache()
+    clearEditableCache()
+  }
   seenPurges = total
   await catalogWorkers().forgetPurged(
     new Map(rows.map((row) => [row.workspaceId, row.count])),

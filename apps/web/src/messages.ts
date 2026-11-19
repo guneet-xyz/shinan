@@ -17,6 +17,8 @@ export function errorMessage(error: unknown): string {
         return "Your sign-in has ended. Sign in to continue."
       case "payload-too-large":
         return "That is too large to send."
+      case "length-required":
+        return "That could not be sent. Reload the page and try again."
       case "too-many-requests":
         return "Too many attempts. Wait a minute and try again."
       case "not-implemented":

@@ -79,14 +79,22 @@ async function call<T>(
   who: Person = owner,
   options: { reauthenticated?: boolean } = {},
 ) {
+  const text = body === undefined ? undefined : JSON.stringify(body)
   const response = await api.request(path, {
     method,
     headers: {
       origin: "http://shinan.test",
       ...as(who, options),
-      ...(body === undefined ? {} : { "content-type": "application/json" }),
+      // As browsers send it: the proposal routes refuse a body of
+      // undeclared size.
+      ...(text === undefined
+        ? {}
+        : {
+            "content-type": "application/json",
+            "content-length": String(Buffer.byteLength(text)),
+          }),
     },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    ...(text === undefined ? {} : { body: text }),
   })
   return { status: response.status, body: (await response.json()) as T }
 }

@@ -42,6 +42,13 @@ export interface CatalogWorkerOptions {
   queuePerWorkspace?: number
   /** Requests all workspaces may have running or waiting. */
   queueTotal?: number
+  /**
+   * Of those, checks (a proposal checked without making it) one workspace
+   * may have running or waiting, so checks never take its whole queue.
+   */
+  checksPerWorkspace?: number
+  /** Checks all workspaces may have running or waiting. */
+  checksTotal?: number
 }
 
 export const defaultWorkerOptions: Required<CatalogWorkerOptions> = {
@@ -88,6 +95,12 @@ export const defaultWorkerOptions: Required<CatalogWorkerOptions> = {
   workers: 1,
   queuePerWorkspace: 8,
   queueTotal: 32,
+  /**
+   * Two of a workspace's eight places, and eight of all 32 (**proposed**,
+   * M2-8): proposals always keep three quarters of the queues.
+   */
+  checksPerWorkspace: 2,
+  checksTotal: 8,
 }
 
 /** How long a refused request is told to wait before sending again. */
@@ -142,6 +155,7 @@ export class CatalogWorkers {
   private readonly slots = new Map<string, Slot>()
   private readonly permits: Permits
   private total = 0
+  private checks = 0
 
   constructor(options: CatalogWorkerOptions = {}) {
     this.options = { ...defaultWorkerOptions, ...options }
@@ -156,6 +170,7 @@ export class CatalogWorkers {
   async run<T>(
     workspaceId: string,
     work: (prepare: Prepare, turn: Turn) => Promise<T>,
+    kind: "proposal" | "check" = "proposal",
   ): Promise<T> {
     const queued = this.slots.get(workspaceId)?.requests ?? 0
     if (
@@ -167,9 +182,25 @@ export class CatalogWorkers {
         "Shinan is applying other catalog proposals; send this one again in a few seconds",
         retryAfterSeconds,
       )
+    const check = kind === "check"
+    if (
+      check &&
+      ((this.slots.get(workspaceId)?.checks ?? 0) >=
+        this.options.checksPerWorkspace ||
+        this.checks >= this.options.checksTotal)
+    )
+      throw new BusyError(
+        "catalog-busy-checks",
+        "Shinan is checking other catalog changes; check this one again in a few seconds",
+        retryAfterSeconds,
+      )
     this.total++
     const slot = this.slotFor(workspaceId)
     slot.requests++
+    if (check) {
+      slot.checks++
+      this.checks++
+    }
     try {
       return await slot.run(async () => {
         await this.permits.acquire()
@@ -192,6 +223,10 @@ export class CatalogWorkers {
     } finally {
       slot.requests--
       this.total--
+      if (check) {
+        slot.checks--
+        this.checks--
+      }
       if (
         slot.requests === 0 &&
         !slot.started &&
@@ -310,6 +345,8 @@ class Slot {
   /** Whether one of its turns is running. */
   inTurn = false
   requests = 0
+  /** Of `requests`, how many are checks. */
+  checks = 0
   lastUsed = 0
   /** How many purges the workspace had when its worker last looked; null before. */
   private purges: number | null = null

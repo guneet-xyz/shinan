@@ -109,6 +109,18 @@ export const rateLimits = {
     windowSeconds: 600,
     record: { action: "request.throttled" },
   },
+  /**
+   * "Check the change" by one person, counted by the person (human
+   * experience, changing the catalog from the wiki; **proposed**, M2-8): a
+   * check takes a catalog worker's turn like a proposal but leaves no
+   * proposal behind. 120 in 10 minutes is a check every 5 seconds, far
+   * above editing by hand. An agent's checks count as its proposals.
+   */
+  "catalog-check": {
+    max: 120,
+    windowSeconds: 600,
+    record: { action: "request.throttled" },
+  },
 } as const satisfies Record<string, RateLimit>
 
 export type RateLimitName = keyof typeof rateLimits

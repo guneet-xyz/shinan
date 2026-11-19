@@ -11,7 +11,7 @@ import {
 import type { CatalogFact, CatalogHistoryAnswer } from "@shinan/api-client"
 
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
+import { Button, buttonVariants } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
 import { isApiError, useApi, useResource } from "../../api"
@@ -22,6 +22,7 @@ import { NotFound } from "../NotFound"
 import { useWorkspace } from "../workspace/context"
 import { EntityPageContext, useEntityPage } from "./context"
 import { diffLines } from "./diff"
+import type { DiffLine } from "./diff"
 import { EntityLink, FactRow, linkClass, MaybeLink } from "./facts"
 import {
   entityPath,
@@ -33,7 +34,7 @@ import {
   wikiPath,
 } from "./format"
 import { Markdown } from "./markdown"
-import { IndexBehind, PageNotice } from "./notices"
+import { IndexBehind, PageNotice, SavedNotice } from "./notices"
 
 /**
  * An entity page (human experience, an entity page), in order of
@@ -98,12 +99,13 @@ export function EntityPage() {
         <RevisionView revision={revision} />
       ) : (
         <div className="flex flex-col gap-6">
-          <EntityHeader />
+          <SavedNotice workspaceId={workspaceId} />
+          <EntityHeader actions={<EditActions />} />
           <IndexBehind behind={answer.data.index_behind} />
           <PendingProposals />
           <Discrepancies />
           <OwningSources />
-          <Facts />
+          <Facts factActions={(fact) => <RecheckAction fact={fact} />} />
           <Body />
           <Links />
           <History />
@@ -647,39 +649,85 @@ function Comparison(props: {
       title={`Revision ${then.revision} compared with revision ${now.revision}`}
       description={`Revision ${then.revision}: ${formatDate(then.at)} by ${then.changed_by}. Now: revision ${now.revision}, ${formatDate(now.at)} by ${now.changed_by}. ${changes === 0 ? "No differences." : `${changes} lines differ: removed lines are marked "−", added lines "+".`}`}
     >
-      <div className="overflow-x-auto rounded-md border font-mono text-xs/5">
-        {lines.map((line, i) => (
-          <div
-            key={i}
-            className={cn(
-              "px-3 wrap-anywhere whitespace-pre-wrap",
-              line.kind === "removed" &&
-                "bg-red-50 text-red-950 dark:bg-red-950/40 dark:text-red-50",
-              line.kind === "added" &&
-                "bg-green-50 text-green-950 dark:bg-green-950/40 dark:text-green-50",
-            )}
-          >
-            <span
-              aria-hidden="true"
-              className="mr-2 text-muted-foreground select-none"
-            >
-              {line.kind === "removed"
-                ? "−"
-                : line.kind === "added"
-                  ? "+"
-                  : " "}
-            </span>
-            <span className="sr-only">
-              {line.kind === "removed"
-                ? "Removed: "
-                : line.kind === "added"
-                  ? "Added: "
-                  : ""}
-            </span>
-            {line.text || " "}
-          </div>
-        ))}
-      </div>
+      <DiffView lines={lines} />
     </Section>
+  )
+}
+
+/** Lines removed and added, marked for sight and for screen readers. */
+export function DiffView(props: { lines: readonly DiffLine[] }) {
+  const { lines } = props
+  return (
+    <div className="overflow-x-auto rounded-md border font-mono text-xs/5">
+      {lines.map((line, i) => (
+        <div
+          key={i}
+          className={cn(
+            "px-3 wrap-anywhere whitespace-pre-wrap",
+            line.kind === "removed" &&
+              "bg-red-50 text-red-950 dark:bg-red-950/40 dark:text-red-50",
+            line.kind === "added" &&
+              "bg-green-50 text-green-950 dark:bg-green-950/40 dark:text-green-50",
+          )}
+        >
+          <span
+            aria-hidden="true"
+            className="mr-2 text-muted-foreground select-none"
+          >
+            {line.kind === "removed" ? "−" : line.kind === "added" ? "+" : " "}
+          </span>
+          <span className="sr-only">
+            {line.kind === "removed"
+              ? "Removed: "
+              : line.kind === "added"
+                ? "Added: "
+                : ""}
+          </span>
+          {line.text || " "}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/** Suggest a change and Record a check (human experience, changing the catalog from the wiki). */
+function EditActions() {
+  const { workspaceId, entity } = useEntityPage()
+  const checkable = entity.facts.some(
+    (f) => f.state === "intended" || f.state === "observed",
+  )
+  return (
+    <div className="flex flex-wrap gap-2">
+      <Link
+        to={wikiPath(workspaceId, `/edit/${entity.id}`)}
+        className={buttonVariants({ variant: "outline" })}
+      >
+        Suggest a change
+      </Link>
+      {checkable && (
+        <Link
+          to={wikiPath(workspaceId, `/check/${entity.id}`)}
+          className={buttonVariants({ variant: "outline" })}
+        >
+          Record a check
+        </Link>
+      )}
+    </div>
+  )
+}
+
+/** Record a check for one fact, from its row. */
+function RecheckAction(props: { fact: CatalogFact }) {
+  const { workspaceId, entity } = useEntityPage()
+  if (props.fact.state !== "intended" && props.fact.state !== "observed")
+    return null
+  return (
+    <Link
+      to={`${wikiPath(workspaceId, `/check/${entity.id}`)}?${new URLSearchParams({ fact: props.fact.identity }).toString()}`}
+      className={cn(linkClass, "self-start text-xs")}
+      aria-label={`Record a check of ${props.fact.key}`}
+    >
+      Record a check
+    </Link>
   )
 }

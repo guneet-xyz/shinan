@@ -3,7 +3,6 @@ import type {
   CatalogBulkRejectionResult,
   CatalogBulkSelection,
   CatalogProposalComment,
-  CatalogProposalOutcome,
   CatalogSettings,
   RecentCatalogChanges,
 } from "./catalog-review.js"
@@ -23,10 +22,21 @@ import type {
   EntityStatus,
   StartHereAnswer,
 } from "./catalog.js"
+import type {
+  CatalogApprovalOutcome,
+  CatalogEditableAnswer,
+  CatalogPreviewOutcome,
+  CatalogProposal,
+  CatalogProposalInput,
+  CatalogProposalList,
+  CatalogProposalOutcome,
+  CatalogProposalState,
+} from "./proposals.js"
 
 export { sameSitePath } from "./paths.js"
 export * from "./catalog.js"
 export * from "./catalog-review.js"
+export * from "./proposals.js"
 
 // The REST API's contract, shared by the web app, CLI and plugin. Times are
 // ISO 8601 strings; IDs of records are UUIDs, except event and security-log
@@ -421,6 +431,7 @@ export type ErrorCode =
   | "invalid-input"
   | "too-many-requests"
   | "payload-too-large"
+  | "length-required"
   | "not-implemented"
   | "internal"
 
@@ -881,6 +892,66 @@ export function createApiClient(options: ApiClientOptions = {}) {
     ) => request<CatalogPurge>("POST", `${catalog(workspaceId)}/purge`, input),
     catalogPurges: (workspaceId: string) =>
       request<CatalogPurge[]>("GET", `${catalog(workspaceId)}/purges`),
+    catalogEditable: (workspaceId: string, id: string) =>
+      request<CatalogEditableAnswer>(
+        "GET",
+        `${catalog(workspaceId)}/editable${search({ id })}`,
+      ),
+    proposeCatalogChange: (workspaceId: string, input: CatalogProposalInput) =>
+      request<CatalogProposalOutcome>(
+        "POST",
+        `${catalog(workspaceId)}/proposals`,
+        input,
+      ),
+    previewCatalogChange: (workspaceId: string, input: CatalogProposalInput) =>
+      request<CatalogPreviewOutcome>(
+        "POST",
+        `${catalog(workspaceId)}/proposals/preview`,
+        input,
+      ),
+    catalogProposals: (
+      workspaceId: string,
+      options: {
+        state?: CatalogProposalState
+        order?: "oldest" | "newest"
+        limit?: number
+        cursor?: number
+      } = {},
+    ) =>
+      request<CatalogProposalList>(
+        "GET",
+        `${catalog(workspaceId)}/proposals${search({
+          state: options.state,
+          order: options.order,
+          limit: options.limit?.toString(),
+          cursor: options.cursor?.toString(),
+        })}`,
+      ),
+    catalogProposal: (workspaceId: string, proposalId: string) =>
+      request<CatalogProposal>(
+        "GET",
+        `${catalog(workspaceId)}/proposals/${encodeURIComponent(proposalId)}`,
+      ),
+    approveCatalogProposal: (workspaceId: string, proposalId: string) =>
+      request<CatalogApprovalOutcome>(
+        "POST",
+        `${catalog(workspaceId)}/proposals/${encodeURIComponent(proposalId)}/approve`,
+      ),
+    rejectCatalogProposal: (
+      workspaceId: string,
+      proposalId: string,
+      reason: string,
+    ) =>
+      request<CatalogProposal>(
+        "POST",
+        `${catalog(workspaceId)}/proposals/${encodeURIComponent(proposalId)}/reject`,
+        { reason },
+      ),
+    withdrawCatalogProposal: (workspaceId: string, proposalId: string) =>
+      request<CatalogProposal>(
+        "POST",
+        `${catalog(workspaceId)}/proposals/${encodeURIComponent(proposalId)}/withdraw`,
+      ),
   }
 }
 

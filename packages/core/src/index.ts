@@ -200,6 +200,7 @@ export * from "./catalog/index/index.js"
 export {
   getAgentStartHerePreview,
   getCatalogDocumentText,
+  getCatalogEditable,
   listCatalogHistory,
   listCatalogPagesOpened,
   listCatalogTypeIndex,
@@ -209,6 +210,7 @@ export {
 export type {
   AgentStartHerePreviewAnswer,
   CatalogDocumentTextAnswer,
+  CatalogEditableAnswer,
   CatalogHistoryAnswer,
   CatalogHistoryItemJson,
   CatalogPageOpenedJson,
