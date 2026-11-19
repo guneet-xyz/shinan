@@ -529,12 +529,17 @@ After the owner approves the M2 deployment and it is verified:
      scanning;
    - no secrets; `secrets-in` records only where a secret lives;
    - trial entities are not imports, so they carry no `imported_from`.
-5. **Start-here document,** after seeding, so its steps can point to the
-   trial entities (owner, M2-Q11): gated, one approval. The agents' path links
-   to the `workspace` repository's policies by URL, because policies stay
-   there during the trial (D-018).
-6. **Owner check.** The owner reads the start-here path and a few entities in
-   the wiki (part of the M2 milestone review).
+5. **Owner check, right after seeding.** The owner reads a few entities in
+   the wiki and the recent changes list, which offers Revert (part of the M2
+   milestone review). It is the only review the seeded facts get, because
+   seeding is not gated and the strict setting starts off (O-3); the first R6
+   sample is also taken from the seeded entities
+   ([trial guide](trial.md#3-starting-the-catalog-part-step-by-step)).
+6. **Start-here document,** after seeding, so its steps can point to the
+   trial entities (owner, M2-Q11): gated, one approval; the owner reads both
+   paths when approving. The agents' path links to the `workspace`
+   repository's policies by URL, because policies stay there during the trial
+   (D-018).
 7. **Trial note.** A `workspace` repository pull request, through that
    repository's own workflow (a Forgejo issue, its own branch and review), adds
    the catalog part of the trial note ([roadmap 4.5](roadmap.md#45-agents-in-the-trial)):

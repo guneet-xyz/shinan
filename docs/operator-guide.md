@@ -281,10 +281,14 @@ in the `Authorization` header, and load the agent skill from
   workspace owners can revoke any token in the workspace. Each new token
   emails its member, and is recorded in the workspace's security log.
 - **`/mcp` refuses sign-in cookies**, a token in the address and requests
-  from other sites, so a browser can't be used to call it. Each token is rate
-  limited (600 requests a minute); so are failed token uses per address. At
+  from other sites, so a browser can't be used to call it. Requests are rate
+  limited per address (300 a minute, shared with `/api` from that address;
+  every agent session on one machine shares it) and per token (600 a minute);
+  so are failed token uses per address. A rate-limited request gets 429 with
+  `Retry-After` set to the seconds left in the minute. At
   most 8 requests may be in flight at once per token and 16 per address (an
-  IPv6 address by its /64); more get 429, before their bodies are read.
+  IPv6 address by its /64); more get 429 with `Retry-After: 1`, before their
+  bodies are read.
   OpenCode (checked in its source, 2026-11-18) retries a 429 twice, after
   250 ms and 1 s, only while connecting and listing tools; a tool call that
   gets 429 fails at once, and the agent sees the error and can call again.

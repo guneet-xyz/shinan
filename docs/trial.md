@@ -81,8 +81,8 @@ and the deployment request M2-12 prepared is ready in `infra/musashi`.
    Shinan, signed in:
    1. Open **Your agents** (`/account/agents`) and go to **Create a token by
       hand**.
-   2. Choose the trial workspace, coding tool **OpenCode**, machine
-      **Daedalus** (the handle becomes `opencode-daedalus`) and access
+   2. Choose the trial workspace and coding tool **OpenCode**, type the
+      machine **Daedalus** (the handle becomes `opencode-daedalus`) and access
       **Full**. Leave **Name** empty to take the name the form suggests,
       **OpenCode on Daedalus**. Select **Create token** and sign in again
       when asked.
@@ -100,7 +100,9 @@ and the deployment request M2-12 prepared is ready in `infra/musashi`.
 3. **Agent: write the three configuration files** of
    [4.3](#43-the-configuration-files) and check them as [4.5](#45-checking-the-setup)
    says. The agent may check the token file's permissions with `stat`, but
-   never reads it.
+   never reads it. Agent sessions on Daedalus run as root, so the file's
+   permissions do not stop an agent reading it; only the rule does
+   ([4.1](#41-where-the-files-go)).
 4. **Owner approves: `person/guneet`.** An agent proposes it (or the owner
    writes it in the wiki): the person entity that owns every trial entity,
    linked to the owner's member record, with responsibilities as prose and no
@@ -110,8 +112,16 @@ and the deployment request M2-12 prepared is ready in `infra/musashi`.
    names it as `owner`, and references must resolve.
 5. **Agents: seed the 17 trial entities** ([section 5](#5-seeding-the-trial-entities)).
    These apply on their own (new entities and observed facts are not gated).
-6. **Owner approves: the start-here document.** An agent proposes it after
-   seeding (see below); the owner approves it. It has two paths
+6. **Owner: check the seeded entities, right after seeding** and before the
+   start-here document: read a few entities in the wiki and the **recent
+   changes** list, where every seeding proposal is listed with **Revert**.
+   This is the only review the seeded facts get before agents rely on them
+   (the strict setting is off, see below); it is part of the M2 milestone
+   review. The first accuracy sample is taken from the seeded entities too
+   ([6.4](#64-what-to-record)).
+7. **Owner approves: the start-here document.** An agent proposes it after
+   seeding (see below); the owner reads both paths in the wiki and approves
+   it. It has two paths
    ([catalog §11](catalog.md#11-start-here)):
    - **For agents:** the `workspace` repository's policies by URL, because
      policies stay there during the trial (D-018): `AGENTS.md`,
@@ -129,8 +139,6 @@ and the deployment request M2-12 prepared is ready in `infra/musashi`.
    Reason: its steps point to the trial entities, which must exist for
    validation to pass.
 
-7. **Owner: check** the start-here path and a few entities in the wiki, as part
-   of the M2 milestone review.
 8. **Agent: the trial note.** A `workspace` repository pull request, through
    that repository's own workflow (a Forgejo issue, a task worktree and
    review), adds the catalog part of the trial note and records the
@@ -146,14 +154,16 @@ proposal that is more than a recheck for catalog approval
 ([catalog §8.2](catalog.md#82-when-catalog-approval-is-needed)). The owner
 decided that only gated changes need approval from the start of the trial,
 switching to strict if accuracy slips (O-3, R6), so the trial starts with it
-off. The seeded entities are still reviewed: in step 7 the owner reads them
-in the wiki, where **recent changes** lists every proposal that applied on its
+off. The seeded entities are still reviewed: in step 6, right after seeding,
+the owner reads them in the wiki, where **recent changes** lists every proposal that applied on its
 own, with **Revert**. Leaving it off also keeps seeding moving without the
 owner. Turning it on just for seeding would be the other choice: each seeding
 session's proposals would then wait, and the owner would clear them with bulk
 approval (at most 50 at a time) before the next session, whose relations
 point to them. That adds an owner step between sessions and is not needed
-while O-3 stands.
+while O-3 stands. A bad seeding run still reaches strict early: the first R6
+sample comes from the seeded entities ([6.4](#64-what-to-record)), and a
+slip there is O-3's signal to switch it on.
 
 ## 4. OpenCode configuration on Daedalus
 
@@ -179,6 +189,14 @@ every session below its folder and nothing else. Sessions started elsewhere,
 including the canonical checkout `/root/shinan`, do not get Shinan. Trial work
 therefore starts in `/mnt/projects/<project>` or a task worktree there, which
 is already Daedalus's convention.
+
+"Root only" protects the token from other users, not from agents: agent
+sessions on Daedalus run as root, so an agent could read the file. Only the
+rule stops it (never read, print or copy the token; the skill and the trial
+note say so), and revocation is the remedy if it is broken
+([4.6](#46-if-the-token-leaks-or-the-trial-pauses)). The plugin (M4) moves
+the token to the machine's credential store where possible
+([build plan M2, risks](build-plan-m2.md#5-risks-and-the-hardest-design-points)).
 
 ### 4.2 The token file (owner)
 
@@ -435,16 +453,21 @@ As built in M2 (catalog §8 and the [operator guide](operator-guide.md#agents-th
 Seeding 17 entities, one proposal or a few per entity, stays far below all of
 them; they matter for a session that tries to do everything in one call.
 
-| Limit                                                                                                     | What happens                                                                                                                                                                                  | What the agent does                                                                                    |
-| --------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| One proposal: at most 50 operations naming at most 100 facts, an explanation of 4,000 characters, 256 KiB | Refused before anything is stored                                                                                                                                                             | Split the change into several proposals (for example one per entity)                                   |
-| A proposal that takes more than 20 seconds to apply                                                       | Stopped; error `invalid-input`, rule `too-complex`                                                                                                                                            | Split it                                                                                               |
-| 60 catalog proposals (and 60 comments) per agent in 10 minutes                                            | Tool error `busy`, with `retry_after_seconds`                                                                                                                                                 | Send the same call, with the **same idempotency key**, after that many seconds                         |
-| Other proposals for the workspace are being applied                                                       | Tool error `busy` ("send this one again in a few seconds")                                                                                                                                    | The same: same key, after `retry_after_seconds`                                                        |
-| 600 MCP requests a minute per token; 8 requests in flight per token, 16 per address                       | HTTP 429 with `Retry-After: 1`, before the body is read. OpenCode retries a 429 twice (250 ms, then 1 s) only while connecting and listing tools; a **tool call** that gets 429 fails at once | Call the tool again; in practice only parallel calls (many tool calls at once) reach the in-flight cap |
-| A catalog of at most 20,000 documents and 50 MiB of text                                                  | Error `catalog-full`                                                                                                                                                                          | Not reachable by the trial catalog                                                                     |
+| Limit                                                                                                                                                                                                                     | What happens                                                                                                                     | What the agent does                                                               |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| One proposal: at most 50 operations naming at most 100 facts, an explanation of 4,000 characters, 256 KiB                                                                                                                 | Refused before anything is stored                                                                                                | Split the change into several proposals (for example one per entity)              |
+| A proposal that takes more than 20 seconds to apply                                                                                                                                                                       | Stopped; error `invalid-input`, rule `too-complex`                                                                               | Split it                                                                          |
+| 60 catalog proposals (and 60 comments) per agent in 10 minutes                                                                                                                                                            | Tool error `busy`, with `retry_after_seconds`                                                                                    | Send the same call, with the **same idempotency key**, after that many seconds    |
+| Other proposals for the workspace are being applied                                                                                                                                                                       | Tool error `busy` ("send this one again in a few seconds")                                                                       | The same: same key, after `retry_after_seconds`                                   |
+| 300 MCP requests a minute per address (shared with `/api` from that address) and 600 per token. Every session on Daedalus comes from one address, so **300 a minute across all trial sessions** is the trial's real limit | HTTP 429, "Too many attempts. Wait a minute and try again.", with `Retry-After` giving the seconds left in the minute (up to 60) | Wait that long (up to a minute) before calling again; calling at once fails again |
+| 8 requests in flight per token, 16 per address                                                                                                                                                                            | HTTP 429 with `Retry-After: 1`, before the body is read                                                                          | Call again after a second; in practice only many parallel tool calls reach it     |
+| A catalog of at most 20,000 documents and 50 MiB of text                                                                                                                                                                  | Error `catalog-full`                                                                                                             | Not reachable by the trial catalog                                                |
 
-The skill tells agents the same
+For either 429, OpenCode retries twice (after 250 ms and 1 s) only while
+connecting and listing tools; a **tool call** that gets 429 fails at once,
+and the agent sees the error and decides when to call again
+([operator guide](operator-guide.md#agents-the-mcp-endpoint-tokens-and-the-skill)).
+The skill tells agents how to handle `busy`
 (`references/changing.md` in [`packages/skill`](../packages/skill/skill/shinan/)).
 A `busy` error or a 429 is not a trial finding by itself; repeated ones that
 block work are.
@@ -510,15 +533,15 @@ From M2, the catalog part produces evidence for these criteria
 ([roadmap §5](roadmap.md#5-readiness-criteria)); agents prepare every sample
 and the owner spot-checks (decided, owner, O-77):
 
-| Criterion               | What is recorded                                                                                                                                                                       |
-| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| R5 Provenance           | That every fact has a state, a source and a check time, or is `unknown`. Validation enforces most of it; any exception is a finding.                                                   |
-| R6 Catalog accuracy     | Samples of 30 facts rechecked at their owning sources: correct, correctly stale or `unknown`, or wrong with the reason. A slip is the signal to switch on the strict setting (O-3).    |
-| R7 Catalog kept current | The weekly comparison's counts, and stale or `unknown` facts fixed as a side effect of task work.                                                                                      |
-| R11 Security            | Findings from secret scans of catalog content; any secret in the catalog is a pause condition, and is purged ([catalog §9](catalog.md#9-history-and-purge)) and rotated at its source. |
-| R12 Useful to the owner | Each time the owner falls back to the `workspace` repository for a trial question, a finding or a note in the tracking issue.                                                          |
-| R13 Useful to agents    | Partly measurable from M2: sessions that took context from Shinan or from the `workspace` repository. Agent sessions are recorded only from M4.                                        |
-| The owner's time        | Minutes spent on trial work each week, against the one-hour cap (O-77).                                                                                                                |
+| Criterion               | What is recorded                                                                                                                                                                                                                                                                                       |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| R5 Provenance           | That every fact has a state, a source and a check time, or is `unknown`. Validation enforces most of it; any exception is a finding.                                                                                                                                                                   |
+| R6 Catalog accuracy     | Samples of 30 facts rechecked at their owning sources: correct, correctly stale or `unknown`, or wrong with the reason. **The first sample is taken from the seeded entities, in the first trial week**, so a bad seeding run shows early. A slip is the signal to switch on the strict setting (O-3). |
+| R7 Catalog kept current | The weekly comparison's counts, and stale or `unknown` facts fixed as a side effect of task work.                                                                                                                                                                                                      |
+| R11 Security            | Findings from secret scans of catalog content; any secret in the catalog is a pause condition, and is purged ([catalog §9](catalog.md#9-history-and-purge)) and rotated at its source.                                                                                                                 |
+| R12 Useful to the owner | Each time the owner falls back to the `workspace` repository for a trial question, a finding or a note in the tracking issue.                                                                                                                                                                          |
+| R13 Useful to agents    | Partly measurable from M2: sessions that took context from Shinan or from the `workspace` repository. Agent sessions are recorded only from M4.                                                                                                                                                        |
+| The owner's time        | Minutes spent on trial work each week, against the one-hour cap (O-77).                                                                                                                                                                                                                                |
 
 ### 6.5 If Shinan is down or wrong
 
