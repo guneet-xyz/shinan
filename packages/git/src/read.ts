@@ -476,6 +476,12 @@ export interface CommitChanges {
   countAtLeast: boolean
 }
 
+/**
+ * The most bytes of paths {@link changedPaths} holds to compare a merge
+ * with its other parents: 4 MiB, about 50,000 paths.
+ */
+export const DEFAULT_MAX_COMBINED_PATH_BYTES = 4 * 1024 * 1024
+
 /** The most changed paths {@link history} lists for one commit: 50. */
 export const DEFAULT_MAX_CHANGES_PER_COMMIT = 50
 
@@ -501,6 +507,18 @@ export async function changedPaths(
     maxPathBytes?: number
     /** The work budget, shared by a request's walks (`walkBudget()`). */
     budget?: WalkBudget
+    /**
+     * For a merge, list only the paths it changed itself: those that differ
+     * from every parent, as Git's combined diff (`diff-tree -c`) names
+     * them. Each further parent costs one more tree walk, from the same
+     * budget; a merge whose walks ran out of budget, or whose other
+     * parents' changes hold more than `maxCombinedPathBytes`, comes back
+     * with nothing listed, `truncated` and `countAtLeast`: its own changes
+     * aren't known.
+     */
+    combined?: boolean
+    /** The bytes of paths held to compare a merge with its other parents. */
+    maxCombinedPathBytes?: number
   } = {},
 ): Promise<Map<string, CommitChanges>> {
   if (!commits.every(isObjectId)) {
@@ -511,6 +529,8 @@ export async function changedPaths(
     )
   }
   const max = options.maxPerCommit ?? DEFAULT_MAX_CHANGES_PER_COMMIT
+  const maxCombined =
+    options.maxCombinedPathBytes ?? DEFAULT_MAX_COMBINED_PATH_BYTES
   const maxPathBytes = options.maxPathBytes ?? Infinity
   const budget = options.budget ?? walkBudget()
   let pathBytes = 0
@@ -526,8 +546,8 @@ export async function changedPaths(
   const outside = [
     ...new Set(
       [...heads.values()]
-        .map((c) => c.parents[0])
-        .filter((p): p is string => p !== undefined && !heads.has(p)),
+        .flatMap((c) => (options.combined ? c.parents : c.parents.slice(0, 1)))
+        .filter((p) => !heads.has(p)),
     ),
   ]
   for (const parent of await readCommits(git, gitDir, outside, options)) {
@@ -539,6 +559,7 @@ export async function changedPaths(
     maxObjectBytes: MAX_TREE_OBJECT_BYTES,
   })
   try {
+    let remaining = new Set(commits).size
     for (const oid of commits) {
       if (result.has(oid)) continue
       const commit = heads.get(oid)!
@@ -550,33 +571,89 @@ export async function changedPaths(
         countAtLeast: false,
       }
       result.set(oid, current)
-      if (budget.objects <= 0 || budget.entries <= 0) {
-        // The request's budget is spent: this commit's changes are unknown.
-        current.truncated = true
-        current.countAtLeast = true
-        continue
+      // Each commit gets a fair share of what is left of the request's
+      // budget, and gives back what it didn't use: one heavy commit can't
+      // leave every other commit of the page "not known" (review of #194).
+      // A small floor lets a page's last commits finish a short walk even
+      // when the budget is nearly spent.
+      const share = {
+        objects: Math.max(
+          Math.floor(budget.objects / remaining),
+          Math.min(budget.objects, 8),
+        ),
+        entries: Math.max(
+          Math.floor(budget.entries / remaining),
+          Math.min(budget.entries, 1000),
+        ),
       }
-      // Every change is counted; only the first, within the budgets, kept.
-      const end = await walkTreeDiff(
-        reader,
-        parent ? heads.get(parent)!.tree : null,
-        commit.tree,
-        ({ status, path }) => {
-          current.count++
-          const bytes = Buffer.byteLength(path)
-          if (
-            current.changes.length < max &&
-            pathBytes + bytes <= maxPathBytes
-          ) {
-            pathBytes += bytes
-            current.changes.push({ status, path })
-          } else current.truncated = true
-        },
-        budget,
-      )
-      if (end.exhausted) {
-        current.truncated = true
-        current.countAtLeast = true
+      remaining--
+      const given = { ...share }
+      try {
+        if (share.objects <= 0 || share.entries <= 0) {
+          // The request's budget is spent: this commit's changes are unknown.
+          current.truncated = true
+          current.countAtLeast = true
+          continue
+        }
+        // A merge's own changes: the paths that differ from each other parent,
+        // to keep only those of the first parent's that differ from all.
+        let others: Set<string>[] | null = null
+        if (options.combined && commit.parents.length > 1) {
+          others = []
+          let held = 0
+          let unknown = false
+          for (const other of commit.parents.slice(1)) {
+            const differs = new Set<string>()
+            const walked = await walkTreeDiff(
+              reader,
+              heads.get(other)!.tree,
+              commit.tree,
+              ({ path }) => {
+                held += Buffer.byteLength(path)
+                // Past the bytes held: stop, its own changes unknown.
+                if (held > maxCombined) return false
+                differs.add(path)
+              },
+              share,
+            )
+            if (walked.exhausted || walked.stopped) {
+              unknown = true
+              break
+            }
+            others.push(differs)
+          }
+          if (unknown) {
+            current.truncated = true
+            current.countAtLeast = true
+            continue
+          }
+        }
+        // Every change is counted; only the first, within the budgets, kept.
+        const end = await walkTreeDiff(
+          reader,
+          parent ? heads.get(parent)!.tree : null,
+          commit.tree,
+          ({ status, path }) => {
+            if (others && !others.every((differs) => differs.has(path))) return
+            current.count++
+            const bytes = Buffer.byteLength(path)
+            if (
+              current.changes.length < max &&
+              pathBytes + bytes <= maxPathBytes
+            ) {
+              pathBytes += bytes
+              current.changes.push({ status, path })
+            } else current.truncated = true
+          },
+          share,
+        )
+        if (end.exhausted) {
+          current.truncated = true
+          current.countAtLeast = true
+        }
+      } finally {
+        budget.objects -= given.objects - share.objects
+        budget.entries -= given.entries - share.entries
       }
     }
     return result

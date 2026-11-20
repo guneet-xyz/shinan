@@ -285,12 +285,12 @@ describe("the catalog for the catalog pages", () => {
     // "Preview as agent", "opened" markers and the editable form are gone
     // with M2's wiki editing (Git-based catalog plan §1.2); revision
     // history, earlier text and changes since a revision with M2's revision
-    // store (GC-4); a page's history now comes from the repository.
+    // store (GC-4); a page's history and Recent changes now come from the
+    // repository.
     for (const path of [
       "/start-here/agent-preview",
       "/opened?id=machine/musashi",
       "/editable?id=machine/musashi",
-      "/changes",
       "/text?id=machine/musashi&revision=1",
     ])
       expect((await get(ws(path))).status, path).toBe(404)
@@ -369,6 +369,41 @@ describe("History, View source and the README, from the repository", () => {
     ).toBe(422)
   })
 
+  it("lists recent changes with the pages each changed, paged by its own cursors", async () => {
+    const first = await get<Api.CatalogChangesAnswer>(ws("/changes?limit=1"))
+    expect(first.status).toBe(200)
+    const [latest] = first.body.changes
+    expect(latest).toMatchObject({
+      pages: [
+        { path: "machine/musashi.md", id: "machine/musashi", title: "Musashi" },
+      ],
+      page_count: 1,
+      merge: false,
+      pushed_by: null,
+    })
+    const second = await get<Api.CatalogChangesAnswer>(
+      ws(`/changes?limit=1&after=${first.body.next_after}`),
+    )
+    expect(second.status).toBe(200)
+    expect(second.body.changes[0]!.commit).not.toBe(latest!.commit)
+    // A page's History cursor doesn't fit Recent changes.
+    const history = await get<Api.CatalogHistoryAnswer>(
+      ws("/history?id=machine/musashi&limit=1"),
+    )
+    expect(
+      (await get(ws(`/changes?after=${history.body.next_after}`))).status,
+    ).toBe(422)
+    expect((await get(ws("/changes?limit=31"))).status).toBe(422)
+    expect((await get(ws("/changes"), outsider)).status).toBe(404)
+    expect(
+      (
+        await withoutGit.request(ws("/changes"), {
+          headers: { origin: "http://shinan.test", ...as(owner) },
+        })
+      ).status,
+    ).toBe(503)
+  })
+
   it("lets one person read the repository only twice at once", async () => {
     let release = () => {}
     let waiting = 0
@@ -395,7 +430,7 @@ describe("History, View source and the README, from the repository", () => {
           headers: { origin: "http://shinan.test", ...as(who) },
         }),
       )
-    const held = [ask("/history?id=machine/musashi"), ask("/readme")]
+    const held = [ask("/changes"), ask("/readme")]
     await vi.waitFor(() => expect(waiting).toBe(2))
     const refused = await ask("/source?id=machine/musashi")
     expect(refused.status).toBe(429)

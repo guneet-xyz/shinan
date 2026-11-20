@@ -412,6 +412,7 @@ export function createGitApp(options: {
         path: c.req.query("path"),
         limit: whole(c.req.query("limit"), "limit", 50),
         skip: whole(c.req.query("skip"), "skip", 0),
+        combined: c.req.query("combined") === "true",
       }),
     )
   })

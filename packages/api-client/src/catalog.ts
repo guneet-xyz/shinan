@@ -217,6 +217,28 @@ export interface CatalogHistoryAnswer extends CatalogAnswer {
   next_after: string | null
 }
 
+/** A file a change touched: a page by its ID and title, or just a file. */
+export interface CatalogChangedPage {
+  path: string
+  /** The page's catalog ID, or null for a file that isn't a page now. */
+  id: string | null
+  title: string | null
+}
+
+/** One change of Recent changes, with the first few files it changed. */
+export interface CatalogRecentChange extends CatalogChange {
+  pages: CatalogChangedPage[]
+  /** How many files it changed in all; at least that many if `_at_least`. */
+  page_count: number
+  page_count_at_least: boolean
+}
+
+export interface CatalogChangesAnswer extends CatalogAnswer {
+  changes: CatalogRecentChange[]
+  /** The cursor for older changes, or null at the first: opaque, signed. */
+  next_after: string | null
+}
+
 /** A file's text as it is on `main`; `text` null when too large to show. */
 export interface CatalogSource {
   path: string

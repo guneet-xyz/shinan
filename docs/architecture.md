@@ -253,14 +253,22 @@ no shell. As built (GC-1b,
   unread. Calls go one way: `web`, `worker` and `migrate` call it; it calls
   nobody and writes nothing to PostgreSQL. In GC-1b only `worker` calls it
   (to create repositories); `web` joins in GC-7 (to read a page's
-  history, its source and the README, at the index's commit) and GC-2 (the
+  history, its source, the README and Recent changes, at the index's commit) and GC-2 (the
   Git endpoint), and `migrate` in GC-6. A person holds at most 2 of
   `web`'s reads for the catalog pages at once (4 per network address), so
   one browser can't take the container's 4 reads from the index updates.
-  History pages by cursors `web` signs (HMAC with the session secret, over
-  the workspace, the file and the commit), so the browser can only start a
-  page of history on a commit `web` listed from the index's `main`, never
-  on another branch.
+  History and Recent changes page by cursors `web` signs (HMAC with the
+  session secret, over the workspace, the list, the commit the list started
+  from and how many of `git log <start>`'s commits came before), so the
+  browser can only read on from a commit `web` started at on the index's
+  `main`, never another branch, and no commit is skipped however merges
+  interleave the history (review of #194). For Recent changes the Git
+  container works out each merge's own changes in the same history read
+  (`combined`: the files that differ from every parent, as Git's combined
+  diff names them, by tree walks within the request's budget; unknown when
+  the budget runs out). Each commit of a page gets a fair share of what is
+  left of that budget (with a small floor) and gives back what it didn't
+  use, so one heavy commit can't leave the rest of its page unknown.
 - **Its API** (JSON; the typed client is core's `createGitClient`):
   `GET`/`PUT /repositories/<workspace ID>` (`main`'s commit; create with a
   first commit by Shinan, once), `GET …/tree`, `POST …/documents`,

@@ -13,6 +13,7 @@ import {
   getCatalogStartHere,
   getCatalogState,
   getCatalogTypeSchema,
+  listCatalogChanges,
   listCatalogPurges,
   listCatalogTree,
   listCatalogTypeIndex,
@@ -71,7 +72,7 @@ export function catalogRoutes(
     key: (c) => c.var.person.personId,
     refuse: tooManyAtOnce,
   })
-  for (const path of ["/history", "/source", "/readme"]) {
+  for (const path of ["/history", "/changes", "/source", "/readme"]) {
     app.use(`${base}${path}`, byAddress)
     app.use(`${base}${path}`, byPerson)
   }
@@ -105,6 +106,17 @@ export function catalogRoutes(
         after: c.req.query("after"),
         limit: integerQuery(c, "limit"),
       },
+      cursors,
+    )
+    return c.json(answer)
+  })
+
+  app.get(`${base}/changes`, async (c) => {
+    const answer: Api.CatalogChangesAnswer = await listCatalogChanges(
+      ctx(c),
+      git,
+      workspaceId(c),
+      { after: c.req.query("after"), limit: integerQuery(c, "limit") },
       cursors,
     )
     return c.json(answer)

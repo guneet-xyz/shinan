@@ -227,6 +227,7 @@ export function fakeApi(overrides: Partial<ApiClient> = {}): Fake {
     "catalogState",
     "catalogDocument",
     "catalogHistory",
+    "catalogChanges",
     "catalogSource",
     "catalogReadme",
     "catalogTree",

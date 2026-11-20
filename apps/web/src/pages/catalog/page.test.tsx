@@ -105,6 +105,7 @@ describe("a page", () => {
     expect(show.getAttribute("aria-expanded")).toBe("false")
     await userEvent.click(show)
     expect(show.getAttribute("aria-expanded")).toBe("true")
+    expect(show.textContent).toBe("disagree · hide checks")
     const checks = within(
       document.getElementById(show.getAttribute("aria-controls")!)!,
     ).getAllByRole("listitem")
@@ -658,8 +659,9 @@ describe("start here", () => {
     expect(
       main.getByRole("link", { name: "These disagree" }).getAttribute("href"),
     ).toBe(`${base}/needs-attention`)
-    // Recent changes come from `main`'s commits in GC-7's next part.
-    expect(main.queryByRole("link", { name: "Recent changes" })).toBeNull()
+    expect(
+      main.getByRole("link", { name: "Recent changes" }).getAttribute("href"),
+    ).toBe(`${base}/changes`)
     expect(main.getByText("Ask in #infra.")).toBeTruthy()
     expect(fake.catalogStartHere).toHaveBeenCalledWith(workspaceId, "people")
     expect(
@@ -850,5 +852,182 @@ describe("a page's source", () => {
     )
     expect(await screen.findByText(/too large to show here/)).toBeTruthy()
     expect(screen.queryByRole("button", { name: "Copy" })).toBeNull()
+  })
+})
+
+describe("recent changes", () => {
+  const change = (
+    subject: string,
+    minutesAgo: number,
+    commit: string,
+    pages: { path: string; id: string | null; title: string | null }[],
+    page_count = pages.length,
+  ) => ({
+    commit: commit.repeat(40),
+    subject,
+    body: "",
+    time: new Date(Date.now() - minutesAgo * 60_000).toISOString(),
+    merge: false,
+    pushed_by: null,
+    pages,
+    page_count,
+    page_count_at_least: false,
+  })
+  const projects = [1, 2, 3].map((i) => ({
+    path: `project/p${i}.md`,
+    id: `project/p${i}`,
+    title: `Project ${i}`,
+  }))
+
+  it("lists main's changes by day, each with the pages it changed by title", async () => {
+    const fake = fakeApi({
+      catalogChanges: (_w, options) =>
+        Promise.resolve(
+          options?.after
+            ? {
+                ...answer,
+                changes: [
+                  change("Import the catalog", 60 * 24 * 40, "e", [
+                    projects[0]!,
+                  ]),
+                ],
+                next_after: null,
+              }
+            : {
+                ...answer,
+                changes: [
+                  change(
+                    "Add five projects \u202Egnp.exe",
+                    1,
+                    "a",
+                    projects,
+                    5,
+                  ),
+                  change("Recheck Musashi and Daedalus", 2, "b", [
+                    {
+                      path: "machine/musashi.md",
+                      id: "machine/musashi",
+                      title: "Musashi",
+                    },
+                    {
+                      path: "machine/daedalus.md",
+                      id: "machine/daedalus",
+                      title: "Daedalus",
+                    },
+                  ]),
+                  change("Write the README", 3, "c", [
+                    { path: "README.md", id: null, title: null },
+                  ]),
+                ],
+                next_after: "opaque-cursor",
+              },
+        ),
+    })
+    renderApp(base, fake)
+    await userEvent.click(
+      within(await screen.findByRole("complementary")).getByRole("link", {
+        name: "Recent changes",
+      }),
+    )
+    expect(currentPath()).toBe(`${base}/changes`)
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Recent changes" }),
+    ).toBeTruthy()
+    expect(screen.getAllByRole("heading", { level: 2 })[0]!.textContent).toBe(
+      "Today",
+    )
+    const items = within(screen.getByRole("main")).getAllByRole("listitem")
+    expect(items[0]!.textContent).toContain(
+      "Add five projects ⟨U+202E⟩ (hidden character: right-to-left override) gnp.exe",
+    )
+    expect(items[0]!.textContent).toContain("aaaaaaa")
+    expect(items[0]!.textContent).toContain(
+      "Project 1, Project 2, Project 3 and 2 more",
+    )
+    expect(
+      within(items[0]!)
+        .getByRole("link", { name: "Project 2" })
+        .getAttribute("href"),
+    ).toBe(`${base}/p/project/p2`)
+    expect(items[1]!.textContent).toContain("Musashi and Daedalus")
+    expect(items[2]!.textContent).toContain("README.md")
+    expect(within(items[2]!).queryByRole("link")).toBeNull()
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Show older changes" }),
+    )
+    expect(await screen.findByText("Import the catalog")).toBeTruthy()
+    expect(fake.catalogChanges).toHaveBeenLastCalledWith(workspaceId, {
+      after: "opaque-cursor",
+    })
+    expect(
+      screen.queryByRole("button", { name: "Show older changes" }),
+    ).toBeNull()
+  })
+
+  it("starts a day heading only on an earlier day, and dates a change that is later than its heading", async () => {
+    renderApp(
+      `${base}/changes`,
+      fakeApi({
+        catalogChanges: () =>
+          Promise.resolve({
+            ...answer,
+            changes: [
+              change("Newest", 60 * 24 * 3, "a", []),
+              // Its time went backwards in the history: later than its day.
+              change("Dated later", 1, "b", []),
+              change("Older", 60 * 24 * 5, "c", []),
+              // A merge whose own files couldn't be worked out.
+              {
+                ...change("Merge a large branch", 60 * 24 * 6, "d", []),
+                merge: true,
+                page_count: 0,
+                page_count_at_least: true,
+              },
+            ],
+            next_after: null,
+          }),
+      }),
+    )
+    await screen.findByText("Newest")
+    const headings = screen
+      .getAllByRole("heading", { level: 2 })
+      .map((h) => h.textContent)
+    expect(headings).toHaveLength(3)
+    expect(new Set(headings).size).toBe(3)
+    expect(headings).not.toContain("Today")
+    const later = screen.getByText("Dated later").closest("li")!
+    // Its own date beside its time, under the earlier day's heading.
+    expect(later.querySelector("time")!.textContent).toMatch(/[A-Z][a-z]{2} \d/)
+    expect(
+      screen.getByText("Merge a large branch").closest("li")!.textContent,
+    ).toContain("Changed files not known")
+  })
+
+  it("says so when a page held only merges that changed nothing", async () => {
+    renderApp(
+      `${base}/changes`,
+      fakeApi({
+        catalogChanges: () =>
+          Promise.resolve({ ...answer, changes: [], next_after: "cursor" }),
+      }),
+    )
+    expect(
+      await screen.findByText(
+        "These latest commits only merged work listed further back. Show older changes to see it.",
+      ),
+    ).toBeTruthy()
+    expect(
+      screen.getByRole("button", { name: "Show older changes" }),
+    ).toBeTruthy()
+  })
+
+  it("says when the repository can't be read right now", async () => {
+    renderApp(`${base}/changes`, fakeApi({ catalogChanges: unavailable }))
+    expect(
+      await screen.findByText(
+        "This isn't available right now. Try again in a minute.",
+      ),
+    ).toBeTruthy()
   })
 })

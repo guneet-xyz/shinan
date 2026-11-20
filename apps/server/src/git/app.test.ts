@@ -633,7 +633,13 @@ describe("tree and diff answers", () => {
       changesTruncated: true,
       changeCountAtLeast: true,
     })
-    expect(commits[1]).toMatchObject({ oid: first, changeCountAtLeast: true })
+    // The heavy commit had only its share of the budget: the small one
+    // after it is still known whole (review of #194).
+    expect(commits[1]).toMatchObject({
+      oid: first,
+      changeCountAtLeast: false,
+      changesTruncated: false,
+    })
     expect(Date.now() - started).toBeLessThan(30_000)
   }, 60_000)
 

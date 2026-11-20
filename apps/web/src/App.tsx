@@ -17,6 +17,7 @@ import { SignIn } from "./pages/SignIn"
 import { SignInLink } from "./pages/SignInLink"
 import { WikiRedirect } from "./pages/WikiRedirect"
 import { Agents } from "./pages/workspace/Agents"
+import { CatalogSettings } from "./pages/workspace/Catalog"
 import { Data } from "./pages/workspace/Data"
 import { General } from "./pages/workspace/General"
 import { Invitations } from "./pages/workspace/Invitations"
@@ -76,6 +77,7 @@ export function App() {
                 <Route path="invitations" element={<Invitations />} />
                 <Route path="agents" element={<Agents />} />
                 <Route path="security-log" element={<SecurityLog />} />
+                <Route path="catalog" element={<CatalogSettings />} />
                 <Route path="data" element={<Data />} />
               </Route>
             </Route>

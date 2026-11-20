@@ -88,9 +88,21 @@ export interface GitClient {
     changes: TreeChange[]
     truncated: boolean
   }>
+  /**
+   * With `combined`, a merge's `changes` are the paths it changed itself
+   * (that differ from every parent, as Git's combined diff), not those
+   * against its first parent; when they can't be known, none are listed and
+   * `changeCountAtLeast` is set.
+   */
   history(
     workspaceId: string,
-    input: { commit: CommitRef; path?: string; limit: number; skip?: number },
+    input: {
+      commit: CommitRef
+      path?: string
+      limit: number
+      skip?: number
+      combined?: boolean
+    },
   ): Promise<{ commit: string; commits: CommitInfo[] }>
   /** The journal's ID, and its entries numbered above `after`, oldest first. */
   readJournal(input: {
@@ -257,6 +269,7 @@ export function createGitClient(options: GitClientOptions): GitClient {
           path: input.path,
           limit: String(input.limit),
           skip: input.skip ? String(input.skip) : undefined,
+          combined: input.combined ? "true" : undefined,
         },
       })) as unknown as { commit: string; commits: CommitInfo[] }
     },

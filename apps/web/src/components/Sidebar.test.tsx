@@ -88,6 +88,7 @@ describe("the sidebar", () => {
         .map((l) => [l.textContent, l.getAttribute("href")]),
     ).toEqual([
       ["Start here", `/w/${workspaceId}/catalog`],
+      ["Recent changes", `/w/${workspaceId}/catalog/changes`],
       ["Needs attention3 things", `/w/${workspaceId}/catalog/needs-attention`],
     ])
     const pages = await sidebar.findByRole("navigation", { name: "Pages" })

@@ -148,7 +148,7 @@ describe("a page's history", () => {
         workspaceId,
         path: "machine/musashi.md",
       }),
-    ).toBe(musashiChanges[3])
+    ).toEqual({ start: indexed, position: 2 })
 
     const second = await history({ limit: 2, after: first.next_after! })
     expect(second.changes.map((c) => c.subject)).toEqual([
@@ -184,21 +184,25 @@ describe("a page's history", () => {
     const refused = [
       branchOnly,
       `${branchOnly}.forged`,
+      `${branchOnly}.1.forged`,
       // Signed, but by another key, or for another page or workspace.
       historyCursors("other key").issue({
         workspaceId,
         path,
-        commit: branchOnly,
+        start: branchOnly,
+        position: 1,
       }),
       cursors.issue({
         workspaceId,
         path: "machine/daedalus.md",
-        commit: branchOnly,
+        start: branchOnly,
+        position: 1,
       }),
       cursors.issue({
         workspaceId: "22222222-2222-4222-8222-222222222222",
         path,
-        commit: branchOnly,
+        start: branchOnly,
+        position: 1,
       }),
       // A commit of `main` itself, not given out as a cursor.
       musashiChanges[3]!,
@@ -248,6 +252,25 @@ describe("a page's history", () => {
     await expect(history({ id: "machine/nothing" })).rejects.toBeInstanceOf(
       NotFoundError,
     )
+  })
+
+  it("goes on from where its first page started, however the index moves", async () => {
+    const all = (await history({})).changes.map((c) => c.commit)
+    const first = await history({ limit: 2 })
+    git.push(
+      workspaceId,
+      { "machine/musashi.md": `${fixtures.musashi}\nNewer.\n` },
+      "Newer than the first page",
+    )
+    await updateWorkspaceIndex(db, git, workspaceId)
+    const second = await history({ limit: 2, after: first.next_after! })
+    expect(second.changes.map((c) => c.commit)).toEqual(all.slice(2, 4))
+    // Musashi's text as the tests below expect it.
+    git.push(workspaceId, {
+      "machine/musashi.md": `${fixtures.musashi}\nRevision 4.\n`,
+    })
+    await updateWorkspaceIndex(db, git, workspaceId)
+    indexed = (await git.getRepository(workspaceId))!.main
   })
 
   it("is unavailable without the Git container", async () => {

@@ -123,14 +123,13 @@ function StepTarget(props: { workspaceId: string; step: StartHereStep }) {
     )
   if ("url" in step) return <MaybeLink text={step.url} />
   const title = listTitles[step.list] ?? step.list
-  // Recent changes, from `main`'s commits, come later in GC-7: until then
-  // that list has no page to open. The other lists are parts of Needs
-  // attention.
-  if (step.list === "recent-changes")
-    return <span className="font-medium">{title}</span>
+  // The other lists are parts of Needs attention.
   return (
     <Link
-      to={catalogPath(workspaceId, "/needs-attention")}
+      to={catalogPath(
+        workspaceId,
+        step.list === "recent-changes" ? "/changes" : "/needs-attention",
+      )}
       className={cn(listLinkClass, "self-start")}
     >
       {title}

@@ -156,7 +156,14 @@ export interface RepositoryStore {
   }>
   history(
     workspaceId: string,
-    input: { commit: CommitRef; path?: string; limit: number; skip?: number },
+    input: {
+      commit: CommitRef
+      path?: string
+      limit: number
+      skip?: number
+      /** A merge's changes are its own, as Git's combined diff lists them. */
+      combined?: boolean
+    },
   ): Promise<{ commit: string; commits: CommitInfo[] }>
 }
 
@@ -458,6 +465,7 @@ export function createRepositoryStore(options: {
           {
             maxPerCommit: maxChangesPerCommit,
             maxPathBytes: maxChangedPathBytes,
+            combined: input.combined,
           },
         ),
       )

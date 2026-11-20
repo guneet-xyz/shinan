@@ -267,6 +267,7 @@ describe("the wiki's old addresses", () => {
       "catalog/p/machine/musashi#section-cautions",
     ],
     ["wiki/search?q=disk", "catalog/search?q=disk"],
+    ["wiki/changes", "catalog/changes"],
     ["wiki/lists/discrepancies", "catalog/needs-attention"],
     // A type's page is its schema's page now.
     ["wiki/types/machine", "catalog/p/schema/machine"],
@@ -286,8 +287,6 @@ describe("the removed M2 screens", () => {
     "wiki/new",
     "wiki/new-type",
     "wiki/repair/machine/musashi",
-    "wiki/changes",
-    "settings/catalog",
   ])("/w/…/%s is not found", async (path) => {
     renderApp(`/w/${workspaceId}/${path}`, fakeApi())
     expect(

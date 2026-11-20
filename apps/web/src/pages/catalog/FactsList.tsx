@@ -235,7 +235,9 @@ function Disagreeing(props: {
           onClick={() => setOpen((o) => !o)}
           className="rounded-sm text-left text-muted-foreground underline decoration-muted-foreground/40 decoration-dotted underline-offset-4 outline-none hover:decoration-current focus-visible:ring-3 focus-visible:ring-ring"
         >
-          disagree · show {count === 2 ? "both" : `all ${count}`} checks
+          {open
+            ? "disagree · hide checks"
+            : `disagree · show ${count === 2 ? "both" : `all ${count}`} checks`}
         </button>
       </p>
       {open && (
