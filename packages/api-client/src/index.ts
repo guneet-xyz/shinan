@@ -118,6 +118,12 @@ export interface CatalogIndexHealth {
     checkedCommit: string | null
     /** Documents whose stored index differed from their text at the last check. */
     checkDifferences: number | null
+    /**
+     * Why the last build or check failed, as a fixed code (such as
+     * `tree-too-large` or `git-busy`), if it did since one succeeded.
+     */
+    failure: string | null
+    failedAt: string | null
   }[]
 }
 

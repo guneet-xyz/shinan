@@ -1289,6 +1289,13 @@ export const catalogIndexState = pgTable(
     checkDifferences: integer("check_differences"),
     /** Which documents differed and in which tables: paths only, never text. */
     checkDetails: jsonb("check_details").$type<IndexCheckDifference[]>(),
+    /**
+     * Why the last attempt to build or check the index failed, as a fixed
+     * code (core's `IndexFailureReason`), never text from the catalog;
+     * cleared once a build or check succeeds.
+     */
+    failure: text("failure"),
+    failedAt: timestamp("failed_at", { withTimezone: true }),
   },
   (t) => [
     check(

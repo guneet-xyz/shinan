@@ -426,7 +426,14 @@ night (03:40 UTC) that the stored index still matches the text on `main`. A
 mismatch is logged by the worker (`Catalog index check: workspace …`) by
 workspace ID and document path only. Operators see each workspace's index
 state at `/api/installation/catalog-index`: the commit of `main` the index
-stands at, the latest `main` Shinan knows of, and the last check. Without the
+stands at, the latest `main` Shinan knows of, the last check, and why the
+last build or check failed, if it did (`failure`: `tree-too-large`,
+`tree-too-deep`, `folder-too-large`, `git-busy`, `git-unavailable`,
+`deferred-none` or `failed`). The worker logs the same reason with the
+workspace ID (`Catalog index of workspace … not brought up to main: …`);
+`git-busy` and `git-unavailable` clear themselves once the Git container
+answers again. A failure of one workspace never stops the nightly check of
+the others. Without the
 Git container (`SHINAN_GIT_URL` and its token, which the reference file gives
 `worker`), indexes wait. To rebuild a workspace's index, or to run the check
 now, use the `worker` service, which reaches the Git container:

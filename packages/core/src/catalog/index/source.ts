@@ -4,6 +4,7 @@ import { maxDocumentsPerRead } from "../git/api.js"
 import type { TreeEntry } from "../git/api.js"
 import { GitServiceError } from "../git/client.js"
 import type { GitClient } from "../git/client.js"
+import { IndexReadError } from "./failure.js"
 
 /**
  * Reading `main` for the index, through the Git container's read API
@@ -128,7 +129,8 @@ async function listFiles(
   const walk = async (folder: string | undefined): Promise<void> => {
     const level = await list(folder, false)
     if (level.truncated)
-      throw new Error(
+      throw new IndexReadError(
+        "folder-too-large",
         `Folder ${folder ?? "/"} of commit ${commit} has more entries than the Git container lists`,
       )
     for (const entry of level.entries) {
@@ -213,7 +215,8 @@ export async function readTexts(
       // Each answer holds at least one document, so this always moves on;
       // one that holds none would ask for the same forever.
       if (deferred.length === asked.length)
-        throw new Error(
+        throw new IndexReadError(
+          "deferred-none",
           `The Git container deferred every document of a read at ${commit}`,
         )
       wanted = deferred

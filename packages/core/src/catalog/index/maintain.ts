@@ -10,9 +10,12 @@ import { isId } from "../../validation.js"
 import { parserVersion } from "../document/index.js"
 import type { GitClient } from "../git/client.js"
 import { indexRulesVersion } from "./derive.js"
+import { indexFailureReason } from "./failure.js"
+import type { IndexFailureReason } from "./failure.js"
 import {
   compareWorkspaceIndex,
   hasStaleRows,
+  recordFailure,
   stateBehind,
   updateWorkspaceIndex,
 } from "./indexer.js"
@@ -190,6 +193,8 @@ async function existingWorkspaces(
 /**
  * The index job: brings one workspace's index up to `main` (an update, or
  * the rebuild its state asks for). Reads `main` through the Git container.
+ * A failure is recorded on the index state by its reason
+ * (`indexFailureReason`) and thrown again, for the job queue to retry.
  */
 export async function updateCatalogIndex(
   ctx: Context,
@@ -201,7 +206,22 @@ export async function updateCatalogIndex(
     "catalog-index.maintain",
     (scope) => existingWorkspaces(scope.tx, [input.workspaceId]),
   )
-  return updateWorkspaceIndex(ctx.db, git, workspaceId!)
+  return recordingFailure(ctx, workspaceId!, () =>
+    updateWorkspaceIndex(ctx.db, git, workspaceId!),
+  )
+}
+
+async function recordingFailure<T>(
+  ctx: Context,
+  workspaceId: string,
+  work: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await work()
+  } catch (error) {
+    await recordFailure(ctx.db, workspaceId, indexFailureReason(error))
+    throw error
+  }
 }
 
 /**
@@ -224,7 +244,9 @@ export async function rebuildCatalogIndex(
       return found
     },
   )
-  return updateWorkspaceIndex(ctx.db, git, workspaceId!, { rebuild: true })
+  return recordingFailure(ctx, workspaceId!, () =>
+    updateWorkspaceIndex(ctx.db, git, workspaceId!, { rebuild: true }),
+  )
 }
 
 /** The outcome of the round-trip check for one workspace. */
@@ -233,9 +255,12 @@ export interface WorkspaceIndexCheck {
   /**
    * `behind`: not at `main`, built (wholly or partly) by another parser or
    * index rules version, or being rebuilt, so not compared; an update or a
-   * rebuild is asked for.
+   * rebuild is asked for. `failed`: the check itself failed, for `reason`;
+   * the other workspaces are checked all the same.
    */
-  outcome: "matched" | "differs" | "behind"
+  outcome: "matched" | "differs" | "behind" | "failed"
+  /** Why the check failed, when it did. */
+  reason?: IndexFailureReason
   /** The commit of `main` compared, or the one the index stands at when behind. */
   commit: string | null
   documents: number
@@ -281,7 +306,25 @@ export async function checkCatalogIndexes(
   const stale: string[] = []
   const lagging: string[] = []
   for (const workspaceId of workspaceIds) {
-    const result = await checkWorkspace(ctx, git, workspaceId)
+    let result: WorkspaceIndexCheck & { rebuild: boolean }
+    try {
+      result = await checkWorkspace(ctx, git, workspaceId)
+    } catch (error) {
+      // One workspace's failure (the Git container busy or down for it, a
+      // tree it refuses) never stops the check of the others.
+      const reason = indexFailureReason(error)
+      await recordFailure(ctx.db, workspaceId, reason)
+      results.push({
+        workspaceId,
+        outcome: "failed",
+        reason,
+        commit: null,
+        documents: 0,
+        differenceCount: 0,
+        differences: [],
+      })
+      continue
+    }
     if (result.outcome === "behind") {
       if (result.rebuild) stale.push(workspaceId)
       else lagging.push(workspaceId)
@@ -293,6 +336,8 @@ export async function checkCatalogIndexes(
           checkedCommit: result.commit,
           checkDifferences: result.differenceCount,
           checkDetails: result.differences,
+          failure: null,
+          failedAt: null,
         })
         .where(eq(schema.catalogIndexState.workspaceId, workspaceId))
     }
@@ -393,6 +438,9 @@ export interface CatalogIndexWorkspaceHealth {
   checkedCommit: string | null
   /** Documents whose stored index differed from their text at the last check. */
   checkDifferences: number | null
+  /** Why the last build or check failed, if it did since one succeeded. */
+  failure: IndexFailureReason | null
+  failedAt: string | null
 }
 
 export interface CatalogIndexHealth {
@@ -428,6 +476,8 @@ export async function getCatalogIndexHealth(
         checkedAt: iso(state.checkedAt),
         checkedCommit: state.checkedCommit,
         checkDifferences: state.checkDifferences,
+        failure: state.failure as IndexFailureReason | null,
+        failedAt: iso(state.failedAt),
       })),
     }
   })

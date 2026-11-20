@@ -694,8 +694,10 @@ indexing (**Proposed**).
     `main` Shinan knows of (`main_commit`), recorded in the transaction
     that stores an accepted update of `main` from the Git container's
     journal (GC-3; core's `recordCatalogMain`, which queues the index job
-    in that transaction), when a new repository is made, and whenever the
-    indexer reads `main`. Answers carry `catalog_commit` and say
+    in that transaction), when a new repository is made, and as soon as the
+    indexer reads `main`, before it builds anything, so the index shows as
+    behind even if the build then fails
+    ([#187](https://github.com/guneet-xyz/shinan/issues/187)). Answers carry `catalog_commit` and say
     `index_behind` while the two differ, while the index was never built
     from a repository the workspace has, while another parser or rules
     version built it (or any of its rows), and while a rebuild is asked for.
@@ -760,9 +762,21 @@ indexing (**Proposed**).
     snapshot. Differences are reported by path and table only, never by
     value; they are logged and kept as installation health, which
     operators read at `/api/installation/catalog-index` (each workspace's
-    `commit`, `mainCommit`, whether it is behind, the last check). A
-    workspace whose index is not at `main` is not compared but gets an
-    index job; one built by another version gets a rebuild. The text →
+    `commit`, `mainCommit`, whether it is behind, the last check, and the
+    last failure). A workspace whose index is not at `main` is not compared
+    but gets an index job; one built by another version gets a rebuild. One
+    workspace whose check fails is reported as `failed`, with its reason,
+    and the others are checked all the same.
+  - **Failures have a fixed reason**
+    ([#187](https://github.com/guneet-xyz/shinan/issues/187)):
+    `tree-too-large` or `tree-too-deep` (the Git container refuses to list
+    `main`), `folder-too-large`, `git-busy` (still busy after every wait),
+    `git-unavailable` (no answer, or a `5xx`), `deferred-none`, or `failed`.
+    An index job, a rebuild or a check that fails stores the reason and its
+    time on the index state (`failure`, `failed_at`), which health shows;
+    the worker logs it with the workspace ID (`Catalog index of workspace
+<ID> not brought up to main: <reason>`), never with catalog text. The
+    next build or check that succeeds clears it. The text →
     parse → apply no operations → text half of rule 5 went with the
     operations (GC-5).
   - **Sharing the worker's event loop** (**decided**, owner, 2026-11-19,

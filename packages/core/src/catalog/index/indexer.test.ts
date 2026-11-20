@@ -23,8 +23,10 @@ import { createWorkspace } from "../../identity/workspaces.js"
 import type { JobQueue } from "../../jobs.js"
 import { parserVersion } from "../document/index.js"
 import { readDocumentId } from "../document/parse.js"
+import { GitServiceError } from "../git/client.js"
 import { createCatalogRepository } from "../git/repositories.js"
 import { indexRulesVersion } from "./derive.js"
+import { indexFailureReason, IndexReadError } from "./failure.js"
 import { compareWorkspaceIndex, updateWorkspaceIndex } from "./indexer.js"
 import {
   catchUpCatalogIndexes,
@@ -498,6 +500,77 @@ describe("reading main however the Git container answers", () => {
       text: "Musashi",
     })
     expect(answer.index_behind).toBe(true)
+  })
+
+  it("records why it could not build, says it is behind before GC-3a records main, and forgets it once built", async () => {
+    await push(filesOf([fixtures.guneet]))
+    const operator = await newPerson(db, "operator")
+    await db
+      .insert(schema.installationOperators)
+      .values({ email: operator.email })
+    const health = async () =>
+      (await getCatalogIndexHealth(asPerson(db, operator))).workspaces.find(
+        (w) => w.workspaceId === workspaceId,
+      )
+    // An ordinary index job, with nothing recording the new `main` first
+    // (GC-3a's `recordCatalogMain` is not there yet): the diff is too
+    // large, so it rebuilds, and machine/ is too large to list.
+    git.limits.treeEntries = 3
+    git.limits.diffChanges = 0
+    const main = git.push(workspaceId, {
+      ...filesOf([fixtures.musashi, fixtures.daedalus, fixtures.takezo]),
+      "machine/extra.md": fixtures.daedalus.replace("daedalus", "extra"),
+    })
+    const failure: unknown = await updateCatalogIndex(
+      asShinan(db),
+      { workspaceId },
+      git,
+    ).catch((e: unknown) => e)
+    expect(indexFailureReason(failure)).toBe("folder-too-large")
+    expect(await health()).toMatchObject({
+      behind: true,
+      mainCommit: main,
+      failure: "folder-too-large",
+      failedAt: expect.any(String) as string,
+    })
+    expect(
+      await searchCatalog(asPerson(db, owner), workspaceId, { text: "x y" }),
+    ).toMatchObject({ index_behind: true })
+
+    git.limits.treeEntries = Infinity
+    await updateCatalogIndex(asShinan(db), { workspaceId }, git)
+    expect(await health()).toMatchObject({
+      behind: false,
+      commit: main,
+      failure: null,
+      failedAt: null,
+    })
+  })
+
+  it("names each failure by a fixed reason", () => {
+    const git = (status: number, code: string) =>
+      new GitServiceError(status, code, "")
+    expect(
+      [
+        git(422, "tree-too-large"),
+        git(422, "tree-too-deep"),
+        git(503, "busy"),
+        git(0, "unreachable"),
+        git(500, "failed"),
+        git(404, "not-found"),
+        new IndexReadError("deferred-none", ""),
+        new Error("anything"),
+      ].map(indexFailureReason),
+    ).toEqual([
+      "tree-too-large",
+      "tree-too-deep",
+      "git-busy",
+      "git-unavailable",
+      "git-unavailable",
+      "failed",
+      "deferred-none",
+      "failed",
+    ])
   })
 
   it("rebuilds when a diff is too large for one answer", async () => {
@@ -1121,6 +1194,42 @@ describe("rebuilds, catch-up and the round-trip check", () => {
       workspaceIds: [workspaceId],
     })
     expect(fixed).toMatchObject({ outcome: "matched" })
+  })
+
+  it("checks every workspace, whatever one of them fails with", async () => {
+    await push(filesOf([fixtures.musashi]))
+    await repositoryMade()
+    const first = workspaceId
+    const other = await createWorkspace(asPerson(db, owner), { name: "Two" })
+    workspaceId = other.workspace.id
+    git.create(workspaceId, filesOf([fixtures.daedalus]))
+    await updateWorkspaceIndex(db, git, workspaceId)
+    await repositoryMade()
+    // The Git container fails for the first workspace only.
+    const failing = {
+      ...git,
+      getRepository: (id: string) =>
+        id === first
+          ? Promise.reject(new GitServiceError(500, "failed", "down"))
+          : git.getRepository(id),
+    }
+    const checks = await checkCatalogIndexes(asShinan(db), failing, {
+      workspaceIds: [first, workspaceId],
+    })
+    // In the order of their IDs, whichever fails.
+    expect(checks.find((c) => c.workspaceId === first)).toMatchObject({
+      outcome: "failed",
+      reason: "git-unavailable",
+    })
+    expect(checks.find((c) => c.workspaceId === workspaceId)).toMatchObject({
+      outcome: "matched",
+    })
+    expect(checks).toHaveLength(2)
+    const [state] = await db
+      .select()
+      .from(schema.catalogIndexState)
+      .where(eq(schema.catalogIndexState.workspaceId, first))
+    expect(state).toMatchObject({ failure: "git-unavailable" })
   })
 
   it("does not compare an index that is not at main, and queues its update", async () => {
