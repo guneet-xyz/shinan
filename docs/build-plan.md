@@ -81,6 +81,35 @@ Library choices left open by architecture are settled in
 - **Review.** A separate reviewer agent reviews every PR against the documents
   it implements (correctness, permissions, tests, scope). A PR merges when CI
   passes and the reviewer approves. The owner does not review every code PR.
+- **Product review.** **Decided (owner, 2026-11-20,
+  [D-067](decisions/D-067-product-owner-role.md)):** a product owner agent
+  puts the experience of people using Shinan first, against the
+  [product principles](product-principles.md). **Proposed** (how the role
+  works):
+  - **Before a user-facing work package is built,** the product owner posts a
+    short product brief on its issue: who it is for, the one or two jobs it
+    must do, the screens and flows sketched in words, what to leave out, and
+    the words to use and avoid. The build agent follows the brief or answers
+    it on the issue.
+  - **On every user-facing PR,** the product owner posts a review headed
+    `PRODUCT: APPROVE` or `PRODUCT: REQUEST CHANGES`, alongside the
+    reviewer agent's code review, from screenshots (phone and desktop, light
+    and dark), the wording and the flows. Findings are grouped "Must change",
+    "Should change" and "Ideas". "Must change" is for what makes the product
+    harder to understand or use, not taste. A user-facing PR merges when CI
+    passes and both reviews approve.
+  - **User-facing** means screens and emails people see, and the text people
+    or agents follow to set up and use Shinan (the setup page, the skill,
+    the messages a refused `git push` prints).
+  - **The owner has the final say.** Where the product owner and a build or
+    reviewer agent disagree, or a simpler design would change a decided
+    behaviour, it goes to the owner with a recommendation.
+
+  Reason: the owner asked for a role that prioritizes simple, easy to
+  understand features and human-facing design over complex,
+  information-dense screens; the code review checks correctness, not
+  experience.
+
 - **Owner checkpoints.** The owner reviews each milestone as a whole: a short
   demo note, what was built against the roadmap, anything cut, and any decision
   that came up. The owner also approves every deployment (D-016, D-039) and

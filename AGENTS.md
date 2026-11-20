@@ -43,6 +43,10 @@ phase**. Read these before doing anything else:
   [README](README.md#developing-locally) explains the setup).
 - If a change alters behaviour a document describes, update that document in
   the same PR.
+- Screens, emails, setup text, the skill and push messages are user-facing:
+  follow the [product principles](docs/product-principles.md). They get a
+  product review as well as the code review
+  ([build plan §4](docs/build-plan.md#4-how-the-work-is-done-proposed)).
 
 ## Writing documents
 
