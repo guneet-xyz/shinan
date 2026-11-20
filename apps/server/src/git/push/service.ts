@@ -4,7 +4,7 @@ import { basename, dirname, isAbsolute, join, relative } from "node:path"
 import { Hono } from "hono"
 import { bodyLimit } from "hono/body-limit"
 
-import { pushLimits } from "@shinan/core"
+import { findPushSecrets, pushLimits } from "@shinan/core"
 import type {
   GitRequestContext,
   PushCheckedData,
@@ -21,6 +21,13 @@ import { checkPush, TooSlowError } from "./checks.js"
 import type { CheckResult, Problem, PushLimits, RefUpdate } from "./checks.js"
 import { createPushLocks } from "./lock.js"
 import type { PushLocks } from "./lock.js"
+import type { MainGroup } from "./main/checks.js"
+import {
+  createMainChecker,
+  MainCheckMemoryError,
+  MainCheckTimeoutError,
+} from "./main/pool.js"
+import type { MainChecker } from "./main/pool.js"
 import { verdictLines } from "./output.js"
 import type { FirstPush, Records } from "./records.js"
 
@@ -66,6 +73,8 @@ interface State {
   release?: () => void
   updates: RefUpdate[]
   result?: CheckResult
+  /** The fact check groups of the new `main`, recorded once it is applied. */
+  mainGroups?: MainGroup[]
   confirming?: Promise<void>
 }
 
@@ -93,8 +102,8 @@ export function createPushService(options: {
   records: Records
   log?: LimitedLog
   locks?: PushLocks
-  /** Whether pushes may change `main` before its checks exist (GC-3b). */
-  openMain?: boolean
+  /** The worker that runs the checks of `main`; one is started if not given. */
+  mainChecker?: MainChecker
   /** Other limits than `pushLimits`, for tests; read at each push. */
   limits?: Partial<PushLimits>
 }): PushService {
@@ -266,6 +275,7 @@ export function createPushService(options: {
         const update = updates[mainAt]!
         main = await mainUpdate(gitDir, update.old!, update.new!)
       }
+      const mainApplied = main !== null
       const data: PushConfirmedData & { by: string } = {
         push: context.requestId,
         workspaceId: context.workspaceId,
@@ -290,6 +300,9 @@ export function createPushService(options: {
           at: entry.recordedAt,
         })),
       )
+      // The revert rule's record of fact check groups ever on main.
+      if (mainApplied && state.mainGroups)
+        records.addMainGroups(context.workspaceId, state.mainGroups)
       state.phase = "done"
       state.release?.()
     })())
@@ -324,6 +337,84 @@ export function createPushService(options: {
     }
   }
 
+  const mainChecker = options.mainChecker ?? createMainChecker()
+
+  /**
+   * The checks of `main` (checks 4 to 7), in the worker thread: first the
+   * limit on commits added to `main`, then the first pusher of each of
+   * them for the `by` rule (this push's for commits it brings that Shinan
+   * never received).
+   */
+  const checkMain = async (
+    state: State,
+    result: CheckResult,
+    run: {
+      gitDir: string
+      env: Record<string, string>
+      limits: PushLimits
+      deadline: number
+    },
+  ): Promise<{
+    problems: Problem[]
+    warnings: Problem[]
+    groups: MainGroup[]
+  }> => {
+    const { context } = state
+    const update = state.updates.find((u) => u.ref === "refs/heads/main")!
+    const added = (
+      await git.run(
+        [
+          "rev-list",
+          `--max-count=${run.limits.mainCommits + 1}`,
+          `${update.old}..${update.new}`,
+        ],
+        { gitDir: run.gitDir, env: run.env },
+      )
+    ).stdout
+      .toString("utf8")
+      .split("\n")
+      .filter(Boolean)
+    if (added.length > run.limits.mainCommits) {
+      return {
+        problems: [
+          {
+            code: "main-too-many-commits",
+            where: "ref refs/heads/main",
+            message: `this push adds more than ${run.limits.mainCommits.toLocaleString("en")} commits to main: merge in parts`,
+          },
+        ],
+        warnings: [],
+        groups: [],
+      }
+    }
+    const fresh = new Set(result.commitsByRef.flat())
+    const firstPushers: Record<string, string | null> = {}
+    for (const commit of added) {
+      firstPushers[commit] =
+        records.firstPush(context.workspaceId, commit)?.by ??
+        (fresh.has(commit) ? context.by : null)
+    }
+    return mainChecker.check(
+      {
+        gitBinary: git.binary,
+        gitHome: git.environment().HOME!,
+        gitDir: run.gitDir,
+        env: run.env,
+        from: update.old!,
+        to: update.new!,
+        now: Date.now(),
+        memberHandles: context.memberHandles,
+        firstPushers,
+        groupsEver: records.mainGroups(context.workspaceId),
+        limits: {
+          documents: run.limits.mainDocuments,
+          textBytes: run.limits.mainTextBytes,
+        },
+      },
+      run.deadline,
+    )
+  }
+
   /** The verdict of `pre-receive`, appended to the journal; the lock is kept only if accepted. */
   const check = async (
     state: State,
@@ -345,6 +436,7 @@ export function createPushService(options: {
       }
     }
     const limits: PushLimits = { ...pushLimits, ...options.limits }
+    let mainWarnings: Problem[] = []
     const release = await locks.acquire(
       context.workspaceId,
       limits.lockWaitSeconds * 1000,
@@ -358,26 +450,57 @@ export function createPushService(options: {
       })
     } else {
       state.release = release
+      const mainAt = state.updates.findIndex(
+        (u) => u.ref === "refs/heads/main" && u.new !== null,
+      )
+      const deadline =
+        Date.now() +
+        (mainAt >= 0 ? limits.mainCheckSeconds : limits.checkSeconds) * 1000
       try {
+        const env = quarantineEnv(gitDir, body.quarantine)
         result = await checkPush({
           git,
           gitDir,
-          env: quarantineEnv(gitDir, body.quarantine),
+          env,
           updates: state.updates,
           allowedValues: new Set(context.allowedValues),
           purged: records.purgedCommits(context.workspaceId),
-          openMain: options.openMain ?? false,
-          deadline: Date.now() + limits.checkSeconds * 1000,
+          deadline,
           limits,
         })
         problems.push(...result.problems)
+        if (
+          mainAt >= 0 &&
+          result.kinds[mainAt] === "update" &&
+          !problems.some((p) => p.code === "too-many-commits")
+        ) {
+          const main = await checkMain(state, result, {
+            gitDir,
+            env,
+            limits,
+            deadline,
+          })
+          const allowed = new Set(context.allowedValues)
+          problems.push(...main.problems.map((p) => unquoted(p, allowed)))
+          mainWarnings = main.warnings.map((p) => unquoted(p, allowed))
+          state.mainGroups = main.groups
+        }
       } catch (error) {
-        if (error instanceof TooSlowError) {
+        if (
+          error instanceof TooSlowError ||
+          error instanceof MainCheckTimeoutError
+        ) {
           problems.push({
             code: "too-slow",
             where: "",
             message:
               "checking this push took longer than Shinan allows: push smaller changes",
+          })
+        } else if (error instanceof MainCheckMemoryError) {
+          problems.push({
+            code: "catalog-too-large",
+            where: "",
+            message: "the catalog is too large to check: tell your person",
           })
         } else {
           log(
@@ -393,7 +516,7 @@ export function createPushService(options: {
       }
     }
     state.result = result
-    const warnings = result?.warnings ?? []
+    const warnings = [...(result?.warnings ?? []), ...mainWarnings]
     const blocking = problems.length > 0 || checkOnly
     const data: PushCheckedData = {
       push: context.requestId,
@@ -583,4 +706,20 @@ function quarantineBytes(quarantine: PreReceiveBody["quarantine"]): number {
     return 0
   }
   return total
+}
+
+/**
+ * A problem of the checks of `main` with any place or message that holds
+ * something secret-looking left out: those checks quote paths, IDs and
+ * validation messages, and check 3 reports the secret itself.
+ */
+function unquoted(problem: Problem, allowed: ReadonlySet<string>): Problem {
+  const hides = (text: string) => findPushSecrets(text, allowed).length > 0
+  return {
+    ...problem,
+    where: hides(problem.where) ? "(path not shown)" : problem.where,
+    message: hides(problem.message)
+      ? "(not shown: it quotes a secret-looking value)"
+      : problem.message,
+  }
 }

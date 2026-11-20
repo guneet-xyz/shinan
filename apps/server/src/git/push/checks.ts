@@ -2,7 +2,12 @@ import { lstatSync, readdirSync } from "node:fs"
 import { join } from "node:path"
 
 import { findPushSecrets } from "@shinan/core"
-import type { PushCheckCode, pushLimits, PushSecretFinding } from "@shinan/core"
+import type {
+  ProblemCode,
+  PushCheckCode,
+  pushLimits,
+  PushSecretFinding,
+} from "@shinan/core"
 import {
   MAX_TREE_OBJECT_BYTES,
   newCommits,
@@ -26,7 +31,8 @@ export type RefKind = "create" | "update" | "forced-update" | "delete"
 
 /** A problem a check found: where, which code, and what to say. */
 export interface Problem {
-  code: PushCheckCode
+  /** A push check's code, or a document validation code (on `main`). */
+  code: PushCheckCode | ProblemCode
   /** A path and line, a commit, a ref, or nothing for the whole push. */
   where: string
   message: string
@@ -57,8 +63,6 @@ export interface CheckInput {
   allowedValues: ReadonlySet<string>
   /** Commits a purge removed. */
   purged: ReadonlySet<string>
-  /** Whether a push may change `main` (GC-3b's checks of `main`). */
-  openMain: boolean
   /** When the checks must have finished. */
   deadline: number
   /** The limits; `pushLimits` but in tests. */
@@ -215,13 +219,6 @@ export async function checkPush(input: CheckInput): Promise<CheckResult> {
             kind === "delete"
               ? "main cannot be deleted"
               : "main only moves forward: fetch, then merge or rebase your own commits onto origin/main",
-        })
-      } else if (!input.openMain) {
-        problems.push({
-          code: "main-not-open",
-          where: "ref refs/heads/main",
-          message:
-            "pushes to main are not open yet: push your work to a branch for now",
         })
       }
     }

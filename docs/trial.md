@@ -116,7 +116,7 @@ and the deployment request M2-12 prepared is ready in `infra/musashi`.
    writes it in the catalog): the person entity that owns every trial entity,
    linked to the owner's member record, with responsibilities as prose and no
    contact details ([catalog, person](catalog.md#person)). It is gated
-   ([catalog §8.2](catalog.md#82-when-catalog-approval-is-needed)), so it
+   ([catalog §8.2](catalog.md#82-no-catalog-approval)), so it
    applies when the owner approves it. It comes first because every entity
    names it as `owner`, and references must resolve.
 5. **Agents: seed the 17 trial entities** ([section 5](#5-seeding-the-trial-entities)).
@@ -162,7 +162,7 @@ M2-Q13, [build plan §7.3](build-plan-m2.md#73-answers-on-the-trial-start-kit)).
 The strict setting
 (workspace settings, **Catalog settings**; off by default) holds every agent
 proposal that is more than a recheck for catalog approval
-([catalog §8.2](catalog.md#82-when-catalog-approval-is-needed)). The owner
+([catalog §8.2](catalog.md#82-no-catalog-approval)). The owner
 decided that only gated changes need approval from the start of the trial,
 switching to strict if accuracy slips (O-3, R6), so the trial starts with it
 off. The seeded entities are still reviewed: in step 6, right after seeding,
@@ -402,7 +402,7 @@ its deployment services (O-16, [catalog, service](catalog.md#service)).
 table, each started from `/mnt/projects/shinan` (so it has Shinan) with the
 issue for its group. Reason: relations point from projects to services and
 machines, and from services to machines and other services, and their targets
-must exist first ([catalog §8.3](catalog.md#83-validation)); a group per
+must exist first ([catalog §8.3](catalog.md#83-validation-on-push)); a group per
 session keeps each session's context small (build plan, risks: seeding cost).
 Each session reads the skill before starting.
 
@@ -428,7 +428,7 @@ as a procedure, for each entity:
    `unknown` (decided, owner, M2-Q10). Reason: every trial pointer is a link an
    agent can normally open, so checking costs little and gives real check
    times. Validation is unchanged: `checked: null` and `by: unknown` are only
-   for imports ([catalog §8.3](catalog.md#83-validation)), which trial
+   for imports ([catalog §8.3](catalog.md#83-validation-on-push)), which trial
    entities are not.
 4. **What cannot be checked within existing access is `unknown`**
    ([catalog §4.8](catalog.md#48-unknowns)), with a short note of why.

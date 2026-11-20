@@ -79,8 +79,15 @@ export function verdictLines(verdict: {
   if (problems.length > 0) {
     lines.push(
       problems.some((p) => inCommits.has(p.code))
-        ? "These problems are in commits not yet in Shinan: rewrite them (git rebase -i origin/main), then push again. A new commit on top won't help."
+        ? "These problems are in commits not yet in Shinan: rewrite them (git rebase -i origin/main), then push again. A new commit on top won't help. The shinan skill explains each code."
         : "Fix them in new commits and push again. The shinan skill explains each code.",
+    )
+  }
+  // A refused agent must not be steered into claiming another agent's
+  // fact checks (product review of GC-3b, D-066).
+  if (problems.some((p) => p.code === "by-not-first-pusher")) {
+    lines.push(
+      "by-not-first-pusher: name yourself only on fact checks you made. For another agent's, merge its pushed branch; don't rebase, cherry-pick or squash it.",
     )
   }
   if (problems.some((p) => p.code === "secret")) {

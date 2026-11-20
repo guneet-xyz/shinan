@@ -402,7 +402,7 @@ the tree of the old one:
 4. **Layout** ([2.1](#21-the-repository-layout-and-rules)): only the allowed
    paths; each path matches its document's ID; no ID that resolved before has
    disappeared.
-5. **Validation**, every rule of [catalog §8.3](catalog.md#83-validation),
+5. **Validation**, every rule of [catalog §8.3](catalog.md#83-validation-on-push),
    charged to the push as M2 charged a proposal: every blocking problem in the
    documents the push adds or changes, and any problem it newly causes
    elsewhere (a reference it broke). Old problems in documents it does not
@@ -462,7 +462,7 @@ the tree of the old one:
      `main`, introduced by that commit; later pushes leave such groups
      unchanged unless they change them.
    - Reason: no push can make a fact look checked by another member or
-     agent, as for M2's repair ([catalog §8.3](catalog.md#83-validation)),
+     agent, as for M2's repair ([catalog §8.3](catalog.md#83-validation-on-push)),
      while agents can still land each other's pushed work.
 7. **Warnings** (keys outside the schema, a fact check older than the one it
    replaces, weaker secret signs, start-here steps to retired entities, task
@@ -510,19 +510,23 @@ repositories; the 1 GiB repository limit (branch deletions pass); and the
 checked for secrets too, and a tree object is refused by its size before
 it is read when it cannot be within the folder limit. `-o check-only` is accepted already (any other
 option is refused), so an agent asking for a check never changes anything.
-Until GC-3b adds checks 4 to 7, a push that changes `main` is refused
-(`main-not-open`). The codes are core's `pushCheckCodes`, which GC-9's
+The codes are core's `pushCheckCodes`, which GC-9's
 skill test reads: `ref-not-branch`, `ref-name-invalid`,
 `main-not-fast-forward`, `too-many-branches`, `purged-commit`, `symlink`,
 `submodule`, `file-too-large`, `commit-too-large`, `too-many-commits`,
 `tree-too-large`, `path-not-portable`, `secret`, `repository-full`, `busy`,
-`too-slow`, `check-only`, `push-option-unknown`, `check-failed`,
-`main-not-open`, the warning `secret-suspected`, and GC-3b's
-`path-not-allowed`, `path-id-mismatch`, `id-disappeared`,
-`by-not-first-pusher`, `catalog-too-large` and `main-too-many-commits`.
-Checks run in the `git` role's main thread, reading through `git` processes
-and yielding between large files; GC-3b moves them into a worker thread
-with the blob-ID cache.
+`too-slow`, `check-only`, `push-option-unknown`, `check-failed`, the
+warning `secret-suspected`, and for `main` `path-not-allowed`,
+`path-id-mismatch`, `id-disappeared`, `by-not-first-pusher`,
+`catalog-too-large` and `main-too-many-commits`, besides validation's
+own codes (`ProblemCode`).
+Checks 1 to 3 run in the `git` role's main thread, reading through `git`
+processes and yielding between large files. **As built (GC-3b):** checks
+4 to 7 run in a worker thread with the blob-ID cache and a time limit
+(60 seconds for a push that changes `main`), and `main` is open. The layout
+refuses paths such as `machine/Upper.md` and names with hidden or
+right-to-left characters (#165, from #190's review); every name in a
+`remote:` line is quoted with such characters written as `\u…`.
 
 ### 2.6 The push log and events
 
@@ -824,7 +828,7 @@ and:
   branch from `origin/main`; edit the documents; commit with a message saying
   why; `git fetch` and `git rebase origin/main` (or merge), resolving
   conflicts from evidence and check times, never by taking the last writer's
-  side ([catalog §8.5](catalog.md#85-conflicts)); `git push origin HEAD:main`;
+  side ([catalog §8.5](catalog.md#85-conflicts-as-git-merges)); `git push origin HEAD:main`;
   on a refusal, read every `remote:` line, fix it in a new commit and push
   again; remove the worktree and delete the branch. Push a branch only to
   share unfinished work.
