@@ -46,7 +46,7 @@ import {
   listCatalogTypeSchemas,
   searchCatalog,
 } from "./queries.js"
-import { listDocuments, readTexts } from "./source.js"
+import { listDocuments, readTexts, whenNotBusy } from "./source.js"
 
 const { db, pool } = testDatabase()
 
@@ -450,6 +450,75 @@ describe("indexing main", () => {
       },
     )
     expect(answer).toMatchObject({ catalog_commit: null, index_behind: false })
+  })
+})
+
+describe("reading main however the Git container answers", () => {
+  it("asks again for documents a read deferred", async () => {
+    // One document an answer: every other one is deferred each time.
+    git.limits.documentBytes = 1
+    expect(await push(filesOf(fixtures.allDocuments))).toMatchObject({
+      outcome: "rebuilt",
+      documents: fixtures.allDocuments.length,
+    })
+    expect((await compareWithMain()).differences).toEqual([])
+    await push({
+      "schema/domain.md": fixtures.domainSchema.replace("30d", "60d"),
+      "machine/daedalus.md": fixtures.daedalus.replace("Agents", "People"),
+    })
+    expect((await compareWithMain()).differences).toEqual([])
+  })
+
+  it("lists a tree too large for one answer folder by folder", async () => {
+    // The whole tree (13 files) is past it; the root (two files and eight
+    // folders) and each folder are not.
+    git.limits.treeEntries = 10
+    await push(filesOf(fixtures.allDocuments))
+    expect((await compareWithMain()).differences).toEqual([])
+    const paths = await db
+      .select({ path: schema.catalogIndexDocuments.path })
+      .from(schema.catalogIndexDocuments)
+      .where(eq(schema.catalogIndexDocuments.workspaceId, workspaceId))
+    expect(paths).toHaveLength(fixtures.allDocuments.length)
+  })
+
+  it("stays behind, saying so, when one folder is too large to list", async () => {
+    await push(filesOf([fixtures.guneet]))
+    // The root (README.md and two folders) fits; machine/ does not, even
+    // one level down.
+    git.limits.treeEntries = 3
+    git.push(workspaceId, {
+      ...filesOf([fixtures.musashi, fixtures.daedalus, fixtures.takezo]),
+      "machine/extra.md": fixtures.daedalus.replace("daedalus", "extra"),
+    })
+    await expect(
+      rebuildCatalogIndex(asShinan(db), { workspaceId }, git),
+    ).rejects.toThrow(/Folder machine\/ of commit .* has more entries/)
+    const answer = await searchCatalog(asPerson(db, owner), workspaceId, {
+      text: "Musashi",
+    })
+    expect(answer.index_behind).toBe(true)
+  })
+
+  it("rebuilds when a diff is too large for one answer", async () => {
+    await push(filesOf([fixtures.guneet]))
+    git.limits.diffChanges = 1
+    expect(
+      await push(filesOf([fixtures.musashi, fixtures.daedalus])),
+    ).toMatchObject({ outcome: "rebuilt" })
+    expect((await compareWithMain()).differences).toEqual([])
+  })
+
+  it("waits while the Git container is busy, then gives up", async () => {
+    git.limits.busy = 2
+    expect(await push(filesOf([fixtures.guneet]))).toMatchObject({
+      outcome: "rebuilt",
+    })
+    git.limits.busy = 3
+    await expect(
+      whenNotBusy(() => git.getRepository(workspaceId), [1, 1]),
+    ).rejects.toMatchObject({ status: 503, code: "busy" })
+    git.limits.busy = 0
   })
 })
 

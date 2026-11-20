@@ -25,6 +25,7 @@ import {
   isReadablePath,
   listDocuments,
   readTexts,
+  whenNotBusy,
 } from "./source.js"
 import type { DocumentText, TreeDocument } from "./source.js"
 
@@ -267,7 +268,7 @@ async function updateOnce(
     }
   })
   const state = before.state
-  const repository = await git.getRepository(workspaceId)
+  const repository = await whenNotBusy(() => git.getRepository(workspaceId))
   if (!repository)
     return { outcome: "no-repository", commit: null, documents: 0 }
   const main = repository.main
@@ -399,7 +400,13 @@ async function planUpdate(
 ): Promise<UpdatePlan | "rebuild"> {
   let changes
   try {
-    ;({ changes } = await git.diff(workspaceId, { from, to: main }))
+    const diff = await whenNotBusy(() =>
+      git.diff(workspaceId, { from, to: main }),
+    )
+    // More changes than one answer holds: reading the whole tree is then
+    // the quicker way anyway.
+    if (diff.truncated) return "rebuild"
+    changes = diff.changes
   } catch (error) {
     if (
       error instanceof GitServiceError &&

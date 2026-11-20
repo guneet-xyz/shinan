@@ -9,6 +9,8 @@ import {
   checkCatalogIndexes,
   createGitClient,
   createWorkspace,
+  maxTreeEntries,
+  rebuildCatalogIndex,
   searchCatalog,
   shinan,
   updateCatalogIndex,
@@ -227,6 +229,55 @@ describe("the agent index from a repository in the Git container", () => {
       )[0],
     ).toMatchObject({ outcome: "matched", documents: 1 })
   })
+
+  it("lists a tree past one answer's entries folder by folder", async () => {
+    const gitDir = join(root, `${workspaceId}.git`)
+    const run = async (args: string[], input?: Uint8Array) =>
+      (await git.run(args, { gitDir, input, env: fixtureIdentity() })).stdout
+        .toString()
+        .trim()
+    const main = (await client.getRepository(workspaceId))!.main
+    const note = await run(["hash-object", "-w", "--stdin"], Buffer.from("x"))
+    // Two folders of notes, more than one listing holds together
+    // (`maxTreeEntries`) but not apart, beside the catalog's documents.
+    const folder = async (count: number) =>
+      run(
+        ["mktree", "-z"],
+        Buffer.from(
+          Array.from(
+            { length: count },
+            (_, i) => `100644 blob ${note}\tn${i}.txt\0`,
+          ).join(""),
+        ),
+      )
+    const half = Math.ceil(maxTreeEntries / 2) + 1
+    const entries = (await run(["ls-tree", "-z", main])).split("\0")
+    const tree = await run(
+      ["mktree", "-z"],
+      Buffer.from(
+        [
+          ...entries.filter(Boolean),
+          `040000 tree ${await folder(half)}\tnotes-a`,
+          `040000 tree ${await folder(half)}\tnotes-b`,
+        ]
+          .map((e) => `${e}\0`)
+          .join(""),
+      ),
+    )
+    const commit = await run(["commit-tree", "-p", main, "-m", "Notes", tree])
+    await run(["update-ref", "refs/heads/main", commit])
+    expect((await client.listTree(workspaceId, { commit })).truncated).toBe(
+      true,
+    )
+
+    expect(
+      await rebuildCatalogIndex(ctx(), { workspaceId }, client),
+    ).toMatchObject({ outcome: "rebuilt", commit, documents: 1 })
+    const [checked] = await checkCatalogIndexes(ctx(), client, {
+      workspaceIds: [workspaceId],
+    })
+    expect(checked).toMatchObject({ outcome: "matched", documents: 1 })
+  }, 120_000)
 
   it("rebuilds and checks on an operator's command", async () => {
     const env = {

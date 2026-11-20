@@ -1,5 +1,8 @@
+import { setTimeout as sleep } from "node:timers/promises"
+
 import { maxDocumentsPerRead } from "../git/api.js"
 import type { TreeEntry } from "../git/api.js"
+import { GitServiceError } from "../git/client.js"
 import type { GitClient } from "../git/client.js"
 
 /**
@@ -8,6 +11,33 @@ import type { GitClient } from "../git/client.js"
  * names a full commit ID, so one build reads one tree however `main` moves
  * meanwhile.
  */
+
+/**
+ * How long to wait before asking again when the Git container answers
+ * `503 busy` (its read queue is full): about 15 seconds in all, then the
+ * error stands and the index job is retried later by the job queue.
+ */
+export const busyWaitsMs = [500, 1000, 2000, 4000, 8000] as const
+
+/** `read()`, asked again while the Git container is busy. */
+export async function whenNotBusy<T>(
+  read: () => Promise<T>,
+  waits: readonly number[] = busyWaitsMs,
+): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await read()
+    } catch (error) {
+      const wait = waits[attempt]
+      if (
+        !(error instanceof GitServiceError && error.status === 503) ||
+        wait === undefined
+      )
+        throw error
+      await sleep(wait)
+    }
+  }
+}
 
 /**
  * Whether a file on `main` is a catalog document the index reads: a
@@ -56,13 +86,63 @@ export async function listDocuments(
   git: GitClient,
   workspaceId: string,
   commit: string,
+  waits: readonly number[] = busyWaitsMs,
 ): Promise<TreeDocument[]> {
-  const { entries } = await git.listTree(workspaceId, { commit })
+  const entries = await listFiles(git, workspaceId, commit, waits)
   const documents = entries
     .filter((e) => e.type === "blob" && isDocumentPath(e))
     .map((e) => ({ path: e.path, blob: e.oid }))
     .sort((a, b) => compare(a.path, b.path) || compare(a.blob, b.blob))
   return documents.filter((d, i) => documents[i - 1]?.path !== d.path)
+}
+
+/**
+ * Every file of a commit's tree. One listing holds at most the Git
+ * container's `maxTreeEntries` and `maxTreePathBytes`; past them it is
+ * `truncated`, and the tree is listed folder by folder instead: each folder
+ * whole if it fits, otherwise its entries one level down. A single folder
+ * too large to list even one level down is an error, as is a tree the Git
+ * container refuses (`422 tree-too-large`, `tree-too-deep`): pushes to
+ * `main` cannot bring either once they are checked (GC-3), and until then
+ * the index stays behind, saying so, rather than leave files out.
+ */
+async function listFiles(
+  git: GitClient,
+  workspaceId: string,
+  commit: string,
+  waits: readonly number[],
+): Promise<TreeEntry[]> {
+  const list = (path: string | undefined, recursive: boolean) =>
+    whenNotBusy(
+      () =>
+        git.listTree(workspaceId, {
+          commit,
+          ...(path === undefined ? {} : { path }),
+          ...(recursive ? {} : { recursive: false }),
+        }),
+      waits,
+    )
+  const whole = await list(undefined, true)
+  if (!whole.truncated) return whole.entries
+  const files: TreeEntry[] = []
+  const walk = async (folder: string | undefined): Promise<void> => {
+    const level = await list(folder, false)
+    if (level.truncated)
+      throw new Error(
+        `Folder ${folder ?? "/"} of commit ${commit} has more entries than the Git container lists`,
+      )
+    for (const entry of level.entries) {
+      if (entry.type !== "tree") {
+        files.push(entry)
+        continue
+      }
+      const inside = await list(`${entry.path}/`, true)
+      if (inside.truncated) await walk(`${entry.path}/`)
+      else files.push(...inside.entries)
+    }
+  }
+  await walk(undefined)
+  return files
 }
 
 /**
@@ -83,13 +163,16 @@ const readBatch = 200
  * not UTF-8 read as U+FFFD, as does a NUL character, which PostgreSQL
  * cannot store: such a document then reads with problems instead of
  * stopping the index. A blob that `blobs` expects and the commit does not
- * hold is an error: `main` moved under a read that named it.
+ * hold is an error: `main` moved under a read that named it. Documents a
+ * read `deferred` (past the Git container's bytes for one answer) are asked
+ * for again, until each is read.
  */
 export async function readTexts(
   git: GitClient,
   workspaceId: string,
   commit: string,
   documents: readonly TreeDocument[],
+  waits: readonly number[] = busyWaitsMs,
 ): Promise<DocumentText[]> {
   const result = new Map<string, DocumentText>()
   const readable: TreeDocument[] = []
@@ -98,23 +181,42 @@ export async function readTexts(
     else result.set(d.path, { ...d, unreadablePath: true })
   const batch = Math.min(readBatch, maxDocumentsPerRead)
   for (let i = 0; i < readable.length; i += batch) {
-    const wanted = readable.slice(i, i + batch)
-    const read = await git.readDocuments(workspaceId, {
-      commit,
-      paths: wanted.map((d) => d.path),
-    })
-    const byPath = new Map(read.documents.map((d) => [d.path, d]))
-    for (const { path, blob } of wanted) {
-      const found = byPath.get(path)
-      if (!found || "missing" in found)
-        throw new Error(`Commit ${commit} has no document at ${path}`)
-      if ("tooLarge" in found) {
-        result.set(path, { path, blob, tooLarge: found.size })
-        continue
+    let wanted = readable.slice(i, i + batch)
+    while (wanted.length > 0) {
+      const asked = wanted
+      const read = await whenNotBusy(
+        () =>
+          git.readDocuments(workspaceId, {
+            commit,
+            paths: asked.map((d) => d.path),
+          }),
+        waits,
+      )
+      const byPath = new Map(read.documents.map((d) => [d.path, d]))
+      const deferred: TreeDocument[] = []
+      for (const { path, blob } of asked) {
+        const found = byPath.get(path)
+        if (!found || "missing" in found)
+          throw new Error(`Commit ${commit} has no document at ${path}`)
+        if ("deferred" in found) {
+          deferred.push({ path, blob })
+          continue
+        }
+        if ("tooLarge" in found) {
+          result.set(path, { path, blob, tooLarge: found.size })
+          continue
+        }
+        if (found.oid !== blob)
+          throw new Error(`Commit ${commit} holds another text at ${path}`)
+        result.set(path, { path, blob, text: decode(found.content) })
       }
-      if (found.oid !== blob)
-        throw new Error(`Commit ${commit} holds another text at ${path}`)
-      result.set(path, { path, blob, text: decode(found.content) })
+      // Each answer holds at least one document, so this always moves on;
+      // one that holds none would ask for the same forever.
+      if (deferred.length === asked.length)
+        throw new Error(
+          `The Git container deferred every document of a read at ${commit}`,
+        )
+      wanted = deferred
     }
   }
   return documents.map((d) => result.get(d.path)!)

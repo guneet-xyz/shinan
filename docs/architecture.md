@@ -660,8 +660,17 @@ indexing (**Proposed**).
     [§2.2](build-plan-git-catalog.md#22-how-shinan-serves-git)). Neither
     `worker` nor `web` runs `git`, and the Git container is never asked
     anything while a database transaction is open: the indexer reads first
-    and writes after. Every read names a full commit ID, so one build reads
-    one tree however `main` moves meanwhile.
+    and writes after (tests run the client through a wrapper that refuses
+    it). Every read names a full commit ID, so one build reads one tree
+    however `main` moves meanwhile. It takes the API's limits as they come:
+    documents an answer `deferred` (past its 32 MiB) are asked for again; a
+    tree listing past one answer is listed folder by folder; a diff past one
+    answer means a rebuild; `503 busy` is asked again after 0.5 to 8
+    seconds, about 15 in all, then the job is retried later. A tree the Git
+    container refuses (`tree-too-large`, `tree-too-deep`), or one folder too
+    large to list even one level down, leaves the index behind, saying so,
+    rather than leaving files out; pushes to `main` cannot bring such a tree
+    once they are checked (GC-3).
   - **Documents and rows.** A document is a regular file on `main` whose
     name ends in `.md`, except the root `README.md` (free Markdown for
     people, plan [§2.1](build-plan-git-catalog.md#21-the-repository-layout-and-rules));

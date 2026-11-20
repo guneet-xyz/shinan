@@ -37,6 +37,18 @@ export interface MemoryGit extends GitClient {
   files(workspaceId: string, commit: string): Map<string, Uint8Array>
   /** What has been asked of it: paths read, diffs and tree listings. */
   calls: { pathsRead: string[]; diffs: number; trees: number }
+  /**
+   * The Git container's limits, small for tests: the entries one listing
+   * or diff holds before it is `truncated`, the document bytes one read
+   * returns before the rest are `deferred` (at least one is always
+   * returned), and how many more requests answer `503 busy`.
+   */
+  limits: {
+    treeEntries: number
+    diffChanges: number
+    documentBytes: number
+    busy: number
+  }
 }
 
 export type FileContent =
@@ -82,6 +94,17 @@ export function createMemoryGit(): MemoryGit {
   const blobs = new Map<string, Uint8Array>()
   let made = 0
   const calls = { pathsRead: [] as string[], diffs: 0, trees: 0 }
+  const limits = {
+    treeEntries: Infinity,
+    diffChanges: Infinity,
+    documentBytes: Infinity,
+    busy: 0,
+  }
+  const notBusy = () => {
+    if (limits.busy <= 0) return
+    limits.busy--
+    throw new GitServiceError(503, "busy", "The Git container is busy")
+  }
 
   const repository = (workspaceId: string) => {
     const found = repositories.get(workspaceId)
@@ -118,6 +141,7 @@ export function createMemoryGit(): MemoryGit {
 
   const client: MemoryGit = {
     calls,
+    limits,
     create(workspaceId, files = { "README.md": "# Catalog\n" }) {
       const r: Repository = { main: "", commits: new Map() }
       repositories.set(workspaceId, r)
@@ -151,25 +175,56 @@ export function createMemoryGit(): MemoryGit {
         ]),
       )
     },
-    getRepository(workspaceId) {
-      const r = repositories.get(workspaceId)
-      return Promise.resolve(r ? { workspaceId, main: r.main } : null)
-    },
+    getRepository: (workspaceId) =>
+      later(() => {
+        notBusy()
+        const r = repositories.get(workspaceId)
+        return r ? { workspaceId, main: r.main } : null
+      }),
     createRepository: notHere,
     listTree: (workspaceId, input) =>
       later(() => {
+        notBusy()
         calls.trees++
         const { id, files } = tree(workspaceId, input.commit)
-        const entries: TreeEntry[] = [...files]
-          .sort(([a], [b]) => (a < b ? -1 : 1))
-          .map(([path, f]) => ({
+        // As `git ls-tree --full-tree [-r] -- <path>`: `folder/` lists what
+        // is inside it; without `-r`, one level, folders as `tree` entries.
+        const prefix = input.path ?? ""
+        const entries: TreeEntry[] = []
+        const folders = new Set<string>()
+        for (const [path, f] of [...files].sort(([a], [b]) =>
+          a < b ? -1 : 1,
+        )) {
+          if (!path.startsWith(prefix)) continue
+          const slash = path.indexOf("/", prefix.length)
+          if (input.recursive === false && slash >= 0) {
+            const folder = path.slice(0, slash)
+            if (!folders.has(folder)) {
+              folders.add(folder)
+              entries.push({
+                path: folder,
+                mode: "040000",
+                type: "tree",
+                oid: blobId(new TextEncoder().encode(folder)),
+                size: null,
+              })
+            }
+            continue
+          }
+          entries.push({
             path,
             mode: f.mode,
             type: "blob",
             oid: f.oid,
             size: blobs.get(f.oid)!.length,
-          }))
-        return { commit: id, entries }
+          })
+        }
+        const truncated = entries.length > limits.treeEntries
+        return {
+          commit: id,
+          entries: entries.slice(0, limits.treeEntries),
+          truncated,
+        }
       }),
     readDocuments: (workspaceId, input) =>
       later(() => {
@@ -184,19 +239,25 @@ export function createMemoryGit(): MemoryGit {
             "invalid-request",
             "Not a path in a repository",
           )
-        calls.pathsRead.push(...input.paths)
+        notBusy()
+        let bytes = 0
         const documents: DocumentRead[] = input.paths.map((path) => {
           const f = path.includes("\uFFFD") ? undefined : files.get(path)
           if (!f) return { path, missing: true }
           const content = blobs.get(f.oid)!
           if (content.length > 1024 * 1024)
             return { path, tooLarge: true, size: content.length }
+          if (bytes > 0 && bytes + content.length > limits.documentBytes)
+            return { path, deferred: true, size: content.length }
+          bytes += content.length
+          calls.pathsRead.push(path)
           return { path, oid: f.oid, size: content.length, content }
         })
         return { commit: id, documents }
       }),
     diff: (workspaceId, input) =>
       later(() => {
+        notBusy()
         calls.diffs++
         const to = tree(workspaceId, input.to)
         const from =
@@ -225,7 +286,12 @@ export function createMemoryGit(): MemoryGit {
             newOid: b?.oid ?? null,
           })
         }
-        return { from: input.from, to: to.id, changes }
+        return {
+          from: input.from,
+          to: to.id,
+          changes: changes.slice(0, limits.diffChanges),
+          truncated: changes.length > limits.diffChanges,
+        }
       }),
     history: notHere,
     readJournal: notHere,

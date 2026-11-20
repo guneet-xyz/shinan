@@ -17,7 +17,7 @@ import {
   updateWorkspaceIndex,
 } from "./indexer.js"
 import type { IndexUpdate } from "./indexer.js"
-import { listDocuments, readTexts } from "./source.js"
+import { listDocuments, readTexts, whenNotBusy } from "./source.js"
 
 /**
  * Keeping the agent index in step with `main` (Git-based catalog plan
@@ -331,7 +331,7 @@ async function checkWorkspace(
     differences: [],
     rebuild,
   })
-  const repository = await git.getRepository(workspaceId)
+  const repository = await whenNotBusy(() => git.getRepository(workspaceId))
   const [state] = await ctx.db
     .select()
     .from(schema.catalogIndexState)
