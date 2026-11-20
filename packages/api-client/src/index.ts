@@ -302,8 +302,25 @@ export interface SecurityLogEntry extends ActorFields {
   details: Record<string, unknown>
 }
 
-/** How many records a catalog purge changed, by kind (catalog §9). */
+/**
+ * How many records a catalog purge changed, by kind (catalog §9): purges
+ * since the catalog moved into Git have `history`; earlier ones do not.
+ */
 export interface CatalogPurgeCounts {
+  /** The repository's history, as the Git container rewrote it. */
+  history?: {
+    commits: number
+    rewrittenCommits: number
+    removedCommits: number
+    files: number
+    messages: number
+    renamedBranches: number
+    journalEntries: number
+  }
+  /** Branch names in the push log. */
+  pushLog?: number
+  indexDocuments?: number
+  /** What M2 stored before the catalog moved into Git. */
   revisionTexts: number
   documents: number
   latestDocuments: number
@@ -313,33 +330,42 @@ export interface CatalogPurgeCounts {
   comments: number
 }
 
-/** Where a text is in a workspace's catalog, before purging it. */
-export interface CatalogPurgePreview {
-  /** Stored document texts that hold it, counting each revision. */
-  revisionTexts: number
-  documents: number
-  /** Catalog IDs of documents whose latest text holds it. */
-  latestDocuments: string[]
-  proposals: number
-  /** Waiting catalog proposals that hold it: the purge rejects them. */
-  waitingProposals: number
-  events: number
-  /** Comments on catalog proposals that hold it. */
-  comments: number
-  /** Stored texts (and current pages) where a match crosses a line break. */
-  acrossLines: { revisionTexts: number; latestDocuments: string[] }
-  /** Copies in encoded forms the purge does not reach; `text` is the form to purge. */
-  alsoWrittenAs: {
-    form: "url" | "percent" | "html" | "escaped"
-    text: string
-    revisionTexts: number
-    proposals: number
-    events: number
-    comments: number
-  }[]
-  /** Where purging would change a document's structure. */
-  structure: { id: string; where: "id" | "alias" | "key" | "frontmatter" }[]
+/** Places on `main` and on the other branches only. */
+export interface CatalogPurgePlaces {
+  main: number
+  branches: number
 }
+
+/** Where a text is in a workspace's catalog, before removing it. */
+export interface CatalogPurgePreview {
+  /** In the catalog's history; null before the workspace has a repository. */
+  history: {
+    commits: CatalogPurgePlaces
+    files: CatalogPurgePlaces
+    messages: CatalogPurgePlaces
+    branchNames: number
+    /** Files on `main` now that hold it, by path as they will read. */
+    currentFiles: string[]
+    currentFilesMore: number
+    acrossLines: number
+    structure: { path: string; where: "id" | "alias" | "key" | "frontmatter" }[]
+    alsoWrittenAs: { form: CatalogPurgeForm; places: number }[]
+    journalEntries: number
+  } | null
+  pushLog: number
+  events: number
+  indexDocuments: number
+  /** The record of the catalog's move into Git, when its catalog IDs hold it. */
+  moves: number
+  /** Places found only across a line break. */
+  acrossLines: number
+  /** Copies in encoded forms a removal does not reach; `text` is the form to remove. */
+  alsoWrittenAs: { form: CatalogPurgeForm; text: string; places: number }[]
+  /** Rewrites of the history whose database part did not finish. */
+  unfinished: number
+}
+
+export type CatalogPurgeForm = "url" | "percent" | "html" | "escaped"
 
 /** A catalog purge: who, when, why and how much, never the purged text. */
 export interface CatalogPurge {
@@ -348,11 +374,7 @@ export interface CatalogPurge {
   createdAt: string
   purgedBy: string
   reason: string
-  /** The catalog revision that stored the cleaned latest text, if any. */
-  revision: number | null
   counts: CatalogPurgeCounts
-  /** Documents the purge left reading with new problems: only in the purge's own answer. */
-  newProblems?: { id: string; problems: string[] }[]
 }
 
 export type InvitationState =
@@ -796,7 +818,7 @@ export function createApiClient(options: ApiClientOptions = {}) {
         `${catalog(workspaceId)}/start-here${search({ path })}`,
       ),
 
-    // Catalog purge (M2-10): the text goes in request bodies only, never
+    // Catalog purge (GC-8): the text goes in request bodies only, never
     // in an address.
     previewCatalogPurge: (workspaceId: string, text: string) =>
       request<CatalogPurgePreview>(

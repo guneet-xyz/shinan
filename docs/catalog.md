@@ -1543,84 +1543,87 @@ change the source of truth, or the checks and history mean nothing.
 
 ## 9. History and purge
 
-> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-8](build-plan-git-catalog.md#gc-8-purge-as-a-history-rewrite)): history is Git's, undo is `git revert`, and purge rewrites the repository's history on the server. **As built (GC-6):** M2's revisions and proposals were moved into each workspace's repository (every document's current text in one first commit by Shinan) and then dropped; until GC-8, a purge rewrites the timeline's events only and does not reach the repositories. The rest of this section describes M2 as built (v0.3.0).
-
-- Every applied proposal creates a new **catalog revision**, the full Markdown
-  of the documents it changed, an event credited to its author (and approver),
-  which appears on the entity's timeline.
-  **Proposed.** Reason: events are the glossary's single record of what
-  happened; revisions let anyone see an entity as it was.
-- Revisions are not edited, except by purge (below). A revert is a new
-  proposal. **Proposed.** Reason: the glossary's rule that events are not
-  edited.
+- **History is Git's.** Each workspace's catalog is a Git repository hosted
+  by Shinan; every change is a commit, and the push log names the agent and
+  person that first pushed it ([D-066](decisions/D-066-by-names-the-first-pusher.md);
+  [Git-based catalog plan §2.6](build-plan-git-catalog.md#26-the-push-log-and-events)).
+  **Decided (owner, GD-11).**
+- **Undo is `git revert`,** a new commit an agent pushes to `main`, which
+  passes the same checks. There is no revert button (no editing in the
+  browser, GD-7). **Decided (owner, GD-11).**
 - Retired entities stay readable, marked retired, linked to their replacement,
   and excluded from default search. **Proposed.** Reason: the `workspace`
   repository keeps retired entries (for example the Takezo machine) because
   their history still answers questions.
 - **Purge** removes content that must not survive, such as a leaked secret or
-  personal data, from catalog revisions. The content is replaced by a marker,
-  the purge is itself an event saying who purged what and why, and derived
-  data is rebuilt (mechanism: [architecture](architecture.md)).
+  personal data, from everything Shinan keeps for the catalog, by rewriting
+  the repository's history on the server. The screen calls it "Remove text
+  from the catalog's history" (Settings › Catalog).
   - **Decided (owner, O-50, [#25]):** only workspace owners can purge,
-    including operational records about their workspace; installation
-    operators cannot. Security-log entries are never purged (owner, N-13,
-    [#25]).
-  - There is no Git mirror to rewrite (owner, N-5 and N-9, [#25]).
-    **Proposed:** the purge screen warns that exports taken before the purge,
-    and agents' model providers, may still hold the content, so a purged
-    secret must be rotated at its source. Reason: a purge cleans Shinan, not
-    copies that already left it.
-  - **As built (M2-10, [#91](https://github.com/guneet-xyz/shinan/issues/91)), decided (owner, 2026-11-19, M2-Q17):**
+    after signing in again; installation operators and agents cannot.
+    Security-log entries are never purged (owner, N-13, [#25]).
+  - **Decided (owner, GD-11):** copies outside Shinan are not reached:
+    agents' clones are the operator's to clean (delete and clone again), and
+    a purged secret must be rotated at its source. The screen says so, with
+    the model providers that read the text
+    ([operator guide](operator-guide.md#catalog-purge)).
+  - **As built (GC-8, [#170](https://github.com/guneet-xyz/shinan/issues/170)):**
     - **What is purged: a text, everywhere.** A workspace owner types the
       text (4 to 10,000 characters, case-sensitive) and a reason. Every
-      occurrence is replaced by `(purged)` in every revision of every
-      document, in catalog proposals (their explanation, operations, related
-      task, validation findings, approval reasons, touched IDs and rejection
-      reason), in comments on proposals (their text, and their idempotency
-      key, cleared), and in timeline events. Reason: a leaked secret or a person's
-      details are a text, wherever they ended up; replacing only those bytes
-      keeps every document readable and every record in its shape. The marker is
-      plain words in brackets, so YAML still reads it as text.
-    - **Whitespace does not have to match.** Any run of whitespace in the
-      text matches any run of whitespace, and inside a long word (20
-      characters or more without a space, as keys and tokens are) a line
-      break may stand between any two characters. The preview counts
-      separately the places found across a line break, so the owner looks
-      at them. Reason: an address or a name in a Markdown paragraph is
-      wrapped across lines, indented, or written with other line endings,
-      and a long secret can be split by an editor; the purge must find them
-      as the owner knows them, without a short word matching the ends of
-      two unrelated words on two lines.
-    - **The latest text.** When a document's latest text held it, the purge
-      stores the cleaned text as a new catalog revision, credited to the
-      workspace owner and marked as the purge's (it has no proposal and
-      cannot be reverted). Reason: agents ask "what changed since revision
-      N" (§12.2) and must learn that the text they hold changed.
-    - **Waiting proposals** that held the text are rejected, naming the
-      purge: their operations no longer say what their author meant.
-    - **Shown first.** Before purging, the owner sees where the text is: how
-      many revision texts of how many documents, which current pages, how
-      many proposals (and waiting ones), how many events. Also shown:
-      - copies in other forms the purge does not reach: URL-encoded,
-        percent-encoded character by character, with HTML entities, or with
-        JSON or YAML escapes, each to purge in its turn;
-      - pages whose structure the purge changes: the text is in the page's
-        ID or an alias, ends at a frontmatter key, or spans lines of the
-        frontmatter. Removing the text comes first; the page may then read
-        with problems, to repair;
-      - (Until GC-4, M2's purge also searched the agent index and refused
-        while it held the text written differently. The index is now built
-        from `main`, which this purge does not reach: GC-8's history
-        rewrite purges `main` and then rebuilds the index.)
-    - **Afterwards** the owner is told which pages now read with problems
-      they did not have, to repair, and to look again a minute later: a
-      proposal being worked out during the purge, or sent again afterwards
-      by an agent, carries its own copy of the text and can bring it back.
-    - **Recorded:** a `catalog.purged` event with who, why, the counts and
-      the documents and proposals it touched; a security-log entry with the
-      counts. Neither holds the text, and the reason may not repeat it.
+      occurrence is replaced by `(purged)` in every version of every file,
+      in commit messages and in commit authors' and committers' names and
+      emails, on every branch; and by `purged` in file and folder names and
+      branch names, which may not hold brackets. Shinan's own records
+      follow: branch names in the push log and the first-pusher record,
+      timeline events, catalog IDs in the record of the catalog's move
+      into Git (GC-6), and the agent index (rebuilt from the new `main`).
+      Reason: a leaked secret or a
+      person's details are a text, wherever they ended up; replacing only
+      those bytes keeps every document readable and every record in its
+      shape. The marker is plain words in brackets, so YAML still reads it
+      as text.
+    - **Whitespace does not have to match** (as M2 built it, owner
+      M2-Q17). Any run of whitespace in the text matches any run of
+      whitespace, and inside a long word (20 characters or more without a
+      space, as keys and tokens are) a line break may stand between any two
+      characters. Files that are not UTF-8 are matched byte for byte. The
+      preview counts the places found across a line break, so the owner
+      looks at them. Reason: an address or a name in a Markdown paragraph
+      is wrapped, indented or written with other line endings, and a long
+      secret can be split by an editor; a short word must not match the
+      ends of two unrelated words on two lines.
+    - **Nothing unreachable is left.** The rewrite writes a new repository
+      and swaps it in, so commits no branch reached (a deleted branch's,
+      or objects a push brought that no commit used) go too. Pushes that
+      bring back a removed commit are refused with "this commit was
+      removed by a purge: fetch, then reset your branch onto the new
+      history". Reason: the Git container's API reads any commit by its
+      full ID, and a clone still holds the old history.
+    - **First pushers carry over.** Each rewritten commit is first pushed
+      by whoever first pushed the commit it replaces (D-066), so the `by`
+      rule (§8.3) holds on the new history and another agent can still
+      merge an agent's rewritten branch.
+    - **Shown first.** Before anything changes the owner sees where the
+      text is: how many changes (commits) to the catalog, on `main` and on
+      agents' branches; change messages; branch names; the pages that show
+      it now; Shinan's records. Also shown, as in M2: copies in other forms a purge does not
+      reach (URL-encoded, percent-encoded, HTML entities, JSON or YAML
+      escapes), each to remove in its turn, and pages whose structure the
+      purge changes (the text is in an ID or an alias, ends at a
+      frontmatter key or spans lines of the frontmatter), for an agent to
+      repair afterwards.
+    - **Agents after a purge:** their next fetch sees `main` forced; they
+      reset local branches onto the new history and redo unpushed work on
+      top ([plan §2.9](build-plan-git-catalog.md#29-undo-and-purge)).
+    - **Recorded:** a `catalog.purged` event with who, why and the counts;
+      a security-log entry with the counts. Neither holds the text, and
+      the reason may not repeat it. The purge's record keeps its ID, so a
+      purge whose database part failed after the rewrite is finished by
+      running it again, without rewriting twice.
+    - **(M2, v0.3.0)** purged M2's stored revisions, proposals and comments
+      and stored the cleaned latest text as a new revision; GC-6 moved the
+      catalog into Git and dropped those tables.
     - Mechanism: [architecture §4.4](architecture.md#44-purge).
-- How revisions are stored: [architecture](architecture.md).
 
 ## 10. The catalog pages
 

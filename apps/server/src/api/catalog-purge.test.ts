@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest"
 
 import type * as Api from "@shinan/api-client"
 import { addMember, createWorkspace } from "@shinan/core"
-import type { JobQueue, Person } from "@shinan/core"
+import type { GitClient, JobQueue, Person } from "@shinan/core"
 import { schema } from "@shinan/db"
 import { connectTestDatabase } from "@shinan/db/testing"
 
@@ -18,12 +18,48 @@ afterAll(async () => {
 })
 
 const jobs: JobQueue = { send: () => Promise.resolve(null) }
+// The Git container's part, as when the history holds no copy: tested
+// against real Git in `git/purge.test.ts`.
+const history = {
+  commits: { main: 0, branches: 0 },
+  files: { main: 0, branches: 0 },
+  messages: { main: 0, branches: 0 },
+  branchNames: 0,
+  currentFiles: [],
+  currentFilesMore: 0,
+  acrossLines: 0,
+  structure: [],
+  alsoWrittenAs: [],
+  journalEntries: 0,
+}
+const gitClient = {
+  previewPurge: () => Promise.resolve(history),
+  purge: (_: string, input: { purgeId: string }) =>
+    Promise.resolve({
+      purgeId: input.purgeId,
+      rewritten: false,
+      commits: 0,
+      rewrittenCommits: 0,
+      removedCommits: 0,
+      files: 0,
+      messages: 0,
+      renamedBranches: 0,
+      journalEntries: 0,
+    }),
+  readJournal: () =>
+    Promise.resolve({
+      journalId: "0b6a3a52-6e3f-4cf1-9a11-6a1c6a7d2f01",
+      entries: [],
+      last: 0,
+    }),
+} as unknown as GitClient
 const api = createApi({
   db,
   signIn: testSignIn,
   jobs,
   installationUrl: "http://shinan.test",
   rateLimit: false,
+  gitClient,
 })
 
 const secret = `plum-otter-${randomBytes(4).toString("hex")}-lantern`
@@ -50,8 +86,8 @@ beforeAll(async () => {
     personId: contributor.id,
     role: "contributor",
   })
-  // Since the move into Git (GC-6), a purge rewrites events in
-  // PostgreSQL; GC-8 adds the repository's history.
+  // Since the move into Git (GC-6), a purge rewrites events (among other
+  // records) in PostgreSQL, and the Git container the history (GC-8).
   await db.insert(schema.events).values({
     workspaceId,
     kind: "catalog.pushed",
@@ -121,16 +157,14 @@ describe("catalog purge over the API", () => {
     )
     expect(preview.status).toBe(200)
     expect(preview.body).toEqual({
-      revisionTexts: 0,
-      documents: 0,
-      latestDocuments: [],
-      proposals: 0,
-      waitingProposals: 0,
+      history,
+      pushLog: 0,
       events: 1,
-      comments: 0,
-      acrossLines: { revisionTexts: 0, latestDocuments: [] },
+      indexDocuments: 0,
+      moves: 0,
+      acrossLines: 0,
       alsoWrittenAs: [],
-      structure: [],
+      unfinished: 0,
     })
 
     const purged = await call<Api.CatalogPurge>("POST", ws("/purge"), {
@@ -142,16 +176,13 @@ describe("catalog purge over the API", () => {
       number: 1,
       purgedBy: owner.handle,
       reason: "A passphrase leaked.",
-      revision: null,
       counts: { revisionTexts: 0, documents: 0, latestDocuments: 0, events: 1 },
     })
 
     const purges = await call<Api.CatalogPurge[]>("GET", ws("/purges"), {
       who: contributor,
     })
-    const { newProblems, ...listed } = purged.body
-    expect(newProblems).toEqual([])
-    expect(purges.body).toEqual([listed])
+    expect(purges.body).toEqual([purged.body])
 
     const again = await call<Api.ErrorBody>("POST", ws("/purge"), {
       body: { text: secret, reason: "Again." },

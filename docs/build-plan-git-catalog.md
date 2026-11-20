@@ -704,6 +704,34 @@ operator's to clean, and the secret is rotated.
 - **Agents after a purge:** their next fetch sees `main` forced. The skill
   says: reset local branches onto the new `origin/main` and redo unpushed
   work on top; never push old history back (it is refused anyway).
+- **As built (GC-8, [#170](https://github.com/guneet-xyz/shinan/issues/170);
+  [architecture §4.4](architecture.md#44-purge)):** as above, with these
+  choices the plan left open:
+  - **Commit authors and committers, file and folder names** are purged
+    too, not only contents and messages; names (and branch names) get
+    `purged`, since `(purged)`'s brackets are not allowed in branch names
+    or in paths on `main`. A branch name made invalid or taken is made
+    unique (`purged-2`); `main` keeps its name.
+  - **The removed-commits list** holds every commit the old repository
+    held that the new one does not, unreachable ones included, so a clone
+    can't bring back a deleted branch's copy either.
+  - **The purge ID** is made by `web` for each attempt; `catalog_purges`
+    takes the ID of the rewrite it records, so "running it again" finishes
+    the newest rewrite no purge record covers. A repository holding no copy
+    at all is not rewritten. Before the swap the Git container checks every
+    object of the new repository; afterwards it finishes from the purge's
+    record alone, also after a restart.
+  - **The record of groups ever on `main`** (GC-3b) gets the text replaced
+    as `main` did, rather than being rebuilt from the new history; a group
+    where the replacement can't be made is dropped (the next push to
+    `main` records it again).
+  - **Unreachable objects after pushes (proposed):** each repository a
+    push changed is repacked and pruned within a minute, with its push lock
+    held and no Git process on it, so objects no branch reaches (which the
+    Git API could read by ID) never linger (reviews of GC-1b and GC-3a).
+  - **The screen** is "Remove text from the catalog's history", a page
+    behind a quiet link at the bottom of Settings › Catalog (GC-7's product
+    brief); M2's Data tab is gone.
 
 ### 2.10 Limits
 

@@ -50,7 +50,7 @@ import type { Git } from "@shinan/git"
 export class StoreError extends Error {
   override name = "StoreError"
   constructor(
-    readonly status: 400 | 404 | 422,
+    readonly status: 400 | 404 | 409 | 422,
     readonly code: string,
     message: string,
   ) {

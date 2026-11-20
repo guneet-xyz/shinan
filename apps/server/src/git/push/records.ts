@@ -5,7 +5,9 @@ import {
   ftruncateSync,
   mkdirSync,
   openSync,
+  readdirSync,
   readFileSync,
+  renameSync,
   writeSync,
 } from "node:fs"
 import { join } from "node:path"
@@ -23,6 +25,34 @@ export interface FirstPush {
   by: string
   /** When, as ISO 8601. */
   at: string
+  /** For a commit a purge rewrote, the commit it replaces (D-066). */
+  replaces?: string
+}
+
+/**
+ * A purge's own record beside the repository (plan §2.9): what its rewrite
+ * did, by commit and branch, never the text. Written before the old
+ * repository is swapped out (`swapping`), so a restart can finish what
+ * follows the swap (`done`).
+ */
+export interface PurgeRecord {
+  purgeId: string
+  phase: "swapping" | "done" | "abandoned"
+  at: string
+  /** Commits whose ID changed: the old ID and the new one. */
+  rewritten: [string, string][]
+  /** Commits the old repository held that the new one does not. */
+  removed: string[]
+  /** Every branch after the rewrite. */
+  refs: { ref: string; commit: string }[]
+  /** Branches renamed: the old name, already purged, is never kept. */
+  renamedBranches: number
+  counts: {
+    commits: number
+    files: number
+    messages: number
+    journalEntries: number
+  }
 }
 
 /**
@@ -35,6 +65,7 @@ export interface FirstPush {
  *   (the `by` rule, GC-3b), and `web` copies it from the journal.
  * - `purged-commits`: commits a purge removed (GC-8), one per line; a push
  *   bringing one back is refused.
+ * - `purges/<purge ID>.json`: each purge's record (`PurgeRecord`).
  */
 export interface Records {
   /** The commit's first push, or undefined if Shinan never received it. */
@@ -56,6 +87,36 @@ export interface Records {
   mainGroups(workspaceId: string): MainGroup[]
   /** Records groups now on `main`, leaving out those recorded already. */
   addMainGroups(workspaceId: string, groups: MainGroup[]): void
+  /** Adds commits to `purged-commits`, synced to disk before it returns. */
+  addPurgedCommits(workspaceId: string, commits: readonly string[]): void
+  /**
+   * Replaces a purge text in the branch names of the first-pusher record
+   * and of earlier purges' records (`rename` gives a branch's new name, or
+   * the same one), rewriting the files in place; returns how many rows of
+   * the first-pusher record changed. The only change ever made to a row.
+   */
+  renameRefs(workspaceId: string, rename: (ref: string) => string): number
+  /**
+   * Replaces a purge text in the record of groups ever on `main` as the
+   * purge replaced it in `main` (`replace`), rewriting the file in place.
+   * A group that still holds the text afterwards (`holds`), such as one
+   * where it spans the record's own quoting, is dropped: the record only
+   * lets a revert restore a group, and a dropped one is recorded again
+   * from `main` by the next push to it. Returns how many groups changed.
+   */
+  purgeMainGroups(
+    workspaceId: string,
+    replace: (text: string) => string,
+    holds: (text: string) => boolean,
+  ): number
+  /** A purge's record, if the Git container has one. */
+  purge(workspaceId: string, purgeId: string): PurgeRecord | undefined
+  /** Every purge record of a workspace. */
+  purges(workspaceId: string): PurgeRecord[]
+  /** The workspaces with any purge record. */
+  purgedWorkspaces(): string[]
+  /** Writes a purge's record, synced to disk before it returns. */
+  writePurge(workspaceId: string, record: PurgeRecord): void
 }
 
 const groupKey = (group: MainGroup) =>
@@ -130,6 +191,17 @@ export function openRecords(root: string): Records {
     return groups
   }
 
+  const purgedCommits = (workspaceId: string): ReadonlySet<string> => {
+    const file = join(folderOf(workspaceId), "purged-commits")
+    if (!existsSync(file)) return new Set()
+    return new Set(
+      readFileSync(file, "utf8")
+        .split("\n")
+        .map((l) => l.trim())
+        .filter(Boolean),
+    )
+  }
+
   return {
     firstPush: (workspaceId, commit) => load(workspaceId).get(commit),
     hasAny: (workspaceId) => load(workspaceId).size > 0,
@@ -171,17 +243,145 @@ export function openRecords(root: string): Records {
       }
       for (const group of fresh) known.set(groupKey(group), group)
     },
-    purgedCommits(workspaceId) {
+    purgedCommits,
+    addPurgedCommits(workspaceId, commits) {
+      const known = purgedCommits(workspaceId)
+      const fresh = [...new Set(commits)].filter((c) => !known.has(c))
+      if (fresh.length === 0) return
+      mkdirSync(folderOf(workspaceId), { recursive: true, mode: 0o700 })
       const file = join(folderOf(workspaceId), "purged-commits")
-      if (!existsSync(file)) return new Set()
-      return new Set(
-        readFileSync(file, "utf8")
-          .split("\n")
-          .map((l) => l.trim())
-          .filter(Boolean),
+      const created = !existsSync(file)
+      const fd = openSync(file, "a", 0o600)
+      try {
+        writeSync(fd, fresh.map((c) => `${c}\n`).join(""))
+        fsyncSync(fd)
+      } finally {
+        closeSync(fd)
+      }
+      if (created) syncFolder(folderOf(workspaceId))
+    },
+    renameRefs(workspaceId, rename) {
+      const purges = join(folderOf(workspaceId), "purges")
+      if (existsSync(purges))
+        for (const name of readdirSync(purges)) {
+          if (!/^[0-9a-f-]{36}\.json$/.test(name)) continue
+          const record = JSON.parse(
+            readFileSync(join(purges, name), "utf8"),
+          ) as PurgeRecord
+          const refs = record.refs.map((r) => ({ ...r, ref: rename(r.ref) }))
+          if (refs.every((r, i) => r.ref === record.refs[i]!.ref)) continue
+          writeDurably(purges, name, JSON.stringify({ ...record, refs }))
+        }
+      const rows = load(workspaceId)
+      let changed = 0
+      for (const [commit, row] of rows) {
+        if (row.ref === null) continue
+        const ref = rename(row.ref)
+        if (ref === row.ref) continue
+        rows.set(commit, { ...row, ref })
+        changed++
+      }
+      if (changed === 0) return 0
+      writeDurably(
+        folderOf(workspaceId),
+        "first-pushes.jsonl",
+        [...rows.values()].map((row) => `${JSON.stringify(row)}\n`).join(""),
+      )
+      return changed
+    },
+    purgeMainGroups(workspaceId, replace, holds) {
+      const groups = loadGroups(workspaceId)
+      let changed = 0
+      const kept = new Map<string, MainGroup>()
+      for (const group of groups.values()) {
+        const line = JSON.stringify(group)
+        if (!holds(line)) {
+          kept.set(groupKey(group), group)
+          continue
+        }
+        changed++
+        let check: string
+        try {
+          check = JSON.stringify(
+            (JSON.parse(group.check) as unknown[]).map((v) =>
+              typeof v === "string" ? replace(v) : v,
+            ),
+          )
+        } catch {
+          check = replace(group.check)
+        }
+        const purged: MainGroup = {
+          document: replace(group.document),
+          check,
+          facts: group.facts.map(replace).sort(),
+        }
+        if (!holds(JSON.stringify(purged))) kept.set(groupKey(purged), purged)
+      }
+      if (changed === 0) return 0
+      mkdirSync(folderOf(workspaceId), { recursive: true, mode: 0o700 })
+      writeDurably(
+        folderOf(workspaceId),
+        "main-groups.jsonl",
+        [...kept.values()].map((g) => `${JSON.stringify(g)}\n`).join(""),
+      )
+      groupsLoaded.set(workspaceId, kept)
+      return changed
+    },
+    purge(workspaceId, purgeId) {
+      const file = join(
+        folderOf(workspaceId),
+        "purges",
+        `${purgeName(purgeId)}.json`,
+      )
+      if (!existsSync(file)) return undefined
+      return JSON.parse(readFileSync(file, "utf8")) as PurgeRecord
+    },
+    purges(workspaceId) {
+      const folder = join(folderOf(workspaceId), "purges")
+      if (!existsSync(folder)) return []
+      return readdirSync(folder)
+        .filter((name) => /^[0-9a-f-]{36}\.json$/.test(name))
+        .map(
+          (name) =>
+            JSON.parse(readFileSync(join(folder, name), "utf8")) as PurgeRecord,
+        )
+    },
+    purgedWorkspaces() {
+      return readdirSync(folder).filter(
+        (name) =>
+          workspacePattern.test(name) &&
+          existsSync(join(folder, name, "purges")),
+      )
+    },
+    writePurge(workspaceId, record) {
+      const folder = join(folderOf(workspaceId), "purges")
+      mkdirSync(folder, { recursive: true, mode: 0o700 })
+      writeDurably(
+        folder,
+        `${purgeName(record.purgeId)}.json`,
+        JSON.stringify(record),
       )
     },
   }
+}
+
+function purgeName(purgeId: string): string {
+  if (!workspacePattern.test(purgeId)) throw new Error("Not a purge ID")
+  return purgeId
+}
+
+/** Writes a file through a temporary one, synced, then renamed into place. */
+function writeDurably(folder: string, name: string, content: string): void {
+  const temporary = join(folder, `.${name}.tmp`)
+  const fd = openSync(temporary, "w", 0o600)
+  try {
+    writeSync(fd, content)
+    fsyncSync(fd)
+  } finally {
+    closeSync(fd)
+  }
+  renameSync(temporary, join(folder, name))
+  syncFolder(folder)
 }
 
 function syncFolder(path: string): void {

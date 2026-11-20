@@ -410,3 +410,59 @@ export interface JournalEntry {
   kind: string
   data: Record<string, unknown>
 }
+
+/** Places that hold a purge text, on `main` and on the other branches only. */
+export interface RepositoryPurgePlaces {
+  main: number
+  branches: number
+}
+
+/**
+ * Where a purge text is in a workspace's repository (Git-based catalog
+ * plan §2.9): the Git container's part of a purge's preview. Paths are
+ * given as they would read after the purge, never with the text.
+ */
+export interface RepositoryPurgePreview {
+  /** Commits that hold it: in a file, a path, the message or an identity. */
+  commits: RepositoryPurgePlaces
+  /** Files (by path) that hold it, in their content or their path. */
+  files: RepositoryPurgePlaces
+  /** Commit messages (and commit identities) that hold it. */
+  messages: RepositoryPurgePlaces
+  /** Branches whose names hold it. */
+  branchNames: number
+  /**
+   * Files on `main` now that hold it, by path as they would read after the
+   * purge, at most `maxPurgePaths`; `currentFilesMore` counts the rest.
+   */
+  currentFiles: string[]
+  currentFilesMore: number
+  /** Of the places found, those found only across a line break. */
+  acrossLines: number
+  /** Documents on `main` whose structure the purge changes, by path as above. */
+  structure: { path: string; where: "id" | "alias" | "key" | "frontmatter" }[]
+  /** Places that hold it in an encoded form the purge does not reach. */
+  alsoWrittenAs: { form: PurgeForm; places: number }[]
+  /** Journal entries not stored yet that hold it (branch names of pushes). */
+  journalEntries: number
+}
+
+/** An encoded form of a purge text that a purge of the text itself does not reach. */
+export type PurgeForm = "url" | "percent" | "html" | "escaped"
+
+/** The most paths a purge preview lists. */
+export const maxPurgePaths = 100
+
+/** What the Git container's part of a purge did (plan §2.9). */
+export interface RepositoryPurgeResult {
+  purgeId: string
+  /** Whether the history was rewritten: false when it held no copy. */
+  rewritten: boolean
+  commits: number
+  rewrittenCommits: number
+  removedCommits: number
+  files: number
+  messages: number
+  renamedBranches: number
+  journalEntries: number
+}

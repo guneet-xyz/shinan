@@ -1,4 +1,4 @@
-import { accessSync, constants } from "node:fs"
+import { accessSync, constants, readdirSync } from "node:fs"
 import { serve } from "@hono/node-server"
 
 import {
@@ -46,6 +46,8 @@ import {
 import type { EmailConfig, Env } from "./config.js"
 import { createGitApp, createGitInternalApp } from "./git/app.js"
 import { openJournal } from "./git/journal.js"
+import { createPruner, createRepositoryGate } from "./git/prune.js"
+import { createPurges } from "./git/purge.js"
 import { openRecords } from "./git/push/records.js"
 import { createPushService } from "./git/push/service.js"
 import { checkGitRole, readGitRoleConfig } from "./git/startup.js"
@@ -393,14 +395,27 @@ async function runGit(env: Env): Promise<void> {
   const config = readGitRoleConfig(env)
   const git = createGit()
   checkGitRole({ git, catalogDir: config.catalogDir })
-  cleanTemporary(config.catalogDir)
   const store = createRepositoryStore({ root: config.catalogDir, git })
   const journal = openJournal(config.catalogDir)
+  const records = openRecords(config.catalogDir)
+  // Objects no branch reaches are removed after pushes (`prune.ts`).
+  const gate = createRepositoryGate()
+  const pruner = createPruner({
+    store,
+    gate,
+    push: { exclusive: (id, waitMs) => push.exclusive(id, waitMs) },
+  })
   const push = createPushService({
     store,
     journal,
-    records: openRecords(config.catalogDir),
+    records,
+    onUpdated: (workspaceId) => pruner.soon(workspaceId),
   })
+  const purges = createPurges({ store, journal, records, push })
+  // A purge stopped by a restart is finished, or its repository put back,
+  // before `.tmp/` is emptied (plan §2.9).
+  await purges.recover()
+  cleanTemporary(config.catalogDir)
   // Only this process appends to the journal (#165): the records are made
   // whole from it before anything is served.
   await push.recover()
@@ -422,7 +437,15 @@ async function runGit(env: Env): Promise<void> {
     store,
     journal,
     push,
+    purges,
+    gate,
   })
+  // Every repository once after a start, then those pushes changed.
+  for (const name of readdirSync(config.catalogDir)) {
+    const id = /^([0-9a-f-]{36})\.git$/.exec(name)?.[1]
+    if (id) pruner.soon(id)
+  }
+  const stopPruning = pruner.start()
   const internal = createGitInternalApp({
     ready: () => {
       try {
@@ -452,6 +475,7 @@ async function runGit(env: Env): Promise<void> {
       ...config.internal,
     },
   ])
+  stopPruning()
   await new Promise<void>((resolve) => hooks.close(() => resolve()))
   console.info(`${productName} git stopped`)
 }

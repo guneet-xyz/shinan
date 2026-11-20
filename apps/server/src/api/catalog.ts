@@ -235,12 +235,14 @@ export function catalogRoutes(
     return c.json(answer)
   })
 
-  // Catalog purge (catalog §9; M2-10): the text comes in the body, never in
-  // the address, and no answer or error repeats it. Core checks the fields.
+  // Catalog purge (catalog §9; plan §2.9, GC-8): the text comes in the body,
+  // never in the address, and no answer or error repeats it. Core checks
+  // the fields; the Git container rewrites the history.
   app.post(`${base}/purge/preview`, async (c) => {
     const body = await purgeBody(c)
     const answer: Api.CatalogPurgePreview = await previewCatalogPurge(
       ctx(c),
+      git,
       workspaceId(c),
       { text: body.text },
     )
@@ -249,7 +251,7 @@ export function catalogRoutes(
 
   app.post(`${base}/purge`, async (c) => {
     const body = await purgeBody(c)
-    const purge = await purgeCatalogText(ctx(c), workspaceId(c), {
+    const purge = await purgeCatalogText(ctx(c), git, workspaceId(c), {
       text: body.text,
       reason: body.reason,
     })

@@ -22,6 +22,7 @@ import type { LimitedLog } from "@shinan/db"
 
 import { gitMessages, gitText } from "../git-text.js"
 import type { GitAppEnv } from "./app.js"
+import type { RepositoryGate } from "./prune.js"
 import { hookUrlVariable, nonceVariable } from "./push/service.js"
 import type { PushService } from "./push/service.js"
 import type { RepositoryStore } from "./store.js"
@@ -186,6 +187,8 @@ export function createSmartHttp(options: {
   openSpool?: (path: string) => NodeJS.WritableStream
   /** The push checks; without them, the hooks refuse every push. */
   push?: PushService
+  /** Who uses each repository, so the pruner waits for them (`prune.ts`). */
+  gate?: RepositoryGate
 }) {
   const { store, log } = options
   const processLimits = options.processes ?? defaultGitProcessLimits
@@ -321,7 +324,12 @@ export function createSmartHttp(options: {
         { "retry-after": String(gitProcessWaitSeconds) },
       )
     }
-    const release = place
+    // A repository being pruned is not read meanwhile.
+    const leave = (await options.gate?.enter(target.workspaceId)) ?? (() => {})
+    const release = () => {
+      leave()
+      place()
+    }
 
     const settings: [string, string][] = [
       ...repositoryConfiguration(store.hooksDirectory),

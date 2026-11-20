@@ -275,6 +275,7 @@ export {
   smartHttpRequest,
   maxTreeEntries,
   maxTreePathBytes,
+  maxPurgePaths,
   serviceTokenMinLength,
 } from "./catalog/git/api.js"
 export type {
@@ -285,6 +286,10 @@ export type {
   GitRequestContext,
   GitService,
   JournalEntry,
+  PurgeForm,
+  RepositoryPurgePlaces,
+  RepositoryPurgePreview,
+  RepositoryPurgeResult,
   SmartHttpRequest,
   RepositoryFile,
   RepositoryInfo,

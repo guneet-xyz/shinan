@@ -9,6 +9,8 @@ import type {
   JournalEntry,
   RepositoryFile,
   RepositoryInfo,
+  RepositoryPurgePreview,
+  RepositoryPurgeResult,
   RepositoryRefs,
   TreeChange,
   TreeEntry,
@@ -123,6 +125,21 @@ export interface GitClient {
    * were read: every update applied before then is in the journal up to it.
    */
   listRefs(workspaceId: string): Promise<RepositoryRefs | null>
+  /** Where a purge text is in the repository; reads only. */
+  previewPurge(
+    workspaceId: string,
+    input: { text: string },
+  ): Promise<RepositoryPurgePreview>
+  /**
+   * Removes a purge text from the repository's whole history, with the
+   * push lock held (refused `busy` while a push is being checked), and
+   * from the journal entries not yet acknowledged. Safe to repeat: a
+   * repository that holds no copy is not rewritten again.
+   */
+  purge(
+    workspaceId: string,
+    input: { purgeId: string; text: string },
+  ): Promise<RepositoryPurgeResult>
 }
 
 type Json = Record<string, unknown>
@@ -144,6 +161,7 @@ export function createGitClient(options: GitClientOptions): GitClient {
       query?: Record<string, string | undefined>
       body?: Json
       notFound?: true
+      timeoutMs?: number
     } = {},
   ): Promise<Json | null> {
     const url = new URL(path, base)
@@ -160,7 +178,7 @@ export function createGitClient(options: GitClientOptions): GitClient {
         },
         body: input.body ? JSON.stringify(input.body) : undefined,
         redirect: "error",
-        signal: AbortSignal.timeout(timeoutMs),
+        signal: AbortSignal.timeout(input.timeoutMs ?? timeoutMs),
       })
     } catch (error) {
       throw new GitServiceError(
@@ -298,5 +316,23 @@ export function createGitClient(options: GitClientOptions): GitClient {
       })
       return body ? (body as unknown as RepositoryRefs) : null
     },
+    async previewPurge(workspaceId, input) {
+      return (await call("POST", repository(workspaceId, "/purge/preview"), {
+        body: { text: input.text },
+        timeoutMs: purgeTimeoutMs,
+      })) as unknown as RepositoryPurgePreview
+    },
+    async purge(workspaceId, input) {
+      return (await call("POST", repository(workspaceId, "/purge"), {
+        body: { purgeId: input.purgeId, text: input.text },
+        timeoutMs: purgeTimeoutMs,
+      })) as unknown as RepositoryPurgeResult
+    },
   }
 }
+
+/**
+ * How long a purge's preview or rewrite may take: 10 minutes, like one Git
+ * process (plan §2.10). A catalog at its limits is rewritten in far less.
+ */
+const purgeTimeoutMs = 10 * 60 * 1000

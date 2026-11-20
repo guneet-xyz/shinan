@@ -54,6 +54,13 @@ export interface Journal {
   /** The last number given, 0 before the first entry. */
   last(): number
   /**
+   * Gives new names to the branches a workspace's entries not yet
+   * acknowledged name (every `ref` field), for a purge (plan §2.9):
+   * `rename` gives a branch's new name, or the same one. Rewrites those
+   * entries in place; returns how many changed.
+   */
+  renameRefs(workspaceId: string, rename: (ref: string) => string): number
+  /**
    * The journal's own ID, made with it and never changed: `web` keeps how
    * far it has stored each journal by it, so a new journal (a replaced
    * volume) is read from its first entry.
@@ -245,6 +252,35 @@ export function openJournal(root: string): Journal {
       return { deleted }
     },
     last: () => sequence,
+    renameRefs(workspaceId, rename) {
+      let changed = 0
+      for (const n of numbers()) {
+        const entry = readEntry(n)
+        if (!entry || entry.data.workspaceId !== workspaceId) continue
+        let renamed = false
+        const data = renameIn(entry.data, (ref) => {
+          const next = rename(ref)
+          if (next !== ref) renamed = true
+          return next
+        }) as Record<string, unknown>
+        if (!renamed) continue
+        writeDurably(entries, entryName(n), JSON.stringify({ ...entry, data }))
+        changed++
+      }
+      return changed
+    },
     id,
   }
+}
+
+/** `value` with every string under a `ref` key passed through `rename`. */
+function renameIn(value: unknown, rename: (ref: string) => string): unknown {
+  if (Array.isArray(value)) return value.map((v) => renameIn(v, rename))
+  if (typeof value !== "object" || value === null) return value
+  return Object.fromEntries(
+    Object.entries(value).map(([key, v]) => [
+      key,
+      key === "ref" && typeof v === "string" ? rename(v) : renameIn(v, rename),
+    ]),
+  )
 }

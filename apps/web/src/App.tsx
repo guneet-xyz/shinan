@@ -18,10 +18,10 @@ import { SignInLink } from "./pages/SignInLink"
 import { WikiRedirect } from "./pages/WikiRedirect"
 import { Agents } from "./pages/workspace/Agents"
 import { CatalogSettings } from "./pages/workspace/Catalog"
-import { Data } from "./pages/workspace/Data"
 import { General } from "./pages/workspace/General"
 import { Invitations } from "./pages/workspace/Invitations"
 import { Members } from "./pages/workspace/Members"
+import { RemoveText } from "./pages/workspace/RemoveText"
 import { SecurityLog } from "./pages/workspace/SecurityLog"
 import {
   SettingsLayout,
@@ -78,7 +78,12 @@ export function App() {
                 <Route path="agents" element={<Agents />} />
                 <Route path="security-log" element={<SecurityLog />} />
                 <Route path="catalog" element={<CatalogSettings />} />
-                <Route path="data" element={<Data />} />
+                <Route path="catalog/remove-text" element={<RemoveText />} />
+                {/* M2's Data tab held only purge, now under Catalog (GC-8). */}
+                <Route
+                  path="data"
+                  element={<Navigate to="../catalog/remove-text" replace />}
+                />
               </Route>
             </Route>
             <Route path="*" element={<NotFound />} />

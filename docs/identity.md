@@ -1236,7 +1236,7 @@ The residual risks of the owner's choices are listed with the
 
 ## 11. Audit
 
-> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-8](build-plan-git-catalog.md#gc-8-purge-as-a-history-rewrite)): history rewrites. The push log, refused pushes and "not a secret" values are built (GC-3a; the last bullets of this section). The rest describes M2 as built (v0.3.0).
+> **With the [Git-based catalog](build-plan-git-catalog.md):** the push log, refused pushes and "not a secret" values are built (GC-3a), and a purge rewrites the catalog's history (GC-8); the last bullets of this section say what each records.
 
 The **security log** records, as [events](domain-model.md#event) of security
 kinds (**proposed**):
@@ -1293,11 +1293,21 @@ kinds (**proposed**):
   `catalog.fetched` entry with `fetches` since the last one, `totalFetches`
   and `lastFetchedAt`, in the same run as the token use summary.
   **Decided (owner, 2026-11-19, M2-Q17; M2-10):** a catalog purge is one `catalog.purged`
-  entry with the purge's ID and number, the revision it stored and how
-  many revision texts, documents, proposals and events it changed, never
-  the purged text or the reason (which is free text, kept on the timeline).
+  entry with the purge's ID and number and how much it changed, never the
+  purged text or the reason (which is free text, kept on the timeline).
   A purge, and seeing where a text is before purging it, need a workspace
-  owner who signed in again recently; agents are refused.
+  owner who signed in again recently; agents are refused. **As built
+  (GC-8, [catalog §9](catalog.md#9-history-and-purge)):** the counts are
+  the history's (commits that held the text, rewritten and removed
+  commits, files, messages, renamed branches, journal entries), the push
+  log's branch names, events, index documents and the record of the move
+  into Git. The
+  push log itself is purged too: a branch name that held the text is
+  renamed in `catalog_push_refs`, `catalog_commit_first_pushes` and
+  `catalog_rewrites` (the rewrite the purge made: the branches after it),
+  and each rewritten commit's first pusher row names the commit it
+  replaces. Security-log entries keep any branch name they recorded
+  (`catalog.unlogged-update`), as every entry is never purged.
 - **Decided (owner, O-47, N-8, N-13, [#25](https://github.com/guneet-xyz/shinan/issues/25)):**
   the security log is kept forever, and no security-log entry can ever be
   purged, by anyone: neither installation-level entries nor a workspace's

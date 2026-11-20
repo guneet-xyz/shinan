@@ -1,5 +1,5 @@
 import { and, databaseErrorCode, desc, eq, schema, sql } from "@shinan/db"
-import type { Transaction } from "@shinan/db"
+import type { CatalogPurgeHistoryCounts, Transaction } from "@shinan/db"
 
 import type { ResolvedActor } from "../../actor.js"
 import { atInstallation, shinanInWorkspace } from "../../authorize.js"
@@ -26,6 +26,12 @@ import { pushLimits } from "./push-codes.js"
  *   index (`recordCatalogMain`).
  * - `repository.created`: a repository's first commit, first pushed by
  *   Shinan.
+ * - `repository.rewritten` and `repository.purged`: a purge's rewrite of
+ *   the history (plan §2.9, GC-8). The first gives rewritten commits, each
+ *   stored with the first pusher of the commit it replaces (D-066); the
+ *   second the branches after it, stored as a `catalog_rewrites` row,
+ *   which the check of the log against Git starts from, and moves the
+ *   index to the new `main`.
  */
 
 /** A ref of a push, as the journal lists it. */
@@ -83,6 +89,21 @@ export interface PushConfirmedData {
 export interface RepositoryCreatedData {
   workspaceId: string
   commit: string
+}
+
+export interface RepositoryRewrittenData {
+  workspaceId: string
+  /** The purge's ID. */
+  purge: string
+  /** Rewritten commits, the commits they replace, and their first ref, already purged. */
+  commits: { commit: string; replaces: string; ref: string | null }[]
+}
+
+export interface RepositoryPurgedData {
+  workspaceId: string
+  purge: string
+  refs: { ref: string; commit: string }[]
+  counts: CatalogPurgeHistoryCounts
 }
 
 const objectId = /^([0-9a-f]{40}|[0-9a-f]{64})$/
@@ -291,6 +312,10 @@ async function storeEntry(
       return storeConfirmed(scope, entry, entry.data as never)
     case "repository.created":
       return storeCreated(scope, entry, entry.data as never)
+    case "repository.rewritten":
+      return storeRewritten(scope, entry, entry.data as never)
+    case "repository.purged":
+      return storePurged(scope, journalId, entry, entry.data as never)
     default:
       // A kind this release does not know: a newer Git container's. It is
       // not stored, so it must not be acknowledged either.
@@ -515,6 +540,79 @@ async function storeCreated(
     .onConflictDoNothing()
 }
 
+async function storeRewritten(
+  scope: RecordScope,
+  entry: JournalEntry,
+  data: RepositoryRewrittenData,
+): Promise<void> {
+  check(uuid.test(data.workspaceId ?? ""), entry, "workspace")
+  check(Array.isArray(data.commits), entry, "commits")
+  for (const c of data.commits)
+    check(
+      objectId.test(c.commit) && objectId.test(c.replaces),
+      entry,
+      "rewritten commit",
+    )
+  if (data.commits.length === 0) return
+  const f = schema.catalogCommitFirstPushes
+  // Each inherits the first pusher of the commit it replaces; one Shinan
+  // never recorded is Shinan's, as the Git container records it.
+  await scope.tx.execute(sql`
+    insert into ${f} (workspace_id, commit, push_id, ref, first_pushed_at, pusher_kind, agent_id, person_id, by_label, replaces_commit)
+    select ${data.workspaceId}::uuid, v.commit, o.push_id, v.ref,
+      coalesce(o.first_pushed_at, ${new Date(entry.recordedAt)}::timestamptz),
+      coalesce(o.pusher_kind, 'shinan'), o.agent_id, o.person_id,
+      coalesce(o.by_label, 'shinan'), v.replaces
+    from jsonb_to_recordset(${JSON.stringify(data.commits)}::jsonb) as v(commit text, replaces text, ref text)
+    left join ${f} o on o.workspace_id = ${data.workspaceId}::uuid and o.commit = v.replaces
+    on conflict do nothing`)
+}
+
+async function storePurged(
+  scope: RecordScope,
+  journalId: string,
+  entry: JournalEntry,
+  data: RepositoryPurgedData,
+): Promise<void> {
+  check(uuid.test(data.workspaceId ?? ""), entry, "workspace")
+  check(uuid.test(data.purge ?? ""), entry, "purge ID")
+  check(
+    Array.isArray(data.refs) &&
+      data.refs.every(
+        (r) => typeof r.ref === "string" && objectId.test(r.commit),
+      ),
+    entry,
+    "refs",
+  )
+  check(
+    typeof data.counts === "object" && data.counts !== null,
+    entry,
+    "counts",
+  )
+  const [inserted] = await scope.tx
+    .insert(schema.catalogRewrites)
+    .values({
+      id: data.purge,
+      workspaceId: data.workspaceId,
+      journalId,
+      journalEntry: entry.number,
+      rewrittenAt: new Date(entry.recordedAt),
+      refs: data.refs.map(({ ref, commit }) => ({ ref, commit })),
+      counts: data.counts,
+    })
+    .onConflictDoNothing()
+    .returning({ id: schema.catalogRewrites.id })
+  if (!inserted) return
+  const main = data.refs.find((r) => r.ref === "refs/heads/main")
+  if (main)
+    await recordCatalogMain({
+      tx: scope.tx,
+      jobs: scope.jobs,
+      workspaceId: data.workspaceId,
+      commit: main.commit,
+    })
+}
+
 /**
  * The minute check of the push log against Git (plan §2.6): for each
  * workspace with a repository, the branches the Git container reports are
@@ -593,13 +691,24 @@ export async function checkCatalogRefs(
 /**
  * What the push log says each branch points to: the newest confirmed
  * update of each (a deletion: nothing), and `main` at the first commit
- * until a push moves it.
+ * until a push moves it. After a purge's rewrite, the branches as it left
+ * them, and the pushes since.
  */
 async function loggedRefs(
   tx: Transaction,
   workspaceId: string,
   firstCommit: string,
 ): Promise<Map<string, string>> {
+  const w = schema.catalogRewrites
+  const [rewrite] = await tx
+    .select()
+    .from(w)
+    .where(eq(w.workspaceId, workspaceId))
+    .orderBy(desc(w.rewrittenAt), desc(w.journalEntry))
+    .limit(1)
+  const since = rewrite
+    ? sql`(${schema.catalogPushes.pushedAt} > ${rewrite.rewrittenAt} or (${schema.catalogPushes.pushedAt} = ${rewrite.rewrittenAt} and ${schema.catalogPushes.journalEntry} > ${rewrite.journalEntry}))`
+    : sql`true`
   const rows = await tx
     .selectDistinctOn([schema.catalogPushRefs.ref], {
       ref: schema.catalogPushRefs.ref,
@@ -614,6 +723,7 @@ async function loggedRefs(
       and(
         eq(schema.catalogPushes.workspaceId, workspaceId),
         eq(schema.catalogPushRefs.confirmed, true),
+        since,
       ),
     )
     .orderBy(
@@ -621,7 +731,11 @@ async function loggedRefs(
       desc(schema.catalogPushes.pushedAt),
       desc(schema.catalogPushes.journalEntry),
     )
-  const refs = new Map<string, string>([["refs/heads/main", firstCommit]])
+  const refs = new Map<string, string>(
+    rewrite
+      ? rewrite.refs.map((r) => [r.ref, r.commit])
+      : [["refs/heads/main", firstCommit]],
+  )
   for (const row of rows) {
     if (row.commit === null) refs.delete(row.ref)
     else refs.set(row.ref, row.commit)

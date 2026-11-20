@@ -54,8 +54,18 @@ export class PurgeMatcher {
   private readonly failure: Int32Array
   private spentMs = 0
   private readonly yieldNow = pauser()
+  private readonly limitMs: number
 
-  constructor(readonly text: string) {
+  /**
+   * `limitMs`: how long matching may take in all; `matchingLimitMs` (15
+   * seconds) by default, for a request. The Git container's rewrite of a
+   * whole history allows more.
+   */
+  constructor(
+    readonly text: string,
+    options: { limitMs?: number } = {},
+  ) {
+    this.limitMs = options.limitMs ?? matchingLimitMs
     this.words = []
     let word = ""
     for (const c of text) {
@@ -164,7 +174,7 @@ export class PurgeMatcher {
     for (let j = 0, k = 0; j < length; j++) {
       if (
         (j & 0xffff) === 0 &&
-        this.spentMs + performance.now() - started > matchingLimitMs
+        this.spentMs + performance.now() - started > this.limitMs
       )
         throw tooSlow()
       const c = codes[j]

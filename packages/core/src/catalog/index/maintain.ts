@@ -148,6 +148,19 @@ export async function requestCatalogIndexRebuilds(
 }
 
 /**
+ * Asks for a rebuild of one workspace's index from `main` in the caller's
+ * transaction, such as a purge's (plan §2.9): answers say the index is
+ * behind from then until the rebuild finishes.
+ */
+export async function requestCatalogIndexRebuildIn(
+  target: { tx: Transaction; jobs: JobQueue | undefined },
+  workspaceId: string,
+): Promise<void> {
+  await markRebuild(target.tx, workspaceId, { onlyIfNeeded: false })
+  await queueUpdate(target, workspaceId)
+}
+
+/**
  * Whether the index of the workspace whose state row is in scope needs a
  * rebuild: never built, built by another parser or rules version, a
  * rebuild already asked for, or any of its document rows built so.

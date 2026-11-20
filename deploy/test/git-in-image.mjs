@@ -14,6 +14,8 @@ import {
   listTree,
   newCommits,
   openCatFile,
+  readAllObjects,
+  rewriteHistory,
 } from "/app/packages/git/dist/index.js"
 
 const git = createGit()
@@ -206,6 +208,34 @@ results.push = {
         okExitCodes: [0, 1, 128],
       })
     ).exitCode !== 0,
+}
+
+// A purge's history rewrite (GC-8): fast-export into fast-import, changing
+// one file, then repack and prune, all in this image's Git.
+const rewritten = await init("rewritten.git")
+const done = await rewriteHistory(
+  git,
+  client,
+  rewritten,
+  (item) =>
+    item.kind === "blob" && item.data.toString() === "musashi\n"
+      ? { ...item, data: Buffer.from("(purged)\n") }
+      : item,
+  { temporaryDir: mkdtempSync(join(root, "rewrite-")) },
+)
+await git.run(["repack", "-a", "-d", "-q"], { gitDir: rewritten })
+await git.run(["prune", "--expire=now"], { gitDir: rewritten })
+let holds = false
+let objects = 0
+await readAllObjects(git, rewritten, (o) => {
+  objects++
+  if (o.content.includes("musashi\n")) holds = true
+})
+results.rewrite = {
+  firstKept: done.commits.get(first) === first,
+  secondNew: done.commits.get(second) !== second,
+  objects,
+  holds,
 }
 
 console.log(JSON.stringify(results))

@@ -1,7 +1,15 @@
 import { randomBytes } from "node:crypto"
 import { afterAll, beforeEach, describe, expect, it } from "vitest"
 
-import { and, asc, eq, inArray, schema, sql } from "@shinan/db"
+import {
+  and,
+  asc,
+  eq,
+  inArray,
+  refuseDuringTransactions,
+  schema,
+  sql,
+} from "@shinan/db"
 
 import {
   asAgent,
@@ -9,33 +17,110 @@ import {
   newPerson,
   testDatabase,
 } from "../../../test/helpers.js"
+import { shinan } from "../../actor.js"
 import type { Context } from "../../context.js"
 import {
+  BusyError,
   ForbiddenError,
   InvalidInputError,
   ReauthenticationRequiredError,
   RuleViolationError,
+  UnavailableError,
 } from "../../errors.js"
 import { addMember } from "../../identity/members.js"
 import type { Person } from "../../identity/people.js"
 import { createWorkspace } from "../../identity/workspaces.js"
+import type {
+  JournalEntry,
+  RepositoryPurgePreview,
+  RepositoryPurgeResult,
+} from "../git/api.js"
+import { GitServiceError } from "../git/client.js"
+import type { GitClient } from "../git/client.js"
+import { storeCatalogJournal } from "../git/push-log.js"
 import { PurgeMatcher } from "./matcher.js"
 import {
   listCatalogPurges,
-  previewCatalogPurge,
-  purgeCatalogText,
+  previewCatalogPurge as previewWith,
   purgeMarker,
+  purgeCatalogText as purgeWith,
 } from "./purge.js"
 
 // Since the move into Git (GC-6), what a purge rewrites in PostgreSQL is
-// the timeline's events; GC-8 adds the rewrite of the repository's
-// history. The tests plant the text in events.
+// the timeline's events, the push log's branch names, the record of the
+// move and the index; the repository's history is the Git container's
+// (GC-8). The tests plant the text in the database.
 
 const { db, pool } = testDatabase()
+
+// The repository's part of a purge is the Git container's, tested against
+// real Git in `apps/server/src/git/purge.test.ts`. Here a stand-in answers
+// for it: by default, the history holds no copy. Like the real client in
+// tests, it refuses to be called inside a database transaction.
+const noHistory: RepositoryPurgePreview = {
+  commits: { main: 0, branches: 0 },
+  files: { main: 0, branches: 0 },
+  messages: { main: 0, branches: 0 },
+  branchNames: 0,
+  currentFiles: [],
+  currentFilesMore: 0,
+  acrossLines: 0,
+  structure: [],
+  alsoWrittenAs: [],
+  journalEntries: 0,
+}
+const jobs = { send: () => Promise.resolve(null) }
+const gitJournal = {
+  id: "0b6a3a52-6e3f-4cf1-9a11-6a1c6a7d2f00",
+  entries: [] as JournalEntry[],
+  last: 0,
+}
+let gitPurge: (input: { purgeId: string }) => RepositoryPurgeResult
+const git = refuseDuringTransactions(
+  {
+    previewPurge: () => Promise.resolve(noHistory),
+    purge: (_workspaceId: string, input: { purgeId: string }) =>
+      Promise.resolve(gitPurge(input)),
+    readJournal: ({ after }: { after: number }) =>
+      Promise.resolve({
+        journalId: gitJournal.id,
+        entries: gitJournal.entries.filter((e) => e.number > after),
+        last: gitJournal.last,
+      }),
+    acknowledgeJournal: ({ through }: { through: number }) => {
+      gitJournal.entries = gitJournal.entries.filter((e) => e.number > through)
+      return Promise.resolve({ deleted: 0 })
+    },
+  } as unknown as GitClient,
+  "git",
+)
+
+const previewCatalogPurge = (
+  ctx: Context,
+  workspaceId: string,
+  input: { text: unknown },
+) => previewWith(ctx, git, workspaceId, input)
+const purgeCatalogText = (
+  ctx: Context,
+  workspaceId: string,
+  input: { text: unknown; reason: unknown },
+) => purgeWith(ctx, git, workspaceId, input)
+
+/** Appends an entry to the stand-in's journal, as the Git container would. */
+function journalEntry(kind: string, data: Record<string, unknown>) {
+  gitJournal.last++
+  gitJournal.entries.push({
+    number: gitJournal.last,
+    recordedAt: new Date().toISOString(),
+    kind,
+    data,
+  })
+}
 
 afterAll(async () => {
   await pool.end()
 })
+
 
 let owner: Person
 let contributor: Person
@@ -47,6 +132,17 @@ let asOwnersAgent: Context
 let secret: string
 
 beforeEach(async () => {
+  gitPurge = ({ purgeId }) => ({
+    purgeId,
+    rewritten: false,
+    commits: 0,
+    rewrittenCommits: 0,
+    removedCommits: 0,
+    files: 0,
+    messages: 0,
+    renamedBranches: 0,
+    journalEntries: 0,
+  })
   owner = await newPerson(db, "owner")
   contributor = await newPerson(db, "contributor")
   asOwner = asPerson(db, owner)
@@ -121,14 +217,12 @@ async function securityLog() {
 }
 
 const none = {
-  revisionTexts: 0,
-  documents: 0,
-  latestDocuments: [],
-  proposals: 0,
-  waitingProposals: 0,
-  comments: 0,
-  acrossLines: { revisionTexts: 0, latestDocuments: [] },
-  structure: [],
+  history: noHistory,
+  pushLog: 0,
+  indexDocuments: 0,
+  moves: 0,
+  acrossLines: 0,
+  unfinished: 0,
 }
 
 describe("purging catalog text", { timeout: 60_000 }, () => {
@@ -147,8 +241,9 @@ describe("purging catalog text", { timeout: 60_000 }, () => {
       number: 1,
       purgedBy: owner.handle,
       reason: "A passphrase was written into the catalog.",
-      revision: null,
       counts: {
+        pushLog: 0,
+        indexDocuments: 0,
         revisionTexts: 0,
         documents: 0,
         latestDocuments: 0,
@@ -157,8 +252,8 @@ describe("purging catalog text", { timeout: 60_000 }, () => {
         events: 3,
         comments: 0,
       },
-      newProblems: [],
     })
+    expect(purge.counts.history).toBeUndefined()
     // Nothing in the database holds it any more, not even the earlier
     // versions of rows or the job queue.
     expect(await tablesHolding(secret)).toEqual([])
@@ -201,7 +296,6 @@ describe("purging catalog text", { timeout: 60_000 }, () => {
       details: {
         purgeId: purge.id,
         number: 1,
-        revision: null,
         counts: purge.counts,
       },
     })
@@ -217,19 +311,15 @@ describe("purging catalog text", { timeout: 60_000 }, () => {
       )
     expect(purged).toMatchObject({
       actorPersonId: owner.id,
-      summary: `${owner.handle} purged text from the catalog (purge 1): 3 timeline events`,
+      summary: `${owner.handle} removed text from the catalog's history (purge 1)`,
       data: {
         purgeId: purge.id,
         reason: "A passphrase was written into the catalog.",
-        revision: null,
+        counts: purge.counts,
       },
     })
     expect(purged!.subjects).toEqual([{ type: "catalog-purge", id: purge.id }])
-    const { newProblems, ...listed } = purge
-    expect(newProblems).toEqual([])
-    expect(await listCatalogPurges(asContributor, workspaceId)).toEqual([
-      listed,
-    ])
+    expect(await listCatalogPurges(asContributor, workspaceId)).toEqual([purge])
   })
 
   it("is only for workspace owners who signed in again recently, never agents", async () => {
@@ -400,16 +490,185 @@ describe("purging catalog text", { timeout: 60_000 }, () => {
     expect(
       (await previewCatalogPurge(asOwner, workspaceId, { text: secret }))
         .alsoWrittenAs,
-    ).toEqual([
+    ).toEqual([{ form: "percent", text: percent, places: 1 }])
+  })
+
+  it("purges branch names in the push log, and finishes a rewrite whose database part never ran", async () => {
+    // A push of a branch named after the secret, as `web` stored it.
+    const [agent] = await db
+      .select()
+      .from(schema.agents)
+      .where(eq(schema.agents.workspaceId, workspaceId))
+    const [member] = await db
+      .select()
+      .from(schema.members)
+      .where(
+        and(
+          eq(schema.members.workspaceId, workspaceId),
+          eq(schema.members.personId, owner.id),
+        ),
+      )
+    const push = "6a1f0000-0000-4000-8000-000000000001"
+    const branch = `refs/heads/notes-${secret}`
+    const old = "a".repeat(40)
+    const now = "b".repeat(40)
+    journalEntry("push.checked", {
+      push,
+      workspaceId,
+      agent: { id: agent!.id, handle: agent!.handle },
+      person: { id: owner.id, handle: owner.handle },
+      memberId: member!.id,
+      by: owner.handle,
+      outcome: "accepted",
+      codes: [],
+      warnings: 0,
+      secrets: 0,
+      refs: [{ ref: branch, old: null, new: old, kind: "create" }],
+      receivedBytes: 10,
+      receivedObjects: 3,
+      newCommits: 1,
+    })
+    journalEntry("push.confirmed", {
+      push,
+      workspaceId,
+      confirmed: [0],
+      firstPushes: [{ commit: old, ref: branch }],
+      main: null,
+    })
+
+    // The Git container rewrote the history, then `web` failed before its
+    // database part.
+    const rewrite = "6a1f0000-0000-4000-8000-0000000000ff"
+    const counts = {
+      commits: 1,
+      rewrittenCommits: 1,
+      removedCommits: 1,
+      files: 1,
+      messages: 0,
+      renamedBranches: 1,
+      journalEntries: 0,
+    }
+    journalEntry("repository.rewritten", {
+      workspaceId,
+      purge: rewrite,
+      commits: [{ commit: now, replaces: old, ref: "refs/heads/notes-purged" }],
+    })
+    journalEntry("repository.purged", {
+      workspaceId,
+      purge: rewrite,
+      refs: [{ ref: "refs/heads/notes-purged", commit: now }],
+      counts,
+    })
+    await storeCatalogJournal({ db, actor: shinan, jobs }, git)
+    expect(await tablesHolding(secret)).toEqual(
+      expect.arrayContaining([
+        "public.catalog_push_refs",
+        "public.catalog_commit_first_pushes",
+      ]),
+    )
+    const preview = await previewCatalogPurge(asOwner, workspaceId, {
+      text: secret,
+    })
+    expect(preview).toMatchObject({ pushLog: 2, unfinished: 1 })
+
+    const purge = await purgeCatalogText({ ...asOwner, jobs }, workspaceId, {
+      text: secret,
+      reason: "A branch named after a passphrase.",
+    })
+    // The rewrite's ID and counts: its database part is now done.
+    expect(purge).toMatchObject({
+      id: rewrite,
+      counts: { history: counts, pushLog: 2 },
+    })
+    expect(await tablesHolding(secret)).toEqual([])
+    const [ref] = await db
+      .select()
+      .from(schema.catalogPushRefs)
+      .where(eq(schema.catalogPushRefs.pushId, push))
+    expect(ref!.ref).toBe("refs/heads/notes-purged")
+    // The rewritten commit inherited its first pusher.
+    const [inherited] = await db
+      .select()
+      .from(schema.catalogCommitFirstPushes)
+      .where(eq(schema.catalogCommitFirstPushes.commit, now))
+    expect(inherited).toMatchObject({
+      pushId: push,
+      replacesCommit: old,
+      ref: "refs/heads/notes-purged",
+      pusherKind: "agent",
+    })
+    // The index is rebuilt from the new `main`.
+    const [state] = await db
+      .select()
+      .from(schema.catalogIndexState)
+      .where(eq(schema.catalogIndexState.workspaceId, workspaceId))
+    expect(state!.rebuildRequestedAt).not.toBeNull()
+    expect(
+      await previewCatalogPurge(asOwner, workspaceId, { text: "anything" }),
+    ).toMatchObject({ unfinished: 0 })
+  })
+
+  it("is refused while a push is being checked, and needs the Git container", async () => {
+    await plant()
+    const busy = refuseDuringTransactions(
       {
-        form: "percent",
-        text: percent,
-        revisionTexts: 0,
-        proposals: 0,
-        events: 1,
-        comments: 0,
-      },
-    ])
+        purge: () =>
+          Promise.reject(
+            new GitServiceError(409, "busy", "A push is being checked"),
+          ),
+      } as unknown as GitClient,
+      "git",
+    )
+    await expect(
+      purgeWith(asOwner, busy, workspaceId, { text: secret, reason: "Leak." }),
+    ).rejects.toBeInstanceOf(BusyError)
+    await expect(
+      purgeWith(asOwner, undefined, workspaceId, {
+        text: secret,
+        reason: "Leak.",
+      }),
+    ).rejects.toBeInstanceOf(UnavailableError)
+    expect(await listCatalogPurges(asOwner, workspaceId)).toEqual([])
+  })
+
+  it("purges catalog IDs in the record of the move into Git", async () => {
+    await db.insert(schema.catalogMoves).values({
+      workspaceId,
+      revision: 3,
+      documents: 2,
+      firstCommit: "e".repeat(40),
+      waitingProposals: [{ number: 8, touches: [`machine/${secret}`] }],
+      problems: [
+        {
+          code: "invalid-id",
+          severity: "blocking",
+          document: `machine/${secret}`,
+        },
+      ],
+    })
+    expect(
+      await previewCatalogPurge(asOwner, workspaceId, { text: secret }),
+    ).toMatchObject({ moves: 1 })
+    await purgeCatalogText(asOwner, workspaceId, {
+      text: secret,
+      reason: "A passphrase in an ID.",
+    })
+    expect(await tablesHolding(secret)).toEqual([])
+    const [move] = await db
+      .select()
+      .from(schema.catalogMoves)
+      .where(eq(schema.catalogMoves.workspaceId, workspaceId))
+    expect(move).toMatchObject({
+      waitingProposals: [{ number: 8, touches: [`machine/${purgeMarker}`] }],
+      problems: [{ document: `machine/${purgeMarker}` }],
+    })
+    // Outside a purge's own transaction, the record never changes.
+    await expect(
+      db
+        .update(schema.catalogMoves)
+        .set({ problems: [] })
+        .where(eq(schema.catalogMoves.workspaceId, workspaceId)),
+    ).rejects.toMatchObject({ cause: { code: "42501" } })
   })
 })
 
@@ -539,5 +798,98 @@ describe("the database's append-only rules", () => {
     })
     const [row] = await db.select().from(e).where(eq(e.id, id))
     expect(row).toMatchObject({ summary: "Purged", data: { purged: true } })
+  })
+
+  it("let a purge change only the push log's branch names, and only in its own transaction", async () => {
+    const [agent] = await db
+      .select()
+      .from(schema.agents)
+      .where(eq(schema.agents.workspaceId, workspaceId))
+    const [member] = await db
+      .select()
+      .from(schema.members)
+      .where(eq(schema.members.workspaceId, workspaceId))
+    const push = "6a1f0000-0000-4000-8000-0000000000bb"
+    await db.insert(schema.catalogPushes).values({
+      id: push,
+      workspaceId,
+      journalId: push,
+      journalEntry: 1,
+      pushedAt: new Date(),
+      agentId: agent!.id,
+      memberId: member!.id,
+      personId: owner.id,
+      byLabel: owner.handle,
+      outcome: "accepted",
+      receivedBytes: 0,
+      receivedObjects: 0,
+      newCommits: 1,
+    })
+    await db.insert(schema.catalogPushRefs).values({
+      pushId: push,
+      position: 0,
+      ref: `refs/heads/${secret}`,
+      newCommit: "c".repeat(40),
+      kind: "create",
+    })
+    await db.insert(schema.catalogCommitFirstPushes).values({
+      workspaceId,
+      commit: "c".repeat(40),
+      pushId: push,
+      ref: `refs/heads/${secret}`,
+      firstPushedAt: new Date(),
+      pusherKind: "agent",
+      agentId: agent!.id,
+      personId: owner.id,
+      byLabel: owner.handle,
+    })
+    const r = schema.catalogPushRefs
+    const f = schema.catalogCommitFirstPushes
+    await refused(
+      db.update(r).set({ ref: "refs/heads/x" }).where(eq(r.pushId, push)),
+    )
+    await refused(
+      db
+        .update(f)
+        .set({ ref: "refs/heads/x" })
+        .where(eq(f.workspaceId, workspaceId)),
+    )
+    const other = await createWorkspace(asOwner, { name: "Other" })
+    await refused(
+      db.transaction(async (tx) => {
+        await recordPurge(tx, other.workspace.id)
+        await tx
+          .update(r)
+          .set({ ref: "refs/heads/x" })
+          .where(eq(r.pushId, push))
+      }),
+    )
+    await refused(
+      db.transaction(async (tx) => {
+        await recordPurge(tx)
+        await tx
+          .update(r)
+          .set({ newCommit: "d".repeat(40) })
+          .where(eq(r.pushId, push))
+      }),
+    )
+    await refused(
+      db.transaction(async (tx) => {
+        await recordPurge(tx)
+        await tx.delete(f).where(eq(f.workspaceId, workspaceId))
+      }),
+    )
+    await db.transaction(async (tx) => {
+      await recordPurge(tx)
+      await tx
+        .update(r)
+        .set({ ref: "refs/heads/purged" })
+        .where(eq(r.pushId, push))
+      await tx
+        .update(f)
+        .set({ ref: "refs/heads/purged" })
+        .where(eq(f.workspaceId, workspaceId))
+    })
+    expect(await tablesHolding(secret)).toEqual([])
   })
 })
