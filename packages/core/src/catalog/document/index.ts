@@ -30,6 +30,7 @@ export type {
 export {
   factKeyPattern,
   isAttributeName,
+  isDocumentPath,
   isEntityId,
   isFactKey,
   parseEntityId,

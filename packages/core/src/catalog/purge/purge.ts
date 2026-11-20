@@ -1,5 +1,3 @@
-import { createHash } from "node:crypto"
-
 import {
   and,
   createLimitedLog,
@@ -17,23 +15,26 @@ import type { Context } from "../../context.js"
 import { InvalidInputError, RuleViolationError } from "../../errors.js"
 import { appendEvent } from "../../events.js"
 import { recordSecurityEntry } from "../../security-log.js"
-import { parseCatalogDocument } from "../document/index.js"
-import { readDocumentId, splitFrontmatter } from "../document/parse.js"
-import { excerpt } from "../document/secrets.js"
 import { clearTypeSchemaCache } from "../index/indexer.js"
-import {
-  appendCatalogRevision,
-  latestTexts,
-  lockCatalogRevisions,
-} from "../revisions.js"
 import { PurgeMatcher, spaces } from "./matcher.js"
 
 /**
  * Catalog purge (catalog §9; architecture §4.4): a workspace owner removes
  * a text that must not survive, such as a leaked secret or personal data,
- * from everything the workspace's catalog stores. Every occurrence is
- * replaced by a marker, and every record keeps its shape: its time, kind,
- * actor and subjects.
+ * from what the workspace stores. Every occurrence is replaced by a
+ * marker, and every record keeps its shape: its time, kind, actor and
+ * subjects.
+ *
+ * **Between GC-6 and GC-8:** M2's stores of catalog text (revisions,
+ * proposals and their comments) are gone with the move into Git (GC-6),
+ * so what this purges in PostgreSQL is the timeline's events. The
+ * catalog's text is in the workspace's Git repository, which GC-8 purges by
+ * rewriting its history (plan §2.9), here, with the push log's ref names,
+ * after which the agent index is rebuilt from the new `main`
+ * (`requestCatalogIndexRebuilds`). Until then a purge does not reach the
+ * repository or the index built from it. The preview's and the counts'
+ * fields for M2's stores stay, at zero, so the API and the screen keep
+ * their shape for purges made before.
  */
 
 /** What replaces purged text. Plain words in brackets, so YAML still reads it as text. */
@@ -51,66 +52,34 @@ export const purgeLimits = {
 } as const
 
 /**
- * Where the catalog stores text, by table and column: what a purge
- * rewrites and what it checks afterwards (catalog §9). A new table or
- * column holding catalog text, such as comments on proposals (M2-4b),
- * belongs here, and in the full-database test in `purge.test.ts`.
+ * Where the workspace stores text a purge rewrites, by table and column,
+ * and checks afterwards (catalog §9). A new table or column holding
+ * catalog text belongs here.
  *
- * - `catalog_revision_documents.text`: every revision's text, rewritten
- *   in place.
- * - `catalog_proposals`: the request (explanation, related task,
- *   operations, idempotency key) and what Shinan stored about it
- *   (validation's findings, approval reasons, touched catalog IDs, the
- *   rejection reason). The request hash is computed again.
  * - `events`: the summary and data.
- * - `catalog_proposal_comments`: the text, and the idempotency key, cleared
- *   when either holds the text.
- *
- * The agent index is no longer here: it is built from `main` of the
- * workspace's Git repository (GC-4), which this purge does not reach. GC-8
- * replaces this purge with a rewrite of the repository's history, after
- * which the index is rebuilt from the new `main`.
  */
 export const purgeTargets = {
-  revisionText: ["text"],
-  proposals: {
-    text: ["explanation", "relatedTask", "rejectionReason"],
-    json: ["operations", "validation", "approvalReasons"],
-    list: ["touches"],
-    /**
-     * Cleared: a retry of the request as it was sent no longer matches the
-     * purged proposal, and two rewritten keys could become the same.
-     */
-    cleared: ["idempotencyKey"],
-  },
   events: { text: ["summary"], json: ["data"] },
-  comments: { text: ["text"], cleared: ["idempotencyKey"] },
 } as const
 
-/** Where a text is in a workspace's catalog. */
+/** Where a text is in a workspace's records. */
 export interface CatalogPurgePreview {
-  /** Stored document texts that hold it, counting each revision. */
+  /** M2's stored document texts: gone with the move into Git, so 0. */
   revisionTexts: number
-  /** Documents with any revision that holds it. */
+  /** 0, as `revisionTexts`. */
   documents: number
-  /**
-   * The catalog IDs (or, without one, the stable IDs) of documents whose
-   * latest text holds it: the purge stores their cleaned text as a new
-   * catalog revision.
-   */
+  /** None: the catalog's current text is in Git (GC-8 purges it there). */
   latestDocuments: string[]
-  /** Catalog proposals that hold it. */
+  /** M2's catalog proposals: gone, so 0. */
   proposals: number
-  /** Of those, the ones waiting for catalog approval: the purge rejects them. */
   waitingProposals: number
   /** Timeline events that hold it. */
   events: number
-  /** Comments on catalog proposals that hold it. */
+  /** Comments on M2's catalog proposals: gone, so 0. */
   comments: number
   /**
    * Where it is found only across a line break (wrapped text, or a long
-   * word split by an editor), to look at before purging: the stored texts,
-   * and the current pages among them.
+   * word split by an editor), to look at before purging.
    */
   acrossLines: { revisionTexts: number; latestDocuments: string[] }
   /**
@@ -118,11 +87,7 @@ export interface CatalogPurgePreview {
    * as in a link: purge each form too (`text` is the form to purge).
    */
   alsoWrittenAs: EncodedForm[]
-  /**
-   * Where purging would change a document's structure: the text is in its
-   * ID or an alias, ends at a frontmatter key, or spans lines of the
-   * frontmatter. The document may then read with problems, to repair.
-   */
+  /** Where purging would change a document's structure: none until GC-8. */
   structure: { id: string; where: "id" | "alias" | "key" | "frontmatter" }[]
 }
 
@@ -145,13 +110,10 @@ export interface CatalogPurge {
   /** Who purged, in their written form (identity §8.7). */
   purgedBy: string
   reason: string
-  /** The catalog revision that stored the cleaned latest text, if any latest text held it. */
+  /** The M2 catalog revision that stored the cleaned latest text, for purges made before v0.4.0; otherwise null. */
   revision: number | null
   counts: CatalogPurgeCounts
-  /**
-   * Documents whose latest text reads with problems it did not have before
-   * the purge, to repair: given only by the purge itself.
-   */
+  /** Documents that read with new problems after the purge: none until GC-8. */
   newProblems?: { id: string; problems: string[] }[]
 }
 
@@ -172,7 +134,7 @@ function mayHold(match: PurgeMatcher, column: SQL, json = false): SQL {
 }
 
 /**
- * Where a text is in the workspace's catalog, so a workspace owner sees
+ * Where a text is in the workspace's records, so a workspace owner sees
  * what a purge would change before purging (human experience, workspace
  * settings: Data), and copies the purge would not reach. Like the purge,
  * it needs a workspace owner who signed in again recently; it stores
@@ -189,46 +151,22 @@ export async function previewCatalogPurge(
     "catalog.purge",
     async (scope) => {
       const match = new PurgeMatcher(purgeText(input.text))
-      const { tx } = scope
-      const workspace = scope.workspaceId
-      const found = await find(tx, workspace, match)
-      const latest = await latestHolding(tx, workspace, match)
-      const names = await catalogIds(
-        tx,
-        workspace,
-        latest.map((l) => l.documentId),
-      )
-      const name = (id: string) =>
-        match.replace(names.get(id) ?? id, purgeMarker)
-      const documents = new Set(found.revisionTexts.map((r) => r.documentId))
+      const events = await holding(scope.tx, scope.workspaceId, match)
       return {
-        revisionTexts: found.revisionTexts.length,
-        documents: documents.size,
-        latestDocuments: latest.map((l) => name(l.documentId)).sort(),
-        proposals: found.proposals.length,
-        waitingProposals: found.proposals.filter((p) => p.state === "pending")
-          .length,
-        events: found.events.length,
-        comments: found.comments.length,
-        acrossLines: {
-          revisionTexts: found.acrossLines.length,
-          latestDocuments: (
-            await kept(match, latest, (l) =>
-              match.matches(l.text).some((m) => m.acrossLines),
-            )
-          )
-            .map((l) => name(l.documentId))
-            .sort(),
-        },
-        alsoWrittenAs: await encodedForms(tx, workspace, match.text),
-        structure: (
-          await mapped(match, latest, (l) =>
-            structureAt(l.text, match).map((where) => ({
-              id: name(l.documentId),
-              where,
-            })),
-          )
-        ).flat(),
+        revisionTexts: 0,
+        documents: 0,
+        latestDocuments: [],
+        proposals: 0,
+        waitingProposals: 0,
+        events: events.length,
+        comments: 0,
+        acrossLines: { revisionTexts: 0, latestDocuments: [] },
+        alsoWrittenAs: await encodedForms(
+          scope.tx,
+          scope.workspaceId,
+          match.text,
+        ),
+        structure: [],
       }
     },
     snapshotRead,
@@ -236,28 +174,21 @@ export async function previewCatalogPurge(
 }
 
 /**
- * Purges a text from M2's stored catalog (catalog §9; architecture §4.4),
- * in one transaction holding the revision store's lock:
+ * Purges a text from the workspace's records (catalog §9; architecture
+ * §4.4), in one transaction:
  *
  * 1. records the purge: who, when and why, never the text;
- * 2. replaces every occurrence (`PurgeMatcher`) with `purgeMarker` in every
- *    revision's stored text, in catalog proposals and their comments, and
- *    in timeline events
- *    (`purgeTargets`), rejecting waiting proposals that held it;
- * 3. stores the cleaned latest text of each document whose latest text
- *    held it as a new catalog revision, credited to the workspace owner,
- *    so agents asking what changed since a revision, and the catalog
- *    workers, see that the text changed;
- * 4. checks that the text is nowhere left in what it purges;
- * 5. appends a `catalog.purged` event and a security-log entry. The
+ * 2. replaces every occurrence (`PurgeMatcher`) with `purgeMarker` in the
+ *    timeline's events (`purgeTargets`);
+ * 3. checks that the text is nowhere left in what it purges;
+ * 4. appends a `catalog.purged` event and a security-log entry. The
  *    security log itself is never purged (D-049).
  *
- * Afterwards this process forgets text it had parsed; other processes do
- * within a minute (`watchCatalogPurges`). Copies outside Shinan, such as
- * exports, backups and agents' model providers, are not reached: a purged
- * secret must still be rotated at its source. A proposal being worked out
- * during the purge, or sent again afterwards, can bring the text back, so
- * the owner looks again a minute later.
+ * Here GC-8 rewrites the repository's history (plan §2.9). Afterwards this
+ * process forgets text it had parsed; other processes do within a minute
+ * (`watchCatalogPurges`). Copies outside Shinan, such as exports, backups
+ * and agents' clones and model providers, are not reached: a purged secret
+ * must still be rotated at its source.
  */
 export async function purgeCatalogText(
   ctx: Context,
@@ -273,15 +204,14 @@ export async function purgeCatalogText(
       const reason = purgeReason(input.reason, match)
       const { tx } = scope
       const workspace = scope.workspaceId
-      await lockCatalogRevisions(tx, workspace)
 
       const p = schema.catalogPurges
       const [{ next }] = (await tx
         .select({ next: sql<number>`coalesce(max(${p.number}), 0)::int + 1` })
         .from(p)
         .where(eq(p.workspaceId, workspace))) as [{ next: number }]
-      // First, so that the triggers on events and revision text allow this
-      // transaction's updates.
+      // First, so that the trigger on events allows this transaction's
+      // updates.
       const [row] = await tx
         .insert(p)
         .values({
@@ -299,60 +229,15 @@ export async function purgeCatalogText(
         .returning()
       const purge = row!
 
-      const before = await latestHolding(tx, workspace, match)
-      // How they read before, to tell which the purge breaks.
-      const problemsBefore = new Map(
-        await mapped(match, before, (b) => [
-          b.documentId,
-          parseCatalogDocument(b.text).problems,
-        ]),
-      )
-      const texts = await purgeRevisionTexts(tx, workspace, match)
-      const proposals = await purgeProposals(tx, workspace, match, {
-        number: purge.number,
-        actor: scope.actor,
-      })
       const events = await purgeEvents(tx, workspace, match)
-      const comments = await purgeComments(tx, workspace, match)
-      if (
-        texts.length + proposals.length + events.length + comments.length ===
-        0
-      ) {
-        throw nothingToPurge()
-      }
-
-      const latest = before.map((b) => b.documentId)
-      let revision: number | null = null
-      if (latest.length > 0) {
-        const cleaned = await latestTexts(tx, workspace, latest)
-        ;({ revision } = await appendCatalogRevision(
-          tx,
-          workspace,
-          scope.actor,
-          cleaned.map((t) => ({ documentId: t.documentId, text: t.text })),
-          { purgeId: purge.id },
-        ))
-      }
-      const documents = [...new Set(texts.map((t) => t.documentId))].sort()
-
-      const left = await find(tx, workspace, match)
-      if (
-        left.revisionTexts.length +
-          left.proposals.length +
-          left.events.length +
-          left.comments.length >
-        0
-      )
-        throw new Error("A purge left the text in stored catalog records")
+      // GC-8: the rewrite of the repository's history goes here.
+      if (events.length === 0) throw nothingToPurge()
+      if ((await holding(tx, workspace, match)).length > 0)
+        throw new Error("A purge left the text in stored records")
 
       const counts: CatalogPurgeCounts = {
-        revisionTexts: texts.length,
-        documents: documents.length,
-        latestDocuments: latest.length,
-        proposals: proposals.length,
-        rejectedProposals: proposals.filter((p) => p.rejected).length,
+        ...emptyCounts,
         events: events.length,
-        comments: comments.length,
       }
       const [stored] = await tx
         .update(p)
@@ -361,24 +246,14 @@ export async function purgeCatalogText(
         .returning()
       await appendEvent(scope, {
         kind: "catalog.purged",
-        subjects: [
-          { type: "catalog-purge", id: purge.id },
-          ...documents.map((id) => ({ type: "catalog-document", id })),
-          ...[
-            ...new Set([
-              ...proposals.map((p) => p.id),
-              ...comments.map((c) => c.proposalId),
-            ]),
-          ].map((id) => ({ type: "catalog-proposal", id })),
-        ],
+        subjects: [{ type: "catalog-purge", id: purge.id }],
         summary: `${scope.actor.label} purged text from the catalog (purge ${purge.number}): ${describe(counts)}`,
         data: {
           purgeId: purge.id,
           number: purge.number,
           reason,
-          revision,
+          revision: null,
           counts,
-          proposals: proposals.map((p) => p.number).sort((a, b) => a - b),
         },
       })
       await recordSecurityEntry(tx, {
@@ -387,12 +262,14 @@ export async function purgeCatalogText(
         outcome: "succeeded",
         actor: scope.actor,
         request: scope.request,
-        details: { purgeId: purge.id, number: purge.number, revision, counts },
+        details: {
+          purgeId: purge.id,
+          number: purge.number,
+          revision: null,
+          counts,
+        },
       })
-      return {
-        ...purgeOf(stored!, revision),
-        newProblems: await newProblems(tx, workspace, latest, problemsBefore),
-      }
+      return { ...purgeOf(stored!), newProblems: [] }
     },
   )
   // Forget the type schemas this process parsed from the purged text.
@@ -412,14 +289,12 @@ export async function listCatalogPurges(
     "workspace.read",
     async (scope) => {
       const p = schema.catalogPurges
-      const r = schema.catalogRevisions
       const rows = await scope.tx
-        .select({ purge: p, revision: r.number })
+        .select()
         .from(p)
-        .leftJoin(r, and(eq(r.workspaceId, p.workspaceId), eq(r.purgeId, p.id)))
         .where(eq(p.workspaceId, scope.workspaceId))
         .orderBy(desc(p.number))
-      return rows.map((row) => purgeOf(row.purge, row.revision))
+      return rows.map(purgeOf)
     },
     snapshotRead,
   )
@@ -435,30 +310,22 @@ const emptyCounts: CatalogPurgeCounts = {
   comments: 0,
 }
 
-function purgeOf(
-  row: typeof schema.catalogPurges.$inferSelect,
-  revision: number | null,
-): CatalogPurge {
+function purgeOf(row: typeof schema.catalogPurges.$inferSelect): CatalogPurge {
   return {
     id: row.id,
     number: row.number,
     createdAt: row.createdAt,
     purgedBy: row.actorLabel,
     reason: row.reason,
-    revision,
+    // M2's purges stored their revision; it went with M2's tables, and
+    // only the counts say what they changed.
+    revision: null,
     counts: row.counts,
   }
 }
 
 function describe(counts: CatalogPurgeCounts): string {
-  const parts = [
-    counts.revisionTexts > 0 &&
-      `${plural(counts.revisionTexts, "revision text")} of ${plural(counts.documents, "document")}`,
-    counts.proposals > 0 && plural(counts.proposals, "catalog proposal"),
-    counts.comments > 0 && plural(counts.comments, "comment"),
-    counts.events > 0 && plural(counts.events, "timeline event"),
-  ].filter((part): part is string => typeof part === "string")
-  return parts.join(", ")
+  return plural(counts.events, "timeline event")
 }
 
 function plural(n: number, word: string): string {
@@ -515,50 +382,8 @@ function purgeReason(value: unknown, match: PurgeMatcher): string {
 function nothingToPurge(): RuleViolationError {
   return new RuleViolationError(
     "nothing-to-purge",
-    "No stored catalog text, catalog proposal or timeline event of this workspace holds this text",
+    "No timeline event of this workspace holds this text",
   )
-}
-
-/** Each document's current catalog ID, by stable ID, from its latest stored text. */
-async function catalogIds(
-  tx: Transaction,
-  workspaceId: string,
-  documentIds: readonly string[],
-): Promise<Map<string, string | null>> {
-  if (documentIds.length === 0) return new Map()
-  const texts = await latestTexts(tx, workspaceId, [...new Set(documentIds)])
-  return new Map(texts.map((t) => [t.documentId, readDocumentId(t.text)]))
-}
-
-/**
- * `fn` of each row, in order, giving the event loop back between rows
- * once matching has held it for a while (#149).
- */
-async function mapped<T, R>(
-  match: PurgeMatcher,
-  rows: readonly T[],
-  fn: (row: T) => R,
-): Promise<R[]> {
-  const result: R[] = []
-  for (const row of rows) {
-    await match.pause()
-    result.push(fn(row))
-  }
-  return result
-}
-
-/** The rows `keep` keeps, as `mapped` goes through them. */
-async function kept<T>(
-  match: PurgeMatcher,
-  rows: readonly T[],
-  keep: (row: T) => boolean,
-): Promise<T[]> {
-  const result: T[] = []
-  for (const row of rows) {
-    await match.pause()
-    if (keep(row)) result.push(row)
-  }
-  return result
 }
 
 /** The text as it appears inside a JSON string, as PostgreSQL writes jsonb. */
@@ -587,130 +412,6 @@ function holdsJson(value: unknown, match: PurgeMatcher): boolean {
   return found
 }
 
-type ProposalRow = typeof schema.catalogProposals.$inferSelect
-
-/** The purgeable fields of a proposal, as `purgeTargets.proposals` names them. */
-function proposalFields(row: ProposalRow) {
-  return {
-    explanation: row.explanation,
-    relatedTask: row.relatedTask,
-    rejectionReason: row.rejectionReason,
-    operations: row.operations as unknown,
-    validation: row.validation as unknown,
-    approvalReasons: row.approvalReasons as unknown,
-    touches: row.touches,
-    idempotencyKey: row.idempotencyKey,
-  } satisfies Record<
-    (typeof purgeTargets.proposals)[
-      "text" | "json" | "list" | "cleared"][number],
-    unknown
-  >
-}
-
-/** Where the text is now: what a purge would change, or what one left. */
-async function find(
-  tx: Transaction,
-  workspaceId: string,
-  match: PurgeMatcher,
-): Promise<{
-  revisionTexts: { documentId: string; revision: number }[]
-  /** Of those, the ones where it crosses a line break. */
-  acrossLines: { documentId: string; revision: number }[]
-  proposals: { id: string; state: ProposalRow["state"] }[]
-  events: number[]
-  comments: string[]
-}> {
-  const holding = (
-    await mapped(
-      match,
-      await revisionCandidates(tx, workspaceId, match),
-      ({ documentId, revision, text }) => {
-        const found = match.matches(text)
-        return found.length === 0
-          ? []
-          : [
-              {
-                documentId,
-                revision,
-                acrossLines: found.some((m) => m.acrossLines),
-              },
-            ]
-      },
-    )
-  ).flat()
-  const revisionTexts = holding.map(({ documentId, revision }) => ({
-    documentId,
-    revision,
-  }))
-  const acrossLines = holding
-    .filter((h) => h.acrossLines)
-    .map(({ documentId, revision }) => ({ documentId, revision }))
-
-  const proposals = (
-    await kept(
-      match,
-      await proposalCandidates(tx, workspaceId, match, false),
-      (row) => holdsJson(proposalFields(row), match),
-    )
-  ).map((row) => ({ id: row.id, state: row.state }))
-
-  const events = (
-    await kept(match, await eventCandidates(tx, workspaceId, match), (row) =>
-      holdsJson({ summary: row.summary, data: row.data }, match),
-    )
-  ).map((row) => row.id)
-
-  const comments = (
-    await kept(match, await commentCandidates(tx, workspaceId, match), (row) =>
-      commentHolds(row, match),
-    )
-  ).map((row) => row.id)
-
-  return {
-    revisionTexts,
-    acrossLines,
-    proposals,
-    events,
-    comments,
-  }
-}
-
-/** Revision texts that might hold the text, to check one by one. */
-function revisionCandidates(
-  tx: Transaction,
-  workspaceId: string,
-  match: PurgeMatcher,
-) {
-  const r = schema.catalogRevisionDocuments
-  return tx
-    .select({ documentId: r.documentId, revision: r.revision, text: r.text })
-    .from(r)
-    .where(and(eq(r.workspaceId, workspaceId), mayHold(match, sql`${r.text}`)))
-}
-
-/**
- * Proposals whose stored row might hold the text, to check one by one;
- * locked when they are to be purged.
- */
-async function proposalCandidates(
-  tx: Transaction,
-  workspaceId: string,
-  match: PurgeMatcher,
-  lock = true,
-): Promise<ProposalRow[]> {
-  const t = schema.catalogProposals
-  const query = tx
-    .select()
-    .from(t)
-    .where(
-      and(
-        eq(t.workspaceId, workspaceId),
-        mayHold(match, sql`to_jsonb(${t})::text`, true),
-      ),
-    )
-  return lock ? query.for("update") : query
-}
-
 function eventCandidates(
   tx: Transaction,
   workspaceId: string,
@@ -728,113 +429,20 @@ function eventCandidates(
     )
 }
 
-/** Rewrites every revision's stored text; returns the texts it changed. */
-async function purgeRevisionTexts(
+/** The events that hold the text now: what a purge would change, or what one left. */
+async function holding(
   tx: Transaction,
   workspaceId: string,
   match: PurgeMatcher,
-): Promise<{ documentId: string; revision: number }[]> {
-  const r = schema.catalogRevisionDocuments
-  const changed = (
-    await mapped(
-      match,
-      await revisionCandidates(tx, workspaceId, match),
-      (row) =>
-        match.test(row.text)
-          ? [{ ...row, text: match.replace(row.text, purgeMarker) }]
-          : [],
-    )
-  ).flat()
-  // A few hundred at a time, each batch in one statement.
-  for (let i = 0; i < changed.length; i += 200)
-    await tx.execute(
-      sql`update ${r} set text = v.text from jsonb_to_recordset(${JSON.stringify(
-        changed.slice(i, i + 200).map((c) => ({
-          document_id: c.documentId,
-          revision: c.revision,
-          text: c.text,
-        })),
-      )}::jsonb) as v(document_id uuid, revision integer, text text) where ${r.documentId} = v.document_id and ${r.revision} = v.revision`,
-    )
-  return changed.map(({ documentId, revision }) => ({ documentId, revision }))
-}
-
-/** The latest texts that hold the text, by document. */
-async function latestHolding(
-  tx: Transaction,
-  workspaceId: string,
-  match: PurgeMatcher,
-): Promise<{ documentId: string; text: string }[]> {
-  const d = schema.catalogDocuments
-  const r = schema.catalogRevisionDocuments
-  const rows = await tx
-    .select({ documentId: d.id, text: r.text })
-    .from(d)
-    .innerJoin(
-      r,
-      and(eq(r.documentId, d.id), eq(r.revision, d.currentRevision)),
-    )
-    .where(and(eq(d.workspaceId, workspaceId), mayHold(match, sql`${r.text}`)))
-  return (await kept(match, rows, (row) => match.test(row.text))).sort(
-    (a, b) => (a.documentId < b.documentId ? -1 : 1),
-  )
-}
-
-/**
- * Where purging the text from a latest text would change the document's
- * structure: its ID or an alias, a frontmatter key it ends at, or lines of
- * the frontmatter it spans.
- */
-function structureAt(
-  text: string,
-  match: PurgeMatcher,
-): ("id" | "alias" | "key" | "frontmatter")[] {
-  const found = new Set<"id" | "alias" | "key" | "frontmatter">()
-  const document = parseCatalogDocument(text)
-  if (document.id !== null && match.test(document.id)) found.add("id")
-  if (
-    document.kind === "entity" &&
-    document.aliases.some((alias) => match.test(alias))
-  )
-    found.add("alias")
-  const { bodyStart } = splitFrontmatter(text)
-  for (const m of match.find(text)) {
-    if (m.index >= bodyStart) continue
-    if (/^\s*:/.test(text.slice(m.index + m.text.length))) found.add("key")
-    if (/[\r\n]/.test(m.text)) found.add("frontmatter")
+): Promise<number[]> {
+  const found: number[] = []
+  for (const row of await eventCandidates(tx, workspaceId, match)) {
+    // Gives the event loop back between rows (#149).
+    await match.pause()
+    if (holdsJson({ summary: row.summary, data: row.data }, match))
+      found.push(row.id)
   }
-  return [...found]
-}
-
-/** The latest texts the purge left reading with problems they did not have. */
-async function newProblems(
-  tx: Transaction,
-  workspaceId: string,
-  documentIds: readonly string[],
-  before: ReadonlyMap<string, { code: string }[]>,
-): Promise<{ id: string; problems: string[] }[]> {
-  if (documentIds.length === 0) return []
-  const result: { id: string; problems: string[] }[] = []
-  for (const { documentId, text } of await latestTexts(
-    tx,
-    workspaceId,
-    documentIds,
-  )) {
-    const now = parseCatalogDocument(text)
-    const was = (before.get(documentId) ?? []).map((p) => p.code)
-    const added = now.problems.filter((p) => {
-      const i = was.indexOf(p.code)
-      if (i < 0) return true
-      was.splice(i, 1)
-      return false
-    })
-    if (added.length > 0)
-      result.push({
-        id: now.id ?? documentId,
-        problems: added.map((p) => p.message),
-      })
-  }
-  return result.sort((a, b) => (a.id < b.id ? -1 : 1))
+  return found
 }
 
 /**
@@ -864,38 +472,20 @@ async function encodedForms(
       form.anyCase
         ? sql`strpos(lower(${column}), ${value.toLowerCase()}) > 0`
         : sql`strpos(${column}, ${value}) > 0`
-    const r = schema.catalogRevisionDocuments
-    const p = schema.catalogProposals
     const e = schema.events
-    const c = schema.catalogProposalComments
     const [counts] = (
-      await tx.execute<{
-        revision_texts: number
-        proposals: number
-        events: number
-        comments: number
-      }>(
-        sql`select
-          (select count(*)::int from ${r} where ${r.workspaceId} = ${workspaceId} and ${has(sql`${r.text}`, form.text)}) as revision_texts,
-          (select count(*)::int from ${p} where ${p.workspaceId} = ${workspaceId} and ${has(sql`to_jsonb(${p})::text`, inJson(form.text))}) as proposals,
-          (select count(*)::int from ${e} where ${e.workspaceId} = ${workspaceId} and (${has(sql`${e.summary}`, form.text)} or ${has(sql`${e.data}::text`, inJson(form.text))})) as events,
-          (select count(*)::int from ${c} where ${c.workspaceId} = ${workspaceId} and ${has(sql`${c.text}`, form.text)}) as comments`,
+      await tx.execute<{ events: number }>(
+        sql`select count(*)::int as events from ${e} where ${e.workspaceId} = ${workspaceId} and (${has(sql`${e.summary}`, form.text)} or ${has(sql`${e.data}::text`, inJson(form.text))})`,
       )
     ).rows
-    if (
-      counts!.revision_texts +
-        counts!.proposals +
-        counts!.events +
-        counts!.comments >
-      0
-    )
+    if (counts!.events > 0)
       result.push({
         form: form.form,
         text: form.text,
-        revisionTexts: counts!.revision_texts,
-        proposals: counts!.proposals,
+        revisionTexts: 0,
+        proposals: 0,
         events: counts!.events,
-        comments: counts!.comments,
+        comments: 0,
       })
   }
   return result
@@ -919,132 +509,6 @@ function htmlEscaped(text: string): string {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;")
-}
-
-/**
- * Rewrites the catalog proposals that hold the text. A waiting one is
- * rejected: its operations no longer say what its author meant. Validation
- * findings and approval reasons also lose the text's excerpt, as the
- * secret check shows it (`excerpt`).
- */
-async function purgeProposals(
-  tx: Transaction,
-  workspaceId: string,
-  match: PurgeMatcher,
-  purge: {
-    number: number
-    actor: {
-      personId: string | null
-      agentId: string | null
-      label: string
-    }
-  },
-): Promise<{ id: string; number: number; rejected: boolean }[]> {
-  const purged: { id: string; number: number; rejected: boolean }[] = []
-  const cut = excerpt(match.text)
-  const plain = (s: string) => match.replace(s, purgeMarker)
-  // An excerpt of six characters, of a text of 18 or more.
-  const findings = (s: string) =>
-    cut.length > 6 ? plain(s).split(cut).join(purgeMarker) : plain(s)
-  for (const row of await proposalCandidates(tx, workspaceId, match)) {
-    await match.pause()
-    if (!holdsJson(proposalFields(row), match)) continue
-    const explanation = plain(row.explanation)
-    const relatedTask = row.relatedTask === null ? null : plain(row.relatedTask)
-    const operations = mapStrings(row.operations, plain) as unknown[]
-    const pending = row.state === "pending"
-    await tx
-      .update(schema.catalogProposals)
-      .set({
-        explanation,
-        relatedTask,
-        operations,
-        validation: mapStrings(row.validation, findings) as Record<
-          string,
-          unknown
-        >[],
-        approvalReasons: mapStrings(row.approvalReasons, findings) as string[],
-        touches: row.touches.map(plain),
-        // A retry of the request as it was sent can no longer match it.
-        idempotencyKey: null,
-        requestHash: hashOf(["purged", explanation, relatedTask, operations]),
-        ...(pending
-          ? {
-              state: "rejected" as const,
-              rejectionReason: `Rejected by purge ${purge.number}: it held text a workspace owner purged`,
-              decidedAt: new Date(),
-              decidedByPersonId: purge.actor.personId,
-              decidedByAgentId: purge.actor.agentId,
-              decidedByLabel: purge.actor.label,
-            }
-          : {
-              rejectionReason:
-                row.rejectionReason === null
-                  ? null
-                  : plain(row.rejectionReason),
-            }),
-      })
-      .where(eq(schema.catalogProposals.id, row.id))
-    purged.push({ id: row.id, number: row.number, rejected: pending })
-  }
-  return purged
-}
-
-/** Comments on proposals that might hold the text, to check one by one. */
-function commentCandidates(
-  tx: Transaction,
-  workspaceId: string,
-  match: PurgeMatcher,
-) {
-  const c = schema.catalogProposalComments
-  return tx
-    .select({
-      id: c.id,
-      proposalId: c.proposalId,
-      text: c.text,
-      idempotencyKey: c.idempotencyKey,
-    })
-    .from(c)
-    .where(
-      and(
-        eq(c.workspaceId, workspaceId),
-        sql`(${mayHold(match, sql`${c.text}`)} or ${mayHold(match, sql`coalesce(${c.idempotencyKey}, '')`)})`,
-      ),
-    )
-}
-
-/** Whether a comment holds the text, in its text or its idempotency key. */
-function commentHolds(
-  row: { text: string; idempotencyKey: string | null },
-  match: PurgeMatcher,
-): boolean {
-  return (
-    match.test(row.text) ||
-    (row.idempotencyKey !== null && match.test(row.idempotencyKey))
-  )
-}
-
-/**
- * Rewrites the comments on proposals that hold the text, clearing their
- * idempotency keys: a retry of the comment as it was sent no longer matches.
- */
-async function purgeComments(
-  tx: Transaction,
-  workspaceId: string,
-  match: PurgeMatcher,
-): Promise<{ id: string; proposalId: string }[]> {
-  const purged: { id: string; proposalId: string }[] = []
-  const c = schema.catalogProposalComments
-  for (const row of await commentCandidates(tx, workspaceId, match)) {
-    await match.pause()
-    if (!commentHolds(row, match)) continue
-    await tx
-      .update(c)
-      .set({ text: match.replace(row.text, purgeMarker), idempotencyKey: null })
-      .where(eq(c.id, row.id))
-    purged.push({ id: row.id, proposalId: row.proposalId })
-  }
-  return purged
 }
 
 /** Rewrites the summary and data of the timeline events that hold the text. */
@@ -1079,9 +543,7 @@ const vacuumLog = createLimitedLog()
  */
 async function vacuumPurged(ctx: Context): Promise<void> {
   try {
-    await ctx.db.execute(
-      sql`vacuum (skip_locked) catalog_revision_documents, catalog_proposals, catalog_proposal_comments, events`,
-    )
+    await ctx.db.execute(sql`vacuum (skip_locked) events`)
   } catch (error) {
     vacuumLog(
       "purge-vacuum",
@@ -1138,26 +600,4 @@ export function watchCatalogPurges(
   const timer = setInterval(() => void run(), intervalMs)
   timer.unref()
   return () => clearInterval(timer)
-}
-
-/**
- * A stored proposal's request hash after a purge (M2's proposals stay in the
- * database until GC-6 moves the catalog into Git): the same form M2 used,
- * the request with every map's keys sorted.
- */
-function hashOf(request: unknown): string {
-  return createHash("sha256")
-    .update(JSON.stringify(canonical(request)))
-    .digest("base64url")
-}
-
-function canonical(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(canonical)
-  if (typeof value === "object" && value !== null)
-    return Object.fromEntries(
-      Object.keys(value)
-        .sort()
-        .map((k) => [k, canonical((value as Record<string, unknown>)[k])]),
-    )
-  return value
 }

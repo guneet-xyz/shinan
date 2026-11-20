@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto"
 import { afterAll, beforeEach, describe, expect, it } from "vitest"
 
-import { and, asc, eq, schema, sql } from "@shinan/db"
+import { and, asc, eq, inArray, schema, sql } from "@shinan/db"
 
 import {
   asAgent,
@@ -19,9 +19,6 @@ import {
 import { addMember } from "../../identity/members.js"
 import type { Person } from "../../identity/people.js"
 import { createWorkspace } from "../../identity/workspaces.js"
-import { storeCatalogRevision } from "../../testing.js"
-import { findCatalogDocument, latestTexts } from "../revisions.js"
-import type { RevisionActor } from "../revisions.js"
 import { PurgeMatcher } from "./matcher.js"
 import {
   listCatalogPurges,
@@ -30,13 +27,15 @@ import {
   purgeMarker,
 } from "./purge.js"
 
+// Since the move into Git (GC-6), what a purge rewrites in PostgreSQL is
+// the timeline's events; GC-8 adds the rewrite of the repository's
+// history. The tests plant the text in events.
+
 const { db, pool } = testDatabase()
 
 afterAll(async () => {
   await pool.end()
 })
-
-const today = new Date().toISOString().slice(0, 10)
 
 let owner: Person
 let contributor: Person
@@ -44,7 +43,6 @@ let workspaceId: string
 let asOwner: Context
 let asContributor: Context
 let asOwnersAgent: Context
-let person: string
 /** A leaked passphrase, unique to each test, that the secret check does not catch. */
 let secret: string
 
@@ -61,303 +59,38 @@ beforeEach(async () => {
     role: "contributor",
   })
   asOwnersAgent = await asAgent(db, owner, workspaceId)
-  person = `person/${owner.handle}`
   secret = `plum-otter-${randomBytes(4).toString("hex")}-lantern`
 })
 
-// M2's catalog proposals and their comments are gone as operations, but
-// their rows stay in the database until GC-6 moves the catalog into Git, and
-// purge must still clean them; the tests store them directly.
-
-/** A stored M2 catalog proposal, as purge sees it. */
-interface StoredProposal {
-  id: string
-  number: number
-}
-
-function actorOf(ctx: Context): RevisionActor {
-  if (ctx.actor.kind === "agent")
-    return {
-      kind: "agent",
-      personId: ctx.actor.personId,
-      agentId: ctx.actor.agentId,
-      agentSessionId: null,
-      label: `${owner.handle} via ${ctx.actor.agentHandle}`,
-      confidence: "recorded",
-    }
-  return {
-    kind: "person",
-    personId: owner.id,
-    agentId: null,
-    agentSessionId: null,
-    label: owner.handle,
-    confidence: "recorded",
-  }
-}
-
-/**
- * Stores a catalog revision of these documents, by this actor: a new
- * revision of a document already stored under the same ID.
- */
-async function store(ctx: Context, texts: string[]): Promise<number> {
-  const documents = []
-  for (const text of texts) {
-    const id = /^id: (.+)$/m.exec(text)![1]!
-    const documentId = await db.transaction((tx) =>
-      findCatalogDocument(tx, workspaceId, id),
-    )
-    documents.push(documentId ? { documentId, text } : { text })
-  }
-  const applied = await storeCatalogRevision(
-    db,
-    workspaceId,
-    actorOf(ctx),
-    documents,
-  )
-  return applied.revision
-}
-
-/** Stores an M2 catalog proposal's row. */
-async function storeProposal(
-  ctx: Context,
-  input: {
-    explanation: string
-    operations: unknown[]
-    touches: string[]
-    state: "applied" | "pending" | "rejected"
-    basedOnRevision: number
-    appliedRevision?: number
-    rejectionReason?: string
-  },
-): Promise<StoredProposal> {
-  const actor = actorOf(ctx)
-  const [{ next }] = (
-    await db.execute<{ next: number }>(
-      sql`select coalesce(max(number), 0) + 1 as next from catalog_proposals where workspace_id = ${workspaceId}`,
-    )
-  ).rows as [{ next: number }]
-  const decided = input.state !== "pending"
+/** An event of the workspace's timeline with this summary and data. */
+async function event(
+  summary: string,
+  data: Record<string, unknown> = {},
+): Promise<number> {
   const [row] = await db
-    .insert(schema.catalogProposals)
+    .insert(schema.events)
     .values({
       workspaceId,
-      number: next,
-      actorKind: actor.kind,
-      actorPersonId: actor.personId,
-      actorAgentId: actor.agentId,
-      actorLabel: actor.label,
-      confidence: actor.confidence,
-      explanation: input.explanation,
-      operations: input.operations,
-      basedOnRevision: input.basedOnRevision,
-      state: input.state,
-      approvalClasses: ["body-and-bookkeeping"],
-      approvalReasons: [],
-      touches: input.touches,
-      validation: [],
-      requestHash: randomBytes(8).toString("hex"),
-      appliedRevision: input.appliedRevision ?? null,
-      decidedAt: decided ? new Date() : null,
-      decidedByPersonId: decided ? owner.id : null,
-      decidedByLabel: decided ? owner.handle : null,
-      rejectionReason: input.rejectionReason ?? null,
+      kind: "catalog.pushed",
+      origin: "git_push",
+      actorKind: "person",
+      actorPersonId: owner.id,
+      actorLabel: owner.handle,
+      confidence: "recorded",
+      summary,
+      data,
     })
-    .returning({ id: schema.catalogProposals.id })
-  return { id: row!.id, number: next }
+    .returning({ id: schema.events.id })
+  return row!.id
 }
 
-/** Stores a comment on a proposal. */
-async function storeComment(
-  ctx: Context,
-  proposal: StoredProposal,
-  text: string,
-  idempotencyKey: string | null = null,
-): Promise<void> {
-  const actor = actorOf(ctx)
-  await db.insert(schema.catalogProposalComments).values({
-    workspaceId,
-    proposalId: proposal.id,
-    actorKind: actor.kind,
-    actorPersonId: actor.personId,
-    actorAgentId: actor.agentId,
-    actorLabel: actor.label,
-    confidence: actor.confidence,
-    text,
-    idempotencyKey,
-  })
-}
-
-/** A proposal's row as stored. */
-async function proposalRow(proposal: StoredProposal) {
-  const [row] = await db
-    .select()
-    .from(schema.catalogProposals)
-    .where(eq(schema.catalogProposals.id, proposal.id))
-  return row!
-}
-
-const ownerEntity = () => `---
-id: ${person}
-type: person
-title: Owner
-summary: Owns the workspace.
-status: active
-owner: ${person}
-facts:
-  - checked: ${today}
-    by: ${owner.handle}
-    scope: Membership
-    source: Shinan
-    observed:
-      member: ${owner.handle}
----
-
-# Owner
-`
-
-const musashi = (access: string) => `---
-id: machine/musashi
-type: machine
-title: Musashi
-summary: The production host.
-status: active
-owner: ${person}
-facts:
-  - checked: ${today}
-    by: ${owner.handle}
-    scope: A look at the machine
-    source: ssh musashi
-    observed:
-      hostname: musashi
----
-
-# Musashi
-
-The shared production host.
-
-## Access
-
-${access}
-`
-
-const daedalus = (summary: string, passphrase = secret) => `---
-id: machine/daedalus
-type: machine
-title: Daedalus
-summary: ${summary}
-status: active
-owner: ${person}
-facts:
-  - checked: ${today}
-    by: ${owner.handle} via opencode-daedalus
-    scope: A look at the machine
-    source: ssh musashi
-    observed:
-      hostname:
-        value: daedalus
-        note: Reached with ${passphrase}
----
-
-# Daedalus
-
-Log in with ${passphrase} until it is rotated.
-`
-
-/**
- * The secret, planted wherever the catalog stores text: in Musashi's first
- * revision only, in Daedalus's latest text, in M2 proposals (applied,
- * waiting and rejected: operations, explanations, a rejection reason), in a
- * comment on a proposal, and in a timeline event (the rejection's reason).
- */
-async function plant(): Promise<{
-  waiting: StoredProposal
-  rejected: StoredProposal
-}> {
-  const first = await store(asOwner, [
-    ownerEntity(),
-    musashi(`The console passphrase is ${secret} for now.`),
-  ])
-  await storeProposal(asOwner, {
-    explanation: "A test change.",
-    operations: [
-      {
-        op: "create-entity",
-        id: "machine/musashi",
-        body: `# Musashi\n\nThe console passphrase is ${secret} for now.\n`,
-      },
-    ],
-    touches: [person, "machine/musashi"],
-    state: "applied",
-    basedOnRevision: 0,
-    appliedRevision: first,
-  })
-  const second = await store(asOwnersAgent, [
-    musashi("Ask the owner for console access."),
-  ])
-  await storeProposal(asOwnersAgent, {
-    explanation: `Took ${secret} out of the page.`,
-    operations: [
-      {
-        op: "edit-body",
-        document: "machine/musashi",
-        expect: {
-          text: `## Access\n\nThe console passphrase is ${secret} for now.\n`,
-        },
-      },
-    ],
-    touches: ["machine/musashi"],
-    state: "applied",
-    basedOnRevision: first,
-    appliedRevision: second,
-  })
-  const third = await store(asOwnersAgent, [
-    daedalus(`The build host; its old passphrase was ${secret}.`),
-  ])
-  await storeProposal(asOwnersAgent, {
-    explanation: "A test change.",
-    operations: [
-      { op: "create-entity", id: "machine/daedalus", summary: secret },
-    ],
-    touches: ["machine/daedalus"],
-    state: "applied",
-    basedOnRevision: second,
-    appliedRevision: third,
-  })
-  const waiting = await storeProposal(asOwnersAgent, {
-    explanation: `Daedalus is going away; ${secret} goes with it.`,
-    operations: [{ op: "set-field", document: "machine/daedalus" }],
-    touches: ["machine/daedalus"],
-    state: "pending",
-    basedOnRevision: third,
-  })
-  const reason = `Not before ${secret} is rotated.`
-  const rejected = await storeProposal(asOwnersAgent, {
-    explanation: "Musashi is going away.",
-    operations: [{ op: "set-field", document: "machine/musashi" }],
-    touches: ["machine/musashi"],
-    state: "rejected",
-    basedOnRevision: third,
-    rejectionReason: reason,
-  })
-  await db.insert(schema.events).values({
-    workspaceId,
-    kind: "catalog.proposal-rejected",
-    origin: "shinan_action",
-    actorKind: "person",
-    actorPersonId: owner.id,
-    actorLabel: owner.handle,
-    confidence: "recorded",
-    subjects: [{ type: "catalog-proposal", id: rejected.id }],
-    summary: `${owner.handle} rejected catalog proposal ${rejected.number}`,
-    data: { proposalId: rejected.id, reason },
-  })
-  await storeComment(
-    asOwnersAgent,
-    waiting,
-    `The old passphrase ${secret}\nstill works.`,
-    "comment-1",
-  )
-  return { waiting, rejected }
+/** The secret, in two events' summaries and one's data (keys and values). */
+async function plant(): Promise<number[]> {
+  return [
+    await event(`${owner.handle} pushed: the passphrase is ${secret}`),
+    await event("A change", { note: `Was ${secret}`, [secret]: true }),
+    await event("Another change", { list: ["fine", `old ${secret}`] }),
+  ]
 }
 
 /**
@@ -387,33 +120,25 @@ async function securityLog() {
     .orderBy(asc(schema.securityLog.id))
 }
 
-// Each test stores several revisions, slowly on a busy machine.
-describe("purging catalog text", { timeout: 60_000 }, () => {
-  it("removes a leaked secret from everything the database stores, keeping the security log", async () => {
-    const { waiting, rejected } = await plant()
-    expect(await tablesHolding(secret)).toEqual(
-      expect.arrayContaining([
-        "public.catalog_revision_documents",
-        "public.catalog_proposals",
-        "public.events",
-      ]),
-    )
-    const logBefore = await securityLog()
+const none = {
+  revisionTexts: 0,
+  documents: 0,
+  latestDocuments: [],
+  proposals: 0,
+  waitingProposals: 0,
+  comments: 0,
+  acrossLines: { revisionTexts: 0, latestDocuments: [] },
+  structure: [],
+}
 
+describe("purging catalog text", { timeout: 60_000 }, () => {
+  it("removes a leaked secret from every event the database stores, keeping the security log", async () => {
+    const [first, second, third] = await plant()
+    expect(await tablesHolding(secret)).toEqual(["public.events"])
+    const logBefore = await securityLog()
     expect(
       await previewCatalogPurge(asOwner, workspaceId, { text: secret }),
-    ).toEqual({
-      revisionTexts: 2,
-      documents: 2,
-      latestDocuments: ["machine/daedalus"],
-      proposals: 5,
-      waitingProposals: 1,
-      events: 1,
-      comments: 1,
-      acrossLines: { revisionTexts: 0, latestDocuments: [] },
-      alsoWrittenAs: [],
-      structure: [],
-    })
+    ).toEqual({ ...none, events: 3, alsoWrittenAs: [] })
     const purge = await purgeCatalogText(asOwner, workspaceId, {
       text: ` ${secret}\n`,
       reason: "A passphrase was written into the catalog.",
@@ -422,23 +147,47 @@ describe("purging catalog text", { timeout: 60_000 }, () => {
       number: 1,
       purgedBy: owner.handle,
       reason: "A passphrase was written into the catalog.",
-      revision: 4,
+      revision: null,
       counts: {
-        revisionTexts: 2,
-        documents: 2,
-        latestDocuments: 1,
-        proposals: 5,
-        rejectedProposals: 1,
-        events: 1,
-        comments: 1,
+        revisionTexts: 0,
+        documents: 0,
+        latestDocuments: 0,
+        proposals: 0,
+        rejectedProposals: 0,
+        events: 3,
+        comments: 0,
       },
       newProblems: [],
     })
-
     // Nothing in the database holds it any more, not even the earlier
     // versions of rows or the job queue.
     expect(await tablesHolding(secret)).toEqual([])
-
+    const rows = await db
+      .select({
+        id: schema.events.id,
+        summary: schema.events.summary,
+        data: schema.events.data,
+      })
+      .from(schema.events)
+      .where(inArray(schema.events.id, [first!, second!, third!]))
+      .orderBy(asc(schema.events.id))
+    expect(rows).toEqual([
+      {
+        id: first,
+        summary: `${owner.handle} pushed: the passphrase is ${purgeMarker}`,
+        data: {},
+      },
+      {
+        id: second,
+        summary: "A change",
+        data: { note: `Was ${purgeMarker}`, [purgeMarker]: true },
+      },
+      {
+        id: third,
+        summary: "Another change",
+        data: { list: ["fine", `old ${purgeMarker}`] },
+      },
+    ])
     // The security log keeps every entry as it was, and records the purge
     // without the text.
     const logAfter = await securityLog()
@@ -452,13 +201,12 @@ describe("purging catalog text", { timeout: 60_000 }, () => {
       details: {
         purgeId: purge.id,
         number: 1,
-        revision: 4,
+        revision: null,
         counts: purge.counts,
       },
     })
-
     // The purge is on the timeline, with who, what and why.
-    const [event] = await db
+    const [purged] = await db
       .select()
       .from(schema.events)
       .where(
@@ -467,77 +215,16 @@ describe("purging catalog text", { timeout: 60_000 }, () => {
           eq(schema.events.kind, "catalog.purged"),
         ),
       )
-    expect(event).toMatchObject({
+    expect(purged).toMatchObject({
       actorPersonId: owner.id,
+      summary: `${owner.handle} purged text from the catalog (purge 1): 3 timeline events`,
       data: {
         purgeId: purge.id,
         reason: "A passphrase was written into the catalog.",
-        revision: 4,
+        revision: null,
       },
     })
-    expect(event!.subjects).toContainEqual({
-      type: "catalog-purge",
-      id: purge.id,
-    })
-    expect(event!.subjects).toContainEqual({
-      type: "catalog-proposal",
-      id: waiting.id,
-    })
-
-    // Earlier text shows the marker; the document keeps its shape.
-    const [first] = await db
-      .select({ text: schema.catalogRevisionDocuments.text })
-      .from(schema.catalogRevisionDocuments)
-      .where(
-        and(
-          eq(schema.catalogRevisionDocuments.workspaceId, workspaceId),
-          eq(schema.catalogRevisionDocuments.revision, 1),
-          sql`${schema.catalogRevisionDocuments.text} like '%id: machine/musashi%'`,
-        ),
-      )
-    expect(first!.text).toContain(
-      `The console passphrase is ${purgeMarker} for now.`,
-    )
-    const latest = await db.transaction((tx) => latestTexts(tx, workspaceId))
-    expect(
-      latest.find((t) => t.text.includes("id: machine/daedalus")),
-    ).toMatchObject({
-      revision: 4,
-      text: expect.stringContaining(
-        `summary: The build host; its old passphrase was ${purgeMarker}.`,
-      ) as string,
-    })
-
-    // Proposals keep their shape; the waiting one was rejected.
-    expect(await proposalRow(waiting)).toMatchObject({
-      state: "rejected",
-      explanation: `Daedalus is going away; ${purgeMarker} goes with it.`,
-      rejectionReason: `Rejected by purge 1: it held text a workspace owner purged`,
-      decidedByLabel: owner.handle,
-    })
-    const [stored] = await db
-      .select({
-        text: schema.catalogProposalComments.text,
-        key: schema.catalogProposalComments.idempotencyKey,
-      })
-      .from(schema.catalogProposalComments)
-      .where(eq(schema.catalogProposalComments.proposalId, waiting.id))
-    expect(stored).toEqual({
-      text: `The old passphrase ${purgeMarker}\nstill works.`,
-      key: null,
-    })
-    expect(await proposalRow(rejected)).toMatchObject({
-      state: "rejected",
-      rejectionReason: `Not before ${purgeMarker} is rotated.`,
-    })
-
-    // A later revision on top of the purged text.
-    const after = await store(asOwnersAgent, [
-      daedalus("The build host.", purgeMarker),
-    ])
-    expect(after).toBe(5)
-    expect(await tablesHolding(secret)).toEqual([])
-
+    expect(purged!.subjects).toEqual([{ type: "catalog-purge", id: purge.id }])
     const { newProblems, ...listed } = purge
     expect(newProblems).toEqual([])
     expect(await listCatalogPurges(asContributor, workspaceId)).toEqual([
@@ -564,7 +251,6 @@ describe("purging catalog text", { timeout: 60_000 }, () => {
         input,
       ),
     ).rejects.toBeInstanceOf(ReauthenticationRequiredError)
-
     const refusals = await db
       .select()
       .from(schema.securityLog)
@@ -574,6 +260,7 @@ describe("purging catalog text", { timeout: 60_000 }, () => {
           eq(schema.securityLog.action, "request.refused"),
         ),
       )
+      .orderBy(asc(schema.securityLog.id))
     expect(refusals.map((r) => r.details)).toEqual([
       { action: "catalog.purge", reason: "role" },
       { action: "catalog.purge", reason: "role" },
@@ -582,9 +269,7 @@ describe("purging catalog text", { timeout: 60_000 }, () => {
     ])
     // Nothing was purged.
     expect(await listCatalogPurges(asOwner, workspaceId)).toEqual([])
-    expect(await tablesHolding(secret)).toContain(
-      "public.catalog_revision_documents",
-    )
+    expect(await tablesHolding(secret)).toEqual(["public.events"])
   })
 
   it("checks the text and the reason", async () => {
@@ -615,38 +300,18 @@ describe("purging catalog text", { timeout: 60_000 }, () => {
   it("matches any run of whitespace, so wrapped text and split secrets go too", async () => {
     const address = "Jane Q Example, 12 Baker Street, Springfield"
     const split = secret.replace("-lantern", "-\nlantern")
-    const body = `# Daedalus\n\nAsk Jane Q Example, 12 Baker\nStreet, Springfield for the key.\n\n    Indented:  Jane Q\r\n  Example, 12   Baker Street,\tSpringfield\n\nThe passphrase is ${split} for now.\n`
-    const first = await store(asOwner, [ownerEntity()])
-    const second = await store(asOwnersAgent, [
-      `---
-id: machine/daedalus
-type: machine
-title: Daedalus
-summary: Contact ${address}.
-status: active
-owner: ${person}
----
-
-${body}`,
-    ])
-    await storeProposal(asOwnersAgent, {
-      explanation: `Contact ${address.replaceAll(" ", "  ")}.`,
-      operations: [{ op: "create-entity", id: "machine/daedalus", body }],
-      touches: ["machine/daedalus"],
-      state: "applied",
-      basedOnRevision: first,
-      appliedRevision: second,
+    await event(
+      "Ask Jane Q Example, 12 Baker\nStreet, Springfield for the key.",
+    )
+    await event("Indented", {
+      text: "Jane Q\r\n  Example, 12   Baker Street,\tSpringfield",
     })
-    const words = ["Baker", "Springfield", "Jane Q"]
-    const preview = await previewCatalogPurge(asOwner, workspaceId, {
-      text: "Jane Q Example,\n12 Baker Street, Springfield",
-    })
-    expect(preview).toMatchObject({
-      revisionTexts: 1,
-      latestDocuments: ["machine/daedalus"],
-      proposals: 1,
-      acrossLines: { revisionTexts: 1, latestDocuments: ["machine/daedalus"] },
-    })
+    await event(`The key is ${split}`)
+    expect(
+      await previewCatalogPurge(asOwner, workspaceId, {
+        text: "Jane Q Example,\n12 Baker Street, Springfield",
+      }),
+    ).toMatchObject({ events: 2 })
     await purgeCatalogText(asOwner, workspaceId, {
       text: address,
       reason: "Personal data.",
@@ -655,35 +320,14 @@ ${body}`,
       text: secret,
       reason: "A passphrase, split by a line break.",
     })
-    for (const word of [...words, "-\nlantern", secret.split("-")[2]!])
+    for (const word of [
+      "Baker",
+      "Springfield",
+      "Jane Q",
+      "-\nlantern",
+      secret.split("-")[2]!,
+    ])
       expect([word, await tablesHolding(word)]).toEqual([word, []])
-  })
-
-  it("purges a comment's idempotency key that holds the text", async () => {
-    const { waiting } = await plant()
-    await storeComment(
-      asOwnersAgent,
-      waiting,
-      "Looks fine to me.",
-      `review-${secret}`,
-    )
-    expect(
-      await previewCatalogPurge(asOwner, workspaceId, { text: secret }),
-    ).toMatchObject({ comments: 2 })
-    const purge = await purgeCatalogText(asOwner, workspaceId, {
-      text: secret,
-      reason: "Leaked.",
-    })
-    expect(purge.counts.comments).toBe(2)
-    expect(await tablesHolding(secret)).toEqual([])
-    const comments = await db
-      .select({
-        text: schema.catalogProposalComments.text,
-        key: schema.catalogProposalComments.idempotencyKey,
-      })
-      .from(schema.catalogProposalComments)
-      .where(eq(schema.catalogProposalComments.proposalId, waiting.id))
-    expect(comments).toContainEqual({ text: "Looks fine to me.", key: null })
   })
 
   it("purges a whole key block, as long as the text may be, in little time", async () => {
@@ -694,31 +338,17 @@ ${body}`,
     for (let i = 0; i < 6000; i += 64) lines.push(body.slice(i, i + 64))
     lines.push("-----END PRIVATE KEY-----")
     const pem = lines.join("\n").slice(0, 6147)
-    await storeCatalogRevision(
-      db,
-      workspaceId,
-      {
-        kind: "person",
-        personId: owner.id,
-        agentId: null,
-        agentSessionId: null,
-        label: owner.handle,
-        confidence: "recorded",
-      },
-      [
-        {
-          // Indented as a Markdown code block, with Windows line endings.
-          text: `---\nid: machine/keyed\ntype: machine\ntitle: Keyed\nsummary: Holds a key.\nowner: ${person}\n---\n\n# Keyed\n\n    ${pem.replaceAll("\n", "\r\n    ")}\n`,
-        },
-      ],
-    )
+    // Indented as a Markdown code block, with Windows line endings.
+    await event("A pasted key", {
+      text: `    ${pem.replaceAll("\n", "\r\n    ")}`,
+    })
     const started = performance.now()
     expect(
       await previewCatalogPurge(asOwner, workspaceId, { text: pem }),
-    ).toMatchObject({ revisionTexts: 1, latestDocuments: ["machine/keyed"] })
+    ).toMatchObject({ events: 1 })
     await purgeCatalogText(asOwner, workspaceId, {
       text: pem,
-      reason: "A private key in a page.",
+      reason: "A private key in an event.",
     })
     expect(performance.now() - started).toBeLessThan(10_000)
     expect(await tablesHolding(lines[3]!)).toEqual([])
@@ -729,26 +359,14 @@ ${body}`,
     // breaks them, over and over, so every place found fails late.
     const text = "a ".repeat(4999) + "a"
     const value = ("a ".repeat(4997) + "aa ").repeat(2)
+    // Once to warm up, as the preview's matching will be.
+    new PurgeMatcher(text).test(value)
     const started = performance.now()
     expect(new PurgeMatcher(text).test(value)).toBe(false)
     const single = performance.now() - started
 
-    const documents = 12
-    await storeCatalogRevision(
-      db,
-      workspaceId,
-      {
-        kind: "person",
-        personId: owner.id,
-        agentId: null,
-        agentSessionId: null,
-        label: owner.handle,
-        confidence: "recorded",
-      },
-      Array.from({ length: documents }, (_, i) => ({
-        text: `---\nid: machine/m${i}\ntype: machine\ntitle: M${i}\nsummary: A host.\nowner: ${person}\n---\n\n${value}\n`,
-      })),
-    )
+    const events = 12
+    for (let i = 0; i < events; i++) await event(value)
 
     // How long the event loop is held at most while the preview matches.
     let longest = 0
@@ -762,99 +380,40 @@ ${body}`,
     try {
       expect(
         await previewCatalogPurge(asOwner, workspaceId, { text }),
-      ).toMatchObject({ revisionTexts: 0 })
+      ).toMatchObject({ events: 0 })
     } finally {
       clearInterval(probe)
     }
     const total = performance.now() - previewStarted
-    // Without the pauses, each query's values are matched in one stretch:
-    // twelve values, at least. With them, about one value (a row can cost
-    // a little more than `single`) and the pause's budget. Half the
-    // documents leaves room either way, also on a busy machine.
-    expect(total).toBeGreaterThan(documents * single)
-    expect(longest).toBeLessThan((documents / 2) * single)
+    // Every value was matched (an event costs about `single`; half of
+    // them leaves room for timing noise). Without the pauses, the values
+    // are matched in one stretch: twelve values, at least. With them,
+    // about one value and the pause's budget. Half the events leaves room
+    // either way, also on a busy machine.
+    expect(total).toBeGreaterThan((events / 2) * single)
+    expect(longest).toBeLessThan((events / 2) * single)
   })
 
-  it("shows copies in encoded forms, and warns where purging changes a document's structure", async () => {
-    const as = {
-      kind: "person" as const,
-      personId: owner.id,
-      agentId: null,
-      agentSessionId: null,
-      label: owner.handle,
-      confidence: "recorded" as const,
-    }
+  it("shows copies in encoded forms the purge does not reach", async () => {
     const percent = secret.replaceAll("-", "%2D")
-    const word = secret.split("-")[2]!
-    await storeCatalogRevision(db, workspaceId, as, [
-      {
-        text: `---\nid: machine/m-${word}\ntype: machine\ntitle: Leaky\nsummary: The key is\n  ${secret}\nstatus: active\nowner: ${person}\naliases: [machine/old-${word}]\n---\n\n# Leaky\n\n[Log in](https://example.test/?p=${percent}) with ${secret}.\n`,
-      },
-    ])
-    const preview = await previewCatalogPurge(asOwner, workspaceId, {
-      text: word,
-    })
-    expect(preview.structure).toEqual([
-      { id: "machine/m-(purged)", where: "id" },
-      { id: "machine/m-(purged)", where: "alias" },
-    ])
-    const full = await previewCatalogPurge(asOwner, workspaceId, {
-      text: `The key is ${secret}\nstatus`,
-    })
-    expect(full.structure).toEqual([
-      { id: `machine/m-${word}`, where: "key" },
-      { id: `machine/m-${word}`, where: "frontmatter" },
-    ])
-    const encoded = await previewCatalogPurge(asOwner, workspaceId, {
-      text: secret,
-    })
-    expect(encoded.alsoWrittenAs).toEqual([
+    await event(`A link: https://example.com/?q=${percent}`)
+    expect(
+      (await previewCatalogPurge(asOwner, workspaceId, { text: secret }))
+        .alsoWrittenAs,
+    ).toEqual([
       {
         form: "percent",
         text: percent,
-        revisionTexts: 1,
+        revisionTexts: 0,
         proposals: 0,
-        events: 0,
+        events: 1,
         comments: 0,
       },
     ])
-
-    // Purging the ID's word leaves the document with an invalid ID: the
-    // purge says so, for the owner to repair.
-    const purge = await purgeCatalogText(asOwner, workspaceId, {
-      text: word,
-      reason: "A key in an ID.",
-    })
-    expect(purge.newProblems).toEqual([
-      {
-        id: "machine/m-(purged)",
-        problems: [
-          expect.stringContaining('The ID "machine/m-(purged)"'),
-          expect.stringContaining('The alias "machine/old-(purged)"'),
-        ],
-      },
-    ])
-    expect(JSON.stringify(purge)).not.toContain(word)
   })
 })
 
 describe("the database's append-only rules", () => {
-  async function event(): Promise<number> {
-    const [row] = await db
-      .insert(schema.events)
-      .values({
-        workspaceId,
-        kind: "test.event",
-        origin: "shinan_action",
-        actorKind: "shinan",
-        actorLabel: "shinan",
-        confidence: "recorded",
-        summary: `Mentions ${secret}`,
-      })
-      .returning({ id: schema.events.id })
-    return row!.id
-  }
-
   const emptyCounts = {
     revisionTexts: 0,
     documents: 0,
@@ -887,7 +446,7 @@ describe("the database's append-only rules", () => {
     })
 
   it("keep a purge's record: never deleted, and only its counts filled in, by its own transaction", async () => {
-    const id = await event()
+    const id = await event(`Mentions ${secret}`)
     const e = schema.events
     const p = schema.catalogPurges
     // Rewriting history and then removing the record that allowed it fails
@@ -936,8 +495,8 @@ describe("the database's append-only rules", () => {
     await refused(db.execute(sql`truncate catalog_purges cascade`))
   })
 
-  it("let a purge change only events' summary and data, and only in its own transaction", async () => {
-    const id = await event()
+  it("let a purge change only events' summary and data, and only in its own transaction, and never the security log", async () => {
+    const id = await event(`Mentions ${secret}`)
     const e = schema.events
     // Outside a purge: refused.
     await refused(db.update(e).set({ summary: "Changed" }).where(eq(e.id, id)))
@@ -962,44 +521,6 @@ describe("the database's append-only rules", () => {
         await tx.delete(e).where(eq(e.id, id))
       }),
     )
-    await db.transaction(async (tx) => {
-      await recordPurge(tx)
-      await tx
-        .update(e)
-        .set({ summary: "Purged", data: { purged: true } })
-        .where(eq(e.id, id))
-    })
-    const [row] = await db.select().from(e).where(eq(e.id, id))
-    expect(row).toMatchObject({ summary: "Purged", data: { purged: true } })
-  })
-
-  it("let a purge change only revision text, and never the security log", async () => {
-    await plant()
-    const r = schema.catalogRevisionDocuments
-    await refused(
-      db
-        .update(r)
-        .set({ text: "Changed" })
-        .where(eq(r.workspaceId, workspaceId)),
-    )
-    await refused(
-      db.transaction(async (tx) => {
-        await recordPurge(tx)
-        await tx
-          .update(r)
-          .set({ revision: 99 })
-          .where(eq(r.workspaceId, workspaceId))
-      }),
-    )
-    await refused(
-      db.transaction(async (tx) => {
-        await recordPurge(tx)
-        await tx
-          .update(schema.catalogRevisions)
-          .set({ actorLabel: "someone" })
-          .where(eq(schema.catalogRevisions.workspaceId, workspaceId))
-      }),
-    )
     await refused(
       db.transaction(async (tx) => {
         await recordPurge(tx)
@@ -1009,13 +530,14 @@ describe("the database's append-only rules", () => {
           .where(eq(schema.securityLog.workspaceId, workspaceId))
       }),
     )
-    await refused(
-      db.transaction(async (tx) => {
-        await recordPurge(tx)
-        await tx
-          .delete(schema.securityLog)
-          .where(eq(schema.securityLog.workspaceId, workspaceId))
-      }),
-    )
+    await db.transaction(async (tx) => {
+      await recordPurge(tx)
+      await tx
+        .update(e)
+        .set({ summary: "Purged", data: { purged: true } })
+        .where(eq(e.id, id))
+    })
+    const [row] = await db.select().from(e).where(eq(e.id, id))
+    expect(row).toMatchObject({ summary: "Purged", data: { purged: true } })
   })
 })

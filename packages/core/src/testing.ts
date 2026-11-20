@@ -3,33 +3,11 @@ import type { Database } from "@shinan/db"
 import { createMemoryGit } from "../test/memory-git.js"
 import type { FileContent, MemoryGit } from "../test/memory-git.js"
 import { updateWorkspaceIndex } from "./catalog/index/indexer.js"
-import { appendCatalogRevision } from "./catalog/revisions.js"
-import type {
-  AppliedRevision,
-  RevisionActor,
-  RevisionDocument,
-} from "./catalog/revisions.js"
 
 /**
  * For other packages' tests and local screen checks only (not in the built
  * package).
  */
-
-/**
- * Stores a catalog revision directly in M2's revision store, which only
- * purge (until GC-8) and the move into Git (GC-6) still read. The agent
- * index does not: use `pushCatalogFiles` for catalog content.
- */
-export async function storeCatalogRevision(
-  db: Database,
-  workspaceId: string,
-  actor: RevisionActor,
-  documents: readonly RevisionDocument[],
-): Promise<AppliedRevision> {
-  return db.transaction((tx) =>
-    appendCatalogRevision(tx, workspaceId, actor, documents),
-  )
-}
 
 const git = createMemoryGit()
 
@@ -66,7 +44,7 @@ export async function pushCatalogFiles(
 }
 
 export { createMemoryGit }
-export type { FileContent, MemoryGit, RevisionActor, RevisionDocument }
+export type { FileContent, MemoryGit }
 
 /** An agent of `person` in the workspace, with every scope, as a context. */
 export { asAgent } from "../test/helpers.js"

@@ -331,11 +331,6 @@ export const workspaces = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     name: text("name").notNull(),
     createdAt: createdAt(),
-    /**
-     * The catalog's strict setting (catalog §8.2): when on, every catalog
-     * change except a recheck needs catalog approval.
-     */
-    catalogStrict: boolean("catalog_strict").notNull().default(false),
   },
   (t) => [check("workspaces_name_not_blank", sql`btrim(${t.name}) <> ''`)],
 )
@@ -825,143 +820,6 @@ export const rateLimits = pgTable("rate_limits", {
   count: integer("count").notNull(),
 })
 
-/**
- * Catalog storage (catalog §2.1, §9; architecture §5.2, §5.3). The stored
- * Markdown text of each revision is the catalog's source of truth; nothing
- * else is authoritative. M2-3 adds the text and the revision numbers the
- * agent index is built from; catalog proposals and approval (M2-4) add
- * their own records about each revision.
- */
-
-/** Where a catalog proposal stands (catalog §8.1, domain model). */
-export const catalogProposalStates = [
-  "pending",
-  "applied",
-  "rejected",
-  "withdrawn",
-] as const
-export type CatalogProposalState = (typeof catalogProposalStates)[number]
-export const catalogProposalStateEnum = pgEnum(
-  "catalog_proposal_state",
-  catalogProposalStates,
-)
-
-/**
- * A catalog proposal (catalog §8.1): a change to the catalog, made and
- * reviewed inside Shinan, as a list of operations with their inline fact
- * checks. It applies at once or waits for catalog approval (§8.2). The
- * record is about the change, not catalog content (catalog §2.1): it is
- * not rebuilt from the Markdown. Proposals that conflict or that validation
- * blocks are not stored; their author is told why.
- */
-export const catalogProposals = pgTable(
-  "catalog_proposals",
-  {
-    id: uuid("id").primaryKey().defaultRandom(),
-    workspaceId: uuid("workspace_id")
-      .notNull()
-      .references(() => workspaces.id),
-    /** Numbered from 1 in each workspace, for people to name it. */
-    number: integer("number").notNull(),
-    createdAt: createdAt(),
-    /** The author. */
-    ...actorColumns(),
-    /** Why, in a few sentences (catalog §8.1). */
-    explanation: text("explanation").notNull(),
-    /** The related task's ID, as text until tasks exist (M3). */
-    relatedTask: text("related_task"),
-    /** The operations as sent, with their inline fact checks. */
-    operations: jsonb("operations").$type<unknown[]>().notNull(),
-    /** The catalog revision it was made against. */
-    basedOnRevision: integer("based_on_revision").notNull(),
-    state: catalogProposalStateEnum("state").notNull().default("pending"),
-    /** Its approval classes (catalog §8.2). */
-    approvalClasses: text("approval_classes").array().notNull(),
-    /** Why it waits for catalog approval; empty when it applies on its own. */
-    approvalReasons: jsonb("approval_reasons").$type<string[]>().notNull(),
-    /** The catalog IDs of the documents it changes, before and after, to show it on them (catalog §8.6). */
-    touches: text("touches").array().notNull(),
-    /** Validation's findings on the text it would produce (catalog §8.3); never a secret's value. */
-    validation: jsonb("validation")
-      .$type<Record<string, unknown>[]>()
-      .notNull(),
-    /** A key the author chose, so a retried request is stored once; unique per author. */
-    idempotencyKey: text("idempotency_key"),
-    /** A hash of the request, to tell a retry from a different request with the same key. */
-    requestHash: text("request_hash").notNull(),
-    /**
-     * The revision it applied as. That revision names this proposal, which
-     * the database checks; a key in both directions would make the two
-     * tables' types depend on each other.
-     */
-    appliedRevision: integer("applied_revision"),
-    /** When it was applied, rejected or withdrawn, and by whom. */
-    decidedAt: timestamp("decided_at", { withTimezone: true }),
-    decidedByPersonId: uuid("decided_by_person_id"),
-    decidedByAgentId: uuid("decided_by_agent_id"),
-    decidedByLabel: text("decided_by_label"),
-    /** Why it was rejected (catalog §8.6). */
-    rejectionReason: text("rejection_reason"),
-    /** The applied proposal it reverts, for a revert (catalog §8.2). */
-    revertsProposalId: uuid("reverts_proposal_id"),
-  },
-  (t) => [
-    unique("catalog_proposals_workspace_id_id").on(t.workspaceId, t.id),
-    foreignKey({
-      name: "catalog_proposals_reverts_fk",
-      columns: [t.workspaceId, t.revertsProposalId],
-      foreignColumns: [t.workspaceId, t.id],
-    }),
-    index("catalog_proposals_reverts_proposal_id").on(t.revertsProposalId),
-    // Pending proposals are shown on the entities they touch (catalog §8.6).
-    index("catalog_proposals_touches").using("gin", t.touches),
-    unique("catalog_proposals_workspace_id_number").on(t.workspaceId, t.number),
-    // Per author: an agent by itself, a person by themselves.
-    uniqueIndex("catalog_proposals_idempotency_key")
-      .on(
-        t.workspaceId,
-        sql`coalesce(${t.actorAgentId}, ${t.actorPersonId})`,
-        t.idempotencyKey,
-      )
-      .where(sql`${t.idempotencyKey} is not null`),
-    index("catalog_proposals_workspace_id_state").on(t.workspaceId, t.state),
-    foreignKey({
-      name: "catalog_proposals_actor_person_id_fk",
-      columns: [t.actorPersonId],
-      foreignColumns: [people.id],
-    }),
-    foreignKey({
-      name: "catalog_proposals_actor_agent_id_fk",
-      columns: [t.actorAgentId],
-      foreignColumns: [agents.id],
-    }),
-    foreignKey({
-      name: "catalog_proposals_decided_by_person_id_fk",
-      columns: [t.decidedByPersonId],
-      foreignColumns: [people.id],
-    }),
-    foreignKey({
-      name: "catalog_proposals_decided_by_agent_id_fk",
-      columns: [t.decidedByAgentId],
-      foreignColumns: [agents.id],
-    }),
-    actorCheck("catalog_proposals_actor_known", t),
-    check("catalog_proposals_number_positive", sql`${t.number} > 0`),
-    check(
-      "catalog_proposals_decided",
-      sql`(${t.state} = 'pending') = (${t.decidedAt} is null) and (${t.decidedAt} is null) = (${t.decidedByLabel} is null)`,
-    ),
-    check(
-      "catalog_proposals_applied_revision",
-      sql`(${t.state} = 'applied') = (${t.appliedRevision} is not null)`,
-    ),
-    check(
-      "catalog_proposals_rejection_reason",
-      sql`(${t.state} = 'rejected') = (${t.rejectionReason} is not null)`,
-    ),
-  ],
-)
-
 /** How many records a catalog purge changed, by kind: counts only, never the text. */
 export interface CatalogPurgeCounts {
   /** Stored texts of document revisions. */
@@ -1024,196 +882,6 @@ export const catalogPurges = pgTable(
   ],
 )
 
-/**
- * A comment on a catalog proposal (catalog §8.6): members and agents
- * comment, and an agent asked to review a proposal records its findings
- * here; only people approve. Comments are not edited; purge (M2-10) can
- * remove one.
- */
-export const catalogProposalComments = pgTable(
-  "catalog_proposal_comments",
-  {
-    id: uuid("id").primaryKey().defaultRandom(),
-    workspaceId: uuid("workspace_id")
-      .notNull()
-      .references(() => workspaces.id),
-    proposalId: uuid("proposal_id").notNull(),
-    createdAt: createdAt(),
-    ...actorColumns(),
-    text: text("text").notNull(),
-    /** A key the author chose, so a retried comment is stored once; unique per author. */
-    idempotencyKey: text("idempotency_key"),
-  },
-  (t) => [
-    uniqueIndex("catalog_proposal_comments_idempotency_key")
-      .on(
-        t.workspaceId,
-        sql`coalesce(${t.actorAgentId}, ${t.actorPersonId})`,
-        t.idempotencyKey,
-      )
-      .where(sql`${t.idempotencyKey} is not null`),
-    foreignKey({
-      name: "catalog_proposal_comments_proposal_fk",
-      columns: [t.workspaceId, t.proposalId],
-      foreignColumns: [catalogProposals.workspaceId, catalogProposals.id],
-    }),
-    foreignKey({
-      name: "catalog_proposal_comments_actor_person_id_fk",
-      columns: [t.actorPersonId],
-      foreignColumns: [people.id],
-    }),
-    foreignKey({
-      name: "catalog_proposal_comments_actor_agent_id_fk",
-      columns: [t.actorAgentId],
-      foreignColumns: [agents.id],
-    }),
-    actorCheck("catalog_proposal_comments_actor_known", t),
-    check(
-      "catalog_proposal_comments_text_not_blank",
-      sql`btrim(${t.text}) <> ''`,
-    ),
-    index("catalog_proposal_comments_proposal_id").on(
-      t.proposalId,
-      t.createdAt,
-    ),
-  ],
-)
-
-/**
- * A catalog revision: one applied change to a workspace's catalog, numbered
- * from 1 within the workspace. Every answer from the agent index names the
- * revision it was built from (catalog §12.2). Its author is credited the
- * way events are. Never edited (catalog §9); a database trigger refuses
- * updates and deletes.
- */
-export const catalogRevisions = pgTable(
-  "catalog_revisions",
-  {
-    workspaceId: uuid("workspace_id")
-      .notNull()
-      .references(() => workspaces.id),
-    number: integer("number").notNull(),
-    createdAt: createdAt(),
-    ...actorColumns(),
-    /**
-     * The catalog proposal it applied (M2-4). Null only for revisions stored
-     * before proposals existed: revisions are never edited, so these
-     * columns could not be filled in later.
-     */
-    proposalId: uuid("proposal_id"),
-    /** The revision the proposal was based on (architecture §5.3), for history and display. */
-    basedOnRevision: integer("based_on_revision"),
-    /** The person whose catalog approval applied it, if it needed one (catalog §8.2). */
-    approvedByPersonId: uuid("approved_by_person_id"),
-    /** That person's written form (identity §8.7), as it was at the time. */
-    approvedByLabel: text("approved_by_label"),
-    /**
-     * The purge that stored this revision: the latest text of the documents
-     * it changed, with the purged text replaced (catalog §9).
-     */
-    purgeId: uuid("purge_id"),
-  },
-  (t) => [
-    primaryKey({ columns: [t.workspaceId, t.number] }),
-    foreignKey({
-      name: "catalog_revisions_purge_fk",
-      columns: [t.workspaceId, t.purgeId],
-      foreignColumns: [catalogPurges.workspaceId, catalogPurges.id],
-    }),
-    check(
-      "catalog_revisions_one_source",
-      sql`${t.proposalId} is null or ${t.purgeId} is null`,
-    ),
-    foreignKey({
-      name: "catalog_revisions_proposal_fk",
-      columns: [t.workspaceId, t.proposalId],
-      foreignColumns: [catalogProposals.workspaceId, catalogProposals.id],
-    }),
-    foreignKey({
-      name: "catalog_revisions_approved_by_person_id_fk",
-      columns: [t.approvedByPersonId],
-      foreignColumns: [people.id],
-    }),
-    check(
-      "catalog_revisions_approver_labelled",
-      sql`(${t.approvedByPersonId} is null) = (${t.approvedByLabel} is null)`,
-    ),
-    foreignKey({
-      name: "catalog_revisions_actor_person_id_fk",
-      columns: [t.actorPersonId],
-      foreignColumns: [people.id],
-    }),
-    foreignKey({
-      name: "catalog_revisions_actor_agent_id_fk",
-      columns: [t.actorAgentId],
-      foreignColumns: [agents.id],
-    }),
-    actorCheck("catalog_revisions_actor_known", t),
-    check("catalog_revisions_number_positive", sql`${t.number} > 0`),
-  ],
-)
-
-/**
- * One catalog document: an entity, a type schema document or the start-here
- * document. Its catalog ID (such as `machine/musashi`) lives in its text and
- * can change (catalog §2.4), so the document has its own stable ID, which
- * every revision of its text and its index rows refer to.
- */
-export const catalogDocuments = pgTable(
-  "catalog_documents",
-  {
-    id: uuid("id").primaryKey().defaultRandom(),
-    workspaceId: uuid("workspace_id")
-      .notNull()
-      .references(() => workspaces.id),
-    /** The catalog revision that holds its latest text. */
-    currentRevision: integer("current_revision").notNull(),
-    createdAt: createdAt(),
-  },
-  (t) => [
-    foreignKey({
-      name: "catalog_documents_current_revision_fk",
-      columns: [t.workspaceId, t.currentRevision],
-      foreignColumns: [catalogRevisions.workspaceId, catalogRevisions.number],
-    }),
-    // Lets revisions and index rows reference a document with its workspace.
-    unique("catalog_documents_workspace_id_id").on(t.workspaceId, t.id),
-  ],
-)
-
-/**
- * The full Markdown text of each document a revision changed (architecture
- * §5.3). The latest text of a document is the one at its
- * `current_revision`. Never edited, like revisions, except by a purge,
- * which may replace the text alone (catalog §9).
- */
-export const catalogRevisionDocuments = pgTable(
-  "catalog_revision_documents",
-  {
-    workspaceId: uuid("workspace_id").notNull(),
-    revision: integer("revision").notNull(),
-    documentId: uuid("document_id").notNull(),
-    text: text("text").notNull(),
-  },
-  (t) => [
-    primaryKey({ columns: [t.documentId, t.revision] }),
-    foreignKey({
-      name: "catalog_revision_documents_revision_fk",
-      columns: [t.workspaceId, t.revision],
-      foreignColumns: [catalogRevisions.workspaceId, catalogRevisions.number],
-    }),
-    foreignKey({
-      name: "catalog_revision_documents_document_fk",
-      columns: [t.workspaceId, t.documentId],
-      foreignColumns: [catalogDocuments.workspaceId, catalogDocuments.id],
-    }),
-    index("catalog_revision_documents_workspace_id_revision").on(
-      t.workspaceId,
-      t.revision,
-    ),
-  ],
-)
-
 const tsvector = customType<{ data: string }>({
   dataType: () => "tsvector",
 })
@@ -1253,6 +921,61 @@ export const catalogRepositories = pgTable(
 
 const gitObjectId = (column: string) =>
   sql`${sql.identifier(column)} ~ '^([0-9a-f]{40}|[0-9a-f]{64})$'`
+
+/** A catalog proposal M2 left waiting, as the move reports it: never its text. */
+export interface CatalogMoveWaitingProposal {
+  number: number
+  /** The catalog IDs it touched. */
+  touches: string[]
+}
+
+/** A problem the moved catalog reads with, as the move reports it. */
+export interface CatalogMoveProblem {
+  code: string
+  severity: "blocking" | "warning"
+  /** The document's catalog ID, or null for one without a readable ID. */
+  document: string | null
+}
+
+/**
+ * The move of a workspace's M2 catalog into its repository (Git-based
+ * catalog plan §4.1), made by `migrate` and verified by reading the first
+ * commit back: one row per workspace that existed before v0.4.0. The drop
+ * of M2's tables (§4.2) refuses to run unless every workspace with M2
+ * documents has one, so a failed move is never followed by a drop. Kept
+ * afterwards as the record of what was moved; never changed.
+ */
+export const catalogMoves = pgTable(
+  "catalog_moves",
+  {
+    workspaceId: uuid("workspace_id")
+      .primaryKey()
+      .references(() => workspaces.id),
+    /** M2's latest catalog revision when the catalog was moved; 0 for none. */
+    revision: integer("revision").notNull(),
+    /** Documents moved, retired ones included; `README.md` aside. */
+    documents: integer("documents").notNull(),
+    /** The repository's first commit, which holds them. */
+    firstCommit: text("first_commit").notNull(),
+    /** When every file was read back and found equal to its stored text. */
+    verifiedAt: timestamp("verified_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    /** The proposals left waiting for approval, which were not applied (GD-12). */
+    waitingProposals: jsonb("waiting_proposals")
+      .$type<CatalogMoveWaitingProposal[]>()
+      .notNull(),
+    /** What the moved catalog reads with: reported, not refused. */
+    problems: jsonb("problems").$type<CatalogMoveProblem[]>().notNull(),
+  },
+  (t) => [
+    check("catalog_moves_commit_format", gitObjectId("first_commit")),
+    check(
+      "catalog_moves_counts",
+      sql`${t.revision} >= 0 and ${t.documents} >= 0`,
+    ),
+  ],
+)
 
 /** How a push ended at the push checks (Git-based catalog plan §2.6). */
 export const catalogPushOutcomes = [
@@ -1755,35 +1478,5 @@ export const catalogIndexSections = pgTable(
     }).onDelete("cascade"),
     index("catalog_index_sections_search").using("gin", t.search),
     index("catalog_index_sections_search_simple").using("gin", t.searchSimple),
-  ],
-)
-
-/**
- * When each person last opened each catalog page in the wiki, and the
- * catalog revision the page stood at then (human experience, start here for
- * people: "opened" and "changed since you opened it"). Not catalog content
- * and not an event: a small personal record, overwritten on each opening.
- */
-export const catalogPageVisits = pgTable(
-  "catalog_page_visits",
-  {
-    workspaceId: uuid("workspace_id").notNull(),
-    personId: uuid("person_id")
-      .notNull()
-      .references(() => people.id),
-    documentId: uuid("document_id").notNull(),
-    /** The catalog revision that had last changed the page when it was opened. */
-    revision: integer("revision").notNull(),
-    openedAt: timestamp("opened_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-  },
-  (t) => [
-    primaryKey({ columns: [t.workspaceId, t.personId, t.documentId] }),
-    foreignKey({
-      name: "catalog_page_visits_document_fk",
-      columns: [t.workspaceId, t.documentId],
-      foreignColumns: [catalogDocuments.workspaceId, catalogDocuments.id],
-    }),
   ],
 )

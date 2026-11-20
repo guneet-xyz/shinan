@@ -91,16 +91,24 @@ services:
     restart: "no"
     environment:
       DATABASE_URL_FILE: /run/secrets/database_url
+      # On the upgrade to 0.4, moves the catalog into the workspaces'
+      # repositories in the Git container before M2's tables are dropped.
+      SHINAN_GIT_URL: http://git:3000
+      SHINAN_GIT_SERVICE_TOKEN_FILE: /run/secrets/git_service_token
     secrets:
       - database_url
+      - git_service_token
     healthcheck:
       disable: true
     depends_on:
       postgres:
         condition: service_healthy
+      git:
+        condition: service_healthy
     mem_limit: 256m
     networks:
       - backend
+      - git
 
   web:
     <<: *shinan

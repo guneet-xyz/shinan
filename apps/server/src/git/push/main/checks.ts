@@ -1,10 +1,8 @@
 import {
-  isEntityId,
+  isDocumentPath,
   maxDocumentBytes as maxReadDocumentBytes,
   parseCatalogDocument,
   readCatalog,
-  slugPattern,
-  typeNamePattern,
   validateCatalog,
   validateChange,
 } from "@shinan/core"
@@ -477,20 +475,7 @@ export function layoutProblem(
     return "only files belong on main"
   if (file.mode !== "100644")
     return "an executable file: clear its executable bit (git update-index --chmod=-x)"
-  const { path } = file
-  if (path === "README.md" || path === "start-here.md") return null
-  const match = /^([^/]+)\/([^/]+)\.md$/.exec(path)
-  if (match) {
-    const [, folder, name] = match
-    if (
-      folder === "schema"
-        ? typeNamePattern.test(name!)
-        : typeNamePattern.test(folder!) &&
-          slugPattern.test(name!) &&
-          isEntityId(`${folder}/${name}`)
-    )
-      return null
-  }
+  if (file.path === "README.md" || isDocumentPath(file.path)) return null
   return "not a page path: use <type>/<slug>.md in a-z, 0-9 and -, or README.md, start-here.md"
 }
 

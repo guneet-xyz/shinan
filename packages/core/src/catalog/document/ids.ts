@@ -124,6 +124,24 @@ export function isEntityId(id: string): boolean {
   return parsed !== null && parsed.type !== "schema"
 }
 
+/**
+ * Whether `path` is where a catalog document lives on `main` (Git-based
+ * catalog plan §2.1): `<type>/<slug>.md`, `schema/<type>.md` or
+ * `start-here.md`, so its ID plus `.md`. The checks of `main` (GC-3b) and
+ * the move of M2's catalog into Git (GC-6) both hold paths to it.
+ */
+export function isDocumentPath(path: string): boolean {
+  if (path === "start-here.md") return true
+  const match = /^([^/]+)\/([^/]+)\.md$/.exec(path)
+  if (!match) return false
+  const [, folder, name] = match
+  return folder === "schema"
+    ? typeNamePattern.test(name!)
+    : typeNamePattern.test(folder!) &&
+        slugPattern.test(name!) &&
+        isEntityId(`${folder}/${name}`)
+}
+
 /** The type a `schema/<type>` ID describes, or null. */
 export function schemaType(id: string): string | null {
   if (!id.startsWith(schemaIdPrefix)) return null

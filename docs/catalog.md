@@ -1543,7 +1543,7 @@ change the source of truth, or the checks and history mean nothing.
 
 ## 9. History and purge
 
-> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-8](build-plan-git-catalog.md#gc-8-purge-as-a-history-rewrite)): history is Git's, undo is `git revert`, and purge rewrites the repository's history on the server. Until then, this section describes M2 as built (v0.3.0).
+> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-8](build-plan-git-catalog.md#gc-8-purge-as-a-history-rewrite)): history is Git's, undo is `git revert`, and purge rewrites the repository's history on the server. **As built (GC-6):** M2's revisions and proposals were moved into each workspace's repository (every document's current text in one first commit by Shinan) and then dropped; until GC-8, a purge rewrites the timeline's events only and does not reach the repositories. The rest of this section describes M2 as built (v0.3.0).
 
 - Every applied proposal creates a new **catalog revision**, the full Markdown
   of the documents it changed, an event credited to its author (and approver),

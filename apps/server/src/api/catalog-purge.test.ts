@@ -4,8 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import type * as Api from "@shinan/api-client"
 import { addMember, createWorkspace } from "@shinan/core"
 import type { JobQueue, Person } from "@shinan/core"
-import { storeCatalogRevision } from "@shinan/core/testing"
-import type { RevisionActor } from "@shinan/core/testing"
+import { schema } from "@shinan/db"
 import { connectTestDatabase } from "@shinan/db/testing"
 
 import { insertPerson } from "../../test/people.js"
@@ -29,29 +28,9 @@ const api = createApi({
 
 const secret = `plum-otter-${randomBytes(4).toString("hex")}-lantern`
 
-const musashi = (body: string) => `---
-id: machine/musashi
-type: machine
-title: Musashi
-summary: The production host.
-status: active
----
-
-${body}
-`
-
 let owner: Person
 let contributor: Person
 let workspaceId: string
-
-const actor = (p: Person): RevisionActor => ({
-  kind: "person",
-  personId: p.id,
-  agentId: null,
-  agentSessionId: null,
-  label: p.handle,
-  confidence: "recorded",
-})
 
 beforeAll(async () => {
   owner = await insertPerson(db, "owner")
@@ -71,15 +50,18 @@ beforeAll(async () => {
     personId: contributor.id,
     role: "contributor",
   })
-  const { documentIds } = await storeCatalogRevision(
-    db,
+  // Since the move into Git (GC-6), a purge rewrites events in
+  // PostgreSQL; GC-8 adds the repository's history.
+  await db.insert(schema.events).values({
     workspaceId,
-    actor(owner),
-    [{ text: musashi(`The passphrase is ${secret}.`) }],
-  )
-  await storeCatalogRevision(db, workspaceId, actor(owner), [
-    { documentId: documentIds[0]!, text: musashi("Ask the owner.") },
-  ])
+    kind: "catalog.pushed",
+    origin: "git_push",
+    actorKind: "person",
+    actorPersonId: owner.id,
+    actorLabel: owner.handle,
+    confidence: "recorded",
+    summary: `${owner.handle} pushed: the passphrase is ${secret}`,
+  })
 })
 
 const ws = (path: string) => `/workspaces/${workspaceId}/catalog${path}`
@@ -139,12 +121,12 @@ describe("catalog purge over the API", () => {
     )
     expect(preview.status).toBe(200)
     expect(preview.body).toEqual({
-      revisionTexts: 1,
-      documents: 1,
+      revisionTexts: 0,
+      documents: 0,
       latestDocuments: [],
       proposals: 0,
       waitingProposals: 0,
-      events: 0,
+      events: 1,
       comments: 0,
       acrossLines: { revisionTexts: 0, latestDocuments: [] },
       alsoWrittenAs: [],
@@ -161,7 +143,7 @@ describe("catalog purge over the API", () => {
       purgedBy: owner.handle,
       reason: "A passphrase leaked.",
       revision: null,
-      counts: { revisionTexts: 1, documents: 1, latestDocuments: 0 },
+      counts: { revisionTexts: 0, documents: 0, latestDocuments: 0, events: 1 },
     })
 
     const purges = await call<Api.CatalogPurge[]>("GET", ws("/purges"), {
