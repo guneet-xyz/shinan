@@ -1,4 +1,5 @@
 import { createHash, timingSafeEqual } from "node:crypto"
+import type { ServerResponse } from "node:http"
 import { Hono } from "hono"
 import type { Context, MiddlewareHandler } from "hono"
 import { bodyLimit } from "hono/body-limit"
@@ -8,8 +9,10 @@ import {
   GitContextError,
   gitContextHeader,
   gitContextMaxLength,
+  maxConcurrentReads,
   maxDocumentsPerRead,
   maxFileBytes,
+  maxQueuedReads,
   maxRequestBodyBytes,
 } from "@shinan/core"
 import type { GitRequestContext, RepositoryFile } from "@shinan/core"
@@ -23,6 +26,8 @@ import type { RepositoryStore } from "./store.js"
 import { StoreError } from "./store.js"
 
 export type GitAppEnv = {
+  /** The Node.js response, when served by `@hono/node-server`. */
+  Bindings: { outgoing?: ServerResponse }
   Variables: { gitContext: GitRequestContext | undefined }
 }
 
@@ -44,7 +49,7 @@ export function serviceTokenCheck(
 
 function fail(
   c: Context,
-  status: 400 | 401 | 404 | 413 | 500,
+  status: 400 | 401 | 404 | 413 | 422 | 500 | 503,
   error: string,
   message: string,
 ) {
@@ -75,6 +80,84 @@ async function jsonBody(c: Context): Promise<Record<string, unknown>> {
 }
 
 /**
+ * Lets at most `running` of the reads that hold repository data (trees,
+ * diffs, documents, history) run at once, and holds each one's place until
+ * its answer has been sent or its client has gone: an answer waiting on a
+ * slow reader still holds its memory. Up to `queued` more wait their turn,
+ * and leave the queue if their client goes; past that, 503 with
+ * `Retry-After`.
+ */
+export function readGate(
+  limits: { running: number; queued: number } = {
+    running: maxConcurrentReads,
+    queued: maxQueuedReads,
+  },
+): MiddlewareHandler<GitAppEnv> {
+  let running = 0
+  const waiting: (() => void)[] = []
+  const release = () => {
+    const next = waiting.shift()
+    // The place passes straight to the next in line.
+    if (next) next()
+    else running--
+  }
+  return async (c, next) => {
+    // Without Node's response (tests calling the app directly), a read's
+    // place is given up once its answer is made.
+    const outgoing = c.env?.outgoing
+    if (running >= limits.running) {
+      if (waiting.length >= limits.queued) {
+        c.header("retry-after", "5")
+        return fail(
+          c,
+          503,
+          "busy",
+          "The Git container is busy; try again shortly",
+        )
+      }
+      const started = await new Promise<boolean>((resolve) => {
+        const start = () => {
+          outgoing?.off("close", gone)
+          resolve(true)
+        }
+        const gone = () => {
+          const at = waiting.indexOf(start)
+          if (at >= 0) waiting.splice(at, 1)
+          resolve(false)
+        }
+        waiting.push(start)
+        outgoing?.once("close", gone)
+      })
+      // The client went while it waited: nothing is read for it.
+      if (!started) return fail(c, 503, "gone", "The client went away")
+    } else {
+      running++
+    }
+    let held = true
+    const done = () => {
+      if (!held) return
+      held = false
+      release()
+    }
+    if (outgoing?.destroyed) {
+      done()
+      return fail(c, 503, "gone", "The client went away")
+    }
+    try {
+      await next()
+    } catch (error) {
+      done()
+      throw error
+    }
+    if (outgoing && !outgoing.writableFinished && !outgoing.destroyed) {
+      outgoing.once("close", done)
+    } else {
+      done()
+    }
+  }
+}
+
+/**
  * The Git container's API (Git-based catalog plan §2.2, D-065), on its own
  * listener in the `git` role, reachable only on the internal `git`
  * network. Every request must carry `Authorization: Bearer <service
@@ -86,6 +169,8 @@ export function createGitApp(options: {
   store: RepositoryStore
   journal: Journal
   log?: LimitedLog
+  /** How many reads run and wait at once; default `readGate()`'s. */
+  readLimits?: { running: number; queued: number }
 }) {
   const log = options.log ?? createLimitedLog()
   const authorized = serviceTokenCheck(options.serviceToken)
@@ -183,6 +268,12 @@ export function createGitApp(options: {
     },
   )
 
+  // The reads that hold repository data take turns.
+  const gate = readGate(options.readLimits)
+  for (const route of ["tree", "documents", "diff", "history"]) {
+    app.use(`/repositories/:workspaceId/${route}`, gate)
+  }
+
   app.get("/repositories/:workspaceId/tree", async (c) => {
     const recursive = c.req.query("recursive")
     if (recursive !== undefined && recursive !== "false")
@@ -209,18 +300,43 @@ export function createGitApp(options: {
       ) {
         bad(`paths must be a list of at most ${maxDocumentsPerRead} paths`)
       }
-      const read = await options.store.readDocuments(workspace(c), {
+      const read = await options.store.openDocuments(workspace(c), {
         commit: typeof body.commit === "string" ? body.commit : "main",
         paths,
       })
-      return c.json({
-        commit: read.commit,
-        documents: read.documents.map((d) =>
-          "content" in d
-            ? { ...d, content: Buffer.from(d.content).toString("base64") }
-            : d,
-        ),
+      // Streamed: each document is read when the answer is ready for it,
+      // so a slow reader holds one document's memory, not the response's.
+      const encoder = new TextEncoder()
+      let first = true
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(
+            encoder.encode(
+              `{"commit":${JSON.stringify(read.commit)},"documents":[`,
+            ),
+          )
+        },
+        async pull(controller) {
+          const next = await read.documents.next()
+          if (next.done) {
+            controller.enqueue(encoder.encode("]}"))
+            controller.close()
+            return
+          }
+          const d = next.value
+          const json = JSON.stringify(
+            "content" in d
+              ? { ...d, content: Buffer.from(d.content).toString("base64") }
+              : d,
+          )
+          controller.enqueue(encoder.encode(first ? json : `,${json}`))
+          first = false
+        },
+        async cancel() {
+          await read.documents.return(undefined)
+        },
       })
+      return c.body(stream, 200, { "content-type": "application/json" })
     },
   )
 

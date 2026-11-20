@@ -101,6 +101,16 @@ describe("listTree", () => {
     ])
   })
 
+  it("stops Git at a limit", async () => {
+    const two = await listTree(git, repository.gitDir, "refs/heads/main", {
+      limit: 2,
+    })
+    expect(two.map((e) => e.path)).toEqual(["README.md", "link.md"])
+    expect(
+      await listTree(git, repository.gitDir, "refs/heads/main", { limit: 0 }),
+    ).toEqual([])
+  })
+
   it("reads a path literally, never as a pattern", async () => {
     expect(
       await listTree(git, repository.gitDir, second, { path: "machine/*" }),
@@ -149,6 +159,13 @@ describe("diffTrees", () => {
     const deleted = changes.find((c) => c.status === "deleted")!
     expect(deleted.oldOid).toMatch(/^[0-9a-f]{40}$/)
     expect(deleted.newOid).toBeNull()
+  })
+
+  it("stops Git at a limit", async () => {
+    const changes = await diffTrees(git, repository.gitDir, second, third, {
+      limit: 2,
+    })
+    expect(changes.map((c) => c.path)).toEqual(["README.md", "link.md"])
   })
 
   it("compares with the empty tree", async () => {

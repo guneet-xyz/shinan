@@ -31,6 +31,16 @@ export const maxDocumentsPerRead = 1000
 export const maxDocumentsResponseBytes = 32 * 1024 * 1024
 /** The most changed paths a history page lists for one commit. */
 export const maxChangesPerCommit = 50
+/**
+ * The most entries one tree listing or diff returns: 50,000, with
+ * `truncated` set when there were more. A branch can hold far more paths
+ * than `main`'s 20,000 documents.
+ */
+export const maxTreeEntries = 50_000
+/** How many reads that hold document, tree or commit data run at once. */
+export const maxConcurrentReads = 4
+/** How many more wait their turn; past that, `503` with `Retry-After`. */
+export const maxQueuedReads = 64
 /** The most commits a history page may skip. */
 export const maxHistorySkip = 1_000_000
 /** The most commits one history page holds. */

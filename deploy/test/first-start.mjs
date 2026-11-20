@@ -398,6 +398,114 @@ function writeHeavyRepository(workspaceId) {
   ).trim()
 }
 
+/**
+ * Inside the running `git` container: a branch off `main` whose tree holds
+ * 250,000 paths (one blob, in 250 folders), as an agent's push could.
+ * Answers its commit.
+ */
+function writeWideBranch(workspaceId, parent) {
+  const script = `
+    const { createGit } = await import("/app/packages/git/dist/index.js")
+    const git = createGit({ timeoutMs: 600000 })
+    const gitDir = "/var/lib/shinan/catalog/${workspaceId}.git"
+    const blob = (await git.run(["hash-object", "-w", "--stdin"], { gitDir, input: "wide\\n" })).stdout.toString().trim()
+    const env = { GIT_INDEX_FILE: gitDir + "/wide-index" }
+    const lines = []
+    for (let i = 0; i < 250000; i++) lines.push("100644 " + blob + "\\tf" + (i % 250) + "/p" + i + ".md")
+    await git.run(["update-index", "--add", "--index-info"], { gitDir, env, input: lines.join("\\n") + "\\n" })
+    const tree = (await git.run(["write-tree"], { gitDir, env })).stdout.toString().trim()
+    const ident = { GIT_AUTHOR_NAME: "T", GIT_AUTHOR_EMAIL: "t@example.com", GIT_COMMITTER_NAME: "T", GIT_COMMITTER_EMAIL: "t@example.com" }
+    const commit = (await git.run(["commit-tree", "-p", "${parent}", "-m", "Wide", tree], { gitDir, env: ident })).stdout.toString().trim()
+    await git.run(["update-ref", "refs/heads/wide", commit], { gitDir })
+    console.log(commit)`
+  const id = compose("ps", "--quiet", "git").trim()
+  return execFileSync(
+    "docker",
+    ["exec", id, "/nodejs/bin/node", "--input-type=module", "-e", script],
+    { encoding: "utf8" },
+  ).trim()
+}
+
+/**
+ * Many requests to the Git container at once, from one container on its
+ * network. Each reader waits `waitMs` after its answer starts before
+ * reading it, as a slow client would. Answers a summary of each.
+ */
+function askGitCrowd(requests, waitMs = 0) {
+  const script = `
+    const requests = JSON.parse(process.env.REQUESTS)
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+    Promise.all(requests.map(async ({ path, documents: count }) => {
+      const body = count ? { paths: Array.from({ length: count }, (_, i) => "thing/" + i + ".md") } : undefined
+      try {
+        const r = await fetch("http://git:3000" + path, {
+          method: body ? "POST" : "GET",
+          headers: { authorization: "Bearer " + process.env.TOKEN, "content-type": "application/json" },
+          body: body ? JSON.stringify(body) : undefined,
+          signal: AbortSignal.timeout(300000),
+        })
+        await sleep(Number(process.env.WAIT))
+        const b = await r.json()
+        const list = b.entries ?? b.changes ?? []
+        const documents = b.documents ?? []
+        return {
+          status: r.status,
+          entries: list.length,
+          truncated: b.truncated,
+          bytes: documents.reduce((n, d) => n + (d.content ? Buffer.from(d.content, "base64").length : 0), 0),
+        }
+      } catch (e) {
+        return { error: e.cause?.code ?? e.name }
+      }
+    })).then((all) => console.log(JSON.stringify(all)))`
+  return JSON.parse(
+    execFileSync(
+      "docker",
+      [
+        "run",
+        "--rm",
+        "--network",
+        `${project}_git`,
+        "--env",
+        `TOKEN=${gitServiceToken}`,
+        "--env",
+        `WAIT=${waitMs}`,
+        "--env",
+        `REQUESTS=${JSON.stringify(requests)}`,
+        "--entrypoint",
+        "/nodejs/bin/node",
+        image,
+        "-e",
+        script,
+      ],
+      { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 },
+    ),
+  )
+}
+
+/** The `git` container's highest memory use so far, from its cgroup. */
+function gitMemoryPeak() {
+  const id = compose("ps", "--quiet", "git").trim()
+  try {
+    const bytes = Number(
+      execFileSync(
+        "docker",
+        [
+          "exec",
+          id,
+          "/nodejs/bin/node",
+          "-e",
+          'process.stdout.write(require("fs").readFileSync("/sys/fs/cgroup/memory.peak", "utf8"))',
+        ],
+        { encoding: "utf8" },
+      ),
+    )
+    return `${Math.round(bytes / 1024 / 1024)} MiB`
+  } catch {
+    return "unknown"
+  }
+}
+
 function psql(query) {
   return compose(
     "exec",
@@ -689,7 +797,7 @@ async function run() {
     ],
     { encoding: "utf8" },
   ).trim()
-  writeHeavyRepository(heavyId)
+  const heavyMain = writeHeavyRepository(heavyId)
   const restartsBefore = inspect("git", "{{.RestartCount}}")
   const documents = askGitSummary(`/repositories/${heavyId}/documents`, {
     paths: Array.from({ length: 1000 }, (_, i) => `thing/${i}.md`),
@@ -713,12 +821,42 @@ async function run() {
       history.mostChanged === 1001,
     `a page of 70 commits with 15 MiB messages returns them truncated to 256 KiB, and a commit's 1,001 changed paths as 50 (${JSON.stringify(history)})`,
   )
+  // Many reads at once, of a branch with 250,000 paths (tiny on disk), and
+  // of documents whose readers take their time: the reads take turns and
+  // each holds its place until its answer is sent.
+  const wide = writeWideBranch(heavyId, heavyMain)
+  const crowd = askGitCrowd([
+    ...Array.from({ length: 6 }, () => ({
+      path: `/repositories/${heavyId}/tree?commit=${wide}`,
+    })),
+    ...Array.from({ length: 6 }, () => ({
+      path: `/repositories/${heavyId}/diff?from=${heavyMain}&to=${wide}`,
+    })),
+  ])
+  check(
+    crowd.every(
+      (r) => r.status === 200 && r.entries === 50_000 && r.truncated === true,
+    ),
+    `6 tree and 6 diff reads at once of 250,000 paths each return 50,000, truncated (${JSON.stringify(crowd.slice(0, 2))})`,
+  )
+  const slow = askGitCrowd(
+    Array.from({ length: 40 }, () => ({
+      path: `/repositories/${heavyId}/documents`,
+      documents: 1000,
+    })),
+    3000,
+  )
+  check(
+    slow.length === 40 &&
+      slow.every((r) => r.status === 200 && r.bytes === 32 * 1024 * 1024),
+    `40 document reads at once whose readers wait 3 s before reading each get 32 MiB (${JSON.stringify(slow.slice(0, 2))})`,
+  )
   check(
     inspect(
       "git",
       "{{.RestartCount}} {{.State.OOMKilled}} {{.State.Status}}",
     ) === `${restartsBefore} false running`,
-    "git stayed up within its memory limit through both reads",
+    `git stayed up within its memory limit through all these reads (peak ${gitMemoryPeak()})`,
   )
 
   compose("restart", "git")

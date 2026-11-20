@@ -188,13 +188,23 @@ export function openJournal(root: string): Journal {
       if (!Number.isSafeInteger(limit) || limit < 1 || limit > maxJournalPage) {
         throw new JournalError(`The limit is 1 to ${maxJournalPage}`)
       }
-      return numbers()
+      // A damaged entry ends the page: the entries before it come back, so
+      // `web` can store and acknowledge them, and the next read, which
+      // starts at it, fails with its number.
+      const page: JournalEntry[] = []
+      for (const n of numbers()
         .filter((n) => n > after)
-        .slice(0, limit)
-        .flatMap((n) => {
-          const entry = readEntry(n)
-          return entry ? [entry] : []
-        })
+        .slice(0, limit)) {
+        let entry: JournalEntry | null
+        try {
+          entry = readEntry(n)
+        } catch (error) {
+          if (page.length > 0) break
+          throw error
+        }
+        if (entry) page.push(entry)
+      }
+      return page
     },
     acknowledge(through) {
       whole(through, "through")

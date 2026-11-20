@@ -54,7 +54,7 @@ export interface GitClient {
   listTree(
     workspaceId: string,
     input: { commit: CommitRef; path?: string; recursive?: boolean },
-  ): Promise<{ commit: string; entries: TreeEntry[] }>
+  ): Promise<{ commit: string; entries: TreeEntry[]; truncated: boolean }>
   readDocuments(
     workspaceId: string,
     input: { commit: CommitRef; paths: string[] },
@@ -63,7 +63,12 @@ export interface GitClient {
   diff(
     workspaceId: string,
     input: { from: string | null; to: CommitRef },
-  ): Promise<{ from: string | null; to: string; changes: TreeChange[] }>
+  ): Promise<{
+    from: string | null
+    to: string
+    changes: TreeChange[]
+    truncated: boolean
+  }>
   history(
     workspaceId: string,
     input: { commit: CommitRef; path?: string; limit: number; skip?: number },
@@ -163,7 +168,11 @@ export function createGitClient(options: GitClientOptions): GitClient {
           path: input.path,
           recursive: input.recursive === false ? "false" : undefined,
         },
-      })) as unknown as { commit: string; entries: TreeEntry[] }
+      })) as unknown as {
+        commit: string
+        entries: TreeEntry[]
+        truncated: boolean
+      }
     },
     async readDocuments(workspaceId, input) {
       const body = (await call("POST", repository(workspaceId, "/documents"), {
@@ -185,6 +194,7 @@ export function createGitClient(options: GitClientOptions): GitClient {
         from: string | null
         to: string
         changes: TreeChange[]
+        truncated: boolean
       }
     },
     async history(workspaceId, input) {

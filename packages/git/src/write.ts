@@ -165,6 +165,39 @@ export async function writeCommit(
       )
     }
     const tree = await text(["write-tree"])
+    // Git drops a path it will not take (`update-index` says "Ignoring
+    // path" and goes on), so the tree must hold exactly the files asked for.
+    const listed = await git
+      .run(["ls-tree", "-r", "-z", "--full-tree", "--name-only", tree], {
+        gitDir,
+      })
+      .catch((error: unknown) => {
+        if (
+          error instanceof GitError &&
+          /exceeded maximum allowed tree depth/.test(error.stderr)
+        ) {
+          throw new GitError(
+            "start",
+            "ls-tree",
+            "A path is deeper than Git reads (2,048 levels)",
+          )
+        }
+        throw error
+      })
+    const written = new Set(
+      listed.stdout.toString("utf8").split("\0").filter(Boolean),
+    )
+    const dropped = input.files.filter((file) => !written.has(file.path))
+    if (dropped.length > 0 || written.size !== input.files.length) {
+      throw new GitError(
+        "start",
+        "update-index",
+        `Git does not take ${dropped.length === 1 ? "this path" : "these paths"}: ${dropped
+          .slice(0, 5)
+          .map((f) => JSON.stringify(f.path))
+          .join(", ")}`,
+      )
+    }
     return await text(
       [
         "commit-tree",
@@ -178,4 +211,29 @@ export async function writeCommit(
   } finally {
     rmSync(folder, { recursive: true, force: true })
   }
+}
+
+/**
+ * Git's own check of every object in the repository (`git fsck --strict`):
+ * the error codes it reports, such as `hasDotgit` (a path Windows or macOS
+ * reads as `.git`) or `gitmodulesSymlink`, or none. Shinan lets Git decide
+ * these rules rather than copying them.
+ */
+export async function checkObjects(
+  git: Git,
+  gitDir: string,
+): Promise<string[]> {
+  const result = await git.run(
+    ["fsck", "--strict", "--no-dangling", "--no-progress", "--full"],
+    { gitDir, okExitCodes: Array.from({ length: 256 }, (_, i) => i) },
+  )
+  if (result.exitCode === 0) return []
+  const codes = [
+    ...new Set(
+      [...result.stderr.matchAll(/^error in \w+ [0-9a-f]+: (\w+):/gm)].map(
+        (m) => m[1]!,
+      ),
+    ),
+  ]
+  return codes.length > 0 ? codes : ["fsckFailed"]
 }

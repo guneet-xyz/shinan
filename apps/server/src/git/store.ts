@@ -19,6 +19,7 @@ import {
   maxFileBytes,
   maxHistoryPage,
   maxHistorySkip,
+  maxTreeEntries,
 } from "@shinan/core"
 import type {
   CommitInfo,
@@ -30,6 +31,7 @@ import type {
 } from "@shinan/core"
 import {
   changedPaths,
+  checkObjects,
   diffTrees,
   GitError,
   history,
@@ -46,7 +48,7 @@ import type { Git } from "@shinan/git"
 export class StoreError extends Error {
   override name = "StoreError"
   constructor(
-    readonly status: 400 | 404,
+    readonly status: 400 | 404 | 422,
     readonly code: string,
     message: string,
   ) {
@@ -122,15 +124,24 @@ export interface RepositoryStore {
   listTree(
     workspaceId: string,
     input: { commit: CommitRef; path?: string; recursive?: boolean },
-  ): Promise<{ commit: string; entries: TreeEntry[] }>
-  readDocuments(
+  ): Promise<{ commit: string; entries: TreeEntry[]; truncated: boolean }>
+  /**
+   * The documents at `paths` in a commit, read one at a time as they are
+   * taken from `documents`; ending it early (`return()`) stops the read.
+   */
+  openDocuments(
     workspaceId: string,
     input: { commit: CommitRef; paths: string[] },
-  ): Promise<{ commit: string; documents: DocumentRead[] }>
+  ): Promise<{ commit: string; documents: AsyncGenerator<DocumentRead> }>
   diff(
     workspaceId: string,
     input: { from: string | null; to: CommitRef },
-  ): Promise<{ from: string | null; to: string; changes: TreeChange[] }>
+  ): Promise<{
+    from: string | null
+    to: string
+    changes: TreeChange[]
+    truncated: boolean
+  }>
   history(
     workspaceId: string,
     input: { commit: CommitRef; path?: string; limit: number; skip?: number },
@@ -149,12 +160,12 @@ export function createRepositoryStore(options: {
   hooksDirectory?: string
   /** The most document bytes one read returns; default `maxDocumentsResponseBytes`. */
   maxResponseBytes?: number
+  /** The most entries one tree listing or diff returns; default `maxTreeEntries`. */
+  maxEntries?: number
 }): RepositoryStore {
   const { root, git } = options
   const maxResponseBytes = options.maxResponseBytes ?? maxDocumentsResponseBytes
-  // Reads that hold document or commit bytes take turns, a few at a time,
-  // so several at once stay inside the container's memory too.
-  const heavy = limitConcurrency(4)
+  const maxEntries = options.maxEntries ?? maxTreeEntries
   const hooks = options.hooksDirectory ?? imageHooks
   const temporary = join(root, ".tmp")
   const creating = new Map<
@@ -270,6 +281,16 @@ export function createRepositoryStore(options: {
       })
       // Create only: the ref must not exist yet.
       await git.run(["update-ref", "refs/heads/main", commit, ""], { gitDir })
+      // Git's own checks of every object, names included (`.git` in the
+      // forms NTFS and HFS+ read as it): Shinan lets Git decide.
+      const refused = await checkObjects(git, gitDir)
+      if (refused.length > 0) {
+        throw new StoreError(
+          400,
+          "invalid-files",
+          `Git refuses these files (${refused.join(", ")})`,
+        )
+      }
       syncRepository(gitDir)
       try {
         renameSync(gitDir, target)
@@ -308,13 +329,21 @@ export function createRepositoryStore(options: {
     },
     async listTree(workspaceId, input) {
       const { gitDir, commit } = await resolve(workspaceId, input.commit)
-      const entries = await listTree(git, gitDir, commit, {
-        path: input.path,
-        recursive: input.recursive,
-      })
-      return { commit, entries }
+      const entries = await tooDeep(() =>
+        listTree(git, gitDir, commit, {
+          path: input.path,
+          recursive: input.recursive,
+          // One more than the cap shows there were more.
+          limit: maxEntries + 1,
+        }),
+      )
+      return {
+        commit,
+        entries: entries.slice(0, maxEntries),
+        truncated: entries.length > maxEntries,
+      }
     },
-    async readDocuments(workspaceId, input) {
+    async openDocuments(workspaceId, input) {
       if (input.paths.length > maxDocumentsPerRead) {
         throw new StoreError(
           400,
@@ -327,43 +356,43 @@ export function createRepositoryStore(options: {
         path,
         name: objectName(commit, path),
       }))
-      return heavy(async () => {
+      // One document at a time, as the caller asks for the next: an answer
+      // streamed to a slow reader holds one document, not all of them.
+      async function* documents(): AsyncGenerator<DocumentRead> {
         const reader = openCatFile(git, gitDir, {
           maxObjectBytes: maxFileBytes,
         })
         try {
-          const documents: DocumentRead[] = []
           let budget = maxResponseBytes
           for (const { path, name } of names) {
             // The size from the object's header, before anything is inflated.
             const info = await reader.info(name)
             if (!info || info.type !== "blob") {
-              documents.push({ path, missing: true })
+              yield { path, missing: true }
             } else if (info.size > maxFileBytes) {
-              documents.push({ path, tooLarge: true, size: info.size })
+              yield { path, tooLarge: true, size: info.size }
             } else if (info.size > budget) {
               // Past this response's budget: the caller asks again.
               budget = 0
-              documents.push({ path, deferred: true, size: info.size })
+              yield { path, deferred: true, size: info.size }
             } else {
               budget -= info.size
               const object = await reader.read(info.oid)
-              if (typeof object === "string")
-                documents.push({ path, missing: true })
+              if (typeof object === "string") yield { path, missing: true }
               else
-                documents.push({
+                yield {
                   path,
                   oid: object.oid,
                   size: object.size,
                   content: object.content,
-                })
+                }
             }
           }
-          return { commit, documents }
         } finally {
           await reader.close()
         }
-      })
+      }
+      return { commit, documents: documents() }
     },
     async diff(workspaceId, input) {
       const { gitDir, commit: to } = await resolve(workspaceId, input.to)
@@ -371,7 +400,15 @@ export function createRepositoryStore(options: {
         input.from === null
           ? null
           : (await resolve(workspaceId, input.from)).commit
-      return { from, to, changes: await diffTrees(git, gitDir, from, to) }
+      const changes = await tooDeep(() =>
+        diffTrees(git, gitDir, from, to, { limit: maxEntries + 1 }),
+      )
+      return {
+        from,
+        to,
+        changes: changes.slice(0, maxEntries),
+        truncated: changes.length > maxEntries,
+      }
     },
     async history(workspaceId, input) {
       if ((input.skip ?? 0) > maxHistorySkip) {
@@ -393,21 +430,22 @@ export function createRepositoryStore(options: {
       // truncated), so a page of 100 stays small.
       // With each commit, the paths it changed: at most 50 kept per commit
       // as Git's output streams by, so a page stays small too.
-      const { commits, changes } = await heavy(async () => {
-        const commits = await history(git, gitDir, commit, {
+      const commits = await tooDeep(() =>
+        history(git, gitDir, commit, {
           limit: input.limit,
           skip: input.skip,
           path: input.path,
           maxCommitBytes: maxCommitBytes,
-        })
-        const changes = await changedPaths(
+        }),
+      )
+      const changes = await tooDeep(() =>
+        changedPaths(
           git,
           gitDir,
           commits.map((c) => c.oid),
           { maxPerCommit: maxChangesPerCommit },
-        )
-        return { commits, changes }
-      })
+        ),
+      )
       return {
         commit,
         commits: commits.map(
@@ -431,25 +469,33 @@ export function createRepositoryStore(options: {
   }
 }
 
-/** The most of one commit a history page reads: 256 KiB. */
-export const maxCommitBytes = 256 * 1024
-
-/** Runs at most `max` of the given jobs at once; the others wait their turn. */
-function limitConcurrency(max: number) {
-  let running = 0
-  const waiting: (() => void)[] = []
-  return async <T>(job: () => Promise<T>): Promise<T> => {
-    if (running >= max)
-      await new Promise<void>((resolve) => waiting.push(resolve))
-    running++
-    try {
-      return await job()
-    } finally {
-      running--
-      waiting.shift()?.()
+/**
+ * Runs a read, and turns Git's refusal of a tree deeper than its
+ * `core.maxTreeDepth` (2,048) into a 422: the content, not Shinan, is at
+ * fault.
+ */
+async function tooDeep<T>(read: () => Promise<T>): Promise<T> {
+  try {
+    return await read()
+  } catch (error) {
+    if (
+      error instanceof GitError &&
+      /exceeded maximum allowed tree depth/.test(
+        `${error.stderr}\n${error.message}`,
+      )
+    ) {
+      throw new StoreError(
+        422,
+        "tree-too-deep",
+        "A tree here is deeper than Git reads (2,048 levels)",
+      )
     }
+    throw error
   }
 }
+
+/** The most of one commit a history page reads: 256 KiB. */
+export const maxCommitBytes = 256 * 1024
 
 /**
  * fsyncs a new repository's files and folders, so its configuration (and

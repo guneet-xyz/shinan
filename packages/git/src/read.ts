@@ -17,11 +17,97 @@ function count(value: number, what: string): number {
   return value
 }
 
-/** NUL-separated records, without the empty one after the last NUL. */
-function records(output: Buffer): string[] {
-  const parts = output.toString("utf8").split("\0")
-  if (parts.at(-1) === "") parts.pop()
-  return parts
+/**
+ * Runs Git and hands each NUL-ended field of its output to `onField` as it
+ * arrives, keeping nothing else. `onField` returns `false` to stop: Git is
+ * ended and what it would have written is never read. Fails like `run()`
+ * on a non-zero exit, with Git's standard error.
+ */
+async function readFields(
+  git: Git,
+  gitDir: string,
+  args: string[],
+  options: ReadOptions,
+  onField: (text: string) => boolean | void,
+): Promise<void> {
+  const command = args[0] ?? "git"
+  const proc = git.spawn(args, {
+    gitDir,
+    env: options.env,
+    timeoutMs: options.timeoutMs,
+  })
+  let rest: Buffer = Buffer.alloc(0)
+  let stopped = false
+  let failure: Error | undefined
+  const errors: Buffer[] = []
+  let errorSize = 0
+  proc.child.stderr.on("data", (chunk: Buffer) => {
+    if (errorSize >= 64 * 1024) return
+    errors.push(chunk)
+    errorSize += chunk.length
+  })
+  const take = (text: string) => {
+    if (stopped) return
+    try {
+      if (onField(text) === false) {
+        stopped = true
+        proc.kill()
+      }
+    } catch (error) {
+      failure ??= error as Error
+      stopped = true
+      proc.kill()
+    }
+  }
+  proc.child.stdout.on("data", (chunk: Buffer) => {
+    if (stopped) return
+    let data = rest.length ? Buffer.concat([rest, chunk]) : chunk
+    for (
+      let end = data.indexOf(0);
+      end >= 0 && !stopped;
+      end = data.indexOf(0)
+    ) {
+      take(data.subarray(0, end).toString("utf8"))
+      data = data.subarray(end + 1)
+    }
+    // A path is at most 4 KiB; anything longer is not Git's output.
+    if (data.length > 64 * 1024) {
+      failure ??= new GitError(
+        "exit",
+        command,
+        `git ${command} gave a field too long to read`,
+      )
+      stopped = true
+      proc.kill()
+    }
+    rest = data
+  })
+  proc.child.stdin.end()
+  const ended = await proc.ended
+  if (failure) throw failure
+  if (stopped) return
+  if (rest.length) take(rest.toString("utf8"))
+  // `take` may have set it since.
+  const late = failure as Error | undefined
+  if (late) throw late
+  if (ended.timedOut) {
+    throw new GitError(
+      "timeout",
+      command,
+      `git ${command} took too long and was stopped`,
+    )
+  }
+  if (ended.code !== 0) {
+    const stderr = Buffer.concat(errors).toString("utf8")
+    const firstLine = stderr.split("\n", 1)[0]?.slice(0, 200) ?? ""
+    throw new GitError(
+      "exit",
+      command,
+      `git ${command} failed (exit code ${ended.code ?? "none"})${firstLine ? `: ${firstLine}` : ""}`,
+      ended.code,
+      stderr,
+    )
+  }
 }
 
 export type EntryType = "blob" | "tree" | "commit"
@@ -46,9 +132,19 @@ export async function listTree(
   git: Git,
   gitDir: string,
   treeish: string,
-  options: ReadOptions & { path?: string; recursive?: boolean } = {},
+  options: ReadOptions & {
+    path?: string
+    recursive?: boolean
+    /** At most this many entries; Git is stopped once they have come. */
+    limit?: number
+  } = {},
 ): Promise<TreeEntry[]> {
-  const { stdout } = await git.run(
+  const limit =
+    options.limit === undefined ? Infinity : count(options.limit, "The limit")
+  const entries: TreeEntry[] = []
+  await readFields(
+    git,
+    gitDir,
     [
       "ls-tree",
       "-z",
@@ -59,26 +155,29 @@ export async function listTree(
       revision(treeish),
       ...(options.path === undefined ? [] : ["--", treePath(options.path)]),
     ],
-    { ...options, gitDir },
+    options,
+    (record) => {
+      if (entries.length >= limit) return false
+      if (record === "") return
+      const tab = record.indexOf("\t")
+      const [mode, type, oid, size] = record.slice(0, tab).split(/ +/)
+      if (tab < 0 || !mode || !type || !oid || !isObjectId(oid)) {
+        throw new GitError(
+          "exit",
+          "ls-tree",
+          "git ls-tree gave a line Shinan cannot read",
+        )
+      }
+      entries.push({
+        mode,
+        type: type as EntryType,
+        oid,
+        path: record.slice(tab + 1),
+        size: size === undefined || size === "-" ? null : Number(size),
+      })
+    },
   )
-  return records(stdout).map((record) => {
-    const tab = record.indexOf("\t")
-    const [mode, type, oid, size] = record.slice(0, tab).split(/ +/)
-    if (tab < 0 || !mode || !type || !oid || !isObjectId(oid)) {
-      throw new GitError(
-        "exit",
-        "ls-tree",
-        "git ls-tree gave a line Shinan cannot read",
-      )
-    }
-    return {
-      mode,
-      type: type as EntryType,
-      oid,
-      path: record.slice(tab + 1),
-      size: size === undefined || size === "-" ? null : Number(size),
-    }
-  })
+  return entries
 }
 
 export type ChangeStatus = "added" | "deleted" | "modified" | "type-changed"
@@ -125,11 +224,20 @@ export async function diffTrees(
   gitDir: string,
   from: string | null,
   to: string,
-  options: ReadOptions = {},
+  options: ReadOptions & {
+    /** At most this many changes; Git is stopped once they have come. */
+    limit?: number
+  } = {},
 ): Promise<TreeChange[]> {
+  const limit =
+    options.limit === undefined ? Infinity : count(options.limit, "The limit")
   const base =
     from === null ? await emptyTree(git, gitDir, options) : revision(from)
-  const { stdout } = await git.run(
+  const changes: TreeChange[] = []
+  let meta: string | undefined
+  await readFields(
+    git,
+    gitDir,
     [
       "diff-tree",
       "-r",
@@ -142,38 +250,43 @@ export async function diffTrees(
       base,
       revision(to),
     ],
-    { ...options, gitDir },
+    options,
+    (field) => {
+      // Each change is two fields: `:<modes> <IDs> <status>`, then its path.
+      if (meta === undefined) {
+        if (field === "") return
+        if (changes.length >= limit) return false
+        meta = field
+        return
+      }
+      const [oldMode, newMode, oldOid, newOid, code] = meta
+        .replace(/^:/, "")
+        .split(" ")
+      meta = undefined
+      const status = STATUS[code ?? ""]
+      if (!status || !oldMode || !newMode || !oldOid || !newOid) {
+        throw new GitError(
+          "exit",
+          "diff-tree",
+          "git diff-tree gave a line Shinan cannot read",
+        )
+      }
+      changes.push({
+        status,
+        path: field,
+        oldMode: status === "added" ? null : oldMode,
+        oldOid: status === "added" ? null : oldOid,
+        newMode: status === "deleted" ? null : newMode,
+        newOid: status === "deleted" ? null : newOid,
+      })
+    },
   )
-  const parts = records(stdout)
-  const changes: TreeChange[] = []
-  for (let i = 0; i < parts.length; i += 2) {
-    const [oldMode, newMode, oldOid, newOid, code] = (parts[i] ?? "")
-      .replace(/^:/, "")
-      .split(" ")
-    const path = parts[i + 1]
-    const status = STATUS[code ?? ""]
-    if (
-      !status ||
-      path === undefined ||
-      !oldMode ||
-      !newMode ||
-      !oldOid ||
-      !newOid
-    ) {
-      throw new GitError(
-        "exit",
-        "diff-tree",
-        "git diff-tree gave a line Shinan cannot read",
-      )
-    }
-    changes.push({
-      status,
-      path,
-      oldMode: status === "added" ? null : oldMode,
-      oldOid: status === "added" ? null : oldOid,
-      newMode: status === "deleted" ? null : newMode,
-      newOid: status === "deleted" ? null : newOid,
-    })
+  if (meta !== undefined) {
+    throw new GitError(
+      "exit",
+      "diff-tree",
+      "git diff-tree gave a line Shinan cannot read",
+    )
   }
   return changes
 }

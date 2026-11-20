@@ -491,6 +491,230 @@ describe("the read API", () => {
   })
 })
 
+describe("tree and diff answers", () => {
+  const id = "ac9c1a2e-3d4f-4a5b-8c6d-7e8f9a0b1c2d"
+  let capped: ReturnType<typeof createGitApp>
+  let first: string
+  let deep: string
+
+  beforeAll(async () => {
+    const store = createRepositoryStore({
+      root,
+      git,
+      hooksDirectory: hooks,
+      maxEntries: 2,
+    })
+    capped = createGitApp({
+      serviceToken: token,
+      store,
+      journal,
+      log: () => {},
+    })
+    first = (
+      await store.create(id, {
+        message: "Start\n",
+        files: ["a.md", "b.md", "c.md"].map((path) => ({
+          path,
+          content: new TextEncoder().encode(path),
+        })),
+      })
+    ).main
+    // Shinan's own writeCommit refuses such a tree; an agent's push could
+    // hold one.
+    deep = await commitFiles(
+      git,
+      join(root, `${id}.git`),
+      { [`${Array(2100).fill("d").join("/")}/f.md`]: "x" },
+      { parents: [first], message: "Deep\n" },
+    )
+  })
+
+  const get = async (path: string) => {
+    const response = await capped.request(`/repositories/${id}${path}`, {
+      headers: auth,
+    })
+    return {
+      status: response.status,
+      body: (await response.json()) as Record<string, unknown>,
+    }
+  }
+
+  it("hold at most their cap of entries, and say when there were more", async () => {
+    const tree = await get("/tree")
+    expect(tree.body).toMatchObject({ truncated: true })
+    expect(
+      (tree.body.entries as { path: string }[]).map((e) => e.path),
+    ).toEqual(["a.md", "b.md"])
+    const diff = await get(`/diff?to=${first}`)
+    expect(diff.body).toMatchObject({ truncated: true })
+    expect((diff.body.changes as unknown[]).length).toBe(2)
+    const one = await get("/tree?path=a.md")
+    expect(one.body).toMatchObject({
+      truncated: false,
+      entries: [{ path: "a.md" }],
+    })
+  })
+
+  it("answer 422 for a tree deeper than Git reads", async () => {
+    for (const path of [
+      `/tree?commit=${deep}`,
+      `/diff?from=${first}&to=${deep}`,
+      `/history?commit=${deep}&path=d/d`,
+    ]) {
+      const response = await get(path)
+      expect(response.status, path).toBe(422)
+      expect(response.body).toMatchObject({ error: "tree-too-deep" })
+    }
+  })
+})
+
+describe("names Git refuses", () => {
+  it("are refused by Git's own fsck before a repository appears", async () => {
+    const put = (id: string, path: string, mode?: string) =>
+      request(`/repositories/${id}`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          message: "m",
+          files: [{ path, content: base64("x"), ...(mode ? { mode } : {}) }],
+        }),
+      })
+    const cases = [
+      ".git::$INDEX_ALLOCATION",
+      ".git:x",
+      ".g\u200cit",
+      ".git\u200d",
+      "a/.g\u200cit/b",
+    ]
+    for (const [i, path] of cases.entries()) {
+      const id = `bc9c1a2e-3d4f-4a5b-8c6d-7e8f9a0b1c${String(i).padStart(2, "0")}`
+      const response = await put(id, path)
+      expect(response.status, path).toBe(400)
+      // Dropped by Git as it writes the tree, or found by its fsck.
+      expect(["invalid-files", "invalid-request"], path).toContain(
+        ((await response.json()) as { error: string }).error,
+      )
+      expect((await request(`/repositories/${id}`)).status, path).toBe(404)
+    }
+    expect(readdirSync(join(root, ".tmp"))).toEqual([])
+  })
+})
+
+describe("the read gate", () => {
+  /** A store whose reads wait until released, to hold places in the gate. */
+  function slowStore() {
+    const waiting: (() => void)[] = []
+    let started = 0
+    const store = {
+      listTree: async () => {
+        started++
+        await new Promise<void>((resolve) => waiting.push(resolve))
+        return { commit: "c", entries: [], truncated: false }
+      },
+    } as unknown as Parameters<typeof createGitApp>[0]["store"]
+    return { store, waiting, started: () => started }
+  }
+
+  /** Node's response as the gate sees it: finished when `close` is emitted. */
+  function outgoing() {
+    const listeners = new Map<string, (() => void)[]>()
+    const o = {
+      destroyed: false,
+      writableFinished: false,
+      once: (event: string, f: () => void) => {
+        listeners.set(event, [...(listeners.get(event) ?? []), f])
+        return o
+      },
+      off: (event: string, f: () => void) => {
+        listeners.set(
+          event,
+          (listeners.get(event) ?? []).filter((g) => g !== f),
+        )
+        return o
+      },
+      close: () => {
+        o.destroyed = true
+        const fs = listeners.get("close") ?? []
+        listeners.delete("close")
+        for (const f of fs) f()
+      },
+    }
+    return o
+  }
+
+  const tick = () => new Promise((resolve) => setTimeout(resolve, 20))
+
+  it("runs a few reads, queues some, refuses the rest, and holds a place until the answer is sent", async () => {
+    const slow = slowStore()
+    const gated = createGitApp({
+      serviceToken: token,
+      store: slow.store,
+      journal,
+      log: () => {},
+      readLimits: { running: 1, queued: 1 },
+    })
+    const ask = (o: ReturnType<typeof outgoing>) =>
+      gated.request(
+        `/repositories/${workspaceId}/tree`,
+        { headers: auth },
+        { outgoing: o },
+      )
+    const [o1, o2, o3] = [outgoing(), outgoing(), outgoing()]
+    const first = ask(o1)
+    const second = ask(o2)
+    await tick()
+    const third = await ask(o3)
+    expect(third.status).toBe(503)
+    expect(third.headers.get("retry-after")).toBe("5")
+    expect(slow.started()).toBe(1)
+
+    slow.waiting.shift()!()
+    expect((await first).status).toBe(200)
+    await tick()
+    // Answered, but not yet sent: the second still waits.
+    expect(slow.started()).toBe(1)
+    o1.close()
+    await tick()
+    expect(slow.started()).toBe(2)
+    slow.waiting.shift()!()
+    expect((await second).status).toBe(200)
+    o2.close()
+  })
+
+  it("drops a queued read whose client went away", async () => {
+    const slow = slowStore()
+    const gated = createGitApp({
+      serviceToken: token,
+      store: slow.store,
+      journal,
+      log: () => {},
+      readLimits: { running: 1, queued: 4 },
+    })
+    const ask = (o: ReturnType<typeof outgoing>) =>
+      gated.request(
+        `/repositories/${workspaceId}/tree`,
+        { headers: auth },
+        { outgoing: o },
+      )
+    const [o1, o2, o3] = [outgoing(), outgoing(), outgoing()]
+    const first = ask(o1)
+    const second = ask(o2)
+    const third = ask(o3)
+    await tick()
+    o2.close()
+    expect((await second).status).toBe(503)
+    slow.waiting.shift()!()
+    await first
+    o1.close()
+    await tick()
+    // The third runs; the second never did.
+    expect(slow.started()).toBe(2)
+    slow.waiting.shift()!()
+    expect((await third).status).toBe(200)
+    o3.close()
+  })
+})
+
 describe("a documents read", () => {
   it("returns at most its byte budget; documents past it are deferred", async () => {
     const folder = mkdtempSync(join(tmpdir(), "shinan-git-budget-"))
@@ -641,7 +865,14 @@ describe("the journal", () => {
         join(folder, "journal", "entries", "0000000000000005.json"),
         "{not json",
       )
-      const damaged = await call("/journal?after=3")
+      // The good entry before it comes back first, so it can be stored
+      // and acknowledged; the read that starts at the damaged one fails.
+      const before = await call("/journal?after=3")
+      expect(before.status).toBe(200)
+      expect(
+        (before.body.entries as { number: number }[]).map((e) => e.number),
+      ).toEqual([4])
+      const damaged = await call("/journal?after=4")
       expect(damaged.status).toBe(500)
       expect(damaged.body).toMatchObject({ error: "journal-damaged" })
       expect(String(damaged.body.message)).toContain(

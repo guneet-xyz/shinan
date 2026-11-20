@@ -8,7 +8,7 @@ export type {
   ReadMiss,
 } from "./cat-file.js"
 export { hooksDirectory } from "./hooks.js"
-export { writeCommit } from "./write.js"
+export { checkObjects, writeCommit } from "./write.js"
 export type { CommitFile, CommitIdentity } from "./write.js"
 export { isBranchRef, isObjectId, objectName } from "./names.js"
 export {
