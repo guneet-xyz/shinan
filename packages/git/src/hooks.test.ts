@@ -51,7 +51,7 @@ describe("the hooks", () => {
     )
     expect(result.status).toBe(1)
     expect(result.stderr).toBe(
-      "Shinan: this push could not be checked. Nothing was changed.\n",
+      "Shinan: this push could not be checked. Nothing was changed. Try again; tell your person if it happens again.\n",
     )
     const unreachable = spawnSync(
       process.execPath,
@@ -68,7 +68,7 @@ describe("the hooks", () => {
     )
     expect(unreachable.status).toBe(1)
     expect(unreachable.stderr).toBe(
-      "Shinan: this push could not be checked. Nothing was changed.\n",
+      "Shinan: this push could not be checked. Nothing was changed. Try again; tell your person if it happens again.\n",
     )
   })
 })

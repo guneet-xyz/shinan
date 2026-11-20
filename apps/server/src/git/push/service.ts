@@ -346,7 +346,7 @@ export function createPushService(options: {
         code: "busy",
         where: "",
         message:
-          "another push to this repository is being checked: push again in a minute",
+          "another push to this repository is being checked: push again in 30 seconds",
       })
     } else {
       state.release = release
@@ -505,7 +505,7 @@ interface PreReceiveBody {
 }
 
 const refusedWithout = [
-  "Shinan: this push could not be checked. Nothing was changed.",
+  "Shinan: this push could not be checked. Nothing was changed. Try again; tell your person if it happens again.",
 ]
 
 function parseUpdates(text: unknown): RefUpdate[] | null {

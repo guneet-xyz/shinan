@@ -729,7 +729,7 @@ async function run() {
   check(
     git.hook.exitCode === 1 &&
       git.hook.stderr ===
-        "Shinan: this push could not be checked. Nothing was changed.",
+        "Shinan: this push could not be checked. Nothing was changed. Try again; tell your person if it happens again.",
     "Git starts the Node.js hook without a shell, and it refuses a push it cannot have checked",
   )
   check(

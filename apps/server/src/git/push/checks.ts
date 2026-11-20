@@ -74,12 +74,31 @@ export class TooSlowError extends Error {
 
 const branchName = /^[A-Za-z0-9._/-]+$/
 
-/** The text of `name`, quoted when it holds anything but plain characters. */
+/**
+ * The text of a name to show in a `remote:` line: cut short, and quoted
+ * with every control or format character (right-to-left overrides,
+ * zero-width characters, line breaks) written as `\u…`, so what a terminal
+ * shows is what the name holds.
+ */
 export function shown(name: string): string {
   const short = name.length > 200 ? `${name.slice(0, 200)}…` : name
-  return /^[\x21-\x7e\u00a0-\uffff ]*$/.test(short) && !/^ | $/.test(short)
+  const escaped = short.replace(
+    /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Co}\p{Cs}"\\]/gu,
+    (c) =>
+      c === '"' || c === "\\"
+        ? `\\${c}`
+        : `\\u${c.codePointAt(0)!.toString(16).padStart(4, "0")}`,
+  )
+  return escaped === short && /^[^ ]/.test(short) && !/ $/.test(short)
     ? short
-    : JSON.stringify(short)
+    : `"${escaped}"`
+}
+
+/** A size in GiB or MiB, as limits are given. */
+function size(bytes: number): string {
+  return bytes >= 1024 ** 3
+    ? `${bytes / 1024 ** 3} GiB`
+    : `${Math.round(bytes / 1024 ** 2)} MiB`
 }
 
 /**
@@ -121,7 +140,7 @@ export async function checkPush(input: CheckInput): Promise<CheckResult> {
       warnings.push({
         code: "secret-suspected",
         where,
-        message: `${what} may hold a secret: ${finding.kind} (value not shown; fingerprint sha256:${finding.fingerprint})`,
+        message: `${what} may hold a ${finding.kind}: check it is not a secret (fingerprint sha256:${finding.fingerprint})`,
       })
     }
   }
@@ -151,8 +170,7 @@ export async function checkPush(input: CheckInput): Promise<CheckResult> {
       problems.push({
         code: "ref-not-branch",
         where,
-        message:
-          "only branches (refs/heads/…) can be pushed: no tags or other refs",
+        message: "only branches can be pushed, not tags or other refs",
       })
       return
     }
@@ -198,7 +216,7 @@ export async function checkPush(input: CheckInput): Promise<CheckResult> {
       problems.push({
         code: "too-many-branches",
         where: "",
-        message: `the repository already has ${branches} branches, and holds at most ${limits.branches}: delete merged ones (git push origin --delete <branch>)`,
+        message: `over ${limits.branches} branches: delete merged ones (git push origin --delete <branch>)`,
       })
     }
   }
@@ -208,7 +226,7 @@ export async function checkPush(input: CheckInput): Promise<CheckResult> {
     problems.push({
       code: "repository-full",
       where: "",
-      message: `the repository is larger than ${limits.repositoryBytes / 1024 / 1024 / 1024} GiB: only branch deletions are accepted until it is cleaned up`,
+      message: `the repository is over its ${size(limits.repositoryBytes)} limit: only branch deletions are accepted. Tell your person.`,
     })
   }
 
@@ -234,7 +252,7 @@ export async function checkPush(input: CheckInput): Promise<CheckResult> {
     problems.push({
       code: "too-many-commits",
       where: "",
-      message: `the push brings more than ${limits.newCommits} new commits: push in parts`,
+      message: `more than ${limits.newCommits.toLocaleString("en")} new commits: push in parts`,
     })
     return { ...result, secrets }
   }
@@ -281,7 +299,7 @@ export async function checkPush(input: CheckInput): Promise<CheckResult> {
           problems.push({
             code: "file-too-large",
             where: shown(object.path),
-            message: `a new file is at most ${limits.fileBytes / 1024 / 1024} MiB; this one is ${(object.size / 1024 / 1024).toFixed(1)} MiB`,
+            message: `a new file is at most ${size(limits.fileBytes)}; this one is ${(object.size / 1024 / 1024).toFixed(1)} MiB: leave it out of the catalog`,
           })
           continue
         }
@@ -387,7 +405,7 @@ async function checkCommit(
     problems.push({
       code: "commit-too-large",
       where,
-      message: `a commit, with its message, is at most ${limits.commitBytes / 1024} KiB`,
+      message: `a commit, with its message, is at most ${limits.commitBytes / 1024} KiB: shorten the message`,
     })
     return
   }
@@ -415,7 +433,7 @@ async function checkCommit(
     problems.push({
       code: "tree-too-large",
       where,
-      message: `its files and folders, counting each folder every place it appears, are more than ${limits.treeEntries.toLocaleString("en")} entries: no catalog needs that many`,
+      message: `over ${limits.treeEntries.toLocaleString("en")} files and folders, counting repeats: no catalog needs that many`,
     })
   }
 }
@@ -477,7 +495,7 @@ async function checkTree(
     problems.push({
       code: "path-not-portable",
       where: shown(`${base}${b}`),
-      message: `Windows and macOS see this name and ${shown(a)} as one`,
+      message: `Windows and macOS see this name and ${shown(a)} as one: rename one of them`,
     })
   }
 }

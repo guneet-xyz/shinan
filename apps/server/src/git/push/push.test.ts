@@ -431,9 +431,10 @@ describe("pushing through web", () => {
     expect(lines[2]).toMatch(
       /^ {2}service\/email\.md:4 {2}secret {2}a value here looks like a GitHub token \(value not shown; fingerprint sha256:[0-9a-f]{64}\)$/,
     )
-    expect(lines.at(-1)).toBe(
-      "Fix them in new commits and push again. The shinan skill explains each code.",
-    )
+    expect(lines.slice(-2)).toEqual([
+      "These problems are in commits not yet in Shinan: rewrite them (git rebase -i origin/main), then push again. A new commit on top won't help.",
+      "If a value is not a secret, a workspace owner can allow its fingerprint in workspace settings (Catalog).",
+    ])
     expect(pushed.stderr).not.toContain(githubToken.slice(4))
     expect(await serverRef("refs/heads/leak")).toBeNull()
     // The quarantine was dropped: none of the push's objects are kept.
@@ -659,7 +660,7 @@ describe("pushing through web", () => {
       `${repeated}:refs/heads/repeated`,
     )
     expect(remote(tooMany.stderr).join("\n")).toMatch(
-      /commit [0-9a-f]{12} +tree-too-large +its files and folders, counting each folder every place it appears, are more than 200,000 entries/,
+      /commit [0-9a-f]{12} +tree-too-large +over 200,000 files and folders, counting repeats: no catalog needs that many/,
     )
   })
 
@@ -689,7 +690,7 @@ describe("pushing through web", () => {
     }
     const pushed = await pushAs("alpha", folder, `${head}:refs/heads/many`)
     expect(remote(pushed.stderr).join("\n")).toContain(
-      "too-many-commits  the push brings more than 1000 new commits: push in parts",
+      "too-many-commits  more than 1,000 new commits: push in parts",
     )
   }, 120_000)
 
@@ -732,7 +733,7 @@ describe("pushing through web", () => {
     )
     const many = await pushAs("alpha", folder, ...branches)
     expect(remote(many.stderr).join("\n")).toMatch(
-      /too-many-branches +the repository already has \d+ branches, and holds at most 100/,
+      /too-many-branches +over 100 branches: delete merged ones \(git push origin --delete <branch>\)/,
     )
   })
 
@@ -769,8 +770,7 @@ describe("pushing through web", () => {
     )
     expect(checked.code).not.toBe(0)
     expect(remote(checked.stderr)).toEqual([
-      "Shinan checked this push: no blocking problems.",
-      "  check-only  check only: nothing was changed",
+      "Shinan checked this push (check only): no blocking problems. Nothing was changed.",
     ])
     expect(await serverRef("refs/heads/opt")).toBeNull()
     expect(await lastPush(since)).toMatchObject({
@@ -788,7 +788,7 @@ describe("pushing through web", () => {
     try {
       const pushed = await pushAs("alpha", folder, "HEAD:refs/heads/busy")
       expect(remote(pushed.stderr).join("\n")).toContain(
-        "busy  another push to this repository is being checked: push again in a minute",
+        "busy  another push to this repository is being checked: push again in 30 seconds",
       )
     } finally {
       release()
@@ -1073,7 +1073,9 @@ describe("the hooks' listener", () => {
       expect(response.status).toBe(403)
       expect(await response.json()).toEqual({
         exitCode: 1,
-        lines: ["Shinan: this push could not be checked. Nothing was changed."],
+        lines: [
+          "Shinan: this push could not be checked. Nothing was changed. Try again; tell your person if it happens again.",
+        ],
       })
     }
     const session = push.begin({

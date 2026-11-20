@@ -10,7 +10,7 @@
 // it directly, without a shell.
 const refuse = () => {
   process.stderr.write(
-    "Shinan: this push could not be checked. Nothing was changed.\n",
+    "Shinan: this push could not be checked. Nothing was changed. Try again; tell your person if it happens again.\n",
   )
   process.exitCode = 1
 }

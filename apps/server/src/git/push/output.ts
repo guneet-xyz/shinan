@@ -23,10 +23,26 @@ const plural = (n: number, one: string, many: string) =>
   `${n} ${n === 1 ? one : many}`
 
 /**
+ * The codes of problems inside the commits a push brings: a new commit on
+ * top leaves the bad one in the push, so they are fixed by rewriting the
+ * commits (product review of GC-3a).
+ */
+const inCommits = new Set([
+  "secret",
+  "symlink",
+  "submodule",
+  "file-too-large",
+  "commit-too-large",
+  "path-not-portable",
+  "tree-too-large",
+])
+
+/**
  * What a push's answer says, as `remote:` lines (Git-based catalog plan
  * §2.5, "Output"): the verdict, each blocking problem and warning with its
- * place, Shinan's code and message, and what to do. Never a suspected
- * secret's value: the checks name its kind and fingerprint.
+ * place, Shinan's code and message, and what to do next, chosen by the
+ * codes present. Never a suspected secret's value: the checks name its
+ * kind and fingerprint.
  */
 export function verdictLines(verdict: {
   problems: Problem[]
@@ -34,20 +50,25 @@ export function verdictLines(verdict: {
   checkOnly: boolean
 }): string[] {
   const problems = verdict.problems.filter((p) => p.code !== "check-only")
-  const { warnings } = verdict
-  if (problems.length === 0 && warnings.length === 0 && !verdict.checkOnly)
-    return []
+  const { warnings, checkOnly } = verdict
+  if (problems.length === 0 && warnings.length === 0 && !checkOnly) return []
   const lines: string[] = []
-  if (problems.length > 0) {
+  if (checkOnly) {
+    lines.push(
+      problems.length > 0
+        ? "Shinan checked this push (check only). Nothing was changed."
+        : "Shinan checked this push (check only): no blocking problems. Nothing was changed.",
+    )
+  } else if (problems.length > 0) {
     lines.push("Shinan refused this push. Nothing was changed.")
+  } else {
+    lines.push("Shinan accepted this push.")
+  }
+  if (problems.length > 0) {
     lines.push(
       `${plural(problems.length, "blocking problem", "blocking problems")}:`,
     )
     lines.push(...rows(problems))
-  } else if (verdict.checkOnly) {
-    lines.push("Shinan checked this push: no blocking problems.")
-  } else {
-    lines.push("Shinan accepted this push.")
   }
   if (warnings.length > 0) {
     lines.push(
@@ -55,12 +76,16 @@ export function verdictLines(verdict: {
     )
     lines.push(...rows(warnings))
   }
-  if (verdict.checkOnly) {
-    lines.push("  check-only  check only: nothing was changed")
-  }
   if (problems.length > 0) {
     lines.push(
-      "Fix them in new commits and push again. The shinan skill explains each code.",
+      problems.some((p) => inCommits.has(p.code))
+        ? "These problems are in commits not yet in Shinan: rewrite them (git rebase -i origin/main), then push again. A new commit on top won't help."
+        : "Fix them in new commits and push again. The shinan skill explains each code.",
+    )
+  }
+  if (problems.some((p) => p.code === "secret")) {
+    lines.push(
+      "If a value is not a secret, a workspace owner can allow its fingerprint in workspace settings (Catalog).",
     )
   }
   return lines

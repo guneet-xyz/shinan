@@ -946,10 +946,22 @@ only if measured growth requires it.
     the `by` rule: GC-3b): a push that changes `main` is refused
     `main-not-open`, so nothing unvalidated reaches the catalog.
   - **Output.** Every refusal and warning is one `remote:` line with its
-    place (file and line, commit, or ref), Shinan's code and a message, and
-    never a suspected secret's value; warnings do not block. A
-    `-o check-only` push runs the checks and changes nothing; any other
-    push option is refused.
+    place (file and line, commit, or ref), Shinan's code and a message of
+    about 70 characters, and never a suspected secret's value; a name is
+    quoted with control and format characters (right-to-left overrides,
+    zero-width characters) written as `\u…`. Warnings do not block. The
+    last line says what to do, chosen by the codes present (product
+    review): problems inside the pushed commits (`secret`, `symlink`,
+    `submodule`, `file-too-large`, `commit-too-large`,
+    `path-not-portable`, `tree-too-large`) need the commits rewritten
+    (`git rebase -i origin/main`), since a new commit on top leaves them in
+    the push; others are fixed in new commits; a `secret` adds that a
+    workspace owner can allow a value that is not a secret. A
+    `-o check-only` push reads as a check ("Shinan checked this push
+    (check only)…") and changes nothing; any other push option is refused.
+    A hook that cannot reach the checks refuses with "Shinan: this push
+    could not be checked. Nothing was changed. Try again; tell your person
+    if it happens again."
   - **The journal and the first-pusher record.** `pre-receive` appends the
     verdict with the context `web` sent (`push.checked`). After Git updated
     the refs, the `git` role compares each ref with what the push asked,
