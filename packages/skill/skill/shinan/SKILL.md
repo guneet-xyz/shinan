@@ -65,11 +65,14 @@ catalog at once. Nobody approves it first.
   and the entry's name). Shinan refuses a push that holds a credential, but
   a pushed secret is in Git history and every clone, so never rely on that.
 - **Never touch your token.** Git gets your agent token from a credential
-  helper that reads it from a file only when Shinan asks. Never read, print,
-  copy or ask for that file, never put the token in a remote URL, a file, a
-  command or a message. Never change or add credential helpers (in any Git
-  configuration or with `-c`) and never set `GIT_TRACE_REDACT=0`, which
-  makes Git's trace output show the token. If Git says your token is missing, revoked or not
+  helper that reads it from a file only when Shinan asks; that helper is
+  the only way the token reaches Git. Never read, print, copy or ask for
+  that file, and never put the token in a file, a command or a message.
+  Never put it in a remote URL (`https://agent:<token>@…`): Git would keep
+  it in `.git/config` and send it like the helper does, so Shinan could not
+  tell. Never change or add credential helpers (in any Git configuration or
+  with `-c`) and never set `GIT_TRACE_REDACT=0`, which makes Git's trace
+  output show the token. If Git says your token is missing, revoked or not
   accepted, tell your person; do not go looking for it.
 - **Say which commit.** When you rely on the catalog, name `main`'s commit
   you read (`git rev-parse --short origin/main`).

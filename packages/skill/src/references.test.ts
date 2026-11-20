@@ -53,8 +53,8 @@ const validationCodes = {
 } satisfies Record<ProblemCode, true>
 
 /**
- * The push checks' own codes, as the skill names them. **To be confirmed**
- * against GC-3's codes (#165), which this list will then come from.
+ * The push checks' own codes: GC-3's `pushCheckCodes` (#191, #193), copied
+ * until it is on `main`, when this list is replaced by its keys.
  */
 const pushCodes = [
   "ref-not-branch",
@@ -65,16 +65,24 @@ const pushCodes = [
   "symlink",
   "submodule",
   "file-too-large",
+  "commit-too-large",
   "too-many-commits",
+  "tree-too-large",
+  "path-not-portable",
+  "secret",
   "repository-full",
   "busy",
   "too-slow",
   "check-only",
+  "push-option-unknown",
+  "check-failed",
+  "secret-suspected",
   "path-not-allowed",
   "path-id-mismatch",
   "id-disappeared",
   "by-not-first-pusher",
   "catalog-too-large",
+  "main-too-many-commits",
 ]
 
 const changingFile = join(skillDirectory, "references", "changing.md")
@@ -91,7 +99,7 @@ describe("the skill's references", () => {
       [...changing.matchAll(/^\| `([a-z-]+)` +\|/gm)].map((m) => m[1]!),
     )
     expect([...listed].sort()).toEqual(
-      [...Object.keys(validationCodes), ...pushCodes].sort(),
+      [...new Set([...Object.keys(validationCodes), ...pushCodes])].sort(),
     )
   })
 

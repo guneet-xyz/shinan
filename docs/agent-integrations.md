@@ -588,9 +588,17 @@ accepted with the plan):**
   Reason: built-in types have no schema document in the repository, so an
   agent reading the clone has no other way to know their intervals.
 - **The refusal codes** in `references/changing.md` are tested against the
-  code: every validation code of `packages/core` must be explained there.
-  The push checks' own codes are **to be confirmed** with GC-3
-  ([#165](https://github.com/guneet-xyz/shinan/issues/165)).
+  code: every validation code of `packages/core` and every push check code
+  (GC-3's `pushCheckCodes`, [#165](https://github.com/guneet-xyz/shinan/issues/165))
+  must be explained there, each with what to do next, the same next steps
+  as the push output gives. For `by-not-first-pusher` the skill repeats the
+  output's advice: name yourself only on fact checks you made; for another
+  agent's, merge its pushed branch; don't rebase, cherry-pick or squash it.
+- **The token reaches Git only through the credential helper.** The skill
+  says never to put it in a remote URL (`https://agent:<token>@…`): Git
+  would keep it in `.git/config` and send it as the same Basic
+  authentication, so Shinan cannot tell the difference and cannot refuse
+  it.
 - **The catalog format**, checked against
   [OpenCode skills](https://opencode.ai/docs/skills) ("Catalogs") on
   2026-11-18: `/skills/index.json` is
