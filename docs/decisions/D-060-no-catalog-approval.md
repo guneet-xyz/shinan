@@ -24,7 +24,7 @@ recorded on [issue #161](https://github.com/guneet-xyz/shinan/issues/161#issueco
   remedy when accuracy slips, and let the only member approve their own
   agents' proposals.
 - M2 built approval classes, the strict setting, bulk approval, comments and
-  revert by proposal ([catalog §8.2](../catalog.md#82-when-catalog-approval-is-needed)).
+  revert by proposal ([catalog §8.2](../catalog.md#82-no-catalog-approval)).
 - The plan's Catalog pillar says "Agents propose changes; people approve where
   needed" ([plan §4](../plan.md#4-product-pillars)).
 - With the catalog in Git ([D-059](D-059-catalog-in-git-hosted-by-shinan.md)),

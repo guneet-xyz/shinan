@@ -172,7 +172,7 @@ a second PR, so M2-2 and M2-3 can start earlier.
 - **The start-here document** shape: two ordered paths of entity references
   with a sentence each ([§11](catalog.md#11-start-here)).
 - **Validation** on the resulting document set: every blocking and warning
-  rule of [8.3](catalog.md#83-validation), including the check for
+  rule of [8.3](catalog.md#83-validation-on-push), including the check for
   secret-looking values ([7.3](catalog.md#73-a-check-for-secret-looking-values))
   with Shinan's own token prefix from M2-5, and the start-here warnings.
 - **Tests:** the examples in the catalog document (Dockyard, Musashi, the
@@ -181,7 +181,7 @@ a second PR, so M2-2 and M2-3 can start earlier.
 
 ### 3.2 M2-2: Operations as text edits, and conflict checks
 
-- Every operation of [8.1](catalog.md#81-catalog-proposals): create entity;
+- Every operation of [8.1](catalog.md#81-pushes): create entity;
   set a fact (replace or add beside); remove a fact; recheck facts; edit the
   whole body or one section; change an entity field; retire; change ID (old
   ID to `aliases`); create or change a type schema document; change the
@@ -194,7 +194,7 @@ a second PR, so M2-2 and M2-3 can start earlier.
   matches; groups left empty are dropped ([4.3](catalog.md#43-how-facts-are-written)).
 - **`by` is never sent by the caller.** The operation's applier writes the
   actor's written form from the request ([identity §8.7](identity.md#87-how-an-actor-is-written-in-text)).
-- **Expectations and conflicts** ([8.5](catalog.md#85-conflicts)): each
+- **Expectations and conflicts** ([8.5](catalog.md#85-conflicts-as-git-merges)): each
   operation states what it expects (the fact's identity key, value and fact
   check, or "absent"); operations whose expectations hold apply even if other
   parts of the entity changed.
@@ -250,7 +250,7 @@ a second PR, so M2-2 and M2-3 can start earlier.
   idempotency key), proposal comments.
 - **Apply in one transaction** (rule 4): new text, index rows (M2-3), conflict
   check, secret check, revision, event. Nothing else writes the index (rule 6).
-- **Approval classes** of [8.2](catalog.md#82-when-catalog-approval-is-needed),
+- **Approval classes** of [8.2](catalog.md#82-no-catalog-approval),
   the **strict setting** with bulk approval, a person's own edit applied at once
   when they may approve it, and self-approval of one's own agents' proposals
   while one person uses Shinan ([D-024](decisions/D-024-gated-catalog-approval.md), O-46).
@@ -607,9 +607,9 @@ People type secrets; agents never handle them. Agents prepare every step.
      ([catalog §4.7](catalog.md#47-discrepancies), raised in review of
      [#108](https://github.com/guneet-xyz/shinan/pull/108));
    - the limits on one catalog proposal, 50 operations naming 100 facts
-     ([catalog §8.1](catalog.md#81-catalog-proposals));
+     ([catalog §8.1](catalog.md#81-pushes));
    - no operation that brings a retired entity back
-     ([catalog §8.1](catalog.md#81-catalog-proposals)).
+     ([catalog §8.1](catalog.md#81-pushes)).
 
 ## 7. Owner answers
 
@@ -655,14 +655,14 @@ to M2-Q17 at the M2 security review, M2-12
    agent may edit the text of an `accepted`, `rejected` or `superseded`
    decision, or create a new decision that supersedes one, without catalog
    approval; only changing a decision's state to one of those is gated
-   (rules). Recorded in [catalog §8.2](catalog.md#82-when-catalog-approval-is-needed).
+   (rules). Recorded in [catalog §8.2](catalog.md#82-no-catalog-approval).
    No decision record changes.
 8. **M2-Q8, approving one's own agents' proposals in a team** (owner,
    2026-11-18, [#112](https://github.com/guneet-xyz/shinan/pull/112)):
    follow [D-024](decisions/D-024-gated-catalog-approval.md) and O-46 as
    written. A person may approve their own agents' catalog proposals only
    while the workspace has one member; with more, another member approves.
-   Recorded in [catalog §8.2](catalog.md#82-when-catalog-approval-is-needed).
+   Recorded in [catalog §8.2](catalog.md#82-no-catalog-approval).
    No decision record changes.
 9. **M2-Q12, the skill's fallback when Shinan is down** (owner,
    2026-11-18, [#90](https://github.com/guneet-xyz/shinan/issues/90)): keep
@@ -702,7 +702,7 @@ to M2-Q17 at the M2 security review, M2-12
     - per catalog, 20,000 documents, 50 MiB of text and an estimate of
       320 MiB; per proposal, 50 operations and 100 facts.
 
-    Recorded in [catalog §8.1 and §8.2](catalog.md#81-catalog-proposals),
+    Recorded in [catalog §8.1 and §8.2](catalog.md#81-pushes),
     [architecture §5.3 and §8.1](architecture.md#53-how-sync-works),
     [identity §10](identity.md#10-protections-for-a-public-installation)
     and [security checklist](security-checklist.md) 1.11. No decision
@@ -716,7 +716,7 @@ to M2-Q17 at the M2 security review, M2-12
     - the recheck intervals of built-in keys ([catalog §4.6](catalog.md#46-freshness));
     - the 64 KiB document limit and the nesting limits on what Shinan reads
       ([catalog §2.1](catalog.md#21-one-document-per-entity-and-what-source-of-truth-means));
-    - task status in facts as a narrow warning only ([catalog §8.3](catalog.md#83-validation));
+    - task status in facts as a narrow warning only ([catalog §8.3](catalog.md#83-validation-on-push));
     - a known value removing the `unknown` facts it settles, and acceptance
       written on a discrepancy's facts and kept by a recheck that leaves
       the values as they are ([catalog §4.2, §4.7](catalog.md#47-discrepancies));
@@ -724,7 +724,7 @@ to M2-Q17 at the M2 security review, M2-12
       (`accept-discrepancy`; `accepted` is never sent);
     - no operation that brings a retired entity back;
     - waiting proposals from a disabled agent or a member who left still
-      approved or rejected ([catalog §8.2](catalog.md#82-when-catalog-approval-is-needed));
+      approved or rejected ([catalog §8.2](catalog.md#82-no-catalog-approval));
     - a confirmed email change keeping the person's agent tokens, with
       alerts that name both addresses in full ([identity §3.4](identity.md#34-recovery));
     - changing `SHINAN_URL` stopping every agent token;

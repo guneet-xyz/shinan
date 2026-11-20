@@ -14,7 +14,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { serve } from "@hono/node-server"
 import type { ServerType } from "@hono/node-server"
-import { afterAll, beforeAll, describe, expect, it } from "vitest"
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest"
 
 import {
   allowCatalogValue,
@@ -72,10 +72,7 @@ let owner: Awaited<ReturnType<typeof insertPerson>>
 const tokens: Record<"alpha" | "beta", string> = { alpha: "", beta: "" }
 const labels: Record<"alpha" | "beta", string> = { alpha: "", beta: "" }
 const locks = createPushLocks()
-const pushOptions: {
-  openMain: boolean
-  limits: Partial<PushLimits>
-} = { openMain: true, limits: {} }
+const pushOptions: { limits: Partial<PushLimits> } = { limits: {} }
 
 async function listen(fetch: Parameters<typeof serve>[0]["fetch"]) {
   const server = serve({
@@ -116,9 +113,6 @@ beforeAll(async () => {
     records,
     locks,
     log: () => {},
-    get openMain() {
-      return pushOptions.openMain
-    },
     get limits() {
       return pushOptions.limits
     },
@@ -169,6 +163,14 @@ beforeAll(async () => {
   )
 })
 
+// These tests push more than an agent may in 10 minutes; the push rate
+// has tests of its own (core access.test.ts).
+beforeEach(async () => {
+  await db
+    .delete(schema.rateLimits)
+    .where(sql`${schema.rateLimits.key} like 'catalog-push%'`)
+})
+
 afterAll(async () => {
   await Promise.all(
     servers.map(
@@ -184,6 +186,40 @@ afterAll(async () => {
 })
 
 const repository = () => `${web}/git/${workspaceId}.git`
+
+/** A catalog page that validates, with `facts` (fact check groups) if given. */
+function page(
+  id: string,
+  facts = "",
+  options: { fields?: string; body?: string } = {},
+) {
+  return `---
+id: ${id}
+type: ${id.split("/")[0]}
+title: ${id}
+summary: A page for tests.
+status: active
+owner: unknown
+${options.fields ?? ""}${facts ? `facts:\n${facts}` : ""}---
+
+${options.body ?? `# ${id}\n`}`
+}
+
+/** A fact check group of machine facts, as an agent writes it. */
+function group(
+  by: string,
+  facts: Record<string, string> = { hostname: "x" },
+  checked = "2026-11-14T09:00:00Z",
+) {
+  return `  - checked: ${checked}
+    by: ${by}
+    scope: Looked
+    source: Somewhere
+    observed:
+${Object.entries(facts)
+  .map(([key, value]) => `      ${key}: ${value}\n`)
+  .join("")}`
+}
 
 /**
  * The `git` client as one agent runs it, with GC-9's credential helper
@@ -860,20 +896,6 @@ describe("pushing through web", () => {
       pushOptions.limits = {}
     }
   })
-
-  it("refuses a push to main until GC-3b opens it", async () => {
-    const folder = await cloneAs("alpha")
-    await commit("alpha", folder, { "m.md": "m\n" })
-    pushOptions.openMain = false
-    try {
-      const pushed = await pushAs("alpha", folder, "HEAD:refs/heads/main")
-      expect(remote(pushed.stderr).join("\n")).toContain(
-        "main-not-open  pushes to main are not open yet: push your work to a branch for now",
-      )
-    } finally {
-      pushOptions.openMain = true
-    }
-  })
 })
 
 describe("branches, main and the push log", () => {
@@ -904,7 +926,7 @@ describe("branches, main and the push log", () => {
     const folder = await cloneAs("alpha")
     const before = await run("alpha", folder, "rev-parse", "HEAD")
     const made = await commit("alpha", folder, {
-      "machine/musashi.md": "# Musashi\n",
+      "machine/musashi.md": page("machine/musashi"),
     })
     const pushed = await pushAs("alpha", folder, "HEAD:refs/heads/main")
     expect(pushed.code).toBe(0)
@@ -936,7 +958,9 @@ describe("branches, main and the push log", () => {
   it("keeps a commit's first pusher when another agent merges its branch into main", async () => {
     const a = await cloneAs("alpha")
     await run("alpha", a, "checkout", "--quiet", "-b", "feature")
-    const theirs = await commit("alpha", a, { "feature.md": "f\n" })
+    const theirs = await commit("alpha", a, {
+      "machine/feature.md": page("machine/feature"),
+    })
     expect((await pushAs("alpha", a, "HEAD:refs/heads/feature")).code).toBe(0)
     const b = await cloneAs("beta")
     await run("beta", b, "fetch", "--quiet", "origin")
@@ -996,8 +1020,12 @@ describe("branches, main and the push log", () => {
   it("serializes pushes to main: the second, checked against an old main, fails to update it and records nothing", async () => {
     const a = await cloneAs("alpha")
     const b = await cloneAs("beta")
-    const ours = await commit("alpha", a, { "race-a.md": "a\n" })
-    const theirs = await commit("beta", b, { "race-b.md": "b\n" })
+    const ours = await commit("alpha", a, {
+      "machine/race-a.md": page("machine/race-a"),
+    })
+    const theirs = await commit("beta", b, {
+      "machine/race-b.md": page("machine/race-b"),
+    })
     // Both start while a push holds the lock, so both are checked against
     // the same main, one after the other.
     const release = (await locks.acquire(workspaceId, 0))!
@@ -1138,5 +1166,497 @@ describe("the hooks' listener", () => {
     expect((await ask("/pre-receive", session.nonce)).status).toBe(403)
     await session.end()
     expect((await ask("/pre-receive", session.nonce)).status).toBe(403)
+  })
+})
+
+/** A fresh clone by `agent`, with `files` committed on top of main. */
+async function change(
+  agent: "alpha" | "beta",
+  files: Record<string, string | Buffer>,
+  message = "A change",
+) {
+  const folder = await cloneAs(agent)
+  const made = await commit(agent, folder, files, message)
+  return { folder, made }
+}
+
+const refused = (pushed: { code: number; stderr: string }) => {
+  expect(pushed.code).not.toBe(0)
+  return remote(pushed.stderr).join("\n")
+}
+
+describe("the checks of main", () => {
+  it("refuse paths outside the layout, a path that is not the id, and an id that disappears", async () => {
+    const { folder } = await change("alpha", {
+      "machine/Upper.md": page("machine/upper"),
+      "machine/\u202eevil.md": page("machine/evil"),
+      "notes.txt": "free text\n",
+      "machine/deep/x.md": page("machine/x"),
+      "machine/elsewhere.md": page("machine/somewhere-else"),
+    })
+    const text = refused(await pushAs("alpha", folder, "HEAD:refs/heads/main"))
+    expect(text).toMatch(
+      /machine\/Upper\.md +path-not-allowed +not a page path/,
+    )
+    // The right-to-left override is shown as what it is, never applied.
+    expect(text).toMatch(/"machine\/\\u202eevil\.md" +path-not-allowed/)
+    expect(text).not.toContain("\u202e")
+    expect(text).toMatch(/notes\.txt +path-not-allowed/)
+    expect(text).toMatch(/machine\/deep\/x\.md +path-not-allowed/)
+    expect(text).toMatch(
+      /machine\/elsewhere\.md +path-id-mismatch +its id is "machine\/somewhere-else": a document's path is its id plus \.md/,
+    )
+    // A document on main, then deleted: its id no longer resolves.
+    const kept = await change("alpha", {
+      "machine/kept.md": page("machine/kept"),
+    })
+    expect(
+      (await pushAs("alpha", kept.folder, "HEAD:refs/heads/main")).code,
+    ).toBe(0)
+    await run("alpha", kept.folder, "rm", "--quiet", "machine/kept.md")
+    await run("alpha", kept.folder, "commit", "--quiet", "-m", "Delete")
+    expect(
+      refused(await pushAs("alpha", kept.folder, "HEAD:refs/heads/main")),
+    ).toMatch(
+      /machine\/kept\.md +id-disappeared +"machine\/kept" no longer resolves: retire the document, or keep the old id in aliases/,
+    )
+  })
+
+  it("never show a secret-looking path or id, which check 3 reports without its value", async () => {
+    const { folder } = await change("alpha", {
+      [`machine/${githubToken}.md`]: page("machine/x"),
+      "machine/quoted.md": page(`machine/${githubToken.toLowerCase()}`),
+    })
+    const pushed = await pushAs("alpha", folder, "HEAD:refs/heads/main")
+    const text = refused(pushed)
+    expect(text).toMatch(/\(name not shown\) +secret +a file or folder name/)
+    expect(text).toMatch(/\(path not shown\) +path-not-allowed/)
+    expect(pushed.stderr).not.toContain(githubToken.slice(4))
+    expect(pushed.stderr.toLowerCase()).not.toContain(
+      githubToken.slice(4).toLowerCase(),
+    )
+  })
+
+  it("refuse an executable document", async () => {
+    const folder = await cloneAs("alpha")
+    writeFileSync(join(folder, "machine-exec.md"), "x")
+    mkdirSync(join(folder, "machine"), { recursive: true })
+    writeFileSync(join(folder, "machine/exec.md"), page("machine/exec"))
+    chmodSync(join(folder, "machine/exec.md"), 0o755)
+    await run("alpha", folder, "add", "machine/exec.md")
+    await run("alpha", folder, "commit", "--quiet", "-m", "Exec")
+    expect(
+      refused(await pushAs("alpha", folder, "HEAD:refs/heads/main")),
+    ).toMatch(/machine\/exec\.md +path-not-allowed +an executable file/)
+  })
+
+  it("validate the new catalog: blocking problems refuse, warnings pass", async () => {
+    const { folder } = await change("alpha", {
+      "machine/broken.md": page("machine/broken", "", {
+        fields: "replaced-by: machine/nowhere\n",
+      }).replace("owner: unknown", "owner: person/nobody"),
+    })
+    expect(
+      refused(await pushAs("alpha", folder, "HEAD:refs/heads/main")),
+    ).toMatch(/machine\/broken\.md:\d+ +reference-unresolved +/)
+    const warned = await change("alpha", {
+      "machine/warned.md": page(
+        "machine/warned",
+        group(labels.alpha, { "not-a-key": "x" }),
+      ),
+    })
+    const pushed = await pushAs("alpha", warned.folder, "HEAD:refs/heads/main")
+    expect(pushed.code).toBe(0)
+    expect(remote(pushed.stderr).join("\n")).toMatch(
+      /machine\/warned\.md:\d+ +key-not-in-schema +/,
+    )
+  })
+
+  it("refuse past the catalog's limits and the commits one push adds to main", async () => {
+    const { folder } = await change("alpha", {
+      "machine/one-more.md": page("machine/one-more"),
+    })
+    pushOptions.limits = { mainDocuments: 1 }
+    try {
+      expect(
+        refused(await pushAs("alpha", folder, "HEAD:refs/heads/main")),
+      ).toContain("catalog-too-large")
+    } finally {
+      pushOptions.limits = {}
+    }
+    for (let i = 0; i < 3; i++)
+      await commit("alpha", folder, {
+        [`machine/many-${i}.md`]: page(`machine/many-${i}`),
+      })
+    pushOptions.limits = { mainCommits: 3 }
+    try {
+      expect(
+        refused(await pushAs("alpha", folder, "HEAD:refs/heads/main")),
+      ).toContain(
+        "main-too-many-commits  this push adds more than 3 commits to main: merge in parts",
+      )
+    } finally {
+      pushOptions.limits = {}
+    }
+  })
+
+  it("run on a check-only push to main, which changes nothing", async () => {
+    const { folder } = await change("alpha", {
+      "machine/checked-only.md": page("machine/checked-only").replace(
+        "owner: unknown",
+        "owner: person/nobody",
+      ),
+    })
+    const checked = await agentGit(
+      "alpha",
+      ["push", "-o", "check-only", "origin", "HEAD:refs/heads/main"],
+      folder,
+    )
+    expect(refused(checked)).toMatch(/reference-unresolved/)
+    expect(await serverRef("refs/heads/main")).not.toBe(
+      await run("alpha", folder, "rev-parse", "HEAD"),
+    )
+  })
+})
+
+describe("the by rule (D-066)", () => {
+  /** A new page by `agent` with one fact check group naming `by`, pushed to a branch or main. */
+  async function pageBy(
+    agent: "alpha" | "beta",
+    id: string,
+    by: string,
+    ref = "refs/heads/main",
+  ) {
+    const folder = await cloneAs(agent)
+    const made = await commit(agent, folder, {
+      [`${id}.md`]: page(id, group(by)),
+    })
+    return { folder, made, pushed: await pushAs(agent, folder, `HEAD:${ref}`) }
+  }
+
+  it("passes a new fact check naming the agent that first pushes it", async () => {
+    const { pushed } = await pageBy("alpha", "machine/by-own", labels.alpha)
+    expect(remote(pushed.stderr)).toEqual([])
+    expect(pushed.code).toBe(0)
+  })
+
+  it("refuses one naming another agent, the person alone or another member, with file, line, commit, found and expected", async () => {
+    for (const by of [
+      labels.beta,
+      owner.handle,
+      "someone-else via opencode-gamma",
+    ]) {
+      const { made, pushed } = await pageBy("alpha", "machine/by-other", by)
+      expect(pushed.code).not.toBe(0)
+      expect(remote(pushed.stderr)).toContain(
+        `  machine/by-other.md:9  by-not-first-pusher  "by: ${by}" but commit ${made.slice(0, 7)} was first pushed by "${labels.alpha}"`,
+      )
+    }
+  })
+
+  it("passes another agent merging an already-pushed branch, by fast-forward and by a merge commit", async () => {
+    const a = await pageBy(
+      "alpha",
+      "machine/by-ff",
+      labels.alpha,
+      "refs/heads/ff",
+    )
+    expect(a.pushed.code).toBe(0)
+    const b = await cloneAs("beta")
+    await run("beta", b, "fetch", "--quiet", "origin")
+    const forward = await pushAs("beta", b, "origin/ff:refs/heads/main")
+    expect(remote(forward.stderr)).toEqual([])
+    expect(forward.code).toBe(0)
+
+    const a2 = await pageBy(
+      "alpha",
+      "machine/by-merge",
+      labels.alpha,
+      "refs/heads/m",
+    )
+    expect(a2.pushed.code).toBe(0)
+    const b2 = await cloneAs("beta")
+    await commit("beta", b2, {
+      "machine/beta-own.md": page("machine/beta-own", group(labels.beta)),
+    })
+    await run("beta", b2, "fetch", "--quiet", "origin")
+    await run(
+      "beta",
+      b2,
+      "merge",
+      "--quiet",
+      "--no-ff",
+      "--no-edit",
+      "origin/m",
+    )
+    const merged = await pushAs("beta", b2, "HEAD:refs/heads/main")
+    expect(remote(merged.stderr)).toEqual([])
+    expect(merged.code).toBe(0)
+  })
+
+  it("refuses another agent rebasing, cherry-picking or squashing those commits", async () => {
+    const a = await pageBy(
+      "alpha",
+      "machine/by-picked",
+      labels.alpha,
+      "refs/heads/picked",
+    )
+    expect(a.pushed.code).toBe(0)
+    for (const how of ["cherry-pick", "squash", "rebase"] as const) {
+      const b = await cloneAs("beta")
+      await run("beta", b, "fetch", "--quiet", "origin")
+      if (how === "cherry-pick")
+        await run("beta", b, "cherry-pick", "origin/picked")
+      else if (how === "squash") {
+        await run("beta", b, "merge", "--quiet", "--squash", "origin/picked")
+        await run("beta", b, "commit", "--quiet", "-m", "Squashed")
+      } else {
+        await commit("beta", b, {
+          "machine/rebase-base.md": page(`machine/rebase-base`),
+        })
+        await run("beta", b, "checkout", "--quiet", "-b", "re", "origin/picked")
+        await run("beta", b, "rebase", "--quiet", "main")
+      }
+      const pushed = await pushAs("beta", b, "HEAD:refs/heads/main")
+      expect(pushed.code, how).not.toBe(0)
+      expect(remote(pushed.stderr).join("\n"), how).toContain(
+        `but commit ${(await run("beta", b, "rev-parse", "HEAD")).slice(0, 7)} was first pushed by "${labels.beta}"`,
+      )
+    }
+  })
+
+  it("passes a fact check written in a merge commit only if it names the merge's first pusher", async () => {
+    const a = await pageBy(
+      "alpha",
+      "machine/by-resolve",
+      labels.alpha,
+      "refs/heads/resolve",
+    )
+    expect(a.pushed.code).toBe(0)
+    for (const by of [labels.beta, labels.alpha]) {
+      const b = await cloneAs("beta")
+      await commit("beta", b, {
+        "machine/by-resolve-base.md": page("machine/by-resolve-base"),
+      })
+      await run("beta", b, "fetch", "--quiet", "origin")
+      await run(
+        "beta",
+        b,
+        "merge",
+        "--quiet",
+        "--no-ff",
+        "--no-commit",
+        "origin/resolve",
+      )
+      writeFileSync(
+        join(b, "machine/by-resolve-base.md"),
+        page("machine/by-resolve-base", group(by, { hostname: "merged" })),
+      )
+      await run("beta", b, "add", "machine/by-resolve-base.md")
+      await run("beta", b, "commit", "--quiet", "-m", "Merge resolve")
+      const pushed = await pushAs("beta", b, "HEAD:refs/heads/main")
+      if (by === labels.beta) {
+        expect(remote(pushed.stderr)).toEqual([])
+        expect(pushed.code).toBe(0)
+      } else {
+        expect(refused(pushed)).toContain(
+          `was first pushed by "${labels.beta}"`,
+        )
+      }
+    }
+  })
+
+  it("refuses a group two agents introduced on two branches", async () => {
+    const a = await pageBy(
+      "alpha",
+      "machine/by-twice",
+      labels.alpha,
+      "refs/heads/twice-a",
+    )
+    expect(a.pushed.code).toBe(0)
+    // Beta writes the same page, the same group, on its own branch.
+    const b = await cloneAs("beta")
+    await run("beta", b, "checkout", "--quiet", "-b", "twice-b")
+    await commit("beta", b, {
+      "machine/by-twice.md": page("machine/by-twice", group(labels.alpha)),
+    })
+    await run("beta", b, "fetch", "--quiet", "origin")
+    await run("beta", b, "checkout", "--quiet", "main")
+    await run(
+      "beta",
+      b,
+      "merge",
+      "--quiet",
+      "--no-ff",
+      "--no-edit",
+      "origin/twice-a",
+    )
+    await run("beta", b, "merge", "--quiet", "--no-ff", "--no-edit", "twice-b")
+    expect(refused(await pushAs("beta", b, "HEAD:refs/heads/main"))).toContain(
+      `was first pushed by "${labels.beta}"`,
+    )
+  })
+
+  it("passes another agent's unchanged fact check and facts removed from it, and refuses a fact added under it", async () => {
+    const id = "machine/by-kept"
+    const twoFacts = { hostname: "kept", "platform.os": "debian" }
+    const a = await cloneAs("alpha")
+    await commit("alpha", a, {
+      [`${id}.md`]: page(id, group(labels.alpha, twoFacts)),
+    })
+    expect((await pushAs("alpha", a, "HEAD:refs/heads/main")).code).toBe(0)
+
+    const body = await change("beta", {
+      [`${id}.md`]: page(id, group(labels.alpha, twoFacts), {
+        body: "# Kept\n\nMore words.\n",
+      }),
+    })
+    expect(
+      remote(
+        (await pushAs("beta", body.folder, "HEAD:refs/heads/main")).stderr,
+      ),
+    ).toEqual([])
+
+    const added = await change("beta", {
+      [`${id}.md`]: page(
+        id,
+        group(labels.alpha, { ...twoFacts, "platform.arch": "arm64" }),
+        {
+          body: "# Kept\n\nMore words.\n",
+        },
+      ),
+    })
+    expect(
+      refused(await pushAs("beta", added.folder, "HEAD:refs/heads/main")),
+    ).toContain(
+      `by-not-first-pusher  "by: ${labels.alpha}" but commit ${added.made.slice(0, 7)} was first pushed by "${labels.beta}"`,
+    )
+
+    const removed = await change("beta", {
+      [`${id}.md`]: page(id, group(labels.alpha, { hostname: "kept" }), {
+        body: "# Kept\n\nMore words.\n",
+      }),
+    })
+    const pushed = await pushAs("beta", removed.folder, "HEAD:refs/heads/main")
+    expect(remote(pushed.stderr)).toEqual([])
+    expect(pushed.code).toBe(0)
+  })
+
+  it("passes another agent reverting the removal of a fact check: restoring is not introducing", async () => {
+    const id = "machine/by-reverted"
+    const a = await cloneAs("alpha")
+    await commit("alpha", a, { [`${id}.md`]: page(id, group(labels.alpha)) })
+    expect((await pushAs("alpha", a, "HEAD:refs/heads/main")).code).toBe(0)
+    const b = await change(
+      "beta",
+      { [`${id}.md`]: page(id) },
+      "Remove the check",
+    )
+    expect((await pushAs("beta", b.folder, "HEAD:refs/heads/main")).code).toBe(
+      0,
+    )
+    const c = await cloneAs("beta")
+    await run("beta", c, "revert", "--no-edit", b.made)
+    const pushed = await pushAs("beta", c, "HEAD:refs/heads/main")
+    expect(remote(pushed.stderr)).toEqual([])
+    expect(pushed.code).toBe(0)
+  })
+
+  it("passes a document moved with its fact checks unchanged, its old id kept as an alias", async () => {
+    const a = await cloneAs("alpha")
+    await commit("alpha", a, {
+      "machine/by-old.md": page("machine/by-old", group(labels.alpha)),
+    })
+    expect((await pushAs("alpha", a, "HEAD:refs/heads/main")).code).toBe(0)
+    const b = await cloneAs("beta")
+    await run("beta", b, "mv", "machine/by-old.md", "machine/by-new.md")
+    writeFileSync(
+      join(b, "machine/by-new.md"),
+      page("machine/by-new", group(labels.alpha), {
+        fields: "aliases: [machine/by-old]\n",
+      }),
+    )
+    await run("beta", b, "add", "-A")
+    await run("beta", b, "commit", "--quiet", "-m", "Move")
+    const pushed = await pushAs("beta", b, "HEAD:refs/heads/main")
+    expect(remote(pushed.stderr)).toEqual([])
+    expect(pushed.code).toBe(0)
+  })
+
+  it("keeps fact checks in commits Shinan made valid, as first pushed by shinan", async () => {
+    // As the migration's first commit (GC-6): made on the server, first
+    // pushed by shinan.
+    const gitDir = store.pathOf(workspaceId)
+    const main = (await serverRef("refs/heads/main"))!
+    const tree = (
+      await store.git.run(["rev-parse", `${main}^{tree}`], { gitDir })
+    ).stdout
+      .toString()
+      .trim()
+    const blob = (
+      await store.git.run(["hash-object", "-w", "--stdin"], {
+        gitDir,
+        input: page("machine/imported", group("guneet")),
+      })
+    ).stdout
+      .toString()
+      .trim()
+    const listing = (
+      await store.git.run(["ls-tree", tree], { gitDir })
+    ).stdout.toString()
+    const machine = /040000 tree ([0-9a-f]{40})\tmachine/.exec(listing)![1]!
+    const machineListing = (
+      await store.git.run(["ls-tree", machine], { gitDir })
+    ).stdout.toString()
+    const newMachine = (
+      await store.git.run(["mktree"], {
+        gitDir,
+        input: `${machineListing}100644 blob ${blob}\timported.md\n`,
+      })
+    ).stdout
+      .toString()
+      .trim()
+    const newTree = (
+      await store.git.run(["mktree"], {
+        gitDir,
+        input: listing.replace(machine, newMachine),
+      })
+    ).stdout
+      .toString()
+      .trim()
+    const shinanCommit = (
+      await store.git.run(
+        ["commit-tree", "-p", main, "-m", "Import\n", newTree],
+        {
+          gitDir,
+          env: {
+            GIT_AUTHOR_NAME: "Shinan",
+            GIT_AUTHOR_EMAIL: "shinan@shinan.invalid",
+            GIT_COMMITTER_NAME: "Shinan",
+            GIT_COMMITTER_EMAIL: "shinan@shinan.invalid",
+          },
+        },
+      )
+    ).stdout
+      .toString()
+      .trim()
+    await store.git.run(["update-ref", "refs/heads/main", shinanCommit, main], {
+      gitDir,
+    })
+    records.addFirstPushes(workspaceId, [
+      {
+        commit: shinanCommit,
+        push: null,
+        ref: null,
+        by: "shinan",
+        at: new Date().toISOString(),
+      },
+    ])
+    const after = await change("beta", {
+      "machine/after-import.md": page("machine/after-import"),
+    })
+    const pushed = await pushAs("beta", after.folder, "HEAD:refs/heads/main")
+    expect(remote(pushed.stderr)).toEqual([])
+    expect(pushed.code).toBe(0)
   })
 })

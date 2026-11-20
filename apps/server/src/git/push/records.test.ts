@@ -140,6 +140,26 @@ describe("the first-pusher record", () => {
   })
 })
 
+describe("the record of fact check groups ever on main", () => {
+  it("keeps each group once, across restarts", () => {
+    const root = folder()
+    const group = {
+      document: "machine/a",
+      check:
+        '["2026-11-14","guneet via opencode-daedalus","Looked","Somewhere",null]',
+      facts: ['["hostname","observed","a"]'],
+    }
+    openRecords(root).addMainGroups(workspaceId, [group, group])
+    const again = openRecords(root)
+    expect(again.mainGroups(workspaceId)).toEqual([group])
+    again.addMainGroups(workspaceId, [
+      group,
+      { ...group, document: "machine/b" },
+    ])
+    expect(openRecords(root).mainGroups(workspaceId)).toHaveLength(2)
+  })
+})
+
 describe("the push lock", () => {
   it("lets one push in at a time per repository, in turn, and gives up after the wait", async () => {
     const locks = createPushLocks()

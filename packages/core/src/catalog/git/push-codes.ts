@@ -28,13 +28,10 @@ export const pushCheckCodes = {
   "check-only": { severity: "blocking", on: "any-branch" },
   "push-option-unknown": { severity: "blocking", on: "any-branch" },
   "check-failed": { severity: "blocking", on: "any-branch" },
-  /**
-   * Until the checks of `main` exist (GC-3b), a push that changes `main` is
-   * refused: nothing unvalidated reaches the catalog. GC-3b removes it.
-   */
-  "main-not-open": { severity: "blocking", on: "main" },
   "secret-suspected": { severity: "warning", on: "any-branch" },
-  // The checks of `main` (GC-3b), besides the documents' validation codes.
+  // The checks of `main`, besides the documents' validation codes
+  // (`ProblemCode`), which a push to `main` can also be refused or warned
+  // with.
   "path-not-allowed": { severity: "blocking", on: "main" },
   "path-id-mismatch": { severity: "blocking", on: "main" },
   "id-disappeared": { severity: "blocking", on: "main" },
@@ -81,4 +78,15 @@ export const pushLimits = {
   lockWaitSeconds: 30,
   /** How long the checks of a push to a branch may take. */
   checkSeconds: 30,
+  /** How long the checks of a push that changes `main` may take. */
+  mainCheckSeconds: 60,
+  /**
+   * Commits one push may add to `main`, counting commits first pushed
+   * earlier on branches: bounds the walk of the `by` rule.
+   */
+  mainCommits: 2000,
+  /** Documents `main` may hold (M2-Q16). */
+  mainDocuments: 20_000,
+  /** Bytes of document text `main` may hold (M2-Q16). */
+  mainTextBytes: 50 * 1024 * 1024,
 } as const

@@ -10,6 +10,8 @@ import {
 } from "node:fs"
 import { join } from "node:path"
 
+import type { MainGroup } from "./main/checks.js"
+
 /** One commit's first pusher (Git-based catalog plan §2.6, D-066). */
 export interface FirstPush {
   commit: string
@@ -46,12 +48,24 @@ export interface Records {
   addFirstPushes(workspaceId: string, rows: FirstPush[]): FirstPush[]
   /** The commits a purge removed from the repository. */
   purgedCommits(workspaceId: string): ReadonlySet<string>
+  /**
+   * The fact check groups ever on `main` (the revert rule, plan §2.5
+   * check 6), from `main-groups.jsonl`: rebuilt from `main` from the next
+   * push to `main` on if lost.
+   */
+  mainGroups(workspaceId: string): MainGroup[]
+  /** Records groups now on `main`, leaving out those recorded already. */
+  addMainGroups(workspaceId: string, groups: MainGroup[]): void
 }
+
+const groupKey = (group: MainGroup) =>
+  JSON.stringify([group.document, group.check, group.facts])
 
 const workspacePattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 export function openRecords(root: string): Records {
+  const groupsLoaded = new Map<string, Map<string, MainGroup>>()
   const folder = join(root, "records")
   mkdirSync(folder, { recursive: true, mode: 0o700 })
   const loaded = new Map<string, Map<string, FirstPush>>()
@@ -93,6 +107,29 @@ export function openRecords(root: string): Records {
     return rows
   }
 
+  const groupsFile = (workspaceId: string) =>
+    join(folderOf(workspaceId), "main-groups.jsonl")
+  const loadGroups = (workspaceId: string) => {
+    let groups = groupsLoaded.get(workspaceId)
+    if (groups) return groups
+    groups = new Map()
+    const file = groupsFile(workspaceId)
+    if (existsSync(file)) {
+      const text = readFileSync(file, "utf8")
+      // A line a stop cut short is dropped: the next push to main records
+      // its group again.
+      for (const line of text
+        .slice(0, text.lastIndexOf("\n") + 1)
+        .split("\n")) {
+        if (line === "") continue
+        const group = JSON.parse(line) as MainGroup
+        groups.set(groupKey(group), group)
+      }
+    }
+    groupsLoaded.set(workspaceId, groups)
+    return groups
+  }
+
   return {
     firstPush: (workspaceId, commit) => load(workspaceId).get(commit),
     hasAny: (workspaceId) => load(workspaceId).size > 0,
@@ -118,6 +155,21 @@ export function openRecords(root: string): Records {
       if (created) syncFolder(folderOf(workspaceId))
       for (const row of fresh) known.set(row.commit, row)
       return fresh
+    },
+    mainGroups: (workspaceId) => [...loadGroups(workspaceId).values()],
+    addMainGroups(workspaceId, groups) {
+      const known = loadGroups(workspaceId)
+      const fresh = groups.filter((g) => !known.has(groupKey(g)))
+      if (fresh.length === 0) return
+      mkdirSync(folderOf(workspaceId), { recursive: true, mode: 0o700 })
+      const fd = openSync(groupsFile(workspaceId), "a", 0o600)
+      try {
+        writeSync(fd, fresh.map((g) => `${JSON.stringify(g)}\n`).join(""))
+        fsyncSync(fd)
+      } finally {
+        closeSync(fd)
+      }
+      for (const group of fresh) known.set(groupKey(group), group)
     },
     purgedCommits(workspaceId) {
       const file = join(folderOf(workspaceId), "purged-commits")

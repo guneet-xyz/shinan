@@ -946,9 +946,21 @@ only if measured growth requires it.
     They read only objects no branch held before, through the push's
     quarantine, and stop after 30 seconds (`too-slow`). Codes and limits
     are core's `pushCheckCodes` and `pushLimits`.
-  - **`main` stays closed until its checks exist** (layout, validation,
-    the `by` rule: GC-3b): a push that changes `main` is refused
-    `main-not-open`, so nothing unvalidated reaches the catalog.
+  - **The checks of `main` (as built, GC-3b)**, when a push fast-forwards
+    `main`, run in a worker thread of the `git` role (heap limit 384 MiB,
+    stopped after 5 idle minutes), one push at a time, within 60 seconds
+    for the whole push: the layout (only `<type>/<slug>.md`,
+    `schema/<type>.md`, `start-here.md` and `README.md`, lower-case
+    letters, digits and dashes, plain files; a document's ID is its path),
+    IDs and aliases never disappearing, at most 20,000 documents and
+    50 MiB of text, validation of the new catalog charged to the push
+    ([catalog §8.3](catalog.md#83-validation-on-push)), the `by` rule
+    (D-066) and at most 2,000 commits added to `main`. Parsed documents
+    are kept by Git blob ID between pushes, at most 64 MiB of text. The
+    `by` rule reads the first pusher of each commit added to `main` from
+    the first-pusher record, and the fact check groups ever on `main`
+    from `records/<workspace ID>/main-groups.jsonl` (the revert rule),
+    which gets the new `main`'s groups once its update is applied.
   - **Output.** Every refusal and warning is one `remote:` line with its
     place (file and line, commit, or ref), Shinan's code and a message of
     about 70 characters, and never a suspected secret's value; a name is

@@ -107,7 +107,7 @@ lines, then a Markdown body.
   for later. How revisions are stored is owned by
   [architecture](architecture.md).
 - **Decided (owner, O-12, [#25]):** catalog proposals and review happen inside
-  Shinan ([8.7](#87-no-edits-outside-shinan)).
+  Shinan ([8.7](#87-only-pushes-change-the-catalog)).
 - Catalog proposals, approvals, comments and events are not catalog content.
   They are separate records about changes to it, like pull requests beside a
   repository, and are not expected to be rebuildable from the Markdown.
@@ -675,14 +675,14 @@ Rules (all **proposed**):
   Reason: Shinan's own features rely on built-in keys such as `checkout-on`
   and `runs-on`.
 - **Changing a schema needs catalog approval** (a gated class,
-  [8.2](#82-when-catalog-approval-is-needed)). Adding keys or making a key
+  [8.2](#82-no-catalog-approval)). Adding keys or making a key
   multi-valued is always safe. Removing a key, or making a multi-valued key
   single-valued, is blocked while any current entity would break the new rule;
   the proposal lists the affected entities. Reason: a schema change affects
   every entity of the type and how agents read them.
 - **Retiring a type** is allowed only when it has no active entities.
   **Decided (owner, 2026-11-19, M2-Q17; M2-1):** nor deprecated ones, which are still in use; retired
-  entities may keep a retired type ([8.3](#83-validation)).
+  entities may keep a retired type ([8.3](#83-validation-on-push)).
 - **Agents read schemas** through the agent index, so an agent creating a
   `domain` entity knows its keys.
 - Keys outside a type's schema are still allowed (treated as single-valued)
@@ -901,7 +901,7 @@ Rules:
 
 ### 4.5 Fact checks
 
-> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-3](build-plan-git-catalog.md#gc-3-push-checks-and-the-push-log)): a new or changed fact check's `by` must name whoever first pushed the commit introducing it to Shinan, as the push log records it (D-066, amending D-061). Until then, this section describes M2 as built (v0.3.0).
+> **Changed with the [Git-based catalog](build-plan-git-catalog.md)** (GC-3b): `by` names the agent that first pushed the commit introducing the fact check (D-066, amending D-061); see the last bullets.
 
 A **fact check** records one act of checking. Several facts can share one
 check when they were checked together.
@@ -924,10 +924,23 @@ check when they were checked together.
 - **Proposed:** rechecking a fact without changing it records a new fact check
   for it. Checking one fact never refreshes others. Reason: the `workspace`
   repository's rule against refreshing dates mechanically.
-- **Proposed:** when a check goes through Shinan, `by` must match the actor
-  Shinan records for the catalog proposal, with its attribution confidence.
-  Reason: a self-declared `by` that disagrees with Shinan's own record would
-  undermine trust; see [identity](identity.md).
+- **Decided (owner, GQ-3 as refined on 2026-11-20, [D-066](decisions/D-066-by-names-the-first-pusher.md); as built, GC-3b):**
+  a new or changed fact check's `by` must name the agent, and its person,
+  that **first pushed the commit introducing it** to Shinan, written as
+  [identity §8.7](identity.md#87-how-an-actor-is-written-in-text) defines
+  (`guneet via opencode-daedalus`); otherwise the push to `main` is refused
+  (`by-not-first-pusher`, naming the file, the line, the commit, the `by`
+  found and the one expected). Shinan writes nothing into the text: the
+  agent writes `by` itself, and the push checks hold it to Shinan's own
+  record of who first pushed each commit. So an agent may merge another
+  agent's already-pushed branch (its fact checks still name that agent),
+  but rebasing, cherry-picking or squashing another agent's commits makes
+  new commits first pushed by whoever does it. A fact check exactly as it
+  was on `main` before, restored by `git revert`, is not introduced again.
+  How "new or changed" and "introducing" are decided:
+  [8.3](#83-validation-on-push). Reason: a self-declared `by` that
+  disagrees with Shinan's own record would undermine trust; see
+  [identity](identity.md).
 - A fact check with `checked: null` shows as **not checked**. It gives the
   fact a source and an explicitly missing last-checked time, which is how
   D-007 is met for imported facts (owner, O-14, [#25]).
@@ -1042,7 +1055,7 @@ Rules (**proposed**; reason: P5 and the `workspace` repository's practice):
   with a fact. Shinan writes it, as it writes `by`: an `accept-discrepancy`
   operation names the discrepancy's facts and the reason, and applies only
   when a person approves the proposal (or makes the edit themselves where
-  [8.2](#82-when-catalog-approval-is-needed) applies it at once); `accepted`
+  [8.2](#82-no-catalog-approval) applies it at once); `accepted`
   then names that person's `person` entity. It never comes from the person
   an agent acts for. An operation that sends `accepted` is refused. The
   reason replaces each fact's earlier `note`, so the approval should show
@@ -1285,28 +1298,47 @@ GQ-2):**
   (`catalog.push-refused`, with its codes and how many secrets, never
   text); the push and its objects are not kept.
 
-## 8. Editing and approval
+## 8. Changing the catalog
 
-> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-3](build-plan-git-catalog.md#gc-3-push-checks-and-the-push-log), [GC-9](build-plan-git-catalog.md#gc-9-the-skill-and-agent-setup)): this section becomes "Changing the catalog": pushes, checks on push and no catalog approval (D-060). GC-5 has removed proposals, approval classes, the strict setting and comments. Pushes are checked on every branch since GC-3a ([7.3](#73-a-check-for-secret-looking-values), [architecture §5.3](architecture.md#53-how-sync-works)); this section is rewritten as "Changing the catalog" with GC-3b's checks of `main`. The rest still describes M2 as built (v0.3.0).
+> **Changed with the [Git-based catalog](build-plan-git-catalog.md)** (D-059, D-060, D-061, D-066; built in GC-3a and GC-3b): the catalog is a Git repository per workspace, changed only by pushes that Shinan checks. M2's catalog proposals, approval, repair and per-operation conflicts are gone (GC-5); this section describes the catalog as built.
 
-### 8.1 Catalog proposals
+### 8.1 Pushes
 
-**Removed with the Git-based catalog** ([D-059](decisions/D-059-catalog-in-git-hosted-by-shinan.md),
-[D-060](decisions/D-060-no-catalog-approval.md);
-[GC-5](build-plan-git-catalog.md#gc-5-remove-the-m2-write-path)). M2's
-catalog proposals, their operations applied as text edits, their states,
-withdrawal, rejection, idempotency keys, turns in a catalog worker and
-retries are gone, with repair and revert by proposal. Agents change the
-catalog by committing and pushing to its Git repository, and Shinan checks
-every push ([Git-based catalog plan §2.5](build-plan-git-catalog.md#25-checks-on-push));
-until GC-2 and GC-3 are built, nothing changes the catalog. The document
-format, validation ([8.3](#83-validation)) and the check for secret-looking
-values ([7.3](#73-a-check-for-secret-looking-values)) are unchanged. M2's
-stored proposals stay in the database, read only by purge, until GC-6 moves
-the catalog into Git and drops them. M2's design is recorded in the
-[M2 build plan](build-plan-m2.md) and this document's history.
+**Decided (owner, GD-1, [D-059](decisions/D-059-catalog-in-git-hosted-by-shinan.md)):**
+agents change the catalog by committing to their clone of the workspace's
+repository and pushing to Shinan
+([architecture §8.5](architecture.md#85-git-endpoint)). People read it in
+the browser and change it through their agents. **As built (GC-3a, GC-3b):**
 
-### 8.2 When catalog approval is needed
+- **Every push is checked** in Shinan's `pre-receive` hook before anything
+  is kept ([Git-based catalog plan §2.5](build-plan-git-catalog.md#25-checks-on-push)):
+  - **On every branch:** refs (only branches, plain names, `main` only
+    fast-forwarded and never deleted, at most 100 branches), the objects a
+    push brings (sizes, no symbolic links or submodules, names every system
+    can check out, bounded trees, at most 1,000 new commits) and the
+    secret check ([7.3](#73-a-check-for-secret-looking-values)).
+  - **When `main` changes,** on its new tree against the old one: the
+    layout (a document's path is its ID plus `.md`; only those, the
+    type schemas, `start-here.md` and `README.md`), IDs never
+    disappearing, validation ([8.3](#83-validation-on-push)), the `by` rule
+    ([4.5](#45-fact-checks)) and at most 2,000 commits added to `main`.
+- **One blocking problem refuses the whole push,** and nothing of it is
+  kept. Each problem is one `remote:` line with its place (file and line,
+  commit or ref), Shinan's code and a message; warnings are printed and do
+  not block. The codes are core's `pushCheckCodes` and validation's
+  `ProblemCode`; the skill explains each.
+- **A check-only push** (`git push -o check-only origin HEAD:main`) runs
+  every check and changes nothing.
+- **Pushes to one repository are checked one at a time.** Git's own
+  compare-and-swap decides a race on `main`: a push checked against an old
+  `main` fails to update it, and the agent fetches and pushes again.
+- **Every push is recorded** in the push log, with its agent and person,
+  its refs before and after, and the first pusher of each commit it
+  brought ([identity §11](identity.md#11-audit)). An accepted update of
+  `main` is a `catalog.pushed` event and brings the agent index up to it
+  ([architecture §5.3](architecture.md#53-how-sync-works)).
+
+### 8.2 No catalog approval
 
 **Never** (owner, GD-2, [D-060](decisions/D-060-no-catalog-approval.md),
 superseding D-024): every push that passes Shinan's checks applies. M2's
@@ -1316,17 +1348,17 @@ through a person's approval are gone (GC-5). Undo is `git revert`
 ([Git-based catalog plan §2.9](build-plan-git-catalog.md#29-undo-and-purge)).
 
 **Kept:** a workspace's catalog is at most 20,000 documents and 50 MiB of
-text on `main` (owner, M2-Q16), checked on push
-([Git-based catalog plan §2.10](build-plan-git-catalog.md#210-limits)).
+text on `main` (owner, M2-Q16), checked on push (`catalog-too-large`;
+[Git-based catalog plan §2.10](build-plan-git-catalog.md#210-limits)).
 
-### 8.3 Validation
+### 8.3 Validation on push
 
-Every proposal is validated, on the Markdown it would produce, before it
-applies or reaches a reviewer. **Proposed.** Reason: the `workspace`
+Every push that changes `main` is validated, on the documents of its new
+tree, before it applies. **As built (GC-3b).** Reason: the `workspace`
 repository's `scripts/check.py` does this for links and frontmatter and is the
 main reason its entries stay consistent.
 
-Blocking rules (the proposal cannot apply):
+Blocking rules (the push is refused):
 
 - frontmatter parses; required entity fields present; `type` names a built-in
   type or an active type schema; `status` valid;
@@ -1344,7 +1376,7 @@ Blocking rules (the proposal cannot apply):
 - no task status copied into facts (for example a `status` key holding a task
   status value). **Decided (owner, 2026-11-19, M2-Q17; M2-1):** a warning, not blocking; see below.
 
-Warning rules (the proposal needs catalog approval, with the reason shown):
+Warning rules (printed with the push's answer; they do not block):
 
 - weaker signs of a secret ([7.3](#73-a-check-for-secret-looking-values));
 - fact key not in the type schema;
@@ -1356,13 +1388,14 @@ Validation cannot prove a fact matches reality; only fact checks do.
 **Decided (owner, 2026-11-19, M2-Q17; M2-1, [#82](https://github.com/guneet-xyz/shinan/issues/82)):**
 how the rules are applied.
 
-- **Which problems belong to a proposal.** In the documents it writes, every
+- **Which problems belong to a push** (as M2 charged a proposal). In the
+  documents it adds or changes on `main`, every
   blocking problem, and the warnings those documents did not already have;
   in documents it does not write, any problem it newly causes (for example a
   reference broken by removing an ID without keeping it as an alias).
   Reason: one old mistake must not block every later change, and a warning a
   person already accepted (a key outside the schema, a value confirmed not to
-  be a secret) must not gate every later recheck ([8.2](#82-when-catalog-approval-is-needed)).
+  be a secret) must not gate every later recheck ([8.2](#82-no-catalog-approval)).
   Secret warnings are compared by the value found, not the message, so a new
   value is never taken for an accepted one. A document the change does not
   write is compared with its earlier, identical text, so even a document
@@ -1409,34 +1442,49 @@ how the rules are applied.
   (`too-large`), as [2.1](#21-one-document-per-entity-and-what-source-of-truth-means)
   sets for documents. Reason: it bounds the work of every check, and no
   catalog document needs more.
-- **Cost** (**decided**, owner, 2026-11-19, M2-Q17; [#116](https://github.com/guneet-xyz/shinan/issues/116)).
-  A proposal is validated against the validation of the revision it is based
-  on, which the catalog worker keeps for each workspace's latest revision
-  ([architecture §5.3](architecture.md#53-how-sync-works), "Kept
-  validation"). Only these documents are validated again:
-  - the documents the change writes, adds or removes;
-  - the documents sharing an ID or alias with one of those, or with another
-    document;
-  - when a type schema changes, every schema document and the entities of the
-    changed types;
-  - every document that references any of the above;
-  - when time has passed, the documents whose fact checks were in the future.
+- **Secret-looking values** on `main` are the secret check's
+  ([7.3](#73-a-check-for-secret-looking-values), "On every push"), which
+  runs on every branch and knows the values the workspace's owners
+  allowed; validation does not report them a second time.
+- **Cost (as built, GC-3b).** The checks of `main` run in a worker thread
+  of the Git container, with a heap limit and a time limit of 60 seconds
+  (`too-slow` past it). Parsed documents are kept by Git blob ID between
+  pushes, so a push parses only the documents it changes; the rest are
+  validated as M2 validated a revision (`validateChange`), the documents
+  the push does not change judged against their own earlier problems.
 
-  An earlier time or other member handles validate every document again.
-  The secret check's findings are kept for each document text, so a document
-  validated again is not scanned again. The catalog worker validates the
-  latest revision while it loads it, not in a proposal's time.
-  The result is the same as validating every document. A property test checks
-  this against full validation on random catalogs and changes. Reason: a
-  one-field change on a 20,000-document catalog then validates in about
-  50 ms instead of about 2 s, so proposals do not queue behind each other in
-  the worker. Checks of a whole catalog (`validateCatalog`) still validate
-  every document.
+**The `by` rule (decided, owner, GQ-3 as refined on 2026-11-20,
+[D-066](decisions/D-066-by-names-the-first-pusher.md); as built, GC-3b).**
+A new or changed fact check must name the agent that first pushed every
+commit that introduced it ([4.5](#45-fact-checks)); otherwise the push is
+refused (`by-not-first-pusher`).
+
+- **New or changed:** a fact check group counts as unchanged when the old
+  `main`'s version of its document (found by its ID, or by an ID in its
+  `aliases`) has a group with the same `checked`, `by`, `scope`, `source`
+  and `limits` covering every fact it now covers, with the same values.
+  Removing facts from a group, or moving the document with its old ID kept
+  in `aliases`, does not change it.
+- **Restoring is not introducing:** a group exactly as it was on `main` at
+  any time before (same five fields, covering facts it covered there) is
+  not new, so `git revert` of its removal passes whoever pushes it. The Git
+  container keeps the groups ever on `main` beside the repository; if that
+  record were lost it starts again from the current `main`.
+- **Introducing:** among the commits the push adds to `main`, a commit
+  introduces a group when its version of the document holds it and none of
+  its parents' versions does; a merge introduces a group none of its
+  parents holds (written while resolving a conflict). Every introducing
+  commit must have been first pushed by the agent the group names, so a
+  group two agents introduced on two branches is refused unless they are
+  the same agent.
+- **First pushers** come from the record of the commit's first push (a
+  commit Shinan never received before is first pushed by this push), and
+  Shinan's own commits are first pushed by `shinan`.
 
 ### 8.4 Agents' documentation-impact obligation
 
 When an agent's work changes or checks a durable fact that the catalog
-records, the agent proposes the update before it reports the work as done, or
+records, the agent pushes the update before it reports the work as done, or
 records on the task exactly what update is pending and why. **Proposed.**
 Reason: this is the `workspace` repository's "documentation-impact check", the
 habit that keeps that catalog current. The obligation is scoped to the task,
@@ -1447,69 +1495,40 @@ How tasks show this, and whether it is part of "done", is owned by
 [tasks](tasks.md); how agents are reminded, by
 [agent integrations](agent-integrations.md).
 
-### 8.5 Conflicts
+### 8.5 Conflicts as Git merges
 
-Each operation states what it expects to find: the current value and fact
-check of the fact it replaces or removes, or that no fact with that identity
-exists yet. When the proposal is applied, Shinan compares these with the
-latest revision. **Proposed.**
+**As built (GC-3a, GC-3b; D-059):** conflicts are Git's. Two agents who
+change the catalog at once each push to `main`; the first applies, and the
+second's push fails to update `main` (it was checked against the old one)
+and is told to fetch. It then merges or rebases its own commits onto
+`origin/main` and pushes again, and its push is checked against the new
+`main`. A conflict in a document is resolved in the merge like any other
+text; a fact check written while resolving it names the agent pushing the
+merge ([8.3](#83-validation-on-push), the `by` rule).
 
-- Operations whose expectations still hold apply, even if other parts of the
-  same entity changed meanwhile. Reason: two agents rechecking different
-  facts of Musashi should not block each other.
-- If any expectation fails, the proposal does not apply on its own. Its author
-  is told and can refresh it; otherwise a person resolves it.
-- Competing claims are resolved from evidence and check time, not from which
-  proposal arrived last. Two different values with valid fact checks may both
-  be kept, as a discrepancy where the key is single-valued.
-- Reason: the `workspace` repository's rule ("resolve competing claims from
-  evidence and observation time, not merge order"); per-fact operations make
-  real conflicts rare.
+- Competing claims are resolved from evidence and check time, not from
+  which push arrived last. Two different values with valid fact checks may
+  both be kept, as a discrepancy where the key is single-valued. Reason:
+  the `workspace` repository's rule ("resolve competing claims from
+  evidence and observation time, not merge order").
+- M2's per-operation expectations are gone with catalog proposals (GC-5).
 
-**Decided (owner, 2026-11-19, M2-Q17; M2-2, [#84](https://github.com/guneet-xyz/shinan/issues/84)):**
-what each operation expects.
+### 8.6 Who sees work in progress
 
-- A fact operation names the [fact identity key](#42-fact-identity-cardinality-and-current-facts)
-  and either `absent: true` or the whole current fact: its value, its fact
-  check and the rest of its long form. The value is compared as text: a
-  value as written (`128`, `true`), a relation's target, or an `unknown`
-  fact's note. `via`, `note`, `task`, `remove`, `accepted` and all relation
-  attributes are compared too, a field left out meaning the fact does not
-  have it, so a stale expectation conflicts when, for example, a plan to
-  add a value has become a plan to remove it. The check is compared by
-  `checked` as written (null for no fact check), plus any of `by`, `scope`,
-  `source` and `limits` the operation gives. A `set-fact` names the
-  identity of the fact it writes; if the type schema now gives that fact
-  another identity (for example a key made single-valued), it conflicts.
-  `supersedes` names the fact a change of state settles, in the same way;
-  an `accept-discrepancy` names every fact of the discrepancy.
-- Field, body, schema-key and start-here operations expect the current
-  value: the field's value (or null for none), the section's or body's
-  exact text (or that the section is absent), the key's options, the
-  path's steps. `retire` expects the status; creating a document and
-  `change-id` expect no document to have the ID or alias.
-- A conflict and an operation that cannot apply as written are reported
-  apart (`conflict` and `invalid`), with the operation's position, so the
-  author knows whether to refresh the proposal or fix it. An operation
-  naming an entity's former ID is told its current ID.
-
-### 8.6 Who sees and reviews proposals
-
-**Removed** with catalog proposals ([8.1](#81-catalog-proposals); GC-5):
-waiting proposals on entities, the review list and comments on proposals.
 Agents working in parallel see each other's work as branches of the
 catalog repository
 ([Git-based catalog plan §2.8](build-plan-git-catalog.md#28-branches)).
+The browser shows only `main`; branches are never indexed. M2's waiting
+proposals, review list and comments are gone (GC-5).
 
-### 8.7 No edits outside Shinan
+### 8.7 Only pushes change the catalog
 
-**Decided (owner, O-12, [#25]):** the catalog is changed only through catalog
-proposals in Shinan. **Proposed:** editing an export changes nothing in
-Shinan; an export comes back only by importing it into an empty workspace
-([2.2](#22-export-the-exit-path)), and imports for the migration arrive as
-catalog proposals ([section 13](#13-mapping-from-the-workspace-repositorys-catalog)).
-Reason: there must be one path to change the source of truth, or catalog
-approval and history mean nothing.
+**Decided (owner, O-12, [#25]; adapted by D-059):** the catalog is changed
+only by pushes to its repository in Shinan, checked as [8.1](#81-pushes)
+says; nothing else writes `main` except Shinan's own commits (a
+repository's first commit, the migration's and a purge's rewrite). Editing
+an export changes nothing in Shinan. Reason: there must be one path to
+change the source of truth, or the checks and history mean nothing.
 
 ## 9. History and purge
 
@@ -2063,10 +2082,10 @@ What this document still needs from other documents:
 9. The [hold-versus-link split](#6-link-dont-copy).
 10. [Where secrets live](#72-where-secrets-live) and a
     [light check for secret-looking values](#73-a-check-for-secret-looking-values).
-11. [Every change is a catalog proposal of operations](#81-catalog-proposals);
-    the [strict setting and bulk approval](#82-when-catalog-approval-is-needed);
-    [validation](#83-validation); [per-operation conflict checks](#85-conflicts);
-    [agent review comments](#86-who-sees-and-reviews-proposals).
+11. [Every change is a catalog proposal of operations](#81-pushes);
+    the [strict setting and bulk approval](#82-no-catalog-approval);
+    [validation](#83-validation-on-push); [per-operation conflict checks](#85-conflicts-as-git-merges);
+    [agent review comments](#86-who-sees-work-in-progress).
 12. The [documentation-impact obligation](#84-agents-documentation-impact-obligation)
     for agents.
 13. [History](#9-history-and-purge): revisions, reverts, retired entities, and
@@ -2091,7 +2110,7 @@ What this document still needs from other documents:
 4. Whether Shinan enforces any `policy` beyond its own settings.
    ([policy](#policy))
 5. External link checking: whether, how often, and from where.
-   ([8.3](#83-validation))
+   ([8.3](#83-validation-on-push))
 6. More than one start-here path for larger workspaces. ([11](#11-start-here))
 7. _Settled:_ the agent index's JSON format is in
    [12.4](#124-the-index-format) (M2-3, [#85](https://github.com/guneet-xyz/shinan/issues/85);

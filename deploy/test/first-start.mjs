@@ -915,11 +915,15 @@ async function run() {
 
   // Agents clone, fetch and push over HTTPS, through Caddy and `web` to
   // the Git container (GC-2), with tokens made in the web app.
+  let fullAgentHandle = null
   const issue = async (machine, access) => {
     const response = await request(`/api/workspaces/${workspaceId}/agents`, {
       body: { codingTool: "opencode", machine, access },
     })
-    return response.status === 201 ? (await response.json()).token : null
+    if (response.status !== 201) return null
+    const issued = await response.json()
+    if (access === "full") fullAgentHandle = issued.agent.handle
+    return issued.token
   }
   const fullToken = await issue("first-start", "full")
   const readOnlyToken = await issue("first-start-ro", "read-only")
@@ -977,6 +981,47 @@ async function run() {
   const pushed = agentGit(["push", "origin", "HEAD:refs/heads/a-note"], {
     cwd: clones[1].folder,
   })
+  // A page with a fact check naming the agent that pushes it (D-066), on
+  // a branch of its own from main, pushed to main.
+  agentGit(["checkout", "--quiet", "-b", "page", "origin/main"], {
+    cwd: clones[1].folder,
+  })
+  mkdirSync(join(clones[1].folder, "machine"), { recursive: true })
+  writeFileSync(
+    join(clones[1].folder, "machine", "first-start.md"),
+    `---
+id: machine/first-start
+type: machine
+title: The first-start machine
+summary: A page the first-start test pushes.
+status: active
+owner: unknown
+facts:
+  - checked: 2026-11-20T09:00:00Z
+    by: ${account.person.handle} via ${fullAgentHandle}
+    scope: Looked at it
+    source: The first-start test
+    observed:
+      hostname: first-start
+---
+
+# The first-start machine
+`,
+  )
+  agentGit(["add", "machine/first-start.md"], { cwd: clones[1].folder })
+  agentGit(
+    [
+      "-c",
+      "user.name=Agent",
+      "-c",
+      "user.email=agent@example.com",
+      "commit",
+      "--quiet",
+      "-m",
+      "A page",
+    ],
+    { cwd: clones[1].folder },
+  )
   const toMain = agentGit(["push", "origin", "HEAD:refs/heads/main"], {
     cwd: clones[1].folder,
   })
@@ -1001,14 +1046,26 @@ async function run() {
   })
   check(
     pushed.code === 0 &&
-      toMain.code !== 0 &&
-      toMain.stderr.includes("main-not-open") &&
+      toMain.code === 0 &&
       leaked.code !== 0 &&
       /remote: +leak\.md:1 +secret +.*fingerprint sha256:[0-9a-f]{64}/.test(
         leaked.stderr,
       ) &&
       !leaked.stderr.includes(token.slice(4)),
-    `the image's hooks have the git role check each push: a branch accepted, main not open yet, a secret refused without its value (${[pushed, toMain, leaked].map((p) => `${p.code}: ${p.stderr.trim().split("\n").slice(-3).join(" | ")}`).join(" / ")})`,
+    `the image's hooks have the git role check each push: a branch and a valid page on main accepted (its checks in a worker thread), a secret refused without its value (${[
+      pushed,
+      toMain,
+      leaked,
+    ]
+      .map(
+        (p) =>
+          `${p.code}: ${p.stderr
+            .trim()
+            .split("\n")
+            .filter((l) => l.startsWith("remote:"))
+            .join(" | ")}`,
+      )
+      .join(" / ")})`,
   )
   const readOnlyClone = join(dir, "clone-read-only")
   const readOnlyCloned = agentGit(
@@ -1050,13 +1107,15 @@ async function run() {
     return rows.split("\n").length >= 3 ? rows : null
   })
   check(
-    pushLog === "accepted:\nrefused:main-not-open\nrefused:secret" &&
+    pushLog === "accepted:\naccepted:\nrefused:secret" &&
       psql(
         "select count(*) from catalog_push_refs where ref = 'refs/heads/a-note' and confirmed",
       ) === "1" &&
       psql(
         "select pusher_kind || ':' || coalesce(ref, '') from catalog_commit_first_pushes order by first_pushed_at",
-      ) === "shinan:\nagent:refs/heads/a-note" &&
+      ) === "shinan:\nagent:refs/heads/a-note\nagent:refs/heads/main" &&
+      psql("select count(*) from events where kind = 'catalog.pushed'") ===
+        "1" &&
       psql(
         "select count(*) from security_log where action = 'catalog.push-refused'",
       ) === "1",
@@ -1314,8 +1373,12 @@ async function run() {
   )
   const kept = askGit("git", `/repositories/${workspaceId}`, gitServiceToken)
   check(
-    kept.status === 200 && kept.body.main === firstCommit,
-    "after a restart, git still has the repository on its volume",
+    kept.status === 200 &&
+      kept.body.main ===
+        psql(
+          "select new_commit from catalog_push_refs where ref = 'refs/heads/main' and confirmed",
+        ),
+    "after a restart, git still has the repository on its volume, at the main an agent pushed",
   )
 
   compose("restart", "web")
