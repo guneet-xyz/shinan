@@ -346,6 +346,33 @@ describe("a page", () => {
     )
   })
 
+  it("gives a last change's own date as the commit's when Shinan has no record of it", async () => {
+    renderApp(
+      musashiPath,
+      api(musashi, {
+        catalogHistory: () =>
+          Promise.resolve({
+            ...history([{ message: "Recheck", minutesAgo: 0 }]),
+            changes: [
+              {
+                ...history([{ message: "Recheck", minutesAgo: 0 }]).changes[0]!,
+                time: "2099-06-02T12:00:00.000Z",
+                time_source: "commit" as const,
+              },
+            ],
+          }),
+      }),
+    )
+    const footer = (
+      await screen.findByRole("link", { name: "History" })
+    ).closest("footer")!
+    await waitFor(() =>
+      expect(footer.querySelector("p")!.textContent).toBe(
+        "Last change dated Jun 2, 2099 · History · View source",
+      ),
+    )
+  })
+
   it("leaves out when it last changed while the repository can't be read", async () => {
     renderApp(musashiPath, api(musashi, { catalogHistory: unavailable }))
     const footer = (
@@ -1040,6 +1067,42 @@ describe("recent changes", () => {
     expect(
       screen.getByText("Merge a large branch").closest("li")!.textContent,
     ).toContain("Changed files not known")
+  })
+
+  it("marks a commit's own date as such, and makes no day of it", async () => {
+    const dated = (iso: string) => ({
+      ...change("Dated by the agent", 0, "f", []),
+      time: iso,
+      time_source: "commit" as const,
+    })
+    renderApp(
+      `${base}/changes`,
+      fakeApi({
+        catalogChanges: () =>
+          Promise.resolve({
+            ...answer,
+            changes: [
+              { ...dated("2099-06-02T12:00:00.000Z"), commit: "f".repeat(40) },
+              change("Recorded", 60, "a", []),
+              { ...dated("2010-01-01T12:00:00.000Z"), commit: "e".repeat(40) },
+            ],
+            next_after: null,
+          }),
+      }),
+    )
+    await screen.findByText("Recorded")
+    expect(
+      screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent),
+    ).toEqual(["Date not recorded", "Today"])
+    const [future, , past] = within(screen.getByRole("main")).getAllByRole(
+      "listitem",
+    )
+    expect(future!.querySelector("time")!.textContent).toBe("dated Jun 2, 2099")
+    expect(future!.querySelector("time")!.getAttribute("title")).toMatch(
+      /as the agent wrote it/,
+    )
+    // Under today's heading, but marked as the commit's date.
+    expect(past!.querySelector("time")!.textContent).toBe("dated Jan 1, 2010")
   })
 
   it("says so when a page held only merges that changed nothing", async () => {

@@ -11,8 +11,9 @@ import { Input } from "@/components/ui/input"
 
 import { useAction } from "../../action"
 import { useApi, useResource } from "../../api"
-import { Rows, Section } from "../../components/page"
+import { Section } from "../../components/page"
 import { ErrorMessage } from "../../components/status"
+import { VisibleText } from "../catalog/VisibleText"
 import { useWorkspace } from "./context"
 
 /**
@@ -70,12 +71,36 @@ export function CatalogSettings() {
   )
 }
 
-/** A fingerprint as a refusal shows it, or a value to allow as it is. */
-function allowInput(text: string): { value: string } | { fingerprint: string } {
+/** Why what was typed can't be allowed. */
+class InputError extends Error {}
+
+/**
+ * The fingerprint to allow: as typed, when it is one as a refusal shows it
+ * (`sha256:` and 64 hexadecimal characters); otherwise the SHA-256 of the
+ * value, worked out here, so the value never leaves the page (review of
+ * #196). Spaces around a pasted value are left out.
+ */
+async function fingerprintOf(text: string): Promise<string> {
   const trimmed = text.trim()
-  return /^(?:sha256:)?[0-9a-f]{64}$/i.test(trimmed)
-    ? { fingerprint: trimmed }
-    : { value: text }
+  if (/^sha256:/i.test(trimmed)) {
+    if (!/^sha256:[0-9a-f]{64}$/i.test(trimmed))
+      throw new InputError(
+        "That isn't a whole fingerprint: it is sha256: and 64 letters and digits, as the refusal shows it.",
+      )
+    return trimmed.toLowerCase()
+  }
+  if (!crypto.subtle)
+    throw new InputError(
+      "This browser can't work out the fingerprint here: open Shinan over https.",
+    )
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(trimmed),
+  )
+  const hex = [...new Uint8Array(digest)]
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("")
+  return `sha256:${hex}`
 }
 
 const dateFormat = new Intl.DateTimeFormat(undefined, {
@@ -99,6 +124,7 @@ function AllowedValues() {
     api.members(workspace.id),
   )
   const [text, setText] = useState("")
+  const [inputError, setInputError] = useState<string | null>(null)
   const add = useAction()
   const remove = useAction()
   const field = useId()
@@ -107,13 +133,22 @@ function AllowedValues() {
   const submit = (event: FormEvent) => {
     event.preventDefault()
     if (text.trim() === "") return
-    add.run(
-      () => api.allowCatalogValue(workspace.id, allowInput(text)),
-      () => {
-        setText("")
-        values.reload()
-      },
-    )
+    setInputError(null)
+    add.run(async () => {
+      let fingerprint: string
+      try {
+        fingerprint = await fingerprintOf(text)
+      } catch (error) {
+        if (error instanceof InputError) {
+          setInputError(error.message)
+          return
+        }
+        throw error
+      }
+      await api.allowCatalogValue(workspace.id, { fingerprint })
+      setText("")
+      values.reload()
+    })
   }
 
   return (
@@ -125,14 +160,19 @@ function AllowedValues() {
         <Field>
           <FieldLabel htmlFor={field}>The value, or its fingerprint</FieldLabel>
           <div className="flex flex-col gap-2 sm:flex-row">
+            {/* Masked as it is typed: it may look like a secret. */}
             <Input
               id={field}
+              type="password"
               value={text}
               autoComplete="off"
               spellCheck={false}
-              placeholder="sha256:… from the refusal"
+              placeholder="The value, or sha256:… from the refusal"
+              aria-invalid={inputError !== null}
+              aria-describedby={`${field}-help`}
               onChange={(event) => {
                 setText(event.target.value)
+                setInputError(null)
                 add.clear()
               }}
               className="font-mono"
@@ -145,10 +185,16 @@ function AllowedValues() {
               Allow
             </Button>
           </div>
-          <FieldDescription>
-            Shinan keeps only its fingerprint, never the value.
+          <FieldDescription id={`${field}-help`}>
+            Shinan works out its fingerprint on this page and keeps only that,
+            never the value.
           </FieldDescription>
         </Field>
+        {inputError && (
+          <p role="alert" className="text-sm text-destructive">
+            {inputError}
+          </p>
+        )}
         {add.error !== undefined && <ErrorMessage error={add.error} />}
       </form>
       {values.error ? <ErrorMessage error={values.error} /> : null}
@@ -156,15 +202,25 @@ function AllowedValues() {
         <p className="text-sm text-muted-foreground">No values allowed yet.</p>
       )}
       {values.data && values.data.length > 0 && (
-        <Rows aria-label="Allowed values">
+        <ul
+          aria-label="Allowed values"
+          className="flex flex-col divide-y rounded-lg border"
+        >
           {values.data.map((allowed) => (
             <li
               key={allowed.fingerprint}
-              className="sm:flex-row sm:items-center sm:justify-between"
+              // One row: the text left, Remove at the right end; on a
+              // phone the text wraps above it (product review of #196).
+              className="flex flex-col items-start gap-2 p-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:p-4"
             >
-              <span className="min-w-0 text-sm">
+              <span className="min-w-0 text-left text-sm">
                 Allowed {dateFormat.format(new Date(allowed.createdAt))} by{" "}
-                {names.get(allowed.allowedByPersonId) ?? "a former member"}
+                <VisibleText
+                  text={
+                    names.get(allowed.allowedByPersonId) ?? "a former member"
+                  }
+                  oneLine
+                />
                 {" · "}
                 <code
                   className="font-mono text-xs wrap-anywhere"
@@ -189,13 +245,13 @@ function AllowedValues() {
                     () => values.reload(),
                   )
                 }
-                className="self-start"
+                className="shrink-0 self-start sm:self-center"
               >
                 Remove
               </Button>
             </li>
           ))}
-        </Rows>
+        </ul>
       )}
       {remove.error !== undefined && <ErrorMessage error={remove.error} />}
     </Section>

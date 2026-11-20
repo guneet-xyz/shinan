@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 
+import { schema } from "@shinan/db"
+
 import {
   asAgent,
   asPerson,
@@ -72,6 +74,7 @@ beforeAll(async () => {
     from: string | null,
     to: string,
     first: string[],
+    added: string[] = [],
   ) => {
     const id = randomUUID()
     append("push.checked", minute, {
@@ -104,12 +107,24 @@ beforeAll(async () => {
       workspaceId,
       confirmed: [0],
       firstPushes: first.map((c) => ({ commit: oid(c), ref })),
+      main:
+        ref === "refs/heads/main"
+          ? {
+              from: oid(from!),
+              to: oid(to),
+              commits: added.length,
+              added: added.map(oid),
+              documents: [],
+              documentsTruncated: false,
+            }
+          : null,
     })
   }
   append("repository.created", 0, { workspaceId, commit: oid("a") })
-  push(10, "refs/heads/main", "a", "b", ["b"])
+  push(10, "refs/heads/main", "a", "b", ["b"], ["b"])
   push(20, "refs/heads/branch", null, "c", ["c"])
-  push(30, "refs/heads/main", "b", "d", ["d"])
+  // The merge d brings c to main with it.
+  push(30, "refs/heads/main", "b", "d", ["d"], ["d", "c"])
   const journalId = randomUUID()
   const client = {
     readJournal: ({ after }: { after: number }) =>
@@ -168,11 +183,31 @@ describe("who pushed each change, and when it reached main", () => {
     expect(pushes.has(oid("e"))).toBe(false)
   })
 
-  it("leaves a branch commit's time to main unknown without the merge in the list", async () => {
+  it("reads when a commit reached main from the record, whatever else is asked", async () => {
+    // Alone, as on a page of its own or in a page's History.
     const pushes = await readCommitPushes(asPerson(db, owner), workspaceId, [
       info("c", ["a"]),
     ])
-    expect(pushes.get(oid("c"))!.reached_main_at).toBeNull()
+    expect(pushes.get(oid("c"))!.reached_main_at).toBe(at(30))
+  })
+
+  it("keeps a rewritten commit's arrival, through the commit it replaces", async () => {
+    // As a purge's rewrite records it (GC-8): the new commit replaces c.
+    await db.insert(schema.catalogCommitFirstPushes).values({
+      workspaceId,
+      commit: oid("f"),
+      firstPushedAt: new Date(at(50)),
+      pusherKind: "shinan",
+      byLabel: "shinan",
+      replacesCommit: oid("c"),
+    })
+    const pushes = await readCommitPushes(asPerson(db, owner), workspaceId, [
+      info("f", ["a"]),
+    ])
+    expect(pushes.get(oid("f"))).toEqual({
+      pushed_by: { kind: "shinan" },
+      reached_main_at: at(30),
+    })
   })
 
   it("is for the workspace's members only", async () => {

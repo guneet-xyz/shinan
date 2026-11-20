@@ -6,6 +6,7 @@ import type { CatalogSection } from "@shinan/api-client"
 import { useApi, useResource } from "../../api"
 import { formatTime } from "../../format"
 import { pageBody } from "./body"
+import { CommitDate } from "./ChangeList"
 import { EntityLink } from "./facts"
 import {
   entityPath,
@@ -157,10 +158,18 @@ function LastChanged(props: {
   if (!change || !time) return null
   return (
     <>
-      Last changed{" "}
-      <time dateTime={time} title={formatTime(time)}>
-        {relativeTime(time)}
-      </time>
+      {change.time_source === "main" ? (
+        <>
+          Last changed{" "}
+          <time dateTime={time} title={formatTime(time)}>
+            {relativeTime(time)}
+          </time>
+        </>
+      ) : (
+        <>
+          Last change <CommitDate time={time} />
+        </>
+      )}
       {change.pushed_by && (
         <>
           {" by "}

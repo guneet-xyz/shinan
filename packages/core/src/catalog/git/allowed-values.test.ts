@@ -152,9 +152,27 @@ describe("values allowed as not a secret (GQ-2)", () => {
     ).rejects.toBeInstanceOf(ForbiddenError)
   })
 
+  it("take 64 hexadecimal characters without sha256: as a key, never storing or logging it", async () => {
+    // What a pasted key looks like: the API takes it as no fingerprint.
+    const key = "0f344e".padEnd(64, "9")
+    await expect(
+      allowCatalogValue(asPerson(db, owner), { workspaceId, fingerprint: key }),
+    ).rejects.toBeInstanceOf(InvalidInputError)
+    const stored = await db
+      .select()
+      .from(schema.catalogAllowedValues)
+      .where(eq(schema.catalogAllowedValues.workspaceId, workspaceId))
+    expect(JSON.stringify(stored)).not.toContain(key)
+    expect(
+      JSON.stringify(await logged("catalog.secret-allowed")),
+    ).not.toContain(key)
+  })
+
   it("refuse a malformed fingerprint, both or neither, and more than 100", async () => {
     for (const input of [
       { fingerprint: "sha256:abc" },
+      // A mistyped fingerprint, given as a value.
+      { value: "sha256:abc" },
       { value: "", fingerprint: undefined },
       { value, fingerprint: secretFingerprint(value) },
       {},

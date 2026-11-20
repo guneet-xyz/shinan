@@ -2,7 +2,6 @@ import { and, eq, inArray, schema, sql } from "@shinan/db"
 
 import { inWorkspace, snapshotRead } from "../authorize.js"
 import type { Context } from "../context.js"
-import type { CommitInfo } from "./git/api.js"
 
 /*
  * Who pushed each change, and when it reached `main` (Git-based catalog
@@ -30,23 +29,21 @@ export interface CommitPushJson {
   reached_main_at: string | null
 }
 
-const main = "refs/heads/main"
-
 /**
- * The first pusher of each of these commits, and when each reached `main`:
- * the push that moved `main` to it, or the push that first brought it if
- * that was a push to `main`; for a commit `main` came to through a later
- * commit of the list (a merged branch's), no later than that one. Commits
- * the push log doesn't know are left out.
+ * The first pusher of each of these commits, and when each reached
+ * `main`, as Shinan recorded it at the time (`catalog_main_arrivals`): for
+ * a commit a purge rewrote, its arrival is the commit's it replaces
+ * (`replaces_commit`). Never the commit's own date, which an agent writes
+ * (D-061). Commits the push log doesn't know are left out.
  */
 export async function readCommitPushes(
   ctx: Context,
   workspaceId: string,
-  commits: readonly CommitInfo[],
+  commits: readonly { oid: string }[],
 ): Promise<Map<string, CommitPushJson>> {
   const oids = [...new Set(commits.map((c) => c.oid))]
   if (oids.length === 0) return new Map()
-  const { first, tips } = await inWorkspace(
+  const { first, arrivals } = await inWorkspace(
     ctx,
     workspaceId,
     "catalog.read",
@@ -56,8 +53,6 @@ export async function readCommitPushes(
         .select({
           commit: f.commit,
           kind: f.pusherKind,
-          ref: f.ref,
-          at: f.firstPushedAt,
           person: schema.people.name,
           agent: schema.agents.name,
         })
@@ -67,60 +62,35 @@ export async function readCommitPushes(
         .where(
           and(eq(f.workspaceId, scope.workspaceId), inArray(f.commit, oids)),
         )
-      const r = schema.catalogPushRefs
-      const p = schema.catalogPushes
-      const tips = await scope.tx
-        .select({
-          commit: r.newCommit,
-          at: sql<Date>`min(${p.pushedAt})`.mapWith(p.pushedAt),
-        })
-        .from(r)
-        .innerJoin(p, eq(p.id, r.pushId))
-        .where(
-          and(
-            eq(p.workspaceId, scope.workspaceId),
-            eq(p.outcome, "accepted"),
-            eq(r.ref, main),
-            eq(r.confirmed, true),
-            inArray(r.newCommit, oids),
-          ),
+      const a = schema.catalogMainArrivals
+      const arrivals = await scope.tx
+        .execute<{ commit: string; at: Date | string }>(
+          sql`
+          with recursive chain ("commit", "current", depth) as (
+            select c, c, 0 from unnest(array[${sql.join(
+              oids.map((o) => sql`${o}`),
+              sql`, `,
+            )}]::text[]) as c
+            union all
+            select chain."commit", ${f.replacesCommit}, chain.depth + 1
+            from chain join ${f}
+              on ${f.workspaceId} = ${scope.workspaceId} and ${f.commit} = chain."current"
+            where ${f.replacesCommit} is not null and chain.depth < 50
+          )
+          select chain."commit", min(${a.reachedMainAt}) as at
+          from chain join ${a}
+            on ${a.workspaceId} = ${scope.workspaceId} and ${a.commit} = chain."current"
+          group by chain."commit"`,
         )
-        .groupBy(r.newCommit)
-      return { first, tips }
+        .then((r) => r.rows)
+      return { first, arrivals }
     },
     snapshotRead,
   )
 
-  const reached = new Map<string, number>()
-  const earliest = (oid: string, at: number) => {
-    const known = reached.get(oid)
-    if (known === undefined || at < known) {
-      reached.set(oid, at)
-      return true
-    }
-    return false
-  }
-  for (const tip of tips) if (tip.commit) earliest(tip.commit, tip.at.getTime())
-  for (const row of first)
-    if (row.ref === main || row.kind === "shinan")
-      earliest(row.commit, row.at.getTime())
-  // A parent reached `main` no later than its child: carry the times down
-  // the list's parent links until nothing changes.
-  const inList = new Set(oids)
-  for (
-    let changed = true, rounds = 0;
-    changed && rounds < oids.length;
-    rounds++
-  ) {
-    changed = false
-    for (const commit of commits) {
-      const at = reached.get(commit.oid)
-      if (at === undefined) continue
-      for (const parent of commit.parents)
-        if (inList.has(parent) && earliest(parent, at)) changed = true
-    }
-  }
-
+  const reached = new Map(
+    arrivals.map((row) => [row.commit, new Date(row.at).toISOString()]),
+  )
   const result = new Map<string, CommitPushJson>()
   const byCommit = new Map(first.map((row) => [row.commit, row]))
   for (const oid of oids) {
@@ -137,7 +107,7 @@ export async function readCommitPushes(
               person: row.person ?? "Someone",
               agent: row.agent ?? "an agent",
             },
-      reached_main_at: at === undefined ? null : new Date(at).toISOString(),
+      reached_main_at: at ?? null,
     })
   }
   return result

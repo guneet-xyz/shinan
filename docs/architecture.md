@@ -1027,7 +1027,13 @@ only if measured growth requires it.
     so it never holds back the entries after it. Only an entry of a kind
     this release does not know, or a database failure, stops the run, to
     be tried again. Stored: `catalog_pushes`, `catalog_push_refs` (confirmed once
-    Git applied them), `catalog_commit_first_pushes`, a `catalog.pushed`
+    Git applied them), `catalog_commit_first_pushes`,
+    `catalog_main_arrivals` (when each commit reached `main`: the commits
+    each applied update of `main` made reachable, which `push.confirmed`
+    lists as `main.added`, at the time Shinan recorded the update; a
+    repository's first commit when Shinan made it; a commit's first
+    arrival is kept, and a purge's rewritten commits read theirs through
+    `replaces_commit`), a `catalog.pushed`
     event for each accepted update of `main` (credited to the agent, with
     the documents it changed), `recordCatalogMain` for the index, and a
     `catalog.push-refused` security-log entry for a refusal that held a

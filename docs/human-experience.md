@@ -975,11 +975,15 @@ order:
   aren't trusted, D-061): each change, here and in History, reads
   "Guneet, through OpenCode on Daedalus · 2:14 PM · abc1234", the agent
   that first pushed it (D-066), or "Shinan" for what Shinan made. The time
-  is when the change reached `main`: the push that moved `main` to it, the
-  push that first brought it if that was a push to `main`, or, for a
-  merged branch's commits, the merge's, when that is on the same page.
-  Otherwise, and for changes from before the push log, the commit's own
-  time, and no name. Start here's "recent-changes" step links here.
+  is when the change reached `main`, as Shinan recorded it at the time:
+  each applied update of `main` records the commits it made reachable, so
+  a branch's commits have their merge's time wherever they are listed. A
+  change with no such record (from before this was recorded, or put into
+  the repository outside a push) shows its commit's own date marked as
+  such, "dated Jun 2, 2099", since the agent wrote it, and makes no day
+  heading of it: those changes stay under the heading before them, or
+  under "Date not recorded". The footer then reads "Last change dated
+  Jun 2, 2099". Start here's "recent-changes" step links here.
 - **View source** (`…/catalog/source/<ID>`) shows the file as it is, with
   hidden characters marked and long lines wrapped, and a Copy button that
   copies it exactly.
@@ -1264,7 +1268,7 @@ details (D-015).
 
 > **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-7](build-plan-git-catalog.md#gc-7-the-catalog-ui)): the "Catalog" screen holds the clone URL, "not a secret" values and purge (GC-5 removed the strict setting). Until then, this section describes M2 as built (v0.3.0).
 >
-> **As built in GC-7 ([#169](https://github.com/guneet-xyz/shinan/issues/169)):** a **Catalog** tab, for every member, between Agents and Security log. It holds "Address for agents": the address agents clone the catalog from (`https://<installation>/git/<workspace ID>.git`), shown whole (it wraps on a phone), with a Copy button, and "Agents clone the catalog from here. Set up an agent →". For workspace owners, it also holds **"Values that aren't secrets"** (GQ-2): one line ("If Shinan refused a push because something looked like a secret but isn't, add it here so the next push goes through."), one field for the value or the fingerprint the refusal showed (`sha256:…`), and the list, "Allowed Nov 20 by Guneet · sha256:3f9a1c2d4e5f…", each with Remove. Shinan keeps only fingerprints, so the list never shows a value. Allowing and removing ask for a recent sign-in, and each is in the security log. Removing text from the catalog's history (GC-8) is a page of its own, behind a quiet owners-only link at the bottom of the tab (agreed on [#170](https://github.com/guneet-xyz/shinan/issues/170)); until GC-8, M2's purge stays under Data.
+> **As built in GC-7 ([#169](https://github.com/guneet-xyz/shinan/issues/169)):** a **Catalog** tab, for every member, between Agents and Security log. It holds "Address for agents": the address agents clone the catalog from (`https://<installation>/git/<workspace ID>.git`), shown whole (it wraps on a phone), with a Copy button, and "Agents clone the catalog from here. Set up an agent →". For workspace owners, it also holds **"Values that aren't secrets"** (GQ-2): one line ("If Shinan refused a push because something looked like a secret but isn't, add it here so the next push goes through."), one masked field for the value or the fingerprint the refusal showed, and the list, one row each: "Allowed Nov 20 by Guneet · sha256:3f9a1c2d4e5f…" on the left, Remove on the right. Only text that starts with `sha256:` is a fingerprint (a mistyped one is refused with a line saying so); anything else is a value, whose fingerprint the page works out itself (SHA-256, in the browser), so the value never leaves the page: 64 hexadecimal characters on their own are what a key looks like, so they are a value too (review of #196). The API takes a fingerprint only with its `sha256:` prefix. Shinan keeps only fingerprints, so the list never shows a value. Allowing and removing ask for a recent sign-in, and each is in the security log. Removing text from the catalog's history (GC-8) is a page of its own, behind a quiet owners-only link at the bottom of the tab (agreed on [#170](https://github.com/guneet-xyz/shinan/issues/170)); until GC-8, M2's purge stays under Data.
 
 For workspace owners. Contributors see three of these screens read only:
 General, Members and Security log (only the entries they made or that are

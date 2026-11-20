@@ -319,6 +319,16 @@ export function createPushService(options: {
         .toString("utf8")
         .trim(),
     )
+    // The commits this update made reachable from `main`, for the record
+    // of when each reached it (GC-7): at most the checks' limit on commits
+    // added to `main`, which an accepted push can't exceed.
+    const added =
+      commits <= pushLimits.mainCommits
+        ? (await git.run(["rev-list", `${from}..${to}`], { gitDir })).stdout
+            .toString("utf8")
+            .split("\n")
+            .filter(Boolean)
+        : []
     const diff = await diffTreesPage(git, gitDir, from, to, { limit: 1000 })
     const documents = [
       ...new Set(
@@ -332,6 +342,7 @@ export function createPushService(options: {
       from,
       to,
       commits,
+      added,
       documents,
       documentsTruncated: diff.truncated,
     }

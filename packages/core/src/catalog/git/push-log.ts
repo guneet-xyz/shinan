@@ -9,6 +9,7 @@ import { recordSecurityEntry } from "../../security-log.js"
 import { recordCatalogMain } from "../index/maintain.js"
 import type { JournalEntry } from "./api.js"
 import type { GitClient } from "./client.js"
+import { pushLimits } from "./push-codes.js"
 
 /**
  * The push log (Git-based catalog plan §2.6): `web` and the worker copy
@@ -67,6 +68,12 @@ export interface PushConfirmedData {
     from: string
     to: string
     commits: number
+    /**
+     * The commits the update made reachable from `main`, when there were at
+     * most the checks' limit (`pushLimits.mainCommits`); absent from
+     * entries written before GC-7 recorded them.
+     */
+    added?: string[]
     /** IDs of the catalog documents it changed, at most 1,000. */
     documents: string[]
     documentsTruncated: boolean
@@ -425,6 +432,29 @@ async function storeConfirmed(
       entry,
       "update of main",
     )
+    // When each commit reached `main`: the commits this update made
+    // reachable (and `main`'s new commit, always), at the time Shinan
+    // recorded the update; a commit's first arrival is kept.
+    const added = data.main.added ?? []
+    check(
+      Array.isArray(added) &&
+        added.length <= pushLimits.mainCommits &&
+        added.every((c) => objectId.test(c)),
+      entry,
+      "commits added to main",
+    )
+    const arrived = [...new Set([data.main.to, ...added])]
+    await scope.tx
+      .insert(schema.catalogMainArrivals)
+      .values(
+        arrived.map((commit) => ({
+          workspaceId: push!.workspaceId,
+          commit,
+          pushId: push!.id,
+          reachedMainAt: new Date(entry.recordedAt),
+        })),
+      )
+      .onConflictDoNothing()
     const workspace = shinanInWorkspace(scope, push!.workspaceId)
     await appendEvent(workspace, {
       kind: "catalog.pushed",
@@ -471,6 +501,16 @@ async function storeCreated(
       firstPushedAt: new Date(entry.recordedAt),
       pusherKind: "shinan",
       byLabel: "shinan",
+    })
+    .onConflictDoNothing()
+  // The first commit is on `main` from the start.
+  await scope.tx
+    .insert(schema.catalogMainArrivals)
+    .values({
+      workspaceId: data.workspaceId,
+      commit: data.commit,
+      pushId: null,
+      reachedMainAt: new Date(entry.recordedAt),
     })
     .onConflictDoNothing()
 }

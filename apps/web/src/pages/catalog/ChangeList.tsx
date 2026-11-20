@@ -54,7 +54,10 @@ function byDay<T extends CatalogChange>(changes: readonly T[]) {
     changes: { change: T; ownDate: boolean }[]
   }[] = []
   for (const change of changes) {
-    const day = change.time ? dayOf(change.time) : null
+    // Only a time Shinan recorded makes a day heading: a commit's own date
+    // is the agent's to write (review of #196).
+    const day =
+      change.time && change.time_source === "main" ? dayOf(change.time) : null
     const last = days[days.length - 1]
     if (last && (day === null || (last.day !== null && day >= last.day)))
       last.changes.push({
@@ -123,7 +126,7 @@ export function ChangeList<T extends CatalogChange>(props: {
           className="flex flex-col gap-3"
         >
           <h2 className="text-sm font-semibold text-muted-foreground">
-            {day.day === null ? "Undated" : dayLabel(day.day)}
+            {day.day === null ? "Date not recorded" : dayLabel(day.day)}
           </h2>
           <ol className="flex flex-col gap-5">
             {day.changes.map(({ change, ownDate }) => (
@@ -174,17 +177,36 @@ function ChangeItem(props: {
             {" · "}
           </>
         )}
-        {change.time && (
+        {change.time && change.time_source === "main" && (
           <time dateTime={change.time}>
             {(props.ownDate ? dateTimeFormat : clockFormat).format(
               new Date(change.time),
             )}
           </time>
         )}
+        {change.time && change.time_source === "commit" && (
+          <CommitDate time={change.time} />
+        )}
         {change.time && " · "}
         <code className="font-mono">{change.commit.slice(0, 7)}</code>
       </p>
       {props.children}
     </li>
+  )
+}
+
+/**
+ * A commit's own date, when Shinan has no record of when the change
+ * reached `main`: marked as the commit's, with its year, since an agent
+ * writes it and it may be anything (review of #196).
+ */
+export function CommitDate(props: { time: string }) {
+  return (
+    <time
+      dateTime={props.time}
+      title="The date in the commit, as the agent wrote it: Shinan has no record of when this reached the catalog"
+    >
+      dated {dayFormat.format(new Date(props.time))}
+    </time>
   )
 }
