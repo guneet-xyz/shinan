@@ -238,6 +238,9 @@ importers:
       '@shinan/email':
         specifier: workspace:*
         version: link:../../packages/email
+      '@shinan/git':
+        specifier: workspace:*
+        version: link:../../packages/git
       '@shinan/skill':
         specifier: workspace:*
         version: link:../../packages/skill
@@ -373,6 +376,8 @@ importers:
       nodemailer:
         specifier: ^10.5.0
         version: 10.5.0
+
+  packages/git: {}
 
   packages/markdown:
     dependencies:

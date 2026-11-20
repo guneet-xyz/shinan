@@ -1,0 +1,7 @@
+#!/nodejs/bin/node
+// Git runs this before it accepts a push (core.hooksPath, build plan §2.5).
+// Until Shinan's push checks exist (GC-3a), it refuses every push, so
+// nothing unchecked can land. Plain JavaScript that runs as a CommonJS or
+// an ES module: Node.js starts it directly, without a shell.
+process.stderr.write("Shinan: pushes are not open yet. Nothing was changed.\n")
+process.exitCode = 1
