@@ -111,9 +111,13 @@ services:
       SHINAN_TRUSTED_PROXIES: ${SHINAN_TRUSTED_PROXIES:-}
       DATABASE_URL_FILE: /run/secrets/database_url
       SHINAN_SESSION_SECRET_FILE: /run/secrets/session_secret
+      # Reads the catalog's repositories: a page's History and View source.
+      SHINAN_GIT_URL: http://git:3000
+      SHINAN_GIT_SERVICE_TOKEN_FILE: /run/secrets/git_service_token
     secrets:
       - database_url
       - session_secret
+      - git_service_token
     # For a reverse proxy on this machine. The internal listener for health
     # checks (port 3001) stays inside the container.
     ports:
@@ -128,6 +132,7 @@ services:
     networks:
       - backend
       - egress
+      - git
 
   worker:
     <<: *shinan
