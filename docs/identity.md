@@ -1038,7 +1038,7 @@ host account and by their agents. Known limits (D-017):
 
 ### 8.7 How an actor is written in text
 
-> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-3](build-plan-git-catalog.md#gc-3-push-checks-and-the-push-log)): a new fact check's `by` must name the pusher. Until then, this section describes M2 as built (v0.3.0).
+> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-3](build-plan-git-catalog.md#gc-3-push-checks-and-the-push-log)): a new or changed fact check's `by` must name, in this written form, whoever first pushed the commit to Shinan, as the push log records it. Until then, this section describes M2 as built (v0.3.0).
 
 Some records name an actor in plain text, such as the `by` field of a
 [fact check](catalog.md) (`by: guneet via opencode-daedalus`). **Proposed**

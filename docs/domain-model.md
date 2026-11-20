@@ -980,7 +980,10 @@ push`, authenticated by its agent token (supplied by a Git credential
 - **Checks on push:** on every push, to any branch, the rules for refs and
   objects and the check for secret-looking values; on a push to `main`, full
   validation of the resulting documents, and that each new or changed fact
-  check's `by` names the pusher. A blocking problem refuses the whole push,
+  check's `by` names whoever first pushed the commit that adds or changes it
+  to Shinan (in the written form for that agent and its person), as the push
+  log records it. Merging another agent's already-pushed branch into `main`
+  is therefore allowed. A blocking problem refuses the whole push,
   with every reason in `git push`'s output; warnings are shown and do not
   block. A **check-only push** runs the checks without changing `main`.
 - **"Not a secret" value:** one exact value a workspace owner allows past the
@@ -989,8 +992,8 @@ push`, authenticated by its agent token (supplied by a Git credential
   (refs, commits before and after, and the commits each push first brought).
   Commit authors are not trusted and carry no meaning; the push log is the
   attribution.
-- **Commit history:** `main`'s commits, newest first, each with its pusher
-  from the push log; it is where people review catalog changes after the
+- **Commit history:** `main`'s commits, newest first, each with the agent and
+  person of the push that first brought it to Shinan, from the push log; it is where people review catalog changes after the
   fact (it replaces M2's recent changes feed).
 - **Owner:** Catalog (rules for documents); Architecture and operations
   (serving Git, the checks' mechanism); Identity, agents and permissions
@@ -1001,7 +1004,8 @@ push`, authenticated by its agent token (supplied by a Git credential
     secret" ([D-060](decisions/D-060-no-catalog-approval.md), replacing
     D-024, O-3 and O-46). Pushes are authenticated by the agent token,
     commit authors are not trusted, a push log records agent and person, and
-    new fact checks name the pusher
+    a new or changed fact check's `by` names whoever first pushed the
+    commit to Shinan (owner's refinement, 2026-11-20)
     ([D-061](decisions/D-061-push-authentication-and-push-log.md)). The
     commit history is the review after the fact
     ([D-064](decisions/D-064-catalog-not-wiki.md)).

@@ -1214,6 +1214,7 @@ provenance from `index/`; GC-5 does not touch `index/`.
 - **GC-5b, web:** the wiki's edit, review, repair, type, start-here and
   settings screens and their tests.
 - **Docs:** agent integrations (design rules 3 and 6, trust labels, tool set);
+  architecture §8.1 (the catalog tools and trust labels on catalog content);
   identity §5.1, §6.3, §7.2; catalog §8.1, §8.2, §8.6 removals; human
   experience "Changing the catalog from the wiki", "Reviewing catalog
   changes", workspace settings "Catalog settings"; operator guide "Catalog
