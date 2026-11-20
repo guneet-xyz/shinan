@@ -44,10 +44,9 @@ export interface McpOptions {
 export const mcpBodyLimit = 512 * 1024
 
 /**
- * How many `/mcp` requests may be in flight at once (**proposed**, M2-12):
- * 8 per token, as deep as one workspace's proposal queue, for an agent and
- * its subagents; 16 per network address, for several agents on one
- * machine. With 512 KB bodies that is at most about 5 MiB held for one
+ * How many `/mcp` requests may be in flight at once (decided by the owner,
+ * M2-Q16): 8 per token, for an agent and its subagents; 16 per network
+ * address, for several agents on one machine. With 512 KB bodies that is at most about 5 MiB held for one
  * token, and 10 MiB for one address, against `web`'s memory limit.
  */
 export const mcpInFlight = { perToken: 8, perAddress: 16 }

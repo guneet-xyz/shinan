@@ -1323,45 +1323,13 @@ how the rules are applied.
   value is never taken for an accepted one. A document the change does not
   write is compared with its earlier, identical text, so even a document
   that no longer reads is never charged to others.
-- **Repairing a document that reads with problems.** **Decided
-  (owner, 2026-11-19, M2-Q17; [#133](https://github.com/guneet-xyz/shinan/issues/133)):**
-  - **The problem.** A stored document can hold something the parser no
-    longer reads, such as a reserved attribute name since parser version 4,
-    or an object-member key. The unreadable fact drops out of the parsed
-    model, so no operation can name it, and its blocking problem blocks
-    every later change to the document.
-  - **The repair.** A workspace owner, after re-authentication, replaces
-    the document's whole text, starting from the text at a revision they
-    read. Only a document whose stored text reads with problems may be
-    repaired (`not-needed` otherwise): anything else is changed with
-    ordinary operations. It is a catalog proposal with one `restore-document` operation,
-    the one a revert uses. It takes the same turn, conflict check (the
-    document must still be at that revision), validation and records.
-  - **Validation charges the document only with problems it did not
-    already have.** So a repair may fix some and leave the rest, while
-    anything it newly breaks, in that document or another, blocks it. A
-    near-certain secret is charged even when the document already held it,
-    since the repair writes the whole text again.
-  - **Nobody else's name in `by`** ([identity §8.7](identity.md#87-how-an-actor-is-written-in-text)):
-    a fact check credited to anyone but the repairing owner must be one the
-    earlier text had, field for field, covering only facts it covered
-    there. The owner may remove facts from it, or put facts under a fact
-    check naming themselves, which says they checked those facts
-    themselves; the repair page and the refusal say so. Reason: otherwise a
-    repair could make a fact look checked by another member or an agent.
-  - **Text PostgreSQL cannot store** (a NUL character, an unpaired
-    surrogate) in the text, explanation or idempotency key is refused as
-    input (`text-characters`), as everywhere.
-  - **Reverting a repair** puts back the earlier text, which read with
-    problems, and ordinary validation charges them, so the revert is
-    blocked while that text reads with problems.
-  - **It applies at once and is recorded as the owner's approval** in the
-    security log (`catalog-proposal.approved`, with `repair: true`),
-    whatever its approval classes.
-  - **Who:** agents and contributors can never repair; it is the
-    `catalog.repair` action (identity §5.1).
-  - Reason: parser versions keep tightening, and the trial's documents must
-    stay fixable without an operator editing the database.
+- **Repairing a document that reads with problems:** **removed** with
+  catalog proposals (GC-5, [D-060](decisions/D-060-no-catalog-approval.md)).
+  M2 let a workspace owner replace a stored document's whole text
+  (`restore-document`, `catalog.repair`); a document that reads with
+  problems is now fixed by a commit pushed to the catalog repository, which
+  Shinan checks like any other
+  ([Git-based catalog plan §2.5](build-plan-git-catalog.md#25-checks-on-push)).
 - **Type schema changes.** When a change to a type schema document adds a
   problem a schema can cause (an unknown or retired type, a key outside the
   schema, a list on a single-valued key, a relation to a type no longer
