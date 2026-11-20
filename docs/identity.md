@@ -1284,7 +1284,9 @@ kinds (**proposed**):
   "not a secret" or stops allowing it (its fingerprint only), and
   `catalog.unlogged-update` when a repository's branch is not where the
   push log says it should be (the ref, the commit found and the one
-  logged). Fetches and pushes are recorded as the
+  logged), and, at the installation's level, `catalog.journal-set-aside`
+  for a Git journal entry that could not be stored (its number, kind,
+  workspace and reason, never its data). Fetches and pushes are recorded as the
   [Git-based catalog plan §2.14](build-plan-git-catalog.md#214-permissions-scopes-and-the-security-log)
   says (GC-2, GC-3). **As built (GC-2):** each token's fetches and clones
   are counted, and every hour each token that fetched gets one

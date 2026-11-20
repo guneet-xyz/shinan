@@ -506,7 +506,9 @@ commit objects at most 64 KiB (history reads them whole); names Windows and
 macOS can check out, on every branch; at most 20,000 entries per folder and
 200,000 reached from a commit's tree, so the read path only sees bounded
 repositories; the 1 GiB repository limit (branch deletions pass); and the
-1,000-new-commit limit. `-o check-only` is accepted already (any other
+1,000-new-commit limit. After its review: file and folder names are
+checked for secrets too, and a tree object is refused by its size before
+it is read when it cannot be within the folder limit. `-o check-only` is accepted already (any other
 option is refused), so an agent asking for a check never changes anything.
 Until GC-3b adds checks 4 to 7, a push that changes `main` is refused
 (`main-not-open`). The codes are core's `pushCheckCodes`, which GC-9's
@@ -572,9 +574,14 @@ each push, with the commits, the ref and the commits before and after.
   brought to an append-only journal on
   its volume, each entry numbered. `web` reads the entries after each
   forwarded `git-receive-pack` request, and every minute, writes them to
-  these tables, the events and the security log in one transaction, and then
-  acknowledges them; the Git container deletes acknowledged entries. Writing
-  is idempotent by entry number, so an entry read twice is stored once.
+  these tables, the events and the security log, one transaction per
+  entry, and then acknowledges them; the Git container deletes acknowledged
+  entries. Writing is idempotent by entry number, so an entry read twice is
+  stored once. **As built (GC-3a, after its review):** an entry that can
+  never be stored, such as one about a workspace PostgreSQL does not have,
+  is set aside (recorded once in the security log as
+  `catalog.journal-set-aside`, reported, acknowledged) and never holds back
+  the entries after it.
   Reason: a push that Git applied is recorded even if `web` or the
   connection died meanwhile.
 - **Checking the log against Git:** each minute `web` also compares the refs

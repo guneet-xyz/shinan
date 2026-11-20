@@ -298,6 +298,7 @@ export {
 export type { CatalogAllowedValue } from "./catalog/git/allowed-values.js"
 export {
   checkCatalogRefs,
+  setAsideMessage,
   storeCatalogJournal,
 } from "./catalog/git/push-log.js"
 export type {

@@ -601,6 +601,47 @@ describe("pushing through web", () => {
     )
   })
 
+  it("refuses a folder by its size before reading it, when it cannot be within the limit", async () => {
+    const folder = await cloneAs("alpha")
+    // Four names of 250 bytes: more than three entries' worth of bytes.
+    const files = Object.fromEntries(
+      ["a", "b", "c", "d"].map((c) => [`${c.repeat(250)}.md`, "x\n"]),
+    )
+    await commit("alpha", folder, files)
+    pushOptions.limits = { folderEntries: 3 }
+    try {
+      const pushed = await pushAs("alpha", folder, "HEAD:refs/heads/long-names")
+      expect(remote(pushed.stderr).join("\n")).toMatch(
+        /tree-too-large +the top folder has over 3 entries: split it into folders/,
+      )
+    } finally {
+      pushOptions.limits = {}
+    }
+  })
+
+  it("refuses a secret in a file or folder name, and never shows the name", async () => {
+    const folder = await cloneAs("alpha")
+    await commit("alpha", folder, {
+      [`d/${githubToken}.md`]: "x\n",
+      [`${githubToken}/x.md`]: "y\n",
+    })
+    const pushed = await pushAs("alpha", folder, "HEAD:refs/heads/secret-path")
+    expect(pushed.code).not.toBe(0)
+    const lines = remote(pushed.stderr)
+    expect(lines).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(
+          /^ {2}\(name not shown\) +secret +a file or folder name looks like a GitHub token \(value not shown; fingerprint sha256:[0-9a-f]{64}\)$/,
+        ),
+        expect.stringMatching(
+          /^ {2}d\/\(name not shown\) +secret +a file or folder name looks like a GitHub token/,
+        ),
+      ]),
+    )
+    expect(pushed.stderr).not.toContain(githubToken.slice(4))
+    expect(await serverRef("refs/heads/secret-path")).toBeNull()
+  })
+
   it("refuses a folder past 20,000 entries, and a tree that reaches more than 200,000", async () => {
     const folder = await cloneAs("alpha")
     const blob = await run("alpha", folder, "hash-object", "-w", "README.md")
@@ -633,7 +674,7 @@ describe("pushing through web", () => {
       `${wideCommit}:refs/heads/wide`,
     )
     expect(remote(tooWide.stderr).join("\n")).toMatch(
-      /tree-too-large +the top folder holds 20,001 entries; a folder holds at most 20,000/,
+      /tree-too-large +the top folder has over 20,000 entries: split it into folders/,
     )
     // 250 folders of 1,000 folders of one file: a few KB, half a million
     // entries to walk.

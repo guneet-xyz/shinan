@@ -145,9 +145,15 @@ describe("storeCatalogJournal", () => {
     } satisfies PushConfirmedData & { by: string })
     // Read twice before acknowledging, as two processes might.
     const copy = [...journal.entries]
-    expect(await storeCatalogJournal(ctx(), client)).toEqual({ stored: 3 })
+    expect(await storeCatalogJournal(ctx(), client)).toEqual({
+      stored: 3,
+      setAside: 0,
+    })
     journal.entries = copy
-    expect(await storeCatalogJournal(ctx(), client)).toEqual({ stored: 0 })
+    expect(await storeCatalogJournal(ctx(), client)).toEqual({
+      stored: 0,
+      setAside: 0,
+    })
     expect(journal.acknowledged).toBe(3)
     expect(journal.entries).toEqual([])
 
@@ -242,7 +248,108 @@ describe("storeCatalogJournal", () => {
     second.journal.append("push.checked", checked(push))
     expect(await storeCatalogJournal(ctx(), second.client)).toEqual({
       stored: 1,
+      setAside: 0,
     })
+  })
+
+  it("sets aside entries about a workspace PostgreSQL does not have, records each once, and stores the entries after them", async () => {
+    const { journal, client } = fakeGit()
+    const unknown = randomUUID()
+    const lost = randomUUID()
+    journal.append("repository.created", {
+      workspaceId: unknown,
+      commit: commit("c"),
+    })
+    journal.append("push.checked", checked(lost, { workspaceId: unknown }))
+    journal.append("push.confirmed", {
+      push: lost,
+      workspaceId: unknown,
+      confirmed: [0],
+      firstPushes: [{ commit: commit("b"), ref: "refs/heads/main" }],
+      main: null,
+    } satisfies PushConfirmedData)
+    const push = randomUUID()
+    journal.append("push.checked", checked(push))
+    expect(await storeCatalogJournal(ctx(), client)).toEqual({
+      stored: 1,
+      setAside: 3,
+    })
+    expect(journal.acknowledged).toBe(4)
+    const [stored] = await db
+      .select()
+      .from(schema.catalogPushes)
+      .where(eq(schema.catalogPushes.id, push))
+    expect(stored).toBeDefined()
+    const setAside = () =>
+      db
+        .select()
+        .from(schema.securityLog)
+        .where(
+          and(
+            eq(schema.securityLog.action, "catalog.journal-set-aside"),
+            sql`${schema.securityLog.details}->>'journalId' = ${journal.id}`,
+          ),
+        )
+        .orderBy(schema.securityLog.id)
+    const entries = await setAside()
+    expect(entries.map((e) => [e.workspaceId, e.outcome, e.details])).toEqual(
+      ["repository.created", "push.checked", "push.confirmed"].map(
+        (kind, i) => [
+          null,
+          "failed",
+          {
+            journalId: journal.id,
+            entry: i + 1,
+            kind,
+            workspaceId: unknown,
+            reason: "workspace-unknown",
+          },
+        ],
+      ),
+    )
+    // Acknowledged: a second run finds nothing, and reports nothing again.
+    expect(await storeCatalogJournal(ctx(), client)).toEqual({
+      stored: 0,
+      setAside: 0,
+    })
+    expect(await setAside()).toHaveLength(3)
+  })
+
+  it("sets aside an entry that can never be stored, by its checks or the database's, and stores the next", async () => {
+    const { journal, client } = fakeGit()
+    journal.append("push.checked", checked("not-a-push-id"))
+    journal.append(
+      "push.checked",
+      checked(randomUUID(), {
+        refs: [
+          {
+            ref: "refs/heads/x",
+            old: null,
+            new: commit("b"),
+            kind: "sideways" as never,
+          },
+        ],
+      }),
+    )
+    journal.append("push.checked", checked(randomUUID()))
+    expect(await storeCatalogJournal(ctx(), client)).toEqual({
+      stored: 1,
+      setAside: 2,
+    })
+    const reasons = await db
+      .select({ details: schema.securityLog.details })
+      .from(schema.securityLog)
+      .where(
+        and(
+          eq(schema.securityLog.action, "catalog.journal-set-aside"),
+          sql`${schema.securityLog.details}->>'journalId' = ${journal.id}`,
+        ),
+      )
+      .orderBy(schema.securityLog.id)
+    expect(
+      reasons.map((r) => (r.details as { reason: string }).reason),
+    ).toEqual(["invalid", "database-23514"])
+    expect(journal.acknowledged).toBe(3)
   })
 
   it("stops at an entry of a kind it does not know, and acknowledges nothing past it", async () => {

@@ -37,6 +37,8 @@ export interface FirstPush {
 export interface Records {
   /** The commit's first push, or undefined if Shinan never received it. */
   firstPush(workspaceId: string, commit: string): FirstPush | undefined
+  /** Whether any first push of the repository is on record. */
+  hasAny(workspaceId: string): boolean
   /**
    * Records first pushes, leaving out commits already recorded, synced to
    * disk before it returns. Returns those it recorded.
@@ -93,6 +95,7 @@ export function openRecords(root: string): Records {
 
   return {
     firstPush: (workspaceId, commit) => load(workspaceId).get(commit),
+    hasAny: (workspaceId) => load(workspaceId).size > 0,
     addFirstPushes(workspaceId, rows) {
       const known = load(workspaceId)
       const fresh: FirstPush[] = []

@@ -52,7 +52,7 @@ export interface PushService {
   /**
    * After a restart: puts the first pushes of journal entries not
    * acknowledged yet into the record (a stop between the two writes), and
-   * records the first commit of any repository that has none.
+   * records the first commit of any repository with no record at all.
    */
   recover(): Promise<void>
 }
@@ -172,6 +172,11 @@ export function createPushService(options: {
       ])
     },
     async recover() {
+      const repositories = readdirSync(store.root)
+        .map((name) => /^([0-9a-f-]{36})\.git$/.exec(name)?.[1])
+        .filter((id) => id !== undefined)
+      // Judged before the journal is replayed into the record.
+      const unrecorded = repositories.filter((id) => !records.hasAny(id))
       for (let after = 0; ;) {
         const entries = journal.read(after, 1000)
         if (entries.length === 0) break
@@ -205,12 +210,15 @@ export function createPushService(options: {
           after = entry.number
         }
       }
-      for (const name of readdirSync(store.root)) {
-        const match = /^([0-9a-f-]{36})\.git$/.exec(name)
-        if (!match) continue
+      // A repository with no record at all was made before the push log
+      // (GC-2), or a stop came between making it and recording it: its
+      // first commit is Shinan's. One with records whose root is not among
+      // them had `main` rewritten outside Shinan; nothing can attribute
+      // that, so it is left alone (review of GC-3a).
+      for (const id of unrecorded) {
         const first = (
           await git.run(["rev-list", "--max-parents=0", "refs/heads/main"], {
-            gitDir: join(store.root, name),
+            gitDir: store.pathOf(id),
             okExitCodes: [0, 128],
           })
         ).stdout
@@ -218,8 +226,8 @@ export function createPushService(options: {
           .split("\n")
           .filter(Boolean)
           .at(-1)
-        if (first && !records.firstPush(match[1]!, first))
-          await service.repositoryCreated(match[1]!, first)
+        if (first && !records.firstPush(id, first))
+          await service.repositoryCreated(id, first)
       }
     },
   }

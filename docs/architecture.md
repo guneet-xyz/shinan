@@ -935,10 +935,14 @@ only if measured growth requires it.
     out (no case or Unicode-normalisation pairs in a folder, no trailing
     dot or space, no `\`, `:` or other characters Windows refuses, no
     reserved device names, at most 255 bytes); at most 20,000 entries in a
-    folder and 200,000 reached from a commit's tree (counting a subtree
+    folder (a tree object larger than such a folder can be is refused by
+    its size before it is read, and entries are counted before any is
+    kept) and 200,000 reached from a commit's tree (counting a subtree
     every place it appears); the repository under 1 GiB (branch deletions
-    still pass); the secret check on every new file, commit message and
-    branch name ([catalog §7.3](catalog.md#73-a-check-for-secret-looking-values)).
+    still pass); the secret check on every new file, commit message,
+    author and committer line, branch name and file or folder name
+    ([catalog §7.3](catalog.md#73-a-check-for-secret-looking-values)); a
+    path holding something secret-looking is never shown, in any problem.
     They read only objects no branch held before, through the push's
     quarantine, and stop after 30 seconds (`too-slow`). Codes and limits
     are core's `pushCheckCodes` and `pushLimits`.
@@ -974,13 +978,24 @@ only if measured growth requires it.
     inserted once). A new repository's first commit is recorded the same
     way, first pushed by `shinan` (`repository.created`). At start, the
     `git` role completes the record from the journal entries not
-    acknowledged yet, so a stop between the two writes loses nothing. Only
+    acknowledged yet, so a stop between the two writes loses nothing, and
+    records the first commit of a repository with no record at all (made
+    before the push log). One with records whose root is not among them
+    had `main` rewritten outside Shinan and is left alone. Only
     the `git` role's process appends to the journal. The journal has an ID
     of its own, so a new volume is read from its first entry.
   - **`web` stores the journal** right after each forwarded push, and the
-    worker every minute (a push whose connection dropped), in one
-    transaction per page, idempotent by entry number per journal, then
-    acknowledges it: `catalog_pushes`, `catalog_push_refs` (confirmed once
+    worker every minute (a push whose connection dropped), one transaction
+    per entry, idempotent by entry number per journal, then acknowledges
+    it. An entry that can never be stored (about a workspace PostgreSQL
+    does not have, as for a repository restored from a backup or made
+    through the Git API alone; invalid; or refused by a constraint) is
+    set aside instead: recorded once in the security log
+    (`catalog.journal-set-aside`, with its number, kind, workspace and
+    reason, never its data), reported in one log line, and acknowledged,
+    so it never holds back the entries after it. Only an entry of a kind
+    this release does not know, or a database failure, stops the run, to
+    be tried again. Stored: `catalog_pushes`, `catalog_push_refs` (confirmed once
     Git applied them), `catalog_commit_first_pushes`, a `catalog.pushed`
     event for each accepted update of `main` (credited to the agent, with
     the documents it changed), `recordCatalogMain` for the index, and a

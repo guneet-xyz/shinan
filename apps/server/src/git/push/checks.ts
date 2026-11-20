@@ -11,7 +11,7 @@ import {
 } from "@shinan/git"
 import type { CatFile, Git } from "@shinan/git"
 
-import { clashingNames, nameProblem } from "./names.js"
+import { clashingNames, maxNameBytes, nameProblem } from "./names.js"
 
 /** One line of `pre-receive`'s input: a ref's old and new commit. */
 export interface RefUpdate {
@@ -143,6 +143,18 @@ export async function checkPush(input: CheckInput): Promise<CheckResult> {
         message: `${what} may hold a ${finding.kind}: check it is not a secret (fingerprint sha256:${finding.fingerprint})`,
       })
     }
+  }
+
+  // A path that holds something secret-looking is never shown, in any
+  // problem: its name is reported once, where its folder lists it.
+  const hidden = new Map<string, boolean>()
+  const place = (path: string): string => {
+    let secret = hidden.get(path)
+    if (secret === undefined) {
+      secret = findPushSecrets(path, input.allowedValues).length > 0
+      hidden.set(path, secret)
+    }
+    return secret ? "(path not shown)" : shown(path)
   }
 
   // 1. Refs.
@@ -298,7 +310,7 @@ export async function checkPush(input: CheckInput): Promise<CheckResult> {
         if (object.size > limits.fileBytes) {
           problems.push({
             code: "file-too-large",
-            where: shown(object.path),
+            where: place(object.path),
             message: `a new file is at most ${size(limits.fileBytes)}; this one is ${(object.size / 1024 / 1024).toFixed(1)} MiB: leave it out of the catalog`,
           })
           continue
@@ -310,14 +322,18 @@ export async function checkPush(input: CheckInput): Promise<CheckResult> {
         for (const finding of findPushSecrets(text, input.allowedValues)) {
           report(
             finding,
-            `${shown(object.path)}:${lineOf(text, finding.range.start)}`,
+            `${place(object.path)}:${lineOf(text, finding.range.start)}`,
             "a value here",
           )
         }
         // Long files must not hold the event loop for long.
         if (object.size > 64 * 1024) await yieldTurn()
       } else if (object.type === "tree") {
-        await checkTree(object, reader, problems, limits)
+        await checkTree(object, reader, problems, limits, {
+          place,
+          report,
+          allowedValues: input.allowedValues,
+        })
       } else {
         problems.push({
           code: "ref-not-branch",
@@ -443,40 +459,61 @@ async function checkTree(
   reader: CatFile,
   problems: Problem[],
   limits: PushLimits,
+  names: {
+    place: (path: string) => string
+    report: (finding: PushSecretFinding, where: string, what: string) => void
+    allowedValues: ReadonlySet<string>
+  },
 ): Promise<void> {
+  const { place } = names
   const folder =
-    object.path === "" ? "the top folder" : `${shown(object.path)}/`
+    object.path === "" ? "the top folder" : `${place(object.path)}/`
+  const where = object.path === "" ? "" : place(object.path)
   const base = object.path === "" ? "" : `${object.path}/`
-  if (object.size > MAX_TREE_OBJECT_BYTES) {
+  // Refused by its size before it is read: larger than any folder within
+  // the limit can be, so it holds more entries than that.
+  if (object.size > Math.min(MAX_TREE_OBJECT_BYTES, treeObjectBytes(limits))) {
     problems.push({
       code: "tree-too-large",
-      where: object.path === "" ? "" : shown(object.path),
-      message: `${folder} is too large to read`,
+      where,
+      message: tooManyEntries(folder, limits),
     })
     return
   }
   const read = await reader.read(object.oid)
   if (typeof read === "string") throw new Error(`Tree ${object.oid}: ${read}`)
-  const entries = treeEntries(read.content)
-  if (entries.length > limits.folderEntries) {
+  // Counted before any entry is kept.
+  const count = countEntries(read.content, limits.folderEntries + 1)
+  if (count > limits.folderEntries) {
     problems.push({
       code: "tree-too-large",
-      where: object.path === "" ? "" : shown(object.path),
-      message: `${folder} holds ${entries.length.toLocaleString("en")} entries; a folder holds at most ${limits.folderEntries.toLocaleString("en")}`,
+      where,
+      message: tooManyEntries(folder, limits),
     })
+    return
   }
+  const entries = [...eachEntry(read.content)]
   for (const entry of entries) {
-    const path = `${base}${entry.name.toString("utf8")}`
+    const name = entry.name.toString("utf8")
+    const path = `${base}${name}`
+    const findings = findPushSecrets(name, names.allowedValues)
+    for (const finding of findings) {
+      names.report(
+        finding,
+        `${object.path === "" ? "" : `${place(object.path)}/`}(name not shown)`,
+        "a file or folder name",
+      )
+    }
     if (entry.mode === "120000") {
       problems.push({
         code: "symlink",
-        where: shown(path),
+        where: place(path),
         message: "a symbolic link: commit a file instead",
       })
     } else if (entry.mode === "160000") {
       problems.push({
         code: "submodule",
-        where: shown(path),
+        where: place(path),
         message: "a submodule: remove it",
       })
     }
@@ -484,7 +521,7 @@ async function checkTree(
     if (problem) {
       problems.push({
         code: "path-not-portable",
-        where: shown(path),
+        where: place(path),
         message: `this name ${problem}, so it cannot be checked out on Windows or macOS`,
       })
     }
@@ -492,12 +529,29 @@ async function checkTree(
   for (const [a, b] of clashingNames(
     entries.map((e) => e.name.toString("utf8")),
   )) {
+    const other = place(`${base}${a}`)
     problems.push({
       code: "path-not-portable",
-      where: shown(`${base}${b}`),
-      message: `Windows and macOS see this name and ${shown(a)} as one: rename one of them`,
+      where: place(`${base}${b}`),
+      message:
+        other === "(path not shown)"
+          ? "Windows and macOS see this name and another as one: rename one of them"
+          : `Windows and macOS see this name and ${shown(a)} as one: rename one of them`,
     })
   }
+}
+
+function tooManyEntries(folder: string, limits: PushLimits): string {
+  return `${folder} has over ${limits.folderEntries.toLocaleString("en")} entries: split it into folders`
+}
+
+/**
+ * The most bytes a tree object within the folder limit can hold: each
+ * entry a mode, a space, a name of at most 255 bytes, a NUL and an object
+ * ID.
+ */
+function treeObjectBytes(limits: PushLimits): number {
+  return limits.folderEntries * (6 + 1 + maxNameBytes + 1 + 20)
 }
 
 interface Entry {
@@ -506,23 +560,34 @@ interface Entry {
   oid: string
 }
 
-function treeEntries(content: Buffer): Entry[] {
-  const entries: Entry[] = []
+/** Shinan's repositories use SHA-1: 20-byte object IDs. */
+const idLength = 20
+
+/** A tree object's entries, one at a time. */
+function* eachEntry(content: Buffer): Generator<Entry> {
   let at = 0
   while (at < content.length) {
     const space = content.indexOf(0x20, at)
     const nul = content.indexOf(0, space + 1)
     if (space < 0 || nul < 0) throw new Error("A tree Shinan cannot read")
-    // Shinan's repositories use SHA-1: 20-byte object IDs.
-    const idLength = 20
-    entries.push({
+    yield {
       mode: content.subarray(at, space).toString("latin1").padStart(6, "0"),
       name: content.subarray(space + 1, nul),
       oid: content.subarray(nul + 1, nul + 1 + idLength).toString("hex"),
-    })
+    }
     at = nul + 1 + idLength
   }
-  return entries
+}
+
+/** How many entries a tree object holds, counting no further than `cap`. */
+function countEntries(content: Buffer, cap: number): number {
+  let count = 0
+  for (let at = 0; at < content.length && count < cap; count++) {
+    const nul = content.indexOf(0, at)
+    if (nul < 0) throw new Error("A tree Shinan cannot read")
+    at = nul + 1 + idLength
+  }
+  return count
 }
 
 /**
@@ -545,7 +610,7 @@ async function entriesReached(
     return cap + 1
   }
   let total = 0
-  for (const entry of treeEntries(read.content)) {
+  for (const entry of eachEntry(read.content)) {
     total++
     if (entry.mode === "040000") {
       total += await entriesReached(entry.oid, reader, counts, cap)

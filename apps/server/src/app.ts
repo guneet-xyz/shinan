@@ -2,7 +2,12 @@ import { extname } from "node:path"
 import { serveStatic } from "@hono/node-server/serve-static"
 import { Hono } from "hono"
 
-import { createGitClient, shinan, storeCatalogJournal } from "@shinan/core"
+import {
+  createGitClient,
+  setAsideMessage,
+  shinan,
+  storeCatalogJournal,
+} from "@shinan/core"
 import type { GitClient, JobQueue } from "@shinan/core"
 import { createLimitedLog, errorSummary } from "@shinan/db"
 import type { Database, DatabaseReadiness } from "@shinan/db"
@@ -138,7 +143,9 @@ function journalStorer(options: {
       { db: options.db, actor: shinan, jobs: options.jobs, origin: "git_push" },
       options.git,
     ).then(
-      () => undefined,
+      ({ setAside }) => {
+        if (setAside > 0) log(setAsideMessage(setAside))
+      },
       (error: unknown) =>
         log(`Storing the Git journal failed: ${errorSummary(error)}`),
     )

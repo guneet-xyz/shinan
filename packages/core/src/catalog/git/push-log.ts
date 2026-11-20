@@ -1,4 +1,4 @@
-import { and, desc, eq, schema, sql } from "@shinan/db"
+import { and, databaseErrorCode, desc, eq, schema, sql } from "@shinan/db"
 import type { Transaction } from "@shinan/db"
 
 import type { ResolvedActor } from "../../actor.js"
@@ -81,20 +81,29 @@ export interface RepositoryCreatedData {
 const objectId = /^([0-9a-f]{40}|[0-9a-f]{64})$/
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
-/** How many entries one transaction stores. */
+/** How many entries are read from the journal at a time. */
 const page = 200
 
 /**
  * Stores the Git container's journal entries not stored yet, and
- * acknowledges them, until none are left. Returns how many it stored. Safe
- * to run from several processes at once: each journal's row is locked
- * while its entries are stored.
+ * acknowledges them, until none are left. Each entry is stored in a
+ * transaction of its own, so one that cannot be stored never holds back
+ * the entries after it: an entry about a workspace PostgreSQL does not
+ * have (a repository restored from a backup, or made through the Git
+ * API alone), or one that can never be stored as it is, is set aside
+ * instead: recorded once in the security log (`catalog.journal-set-aside`,
+ * its number, kind, workspace and reason), counted in `setAside` for the
+ * caller to report, and acknowledged. Only an entry of a kind this release
+ * does not know, or a failure of the database, stops the run, to be tried
+ * again. Safe to run from several processes at once: each journal's row
+ * is locked while an entry is stored.
  */
 export async function storeCatalogJournal(
   ctx: Context,
   git: GitClient,
-): Promise<{ stored: number }> {
+): Promise<{ stored: number; setAside: number }> {
   let stored = 0
+  let setAside = 0
   for (;;) {
     const probe = await git.readJournal({ after: 0, limit: 1 })
     const journalId = probe.journalId
@@ -103,36 +112,154 @@ export async function storeCatalogJournal(
       probe.entries.length === 0
         ? { entries: [] as JournalEntry[] }
         : await git.readJournal({ after, limit: page })
-    const through = await atInstallation(
-      { ...ctx, origin: "git_push" },
-      "catalog-push.record",
-      async (scope) => {
-        await scope.tx
-          .insert(schema.catalogJournals)
-          .values({ journalId })
-          .onConflictDoNothing()
-        const [state] = await scope.tx
-          .select()
-          .from(schema.catalogJournals)
-          .where(eq(schema.catalogJournals.journalId, journalId))
-          .for("update")
-        let last = state!.lastStored
-        for (const entry of entries) {
-          if (entry.number <= last) continue
-          await storeEntry(scope, journalId, entry)
-          last = entry.number
-          stored++
-        }
-        await scope.tx
-          .update(schema.catalogJournals)
-          .set({ lastStored: last, updatedAt: sql`now()` })
-          .where(eq(schema.catalogJournals.journalId, journalId))
-        return last
-      },
-    )
+    // What is stored already is acknowledged even if this run stores
+    // nothing: another process may have stored it and stopped.
+    let through = after
+    for (const entry of entries) {
+      const result = await storeOne(ctx, journalId, entry)
+      if (result.outcome === "stored") stored++
+      if (result.outcome === "set-aside") setAside++
+      through = result.last
+    }
     if (through > 0) await git.acknowledgeJournal({ journalId, through })
-    if (entries.length < page) return { stored }
+    if (entries.length < page) return { stored, setAside }
   }
+}
+
+/** The one line a run that set entries aside writes to its log. */
+export function setAsideMessage(count: number): string {
+  return `${count} Git journal ${count === 1 ? "entry" : "entries"} could not be stored and ${count === 1 ? "was" : "were"} set aside; see the security log (catalog.journal-set-aside)`
+}
+
+/** An entry that can never be stored as it is: storing it again would fail again. */
+class UnstorableEntryError extends Error {
+  override name = "UnstorableEntryError"
+}
+
+/**
+ * Database errors no retry can mend: a row referring to one PostgreSQL
+ * does not have, a missing value, or a value of the wrong form.
+ */
+const unstorableCodes = new Set(["23503", "23502", "23514", "22P02"])
+
+/**
+ * Stores one entry, or sets it aside, in its own transaction; an entry
+ * stored already (by another process) is passed over. Returns the
+ * journal's last stored entry after it.
+ */
+async function storeOne(
+  ctx: Context,
+  journalId: string,
+  entry: JournalEntry,
+): Promise<{ outcome: "stored" | "set-aside" | "passed"; last: number }> {
+  const record = <T>(work: (scope: RecordScope) => Promise<T>) =>
+    atInstallation({ ...ctx, origin: "git_push" }, "catalog-push.record", work)
+  const workspaceId = (entry.data as { workspaceId?: unknown } | null)
+    ?.workspaceId
+  try {
+    return await record(async (scope) => {
+      const last = await lockJournal(scope, journalId)
+      if (entry.number <= last) return { outcome: "passed" as const, last }
+      if (
+        typeof workspaceId === "string" &&
+        uuid.test(workspaceId) &&
+        !(await workspaceExists(scope.tx, workspaceId))
+      ) {
+        await setEntryAside(scope, journalId, entry, "workspace-unknown")
+        await advance(scope, journalId, entry.number)
+        return { outcome: "set-aside" as const, last: entry.number }
+      }
+      await storeEntry(scope, journalId, entry)
+      await advance(scope, journalId, entry.number)
+      return { outcome: "stored" as const, last: entry.number }
+    })
+  } catch (error) {
+    const code = databaseErrorCode(error)
+    if (!(error instanceof UnstorableEntryError) && !unstorableCodes.has(code))
+      throw error
+    return record(async (scope) => {
+      const last = await lockJournal(scope, journalId)
+      if (entry.number <= last) return { outcome: "passed" as const, last }
+      await setEntryAside(
+        scope,
+        journalId,
+        entry,
+        error instanceof UnstorableEntryError ? "invalid" : `database-${code}`,
+      )
+      await advance(scope, journalId, entry.number)
+      return { outcome: "set-aside" as const, last: entry.number }
+    })
+  }
+}
+
+/** Locks the journal's row, made if new, and returns its last stored entry. */
+async function lockJournal(
+  scope: RecordScope,
+  journalId: string,
+): Promise<number> {
+  await scope.tx
+    .insert(schema.catalogJournals)
+    .values({ journalId })
+    .onConflictDoNothing()
+  const [state] = await scope.tx
+    .select()
+    .from(schema.catalogJournals)
+    .where(eq(schema.catalogJournals.journalId, journalId))
+    .for("update")
+  return state!.lastStored
+}
+
+async function advance(
+  scope: RecordScope,
+  journalId: string,
+  through: number,
+): Promise<void> {
+  await scope.tx
+    .update(schema.catalogJournals)
+    .set({ lastStored: through, updatedAt: sql`now()` })
+    .where(eq(schema.catalogJournals.journalId, journalId))
+}
+
+async function workspaceExists(
+  tx: Transaction,
+  workspaceId: string,
+): Promise<boolean> {
+  const [row] = await tx
+    .select({ id: schema.workspaces.id })
+    .from(schema.workspaces)
+    .where(eq(schema.workspaces.id, workspaceId))
+  return row !== undefined
+}
+
+/**
+ * Records an entry set aside, at the installation's level (its workspace
+ * may not exist): what it was and why, never its data.
+ */
+async function setEntryAside(
+  scope: RecordScope,
+  journalId: string,
+  entry: JournalEntry,
+  reason: string,
+): Promise<void> {
+  const workspaceId = (entry.data as { workspaceId?: unknown } | null)
+    ?.workspaceId
+  await recordSecurityEntry(scope.tx, {
+    workspaceId: null,
+    action: "catalog.journal-set-aside",
+    outcome: "failed",
+    actor: scope.actor,
+    request: {},
+    details: {
+      journalId,
+      entry: entry.number,
+      kind: /^[a-z.-]{1,40}$/.test(entry.kind) ? entry.kind : "unknown",
+      workspaceId:
+        typeof workspaceId === "string" && uuid.test(workspaceId)
+          ? workspaceId
+          : null,
+      reason,
+    },
+  })
 }
 
 async function lastStored(ctx: Context, journalId: string): Promise<number> {
@@ -168,7 +295,9 @@ async function storeEntry(
 
 function check(condition: boolean, entry: JournalEntry, what: string) {
   if (!condition) {
-    throw new Error(`Journal entry ${entry.number} has no valid ${what}`)
+    throw new UnstorableEntryError(
+      `Journal entry ${entry.number} has no valid ${what}`,
+    )
   }
 }
 
@@ -354,12 +483,13 @@ async function storeCreated(
  * storing the journal up to the moment the refs were read. An update the
  * log does not explain is recorded in the security log once
  * (`catalog.unlogged-update`). A repository with a push being checked is
- * left for the next minute. Returns how many it recorded.
+ * left for the next minute. Returns how many it recorded, and how many
+ * journal entries the storing it did set aside.
  */
 export async function checkCatalogRefs(
   ctx: Context,
   git: GitClient,
-): Promise<{ unlogged: number }> {
+): Promise<{ unlogged: number; setAside: number }> {
   const repositories = await ctx.db
     .select({
       workspaceId: schema.catalogRepositories.workspaceId,
@@ -368,11 +498,12 @@ export async function checkCatalogRefs(
     .from(schema.catalogRepositories)
     .where(sql`${schema.catalogRepositories.firstCommit} is not null`)
   let unlogged = 0
+  let setAside = 0
   for (const repository of repositories) {
     const refs = await git.listRefs(repository.workspaceId)
     if (!refs || refs.busy) continue
     if ((await lastStored(ctx, refs.journalId)) < refs.journalLast) {
-      await storeCatalogJournal(ctx, git)
+      setAside += (await storeCatalogJournal(ctx, git)).setAside
     }
     unlogged += await atInstallation(
       ctx,
@@ -416,7 +547,7 @@ export async function checkCatalogRefs(
       },
     )
   }
-  return { unlogged }
+  return { unlogged, setAside }
 }
 
 /**

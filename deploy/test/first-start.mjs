@@ -1339,6 +1339,34 @@ async function run() {
     "migrate runs again on the next up and exits 0",
   )
 
+  // The journal drains: the entry about the heavy repository, which has no
+  // workspace in PostgreSQL, is set aside rather than holding back the
+  // entries after it, such as this refused push's (review of GC-3a).
+  const pushesBefore = Number(psql("select count(*) from catalog_pushes"))
+  const late = agentGit(["push", "origin", "HEAD:refs/heads/after-heavy"], {
+    cwd: clones[1].folder,
+  })
+  const drained = await waitFor(
+    "the worker to store the whole Git journal",
+    () => {
+      const journal = askGit("git", "/journal?after=0", gitServiceToken)
+      return journal.status === 200 && journal.body.entries.length === 0
+        ? journal
+        : null
+    },
+    150,
+  )
+  check(
+    late.code !== 0 &&
+      drained.body.entries.length === 0 &&
+      Number(psql("select count(*) from catalog_pushes")) ===
+        pushesBefore + 1 &&
+      psql(
+        `select details->>'reason' from security_log where action = 'catalog.journal-set-aside' and details->>'workspaceId' = '${heavyId}'`,
+      ) === "workspace-unknown",
+    "the Git journal drains: an entry for a workspace PostgreSQL does not have is set aside once, and later pushes are stored",
+  )
+
   console.info(`All ${passed} checks passed`)
 }
 

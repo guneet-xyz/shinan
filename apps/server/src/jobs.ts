@@ -20,6 +20,7 @@ import {
   pruneSignInRecords,
   requestCatalogIndexRebuilds,
   requestPendingCatalogRepositories,
+  setAsideMessage,
   shinan,
   storeCatalogJournal,
   summarizeAgentTokenUse,
@@ -288,13 +289,15 @@ export async function startWorker(options: WorkerOptions): Promise<Worker> {
           jobs: boss,
           origin: "git_push" as const,
         }
-        const { stored } = await storeCatalogJournal(ctx, git)
-        const { unlogged } = await checkCatalogRefs(ctx, git)
-        if (unlogged > 0)
+        const journal = await storeCatalogJournal(ctx, git)
+        const refs = await checkCatalogRefs(ctx, git)
+        const setAside = journal.setAside + refs.setAside
+        if (setAside > 0) console.warn(setAsideMessage(setAside))
+        if (refs.unlogged > 0)
           console.warn(
-            `${unlogged} catalog branch updates the push log does not explain; see the security log (catalog.unlogged-update)`,
+            `${refs.unlogged} catalog branch updates the push log does not explain; see the security log (catalog.unlogged-update)`,
           )
-        return { stored, unlogged }
+        return { stored: journal.stored, setAside, unlogged: refs.unlogged }
       }),
     )
     await boss.createQueue(queues.catalogIndexCheck)

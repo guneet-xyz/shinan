@@ -96,6 +96,48 @@ describe("the first-pusher record", () => {
       "repository.created",
     ])
   })
+
+  it("leaves alone a repository whose main was rewritten outside Shinan", async () => {
+    const root = folder()
+    const git = createGit()
+    const store = createRepositoryStore({ root, git, hooksDirectory: folder() })
+    const journal = openJournal(root)
+    const records = openRecords(root)
+    const service = createPushService({ store, journal, records })
+    const { main } = await store.create(workspaceId, {
+      files: [{ path: "README.md", content: Buffer.from("# Catalog\n") }],
+      message: "Start\n",
+    })
+    await service.repositoryCreated(workspaceId, main)
+    // A new root commit on main, written straight to the volume.
+    const gitDir = store.pathOf(workspaceId)
+    const tree = (
+      await git.run(["rev-parse", `${main}^{tree}`], { gitDir })
+    ).stdout
+      .toString()
+      .trim()
+    const other = (
+      await git.run(["commit-tree", "-m", "Elsewhere\n", tree], {
+        gitDir,
+        env: {
+          GIT_AUTHOR_NAME: "x",
+          GIT_AUTHOR_EMAIL: "x@example.com",
+          GIT_COMMITTER_NAME: "x",
+          GIT_COMMITTER_EMAIL: "x@example.com",
+        },
+      })
+    ).stdout
+      .toString()
+      .trim()
+    await git.run(["update-ref", "refs/heads/main", other], { gitDir })
+    await createPushService({
+      store,
+      journal,
+      records: openRecords(root),
+    }).recover()
+    expect(openRecords(root).firstPush(workspaceId, other)).toBeUndefined()
+    expect(journal.read(0).map((e) => e.kind)).toEqual(["repository.created"])
+  })
 })
 
 describe("the push lock", () => {
