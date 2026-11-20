@@ -982,8 +982,8 @@ push`, authenticated by its agent token (supplied by a Git credential
   validation of the resulting documents, and that each new or changed fact
   check's `by` names whoever first pushed the commit that adds or changes it
   to Shinan (in the written form for that agent and its person), as the push
-  log records it. Merging another agent's already-pushed branch into `main`
-  is therefore allowed. A blocking problem refuses the whole push,
+  log records it ([D-066](decisions/D-066-by-names-the-first-pusher.md)). Merging another agent's already-pushed branch
+  into `main` is therefore allowed. A blocking problem refuses the whole push,
   with every reason in `git push`'s output; warnings are shown and do not
   block. A **check-only push** runs the checks without changing `main`.
 - **"Not a secret" value:** one exact value a workspace owner allows past the
@@ -1005,8 +1005,9 @@ push`, authenticated by its agent token (supplied by a Git credential
     D-024, O-3 and O-46). Pushes are authenticated by the agent token,
     commit authors are not trusted, a push log records agent and person, and
     a new or changed fact check's `by` names whoever first pushed the
-    commit to Shinan (owner's refinement, 2026-11-20)
-    ([D-061](decisions/D-061-push-authentication-and-push-log.md)). The
+    commit introducing it to Shinan
+    ([D-061](decisions/D-061-push-authentication-and-push-log.md), as
+    amended by [D-066](decisions/D-066-by-names-the-first-pusher.md)). The
     commit history is the review after the fact
     ([D-064](decisions/D-064-catalog-not-wiki.md)).
   - **Proposed:** the checks' details, the push log's records and the limits

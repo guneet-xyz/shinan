@@ -901,7 +901,7 @@ Rules:
 
 ### 4.5 Fact checks
 
-> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-3](build-plan-git-catalog.md#gc-3-push-checks-and-the-push-log)): a new or changed fact check's `by` must name whoever first pushed the commit to Shinan, as the push log records it (D-061). Until then, this section describes M2 as built (v0.3.0).
+> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-3](build-plan-git-catalog.md#gc-3-push-checks-and-the-push-log)): a new or changed fact check's `by` must name whoever first pushed the commit introducing it to Shinan, as the push log records it (D-066, amending D-061). Until then, this section describes M2 as built (v0.3.0).
 
 A **fact check** records one act of checking. Several facts can share one
 check when they were checked together.
