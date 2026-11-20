@@ -19,6 +19,7 @@ import {
   freshnessSummary,
   isWebAddress,
   summaryParts,
+  titleText,
   valueText,
 } from "./format"
 import { Markdown } from "./markdown"
@@ -129,7 +130,7 @@ export function EntityHeader() {
       )}
       <div className="flex min-w-0 flex-col gap-1">
         <h1 className="text-2xl font-semibold tracking-tight wrap-anywhere">
-          {entity.title ?? entity.id}
+          {titleText(entity.title, entity.id)}
         </h1>
         {entity.summary && (
           <p className="text-sm text-muted-foreground">{entity.summary}</p>

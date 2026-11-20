@@ -8,7 +8,11 @@ import type { Person } from "../identity/people.js"
 import { createWorkspace } from "../identity/workspaces.js"
 import { readDocumentId } from "./document/parse.js"
 import { updateWorkspaceIndex } from "./index/indexer.js"
-import { listCatalogTree, listCatalogTypeIndex } from "./wiki.js"
+import {
+  getCatalogState,
+  listCatalogTree,
+  listCatalogTypeIndex,
+} from "./wiki.js"
 
 const { db, pool } = testDatabase()
 
@@ -104,8 +108,19 @@ describe("the catalog's tree", () => {
     })
   })
 
+  it("gives where the catalog stands on its own", async () => {
+    const tree = await listCatalogTree(asPerson(db, owner), workspaceId)
+    expect(await getCatalogState(asPerson(db, owner), workspaceId)).toEqual({
+      catalog_commit: tree.catalog_commit,
+      index_behind: false,
+    })
+  })
+
   it("is for the workspace's members only", async () => {
     const stranger = await newPerson(db, "stranger")
+    await expect(
+      getCatalogState(asPerson(db, stranger), workspaceId),
+    ).rejects.toBeInstanceOf(NotFoundError)
     await expect(
       listCatalogTree(asPerson(db, stranger), workspaceId),
     ).rejects.toBeInstanceOf(NotFoundError)

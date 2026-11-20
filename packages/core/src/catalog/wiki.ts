@@ -143,6 +143,24 @@ export async function listCatalogTypeIndex(
   )
 }
 
+/**
+ * Where the catalog stands, alone (catalog §12.4): what the sidebar asks
+ * for, cheaply, while the catalog is being set up or catching up, before it
+ * reads the whole tree again.
+ */
+export async function getCatalogState(
+  ctx: Context,
+  workspaceId: string,
+): Promise<CatalogAnswer> {
+  return inWorkspace(
+    ctx,
+    workspaceId,
+    "catalog.read",
+    (scope) => answerFor(scope.tx, scope.workspaceId),
+    snapshotRead,
+  )
+}
+
 /** One file of `main` in the catalog's tree. */
 export interface CatalogTreeItemJson {
   /** Its path on `main`, such as `machine/musashi.md`. */

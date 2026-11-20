@@ -6,6 +6,16 @@ import type {
   ScalarValue,
 } from "@shinan/api-client"
 
+import { visible } from "./visible"
+
+/**
+ * A page's title in a list (search results, Needs attention): a link that
+ * looks like one without hovering, which a phone cannot do, with a quiet
+ * underline (product review of #190).
+ */
+export const listLinkClass =
+  "rounded-sm font-medium text-primary underline decoration-muted-foreground/40 underline-offset-4 outline-none hover:decoration-current focus-visible:ring-3 focus-visible:ring-ring"
+
 /**
  * The catalog page a catalog ID names (an ID may hold `/`): an entity's
  * page; for a type schema document (`schema/<type>`) its type's page; for
@@ -24,6 +34,16 @@ export function entityPath(workspaceId: string, id: string): string {
 /** An address in a workspace's catalog, such as `/search`. */
 export function catalogPath(workspaceId: string, path = ""): string {
   return `/w/${workspaceId}/catalog${path}`
+}
+
+/**
+ * A page's title as the catalog shows it: titles are written by agents, so
+ * hidden, bidirectional and control characters show as markers
+ * (`visible`), and "Invoice ⟨U+202E⟩gnp.exe" cannot read as "Invoice
+ * exe.png". Without a title, the ID (marked the same way).
+ */
+export function titleText(title: string | null, id: string): string {
+  return visible(title ?? id, { oneLine: true })
 }
 
 /**

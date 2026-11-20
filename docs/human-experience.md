@@ -148,12 +148,22 @@ as built in GC-7 ([#169](https://github.com/guneet-xyz/shinan/issues/169)).**
 - **The folders** are those of `main`, by their names in the repository
   (`machine`, `service`), sorted with `schema` last. Each holds its pages
   by title only. Only the folder of the page open starts open; any folder
-  opens with a click.
+  opens with a click. A large folder shows its first 100 pages, then "Show
+  more (N more)" adds 500 at a time; the page open always shows, with five
+  pages on each side, after a "…".
+- **Titles and folder names** are written by agents, so hidden,
+  bidirectional and control characters in them show as markers such as
+  `⟨U+202E⟩` wherever they appear (sidebar, search, Needs attention, a
+  page's heading): "Invoice ⟨U+202E⟩gnp.exe" cannot pass for "Invoice
+  exe.png".
 - **Left out of the folders:** the start-here page, which is Start here;
   `README.md`; retired pages, which search finds; and files that cannot be
   read as pages, which are under Needs attention.
 - **On narrow screens** the sidebar folds into a "Menu" button at the top,
-  which opens it as a sheet, closed by following a link.
+  which opens it as a sheet. Focus starts on its "Close menu" ×, not the
+  search box (which would bring up a phone's keyboard). Following a link
+  closes it and moves focus to the new page's heading; the × or Escape
+  closes it and returns focus to Menu.
 - **Outside a workspace** (Your account, Installation) it shows the
   workspace last open, else the person's first, so it keeps its shape.
   Someone with no workspace sees only Your account.
@@ -991,7 +1001,10 @@ from the [product brief](https://github.com/guneet-xyz/shinan/issues/169#issueco
   title, its folder in muted text, and one line (the best matching
   section's words, else the summary). Retired pages are left out; if any
   matched, one button shows them ("Show 2 retired pages"). There are no
-  type filters.
+  type filters. With nothing searched yet, the page is titled "Search the
+  catalog". In search results and Needs attention, page titles are links
+  with a quiet underline that shows without hovering (a phone cannot
+  hover), and a long title wraps rather than running off the screen.
 - **Needs attention** is one page with up to four short parts, only those
   that have something in them:
   - "These disagree": differences not accepted;
@@ -1007,8 +1020,11 @@ from the [product brief](https://github.com/guneet-xyz/shinan/issues/169#issueco
 
 - **States:**
   - While a new workspace's repository is made: "Your catalog is being set
-    up. This takes a few seconds." The sidebar reads again every few
-    seconds until it is there.
+    up. This takes a few seconds." The sidebar asks where the catalog
+    stands after 3 seconds, then after twice as long each time up to once a
+    minute, and not while the browser tab is hidden. Once that changes it
+    reads the folders again, and the page updates by itself. Until then the
+    sidebar shows no folder area.
   - While the index catches up: "Catching up with the latest changes…".
   - With no pages at all: "Your catalog is empty. Agents write it. Set up an
     agent, then ask it to add your first machine.", with a "Set up an

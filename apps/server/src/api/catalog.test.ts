@@ -152,6 +152,29 @@ describe("the catalog for the catalog pages", () => {
     expect((await get(ws("/tree"), outsider)).status).toBe(404)
   })
 
+  it("compresses the tree for a browser that accepts it", async () => {
+    const response = await api.request(ws("/tree"), {
+      headers: {
+        origin: "http://shinan.test",
+        "accept-encoding": "gzip, br",
+        ...as(owner),
+      },
+    })
+    expect(response.status).toBe(200)
+    expect(response.headers.get("content-encoding")).toBe("gzip")
+    const text = await new Response(
+      response.body!.pipeThrough(new DecompressionStream("gzip")),
+    ).text()
+    expect(JSON.parse(text)).toMatchObject({ catalog_commit: commit })
+  })
+
+  it("gives where the catalog stands without its tree", async () => {
+    const { status, body } = await get<Api.CatalogAnswer>(ws("/state"))
+    expect(status).toBe(200)
+    expect(body).toEqual({ catalog_commit: commit, index_behind: false })
+    expect((await get(ws("/state"), outsider)).status).toBe(404)
+  })
+
   it("reads types, a type's index, search, lists and start here", async () => {
     const types = await get<Api.CatalogTypeSchemasAnswer>(ws("/types"))
     expect(types.body.items.map((t) => t.type)).toContain("machine")

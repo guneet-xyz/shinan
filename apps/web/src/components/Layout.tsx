@@ -1,10 +1,11 @@
-import { MenuIcon } from "lucide-react"
-import { useEffect, useState } from "react"
+import { MenuIcon, XIcon } from "lucide-react"
+import { useEffect, useRef, useState } from "react"
 import { Link, Outlet, useLocation, useMatch } from "react-router"
 
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogTitle,
   DialogTrigger,
@@ -61,11 +62,27 @@ export function AppShell() {
   const tree = useCatalogTreeResource(workspaceId)
   const [menuOpen, setMenuOpen] = useState(false)
   const location = useLocation()
-  // Following a link in the menu closes it.
+  const mainRef = useRef<HTMLElement>(null)
+  const closeRef = useRef<HTMLButtonElement>(null)
+  // Following a link in the menu closes it, and focus goes to the new page,
+  // not back to the Menu button.
   const [shownAt, setShownAt] = useState(location.key)
+  const [followed, setFollowed] = useState(false)
   if (shownAt !== location.key) {
     setShownAt(location.key)
-    setMenuOpen(false)
+    if (menuOpen) {
+      setMenuOpen(false)
+      setFollowed(true)
+    }
+  }
+  const finalFocus = () => {
+    if (!followed) return true
+    setFollowed(false)
+    const heading = mainRef.current?.querySelector<HTMLElement>("h1")
+    // A heading takes focus only with a tabindex; -1 keeps it out of the
+    // tab order.
+    if (heading && !heading.hasAttribute("tabindex")) heading.tabIndex = -1
+    return heading ?? mainRef.current
   }
 
   return (
@@ -80,16 +97,39 @@ export function AppShell() {
           Skip to content
         </a>
         <header className="sticky top-0 z-40 flex h-14 items-center gap-2 border-b bg-background px-4 md:hidden">
-          <Dialog open={menuOpen} onOpenChange={setMenuOpen}>
+          <Dialog
+            open={menuOpen}
+            onOpenChange={(open) => {
+              setFollowed(false)
+              setMenuOpen(open)
+            }}
+          >
             <DialogTrigger render={<Button variant="outline" />}>
               <MenuIcon aria-hidden="true" />
               Menu
             </DialogTrigger>
             <DialogContent
               showCloseButton={false}
+              // The close button, not the search box: focusing a text box
+              // would open a phone's keyboard over the menu.
+              initialFocus={closeRef}
+              finalFocus={finalFocus}
               className="top-0 left-0 h-svh max-w-[min(20rem,calc(100%-3rem))] translate-x-0 translate-y-0 gap-0 rounded-none p-0 sm:max-w-80 data-open:slide-in-from-left data-closed:slide-out-to-left"
             >
               <DialogTitle className="sr-only">Menu</DialogTitle>
+              <DialogClose
+                ref={closeRef}
+                aria-label="Close menu"
+                render={
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    className="absolute top-3 right-3"
+                  />
+                }
+              >
+                <XIcon aria-hidden="true" />
+              </DialogClose>
               <Sidebar workspaceId={workspaceId} />
             </DialogContent>
           </Dialog>
@@ -107,7 +147,9 @@ export function AppShell() {
         </aside>
         <main
           id="content"
-          className="mx-auto w-full max-w-3xl min-w-0 flex-1 px-4 py-6 sm:px-6 sm:py-8"
+          ref={mainRef}
+          tabIndex={-1}
+          className="mx-auto w-full max-w-3xl min-w-0 flex-1 px-4 py-6 outline-none sm:px-6 sm:py-8"
         >
           <Outlet />
         </main>

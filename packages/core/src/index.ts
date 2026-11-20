@@ -203,6 +203,7 @@ export type {
 export * from "./catalog/document/index.js"
 export * from "./catalog/index/index.js"
 export {
+  getCatalogState,
   listCatalogTree,
   listCatalogTypeIndex,
   typeIndexLimit,

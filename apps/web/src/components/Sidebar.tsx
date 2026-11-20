@@ -4,8 +4,8 @@ import {
   ChevronsUpDownIcon,
   SearchIcon,
 } from "lucide-react"
-import { useMemo, useState } from "react"
-import type { FormEvent, ReactNode } from "react"
+import { memo, useCallback, useMemo, useState } from "react"
+import type { FormEvent } from "react"
 import {
   Link,
   NavLink,
@@ -36,8 +36,10 @@ import {
   folderOf,
   useCatalogTree,
 } from "../catalog-tree"
+import type { Folder } from "../catalog-tree"
 import { roleNames } from "../format"
 import { catalogPath, entityPath } from "../pages/catalog/format"
+import { visible } from "../pages/catalog/visible"
 
 /**
  * The app's one navigation (Git-based catalog plan §3; owner, 2026-11-20):
@@ -87,12 +89,14 @@ export function Sidebar(props: { workspaceId: string | undefined }) {
           <Separator />
           {state?.tree.data &&
             catalogState(state.tree.data) !== "setting-up" && (
-              <CatalogTree
-                workspaceId={workspaceId}
-                items={state.tree.data.items}
-              />
+              <>
+                <CatalogTree
+                  workspaceId={workspaceId}
+                  items={state.tree.data.items}
+                />
+                <Separator />
+              </>
             )}
-          <Separator />
         </>
       )}
       <nav aria-label="Settings and account" className="flex flex-col gap-1">
@@ -153,18 +157,32 @@ function SearchBox(props: { workspaceId: string }) {
   )
 }
 
+/** How many pages of a folder show at first, and how many more each time. */
+export const folderPageStep = 100
+
 function CatalogTree(props: {
   workspaceId: string
   items: readonly CatalogTreeItem[]
 }) {
+  const { workspaceId } = props
   const location = useLocation()
   const folders = useMemo(() => catalogFolders(props.items), [props.items])
-  const current = props.items.find(
-    (item) =>
-      item.id !== null &&
-      decodeURIComponent(location.pathname) ===
-        decodeURIComponent(entityPath(props.workspaceId, item.id)),
-  )
+  // Each page's address, worked out once per tree, so finding the current
+  // page is one lookup however many pages there are.
+  const byAddress = useMemo(() => {
+    const map = new Map<string, CatalogTreeItem>()
+    for (const folder of folders)
+      for (const item of folder.items)
+        map.set(decodeURIComponent(entityPath(workspaceId, item.id!)), item)
+    return map
+  }, [folders, workspaceId])
+  let path = location.pathname
+  try {
+    path = decodeURIComponent(path)
+  } catch {
+    // An address that is not valid percent-encoding names no page.
+  }
+  const current = byAddress.get(path)
   const currentFolder = current ? folderOf(current.path) : null
   // Folders opened or closed by hand; the current page's folder is open
   // unless closed by hand since that page opened.
@@ -181,6 +199,11 @@ function CatalogTree(props: {
     }
   }
   const isOpen = (name: string) => toggled.get(name) ?? name === currentFolder
+  const toggle = useCallback(
+    (name: string, open: boolean) =>
+      setToggled((t) => new Map(t).set(name, !open)),
+    [],
+  )
 
   if (folders.length === 0)
     return <p className="px-2 text-sm text-muted-foreground">No pages yet.</p>
@@ -189,30 +212,23 @@ function CatalogTree(props: {
       <ul className="flex flex-col gap-1">
         {folders.map((folder) =>
           folder.name === "" ? (
-            folder.items.map((item) => (
-              <li key={item.path}>
-                <PageLink workspaceId={props.workspaceId} item={item} />
-              </li>
-            ))
+            <PageList
+              key=""
+              workspaceId={workspaceId}
+              items={folder.items}
+              current={current?.path ?? null}
+            />
           ) : (
             <li key={folder.name}>
-              <FolderToggle
-                name={folder.name}
+              <FolderSection
+                workspaceId={workspaceId}
+                folder={folder}
                 open={isOpen(folder.name)}
-                onToggle={() =>
-                  setToggled((t) =>
-                    new Map(t).set(folder.name, !isOpen(folder.name)),
-                  )
+                onToggle={toggle}
+                current={
+                  folder.name === currentFolder ? (current?.path ?? null) : null
                 }
-              >
-                <ul className="flex flex-col gap-0.5 py-0.5 pl-5">
-                  {folder.items.map((item) => (
-                    <li key={item.path}>
-                      <PageLink workspaceId={props.workspaceId} item={item} />
-                    </li>
-                  ))}
-                </ul>
-              </FolderToggle>
+              />
             </li>
           ),
         )}
@@ -221,45 +237,126 @@ function CatalogTree(props: {
   )
 }
 
-function FolderToggle(props: {
-  name: string
+/**
+ * One folder of the tree. Memoised: following a link re-renders only the
+ * folders the current page leaves or enters.
+ */
+const FolderSection = memo(function FolderSection(props: {
+  workspaceId: string
+  folder: Folder
   open: boolean
-  onToggle: () => void
-  children: ReactNode
+  onToggle: (name: string, open: boolean) => void
+  /** The current page's path, when it is in this folder. */
+  current: string | null
 }) {
+  const { folder } = props
   const Icon = props.open ? ChevronDownIcon : ChevronRightIcon
   return (
     <>
       <button
         type="button"
         aria-expanded={props.open}
-        onClick={props.onToggle}
+        onClick={() => props.onToggle(folder.name, props.open)}
         className="flex min-h-8 w-full items-center gap-1 rounded-md px-2 text-left text-sm text-foreground/80 outline-none hover:bg-muted hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring"
       >
         <Icon aria-hidden="true" className="size-4 shrink-0" />
-        <span className="truncate">{props.name}</span>
+        <span className="truncate">
+          {visible(folder.name, { oneLine: true })}
+        </span>
       </button>
-      {props.open && props.children}
+      {props.open && (
+        <ul className="flex flex-col gap-0.5 py-0.5 pl-5">
+          <PageList
+            workspaceId={props.workspaceId}
+            items={folder.items}
+            current={props.current}
+          />
+        </ul>
+      )}
+    </>
+  )
+})
+
+/**
+ * A folder's pages, `folderPageStep` at a time, with a button for more: a
+ * folder of 20,000 pages (the catalog's limit) would otherwise render them
+ * all on every visit. The current page always shows, with a few around it.
+ */
+function PageList(props: {
+  workspaceId: string
+  items: readonly CatalogTreeItem[]
+  current: string | null
+}) {
+  const { items } = props
+  const [shown, setShown] = useState(folderPageStep)
+  const at =
+    props.current === null
+      ? -1
+      : items.findIndex((item) => item.path === props.current)
+  const near =
+    at >= shown
+      ? items.slice(Math.max(shown, at - 5), Math.min(items.length, at + 6))
+      : []
+  const more = items.length - shown - near.length
+  const item = (page: CatalogTreeItem) => (
+    <li key={page.path}>
+      <PageLink
+        to={entityPath(props.workspaceId, page.id!)}
+        title={page.title ?? page.id!}
+        current={page.path === props.current}
+      />
+    </li>
+  )
+  return (
+    <>
+      {items.slice(0, shown).map(item)}
+      {near.length > 0 && (
+        <>
+          <li aria-hidden="true" className="px-2 text-sm text-muted-foreground">
+            …
+          </li>
+          {near.map(item)}
+        </>
+      )}
+      {more > 0 && (
+        <li>
+          <button
+            type="button"
+            onClick={() => setShown((n) => n + folderPageStep * 5)}
+            className="flex min-h-8 items-center rounded-md px-2 text-sm text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring"
+          >
+            Show more ({more.toLocaleString()} more)
+          </button>
+        </li>
+      )}
     </>
   )
 }
 
-function PageLink(props: { workspaceId: string; item: CatalogTreeItem }) {
-  const { item } = props
+/**
+ * A page in the tree: a plain link, marked current by the tree, which
+ * reads the address once (not each link). Memoised.
+ */
+const PageLink = memo(function PageLink(props: {
+  to: string
+  title: string
+  current: boolean
+}) {
   return (
-    <NavLink
-      to={entityPath(props.workspaceId, item.id!)}
-      className={({ isActive }) =>
-        cn(
-          "flex min-h-8 items-center rounded-md px-2 py-1 text-sm text-foreground/80 outline-none hover:bg-muted hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring",
-          isActive && "bg-muted font-medium text-foreground",
-        )
-      }
+    <Link
+      to={props.to}
+      aria-current={props.current ? "page" : undefined}
+      className={cn(
+        "flex min-h-8 items-center rounded-md px-2 py-1 text-sm text-foreground/80 outline-none hover:bg-muted hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring",
+        props.current && "bg-muted font-medium text-foreground",
+      )}
     >
-      <span className="wrap-anywhere">{item.title ?? item.id}</span>
-    </NavLink>
+      <span className="min-w-0 wrap-anywhere">
+        {visible(props.title, { oneLine: true })}
+      </span>
+    </Link>
   )
-}
+})
 
 /**
  * Lists the person's workspaces and their role in each (human experience,

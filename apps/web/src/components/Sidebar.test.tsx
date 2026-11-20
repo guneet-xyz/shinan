@@ -179,16 +179,100 @@ describe("the sidebar", () => {
     expect(sidebar.queryByRole("search")).toBeNull()
   })
 
-  it("folds into a menu on narrow screens, closed by following a link", async () => {
+  it("folds into a menu on narrow screens, closed by following a link, with focus on the new page's heading", async () => {
+    renderApp(
+      `/w/${workspaceId}/catalog`,
+      fakeApi({
+        catalogTree: () => Promise.resolve(tree),
+        catalogList: () => new Promise(() => {}),
+      }),
+    )
+    const banner = within(await screen.findByRole("banner"))
+    await userEvent.click(banner.getByRole("button", { name: "Menu" }))
+    const menu = within(await screen.findByRole("dialog", { name: "Menu" }))
+    // Focus starts on the close button, not the search box: a phone would
+    // open its keyboard over the menu.
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        menu.getByRole("button", { name: "Close menu" }),
+      ),
+    )
+    await userEvent.click(menu.getByRole("link", { name: /Needs attention/ }))
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
+    expect(currentPath()).toBe(`/w/${workspaceId}/catalog/needs-attention`)
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        screen.getByRole("heading", { level: 1, name: "Needs attention" }),
+      ),
+    )
+  })
+
+  it("closes the menu with its close button, and gives focus back to Menu", async () => {
     renderApp(
       `/w/${workspaceId}/catalog`,
       fakeApi({ catalogTree: () => Promise.resolve(tree) }),
     )
     const banner = within(await screen.findByRole("banner"))
-    await userEvent.click(banner.getByRole("button", { name: "Menu" }))
+    const button = banner.getByRole("button", { name: "Menu" })
+    await userEvent.click(button)
     const menu = within(await screen.findByRole("dialog", { name: "Menu" }))
-    await userEvent.click(menu.getByRole("link", { name: /Needs attention/ }))
+    await userEvent.click(menu.getByRole("button", { name: "Close menu" }))
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
-    expect(currentPath()).toBe(`/w/${workspaceId}/catalog/needs-attention`)
+    await waitFor(() => expect(document.activeElement).toBe(button))
+  })
+
+  it("shows hidden characters in titles and folder names as markers", async () => {
+    renderApp(
+      `/w/${workspaceId}/catalog/p/machine/musashi`,
+      fakeApi({
+        catalogTree: () =>
+          Promise.resolve({
+            ...tree,
+            items: [item("machine/musashi.md", "Invoice \u202Egnp.exe")],
+          }),
+        catalogEntity: () => new Promise(() => {}),
+      }),
+    )
+    const sidebar = within(await screen.findByRole("complementary"))
+    expect(
+      await sidebar.findByRole("link", { name: "Invoice ⟨U+202E⟩gnp.exe" }),
+    ).toBeTruthy()
+  })
+
+  it("shows a folder of 20,000 pages a slice at a time, with the current page and its neighbours", async () => {
+    const big = Array.from({ length: 20_000 }, (_, i) =>
+      item(`machine/m${i}.md`, `Machine ${i}`),
+    )
+    renderApp(
+      `/w/${workspaceId}/catalog/p/machine/m10000`,
+      fakeApi({
+        catalogTree: () => Promise.resolve({ ...tree, items: big }),
+        catalogEntity: () => new Promise(() => {}),
+      }),
+    )
+    const sidebar = within(await screen.findByRole("complementary"))
+    const pages = within(
+      await sidebar.findByRole("navigation", { name: "Pages" }),
+    )
+    const current = await pages.findByRole("link", { name: "Machine 10000" })
+    expect(current.getAttribute("aria-current")).toBe("page")
+    const links = pages.getAllByRole("link")
+    // The first 100, then the current page with five on each side.
+    expect(links).toHaveLength(100 + 11)
+    expect(links[0]!.textContent).toBe("Machine 0")
+    expect(links[99]!.textContent).toBe("Machine 99")
+    expect(links[100]!.textContent).toBe("Machine 9995")
+    expect(links[110]!.textContent).toBe("Machine 10005")
+    expect(
+      pages.getAllByRole("link", { current: "page" }).map((l) => l.textContent),
+    ).toEqual(["Machine 10000"])
+
+    await userEvent.click(
+      pages.getByRole("button", { name: "Show more (19,889 more)" }),
+    )
+    expect(pages.getAllByRole("link")).toHaveLength(600 + 11)
+    expect(
+      pages.getByRole("button", { name: "Show more (19,389 more)" }),
+    ).toBeTruthy()
   })
 })

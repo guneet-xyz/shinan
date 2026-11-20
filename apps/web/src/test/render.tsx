@@ -203,6 +203,7 @@ export function fakeApi(overrides: Partial<ApiClient> = {}): Fake {
     "disableAgent",
     "enableAgent",
     "catalogEntity",
+    "catalogState",
     "catalogTree",
     "catalogTypes",
     "catalogType",

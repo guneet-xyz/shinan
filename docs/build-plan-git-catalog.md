@@ -1329,7 +1329,10 @@ provenance from `index/`; GC-5 does not touch `index/`.
   10.9 (secret check on push) and the new Git items (the Git container's
   isolation and service token among them) move to **Pass**; the limits of
   [2.10](#210-limits) confirmed; the Git container's and `web`'s memory
-  measured.
+  measured. Whether Musashi's proxy compresses JSON answers (Caddy
+  `encode`): `web` compresses the catalog's tree itself (GC-7, about 2 MB
+  for 20,000 pages, no secrets in it); compressing answers that hold a
+  secret beside text an attacker chooses is weighed against BREACH.
 - The release (v0.4.0, a release-please PR merged by the owner) and the
   `infra/musashi` request of [4.3](#43-deployment-changes-on-musashi): the
   `shinan-git` service, its folder, the `shinan-git` network and its subnet,

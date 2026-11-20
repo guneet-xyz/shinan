@@ -15,7 +15,13 @@ import { PageHeader, Section } from "../../components/page"
 import { ErrorMessage, Loading } from "../../components/status"
 import { useWorkspace } from "../workspace/context"
 import { EntityLink, linkClass } from "./facts"
-import { ageText, catalogPath, daysSince, entityPath } from "./format"
+import {
+  ageText,
+  catalogPath,
+  daysSince,
+  entityPath,
+  titleText,
+} from "./format"
 import { Markdown } from "./markdown"
 import { IndexBehind, PageNotice } from "./notices"
 
@@ -96,7 +102,7 @@ export function TypePage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title={details?.title ?? type}>
+      <PageHeader title={titleText(details?.title ?? null, type)}>
         {details?.summary ??
           (details?.built_in
             ? `One of Shinan's eight built-in types.`

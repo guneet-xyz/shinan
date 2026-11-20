@@ -10,19 +10,21 @@ import type {
 } from "@shinan/api-client"
 
 import { Button } from "@/components/ui/button"
+import { cn } from "@/lib/utils"
 
 import { useApi, useResource } from "../../api"
 import { catalogState, useCatalogTree } from "../../catalog-tree"
 import { PageHeader } from "../../components/page"
 import { ErrorMessage, Loading } from "../../components/status"
 import { useWorkspace } from "../workspace/context"
-import { linkClass } from "./facts"
 import {
   ageText,
   entityPath,
   factLabel,
+  listLinkClass,
   snippet,
   stateLabels,
+  titleText,
   valueText,
 } from "./format"
 import { BeingSetUp, IndexBehind } from "./notices"
@@ -54,9 +56,9 @@ function PageLink(props: {
   return (
     <Link
       to={entityPath(props.workspaceId, props.id)}
-      className={props.className ?? linkClass}
+      className={cn(listLinkClass, props.className)}
     >
-      {props.title ?? props.id}
+      {titleText(props.title, props.id)}
     </Link>
   )
 }
@@ -90,7 +92,7 @@ export function SearchPage() {
     : items.filter((i) => i.entity.status !== "retired")
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title={text ? `Search: ${text}` : "Search"}>
+      <PageHeader title={text ? `Search: ${text}` : "Search the catalog"}>
         {text
           ? undefined
           : "Type words in the search box: a name, a value, or words from a page."}
@@ -105,11 +107,12 @@ export function SearchPage() {
         <ol className="flex flex-col gap-5">
           {shown.map((item) => (
             <li key={item.entity.id} className="flex flex-col gap-0.5">
-              <p className="flex flex-wrap items-baseline gap-x-2">
+              <p className="flex min-w-0 flex-wrap items-baseline gap-x-2">
                 <PageLink
                   workspaceId={workspace.id}
                   id={item.entity.id}
                   title={item.entity.title}
+                  className="min-w-0 wrap-anywhere"
                 />
                 <span className="text-xs text-muted-foreground">
                   {folderOf(item.entity.id)}
@@ -278,7 +281,7 @@ function AttentionItem(props: {
         workspaceId={props.workspaceId}
         id={props.id}
         title={props.title}
-        className={`${linkClass} self-start`}
+        className="self-start wrap-anywhere"
       />
       <span className="text-sm text-muted-foreground">{props.line}</span>
     </li>

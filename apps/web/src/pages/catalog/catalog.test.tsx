@@ -818,6 +818,16 @@ describe("moving around the catalog", () => {
     )
   })
 
+  it("names the empty search page after what it does", async () => {
+    renderApp(`/w/${workspaceId}/catalog/search`, fakeApi())
+    expect(
+      await screen.findByRole("heading", {
+        level: 1,
+        name: "Search the catalog",
+      }),
+    ).toBeTruthy()
+  })
+
   it("says when nothing needs attention", async () => {
     renderApp(
       `/w/${workspaceId}/catalog/needs-attention`,
@@ -827,6 +837,59 @@ describe("moving around the catalog", () => {
       }),
     )
     expect(await screen.findByText("Nothing needs attention.")).toBeTruthy()
+  })
+})
+
+describe("titles written by agents", () => {
+  // A right-to-left override makes "Invoice gnp.exe" read "Invoice exe.png".
+  const spoof = "Invoice \u202Egnp.exe"
+  const marked = "Invoice ⟨U+202E⟩gnp.exe"
+
+  it("show hidden characters as markers on the page, in search and in Needs attention", async () => {
+    const page = {
+      id: "machine/musashi",
+      type: "machine",
+      title: spoof,
+      summary: null,
+      status: "active",
+      owner: null,
+    }
+    const fake = fakeApi({
+      catalogEntity: () =>
+        Promise.resolve({ ...answer, entity: { ...musashi, title: spoof } }),
+      catalogSearch: () =>
+        Promise.resolve({
+          ...answer,
+          items: [{ entity: page, rank: 1, sections: [] }],
+        }),
+      catalogList: (_w, list) =>
+        Promise.resolve({
+          ...answer,
+          next_offset: null,
+          items:
+            list === "due-for-recheck"
+              ? [{ entity: page, fact: musashi.facts[2]! }]
+              : [],
+        }),
+    })
+    const { unmount } = renderApp(entityPath, fake)
+    expect(
+      await screen.findByRole("heading", { level: 1, name: marked }),
+    ).toBeTruthy()
+    unmount()
+
+    const search = renderApp(`/w/${workspaceId}/catalog/search?q=invoice`, fake)
+    expect(
+      // The sidebar's tree is empty: the one link is in the page.
+      await screen.findByRole("link", { name: marked }),
+    ).toBeTruthy()
+    search.unmount()
+
+    renderApp(`/w/${workspaceId}/catalog/needs-attention`, fake)
+    expect(
+      // The sidebar's tree is empty: the one link is in the page.
+      await screen.findByRole("link", { name: marked }),
+    ).toBeTruthy()
   })
 })
 
@@ -873,12 +936,19 @@ describe("the removed M2 screens", () => {
         Promise.resolve(
           calls++ === 0 ? { ...tree, catalog_commit: null, items: [] } : tree,
         ),
+      catalogState: () => Promise.resolve(answer),
     })
     renderApp(`/w/${workspaceId}/catalog`, fake)
     expect(
       await screen.findByText("Your catalog is being set up."),
     ).toBeTruthy()
-    // It reads again by itself, a few seconds later.
+    // While it waits, the sidebar's tree shows no folders and no empty
+    // divider.
+    const sidebar = within(screen.getByRole("complementary"))
+    expect(sidebar.queryByRole("navigation", { name: "Pages" })).toBeNull()
+    expect(sidebar.getAllByRole("separator")).toHaveLength(1)
+    // It asks only where the catalog stands, a few seconds later, and reads
+    // the tree again once that has changed.
     expect(
       await screen.findByText(
         /There's no Start here page yet/,
@@ -886,6 +956,8 @@ describe("the removed M2 screens", () => {
         { timeout: 6000 },
       ),
     ).toBeTruthy()
+    expect(fake.catalogState).toHaveBeenCalledTimes(1)
+    expect(fake.catalogTree).toHaveBeenCalledTimes(2)
   }, 10_000)
 
   it("says it is catching up while the index is behind", async () => {

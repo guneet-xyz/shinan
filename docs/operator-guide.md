@@ -151,6 +151,12 @@ reads the visitor's address from `X-Forwarded-For`, which your proxy must
 set (Caddy and nginx's usual settings do). Without it, every visitor shares
 one address and one set of limits.
 
+**Compression.** Shinan compresses the one large answer itself: the
+catalog's tree for the sidebar, which for a catalog of 20,000 pages is about
+2 MB of JSON and holds only paths, titles and statuses. Your proxy may
+compress the rest (Caddy's `encode zstd gzip`, nginx's `gzip on` with
+`gzip_types application/json`). The app's own files are small either way.
+
 **Agents' requests at `/mcp`.** Don't buffer its answers, and don't time them
 out in under a few minutes. A request in the 2025-11-25 form, which OpenCode
 uses by default, is answered as a short event stream (`text/event-stream`)
