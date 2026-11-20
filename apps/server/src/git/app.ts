@@ -26,6 +26,8 @@ import { GitError } from "@shinan/git"
 
 import type { Journal } from "./journal.js"
 import { JournalDamagedError, JournalError } from "./journal.js"
+import { createSmartHttp } from "./smart-http.js"
+import type { GitProcessLimits } from "./smart-http.js"
 import type { RepositoryStore } from "./store.js"
 import { StoreError } from "./store.js"
 
@@ -181,7 +183,8 @@ export const answerSendSeconds = 120
  * listener in the `git` role, reachable only on the internal `git`
  * network. Every request must carry `Authorization: Bearer <service
  * token>`; any other gets 401 and nothing else: not even the context
- * header is read. The smart HTTP paths join this in GC-2.
+ * header is read. The smart HTTP paths under `/git/` are agents' fetches
+ * and pushes, which `web` forwards (`smart-http.ts`).
  */
 export function createGitApp(options: {
   serviceToken: string
@@ -190,6 +193,10 @@ export function createGitApp(options: {
   log?: LimitedLog
   /** How many reads run and wait at once, and how long an answer may take to send; default `readGate()`'s. */
   readLimits?: { running: number; queued: number; sendDeadlineMs?: number }
+  /** How many Git processes serve fetches and pushes at once; default `defaultGitProcessLimits`. */
+  gitProcesses?: GitProcessLimits
+  /** How long one Git process may run, in seconds; default `gitProcessSeconds`. */
+  gitProcessSeconds?: number
 }) {
   const log = options.log ?? createLimitedLog()
   const authorized = serviceTokenCheck(options.serviceToken)
@@ -406,6 +413,17 @@ export function createGitApp(options: {
     if (typeof body.through !== "number") bad("through must be a whole number")
     return c.json(options.journal.acknowledge(body.through))
   })
+
+  // Agents' fetches and pushes, forwarded by `web` (plan §2.2, step 6).
+  app.all(
+    "/git/*",
+    createSmartHttp({
+      store: options.store,
+      log,
+      processes: options.gitProcesses,
+      processSeconds: options.gitProcessSeconds,
+    }),
+  )
 
   app.all("*", (c) => fail(c, 404, "not-found", "Not found"))
   return app

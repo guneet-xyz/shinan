@@ -21,6 +21,7 @@ import {
   requestPendingCatalogRepositories,
   shinan,
   summarizeAgentTokenUse,
+  summarizeCatalogFetches,
   updateCatalogIndex,
 } from "@shinan/core"
 import type {
@@ -192,6 +193,11 @@ export async function startWorker(options: WorkerOptions): Promise<Worker> {
   await boss.work(queues.agentTokenUse, polling, () =>
     safely(queues.agentTokenUse, async () => ({
       summarized: await summarizeAgentTokenUse({
+        db: options.db,
+        actor: shinan,
+      }),
+      // Catalog fetches, summarised the same way (plan §2.14).
+      fetchesSummarized: await summarizeCatalogFetches({
         db: options.db,
         actor: shinan,
       }),

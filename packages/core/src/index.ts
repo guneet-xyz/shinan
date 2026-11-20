@@ -253,6 +253,13 @@ export {
   maxJournalPage,
   maxQueuedReads,
   maxRequestBodyBytes,
+  maxPushBodyBytes,
+  maxFetchBodyBytes,
+  maxGitProcesses,
+  maxQueuedGitProcesses,
+  gitProcessWaitSeconds,
+  gitProcessSeconds,
+  smartHttpRequest,
   maxTreeEntries,
   maxTreePathBytes,
   serviceTokenMinLength,
@@ -263,7 +270,9 @@ export type {
   CommitRef,
   DocumentRead,
   GitRequestContext,
+  GitService,
   JournalEntry,
+  SmartHttpRequest,
   RepositoryFile,
   RepositoryInfo,
   TreeChange as GitTreeChange,
@@ -271,6 +280,11 @@ export type {
 } from "./catalog/git/api.js"
 export { createGitClient, GitServiceError } from "./catalog/git/client.js"
 export type { GitClient, GitClientOptions } from "./catalog/git/client.js"
+export {
+  authorizeGitRequest,
+  summarizeCatalogFetches,
+} from "./catalog/git/access.js"
+export type { GitRequestAccess, GitRequestInput } from "./catalog/git/access.js"
 export {
   catalogRepositoryQueue,
   createCatalogRepository,

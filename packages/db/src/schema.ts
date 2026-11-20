@@ -570,6 +570,13 @@ export const agentTokens = pgTable(
     summarizedCount: bigint("summarized_count", { mode: "number" })
       .notNull()
       .default(0),
+    /** Fetches and clones of the catalog with this token (plan §2.14). */
+    fetchCount: bigint("fetch_count", { mode: "number" }).notNull().default(0),
+    /** `fetch_count` at the last `catalog.fetched` summary. */
+    fetchSummarizedCount: bigint("fetch_summarized_count", { mode: "number" })
+      .notNull()
+      .default(0),
+    lastFetchedAt: timestamp("last_fetched_at", { withTimezone: true }),
   },
   (t) => [
     foreignKey({

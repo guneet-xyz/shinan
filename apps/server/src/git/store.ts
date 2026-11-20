@@ -115,8 +115,14 @@ function syncFolder(path: string): void {
 
 export interface RepositoryStore {
   readonly root: string
+  /** How the store runs Git. */
+  readonly git: Git
+  /** The hooks every repository runs (`core.hooksPath`). */
+  readonly hooksDirectory: string
   /** The workspace's repository folder; refuses anything but a workspace ID. */
   pathOf(workspaceId: string): string
+  /** Whether the workspace has a repository. */
+  exists(workspaceId: string): boolean
   /** `main`'s commit, or `null` if the workspace has no repository. */
   main(workspaceId: string): Promise<string | null>
   create(
@@ -319,7 +325,10 @@ export function createRepositoryStore(options: {
 
   return {
     root,
+    git,
+    hooksDirectory: hooks,
     pathOf,
+    exists: (workspaceId) => exists(pathOf(workspaceId)),
     main,
     create(workspaceId, input) {
       pathOf(workspaceId)

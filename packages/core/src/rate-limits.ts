@@ -78,6 +78,16 @@ export const rateLimits = {
     record: { action: "request.throttled" },
   },
   /**
+   * Pushes to the catalog by one agent (Git-based catalog plan §2.10),
+   * counted by the agent: pushes are the expensive requests (a pack of up
+   * to 64 MiB, then the push checks). Like M2's proposals.
+   */
+  "catalog-push": {
+    max: 60,
+    windowSeconds: 600,
+    record: { action: "request.throttled" },
+  },
+  /**
    * Asking to change one's email address, counted by the person (identity
    * §3.4, **proposed**): each request emails the new address and alerts the
    * old one, so a person (or someone in their sign-in session) cannot use

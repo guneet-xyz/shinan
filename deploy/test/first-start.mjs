@@ -139,6 +139,47 @@ async function waitFor(what, check, seconds = 120) {
   throw new Error(`Timed out waiting for ${what}`)
 }
 
+/**
+ * The `git` client as an agent runs it, with GC-9's agent setup: a
+ * credential helper that reads the token from `~/.config/shinan/token` and
+ * gives it as the password (`token`: the token to put there; `null`: no
+ * helper at all). Caddy's certificate is self-signed: only these runs skip
+ * Git's check of it.
+ */
+const agentHome = join(dir, "agent-home")
+function agentGit(args, { cwd = dir, token } = {}) {
+  mkdirSync(join(agentHome, ".config", "shinan"), { recursive: true })
+  if (token)
+    writeFileSync(join(agentHome, ".config", "shinan", "token"), token, {
+      mode: 0o600,
+    })
+  const helper =
+    token === null
+      ? []
+      : [
+          "-c",
+          `credential.${installationUrl}.helper=`,
+          "-c",
+          `credential.${installationUrl}.helper=!f(){ test "$1" = get && printf "username=agent\\npassword=%s\\n" "$(cat ~/.config/shinan/token)"; }; f`,
+        ]
+  const result = spawnSync(
+    "git",
+    ["-c", "http.sslVerify=false", ...helper, ...args],
+    {
+      cwd,
+      encoding: "utf8",
+      env: {
+        PATH: process.env.PATH,
+        HOME: agentHome,
+        GIT_CONFIG_NOSYSTEM: "1",
+        GIT_TERMINAL_PROMPT: "0",
+        LC_ALL: "C",
+      },
+    },
+  )
+  return { code: result.status, stdout: result.stdout, stderr: result.stderr }
+}
+
 let passed = 0
 function check(condition, description) {
   if (!condition) throw new Error(`Check failed: ${description}`)
@@ -832,6 +873,109 @@ async function run() {
       repository.body.commit === firstCommit &&
       repository.body.entries.map((e) => e.path).join(",") === "README.md",
     "the worker had git create the workspace's repository, with a first commit holding README.md",
+  )
+
+  // Agents clone, fetch and push over HTTPS, through Caddy and `web` to
+  // the Git container (GC-2), with tokens made in the web app.
+  const issue = async (machine, access) => {
+    const response = await request(`/api/workspaces/${workspaceId}/agents`, {
+      body: { codingTool: "opencode", machine, access },
+    })
+    return response.status === 201 ? (await response.json()).token : null
+  }
+  const fullToken = await issue("first-start", "full")
+  const readOnlyToken = await issue("first-start-ro", "read-only")
+  check(
+    fullToken !== null && readOnlyToken !== null,
+    "the operator makes a full and a read-only agent token",
+  )
+  const cloneUrl = `${installationUrl}/git/${workspaceId}.git`
+  const clones = [0, 2].map((version) => {
+    const folder = join(dir, `clone-v${version}`)
+    const cloned = agentGit(
+      [
+        "-c",
+        `protocol.version=${version}`,
+        "clone",
+        "--quiet",
+        cloneUrl,
+        folder,
+      ],
+      { token: fullToken },
+    )
+    const head = agentGit(["rev-parse", "HEAD"], { cwd: folder }).stdout?.trim()
+    const fetched = agentGit(
+      ["-c", `protocol.version=${version}`, "fetch", "--quiet"],
+      { cwd: folder },
+    )
+    return { cloned, head, fetched, folder }
+  })
+  check(
+    clones.every(
+      (c) =>
+        c.cloned.code === 0 && c.head === firstCommit && c.fetched.code === 0,
+    ),
+    `an agent clones and fetches its workspace's repository over HTTPS, with protocol v0 and v2 (${JSON.stringify(clones.map((c) => [c.cloned.code, c.cloned.stderr.slice(0, 200), c.fetched.code]))})`,
+  )
+  writeFileSync(join(clones[1].folder, "note.md"), "A note\n")
+  agentGit(["add", "note.md"], { cwd: clones[1].folder })
+  agentGit(
+    [
+      "-c",
+      "user.name=Agent",
+      "-c",
+      "user.email=agent@example.com",
+      "commit",
+      "--quiet",
+      "-m",
+      "A note",
+    ],
+    { cwd: clones[1].folder },
+  )
+  const pushed = agentGit(["push", "origin", "HEAD:refs/heads/a-note"], {
+    cwd: clones[1].folder,
+  })
+  check(
+    pushed.code !== 0 &&
+      pushed.stderr.includes(
+        "remote: Shinan: pushes are not open yet. Nothing was changed.",
+      ),
+    `the image's pre-receive hook refuses every push until the push checks exist (${pushed.stderr.trim().split("\n").slice(0, 3).join(" | ")})`,
+  )
+  const readOnlyClone = join(dir, "clone-read-only")
+  const readOnlyCloned = agentGit(
+    ["clone", "--quiet", cloneUrl, readOnlyClone],
+    {
+      token: readOnlyToken,
+    },
+  )
+  const readOnlyPush = agentGit(["push", "origin", "HEAD:refs/heads/x"], {
+    cwd: readOnlyClone,
+  })
+  check(
+    readOnlyCloned.code === 0 &&
+      readOnlyPush.code !== 0 &&
+      readOnlyPush.stderr.includes(
+        "remote: This agent's token is read-only: it can fetch but not push.",
+      ),
+    "a read-only token clones, and its push is refused with 403",
+  )
+  const anonymous = agentGit(["ls-remote", cloneUrl], { token: null })
+  const otherId = "9b9c1a2e-3d4f-4a5b-8c6d-7e8f9a0b1c2d"
+  const unknown = agentGit(
+    ["ls-remote", `${installationUrl}/git/${otherId}.git`],
+    { token: fullToken },
+  )
+  check(
+    anonymous.code !== 0 &&
+      anonymous.stderr.includes("could not read Username") &&
+      unknown.code !== 0 &&
+      unknown.stderr.includes("not found"),
+    "without a token Git is asked for credentials; an unknown workspace is not found",
+  )
+  check(
+    Number(psql("select sum(fetch_count) from agent_tokens")) === 5,
+    "each token's fetches are counted for the security log's hourly summary",
   )
 
   const addresses = psql(

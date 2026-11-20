@@ -36,13 +36,13 @@ not apply to anyone else's installation.
 
 ## What runs
 
-| Service    | Role                                                                                                                             | Networks                   |
-| ---------- | -------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
-| `postgres` | PostgreSQL 18; data in the `postgres` volume                                                                                     | `backend`                  |
-| `migrate`  | Applies new database migrations and prepares the job queue, then exits; runs on every `up`                                       | `backend`                  |
-| `web`      | Pages, API and sign-in; published on `127.0.0.1` only, for your proxy                                                            | `backend`, `egress`        |
-| `worker`   | Background jobs: sends email through SES; has `git` make each new workspace's repository                                         | `backend`, `egress`, `git` |
-| `git`      | The catalog's Git repositories, one per workspace, in the `catalog` volume; answers only the other roles, with the service token | `git`                      |
+| Service    | Role                                                                                                                              | Networks                   |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
+| `postgres` | PostgreSQL 18; data in the `postgres` volume                                                                                      | `backend`                  |
+| `migrate`  | Applies new database migrations and prepares the job queue, then exits; runs on every `up`                                        | `backend`                  |
+| `web`      | Pages, API, sign-in and agents' Git requests (`/git/`), which it forwards to `git`; published on `127.0.0.1` only, for your proxy | `backend`, `egress`, `git` |
+| `worker`   | Background jobs: sends email through SES; has `git` make each new workspace's repository                                          | `backend`, `egress`, `git` |
+| `git`      | The catalog's Git repositories, one per workspace, in the `catalog` volume; answers only the other roles, with the service token  | `git`                      |
 
 `backend` has no internet access; `egress` gives `web` (GitHub sign-in) and
 `worker` (SES) outgoing access. `git` is internal too, and the Git container
@@ -122,7 +122,7 @@ All files go in one directory, next to `compose.yml`.
    | `ses_access_key_id`     | `worker`                   | The SES user's access key ID                                                                                            |
    | `ses_secret_access_key` | `worker`                   | Its secret key                                                                                                          |
    | `github_client_secret`  | `web`, only with GitHub    | The GitHub App's client secret                                                                                          |
-   | `git_service_token`     | `git`, `worker`            | Lets the other roles call the Git container; at least 32 characters, no spaces. Changing it needs all of them restarted |
+   | `git_service_token`     | `git`, `web`, `worker`     | Lets the other roles call the Git container; at least 32 characters, no spaces. Changing it needs all of them restarted |
 
    The `catalog` volume is created on the first start, owned by the image's
    user (65532) with mode `0700`. If you mount a folder there instead, give
@@ -170,6 +170,19 @@ below 512 KB: Shinan limits them itself, before reading them (64 KB on the
 API, 512 KB on `/mcp` and catalog proposals), gives a client 30 seconds to
 send a whole request, and answers 429 to more than a few `/mcp` requests in
 flight at once from one token or address.
+
+**Agents' Git requests at `/git/`.** Agents clone, fetch and push the
+catalog at `https://<your address>/git/<workspace ID>.git`. Pass these
+requests on as they are: their `Authorization` header (the agent token, as
+HTTP Basic), and bodies streamed rather than buffered. Shinan limits them
+itself: 64 MiB for a push and 4 MiB for a fetch request, 120 seconds to
+send a push and 30 for anything else, a few requests in flight per token
+and address (shared with `/mcp`), and a 10-minute limit on each Git
+process. So don't limit request bodies below 64 MiB there, and don't time
+answers out in under 10 minutes: a full clone on a slow link takes time.
+Caddy's `reverse_proxy` needs nothing. With nginx, for `/git/`, set
+`client_max_body_size 64m`, `proxy_request_buffering off`,
+`proxy_buffering off` and `proxy_read_timeout 600s`.
 
 The address Shinan sees is not always `127.0.0.1`: a proxy on the host
 reaching the published port arrives from the Docker network's gateway. Find it

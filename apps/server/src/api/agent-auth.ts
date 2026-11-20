@@ -40,48 +40,121 @@ export function requireAgent(
   options: AgentAuthOptions,
 ): MiddlewareHandler<AgentEnv> {
   return async (c, next) => {
-    if (tokenInAddress(c.req.url)) {
-      return refuse(
-        c,
-        "Send the agent token in the Authorization header, never in the address",
-      )
-    }
-    if (c.req.header("cookie") !== undefined) {
-      return refuse(
-        c,
-        "Agent endpoints take only an agent token; send no cookies",
-      )
-    }
-    const token = bearerToken(c.req.header("authorization"))
-    if (token === null) {
-      return refuse(
-        c,
-        "An agent token is needed, as Authorization: Bearer <token>",
-      )
-    }
-    const result = await authenticateAgent(
-      {
-        db: options.db,
-        actor: shinan,
-        request: options.requestInfo(c),
-        installationUrl: options.installationUrl,
-      },
-      { token },
-    )
-    if (!result.authenticated) {
+    const result = await checkAgentRequest(options, c)
+    if (!result.agent) {
       if (result.retryAfterSeconds !== undefined) {
         const response = errorResponse(c, 429, {
           error: "too-many-requests",
-          message: "Too many requests. Wait a minute and try again.",
+          message: result.message,
         })
         response.headers.set("retry-after", String(result.retryAfterSeconds))
         return response
       }
-      return refuse(c, "The agent token is not valid")
+      return refuse(c, result.message)
     }
-    c.set("agent", result.actor)
+    c.set("agent", result.agent)
     await next()
   }
+}
+
+/** Why `checkAgentRequest` refused a request. */
+export type AgentRefusal =
+  | {
+      agent?: undefined
+      reason: "token-in-address" | "cookie"
+      message: string
+      retryAfterSeconds?: undefined
+    }
+  /** No token was sent at all. */
+  | {
+      agent?: undefined
+      reason: "no-token"
+      message: string
+      retryAfterSeconds?: undefined
+    }
+  | {
+      agent?: undefined
+      reason: "invalid-token"
+      message: string
+      retryAfterSeconds?: undefined
+    }
+  /** A rate limit: answer 429 with `Retry-After`. */
+  | {
+      agent?: undefined
+      reason: "rate-limited"
+      message: string
+      retryAfterSeconds: number
+    }
+
+/**
+ * The checks of `requireAgent`, for endpoints that answer in their own
+ * format (the Git endpoint): the working agent token, or why not. With
+ * `basic`, the token may also be the password of HTTP Basic
+ * authentication, whose user name is ignored, which is how Git sends what
+ * its credential helper gives it.
+ */
+export async function checkAgentRequest(
+  options: AgentAuthOptions & { basic?: boolean },
+  c: HonoContext,
+): Promise<{ agent: AgentActor } | AgentRefusal> {
+  if (tokenInAddress(c.req.url)) {
+    return {
+      reason: "token-in-address",
+      message:
+        "Send the agent token in the Authorization header, never in the address",
+    }
+  }
+  if (c.req.header("cookie") !== undefined) {
+    return {
+      reason: "cookie",
+      message: "Agent endpoints take only an agent token; send no cookies",
+    }
+  }
+  const header = c.req.header("authorization")
+  const token =
+    bearerToken(header) ?? (options.basic ? basicPassword(header) : null)
+  if (token === null || token === "") {
+    return {
+      reason:
+        header === undefined || token === "" ? "no-token" : "invalid-token",
+      message: options.basic
+        ? "An agent token is needed, as the password or as Authorization: Bearer <token>"
+        : "An agent token is needed, as Authorization: Bearer <token>",
+    }
+  }
+  const result = await authenticateAgent(
+    {
+      db: options.db,
+      actor: shinan,
+      request: options.requestInfo(c),
+      installationUrl: options.installationUrl,
+    },
+    { token },
+  )
+  if (!result.authenticated) {
+    if (result.retryAfterSeconds !== undefined) {
+      return {
+        reason: "rate-limited",
+        message: "Too many requests. Wait a minute and try again.",
+        retryAfterSeconds: result.retryAfterSeconds,
+      }
+    }
+    return { reason: "invalid-token", message: "The agent token is not valid" }
+  }
+  return { agent: result.actor }
+}
+
+/**
+ * The password of an `Authorization: Basic` header, or null: Git sends
+ * the agent token this way. The user name is ignored.
+ */
+function basicPassword(header: string | undefined): string | null {
+  const match =
+    header === undefined ? null : /^Basic +([A-Za-z0-9+/=]+) *$/i.exec(header)
+  if (!match) return null
+  const decoded = Buffer.from(match[1]!, "base64").toString("utf8")
+  const colon = decoded.indexOf(":")
+  return colon < 0 ? null : decoded.slice(colon + 1)
 }
 
 /** The token of an `Authorization: Bearer <token>` header, or null. */

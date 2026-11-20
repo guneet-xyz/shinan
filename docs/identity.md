@@ -620,8 +620,8 @@ workspace, acts for exactly one member, and never does more than that member.
 an agent gets its long-lived token through a **browser approval started from
 the plugin or the CLI**, with a short code for machines without a browser, and
 a **token made by hand** in the web app as the fallback. There is one token
-per agent, accepted at every agent endpoint: the MCP endpoint, the REST API
-and the plugin stream. There is no MCP-specific OAuth sign-in in the first
+per agent, accepted at every agent endpoint: the MCP endpoint, the REST API,
+the Git endpoint and the plugin stream. There is no MCP-specific OAuth sign-in in the first
 version; it may come later, only if a coding tool needs it.
 
 The flow, with the details **proposed** here:
@@ -801,7 +801,11 @@ rule.
 | `presence`      | Report agent sessions and presence; receive nudges                                                                                    |
 
 `catalog:write` was `catalog:propose` in M2; a migration renamed the stored
-scopes, so tokens keep their access (Git-based catalog plan §2.14, GC-5). A
+scopes, so tokens keep their access (Git-based catalog plan §2.14, GC-5).
+At the Git endpoint they are core's permissions `catalog.fetch`
+(`catalog:read`) and `catalog.push` (`catalog:write`), which only agents
+take: people read the catalog in the browser and push through their agents
+(as built, GC-2). A
 normal agent gets all five. A **read-only token** has only the two `read`
 scopes; it is a choice of scopes offered when approving a token, not a role
 (N-11 removed only the viewer role). Reason: splitting reading from writing is the line that matters most when a
@@ -834,8 +838,6 @@ no forced re-approval.
 
 ### 7.4 Handling
 
-> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-2](build-plan-git-catalog.md#gc-2-serving-git-over-https-through-web)): at `/git/` the token is the password of HTTP Basic authentication. Until then, this section describes M2 as built (v0.3.0).
-
 **Proposed:**
 
 - A token is shown once, if at all, and Shinan stores only a one-way hash of
@@ -855,9 +857,17 @@ no forced re-approval.
 - Tokens are sent in an `Authorization` header, never in a web address.
   Reason: web addresses end up in logs; the MCP specification also forbids
   tokens in query strings.
+- **As built (GC-2, Git-based catalog plan §2.2):** at the Git endpoint,
+  `/git/`, the token may also be the password of HTTP Basic authentication,
+  with any user name, because Git sends what its credential helper gives it
+  only that way; `Bearer` works there too. A request without one is
+  answered `401` with `WWW-Authenticate: Basic realm="Shinan"`, which makes
+  Git ask its credential helper. The `web` role never passes the agent's
+  `Authorization` header on to the Git container
+  ([architecture §8.5](architecture.md#85-git-endpoint)).
 - **Decided (owner, NO-1):** an agent token is accepted at every agent
-  endpoint of the installation that issued it (the MCP endpoint, the REST API
-  and the plugin stream) and nowhere else. **Proposed:** the token records the
+  endpoint of the installation that issued it (the MCP endpoint, the REST API,
+  the Git endpoint and the plugin stream) and nowhere else. **Proposed:** the token records the
   installation's address, and other installations reject it. Which endpoints
   exist is for the [architecture](architecture.md) document. **Decided
   (owner, 2026-11-19, M2-Q17; M2-5):** the address recorded is the origin of `SHINAN_URL` when the token
@@ -1155,8 +1165,6 @@ are credited.
 
 ## 10. Protections for a public installation
 
-> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-2](build-plan-git-catalog.md#gc-2-serving-git-over-https-through-web)): limits for the Git endpoint. Until then, this section describes M2 as built (v0.3.0).
-
 **Decided (D-015):** security for a public sign-in app gets extra attention in
 this document and the [architecture](architecture.md) document. This section
 lists what Shinan must do; the architecture document decides how, along with
@@ -1191,8 +1199,20 @@ restriction stays possible later.
   machine, a home network, or every visitor if the trusted proxy is set
   wrong) must not let one client stop the others' agents. Each token is
   limited to 600 requests a minute from anywhere (**decided**, owner,
-  2026-11-19, M2-Q16, with 300 a minute per address on `/mcp` and `/api`). Every refused token gets
-  the same answer (401 `invalid-token`).
+  2026-11-19, M2-Q16, with 300 a minute per address on `/mcp`, `/api` and
+  `/git`). Every refused token gets the same answer (401 `invalid-token`;
+  at `/git/`, a plain-text 401 asking for Basic credentials).
+- **The Git endpoint's limits** (decided with the Git-based catalog plan,
+  §2.10; as built in GC-2, [architecture §8.5](architecture.md#85-git-endpoint)):
+  a push body of at most 64 MiB and a fetch request of at most 4 MiB, both
+  refused (`413`) before forwarding when declared and cut off when sent;
+  120 seconds for a push's body to arrive (30 for every other request); at
+  most 60 pushes in 10 minutes per agent (`429` with `Retry-After`); the
+  caps on requests in flight shared with `/mcp` (8 per token, 16 per
+  address); at most 4 Git processes at once in the Git container, with 16
+  waiting up to 10 seconds, then `429` with `Retry-After`; and 10 minutes
+  per Git process. Another workspace's token gets the same `404` as a
+  workspace that does not exist.
 - **Uniform answers** that do not reveal whether an email address is
   allowlisted or whether a person, workspace, task or repository exists.
   Reason: probing for names leaks information.
@@ -1250,7 +1270,10 @@ kinds (**proposed**):
   longer written: those tools and approvals are gone (GC-5); entries already
   written stay. Fetches and pushes are recorded as the
   [Git-based catalog plan §2.14](build-plan-git-catalog.md#214-permissions-scopes-and-the-security-log)
-  says (GC-2, GC-3).
+  says (GC-2, GC-3). **As built (GC-2):** each token's fetches and clones
+  are counted, and every hour each token that fetched gets one
+  `catalog.fetched` entry with `fetches` since the last one, `totalFetches`
+  and `lastFetchedAt`, in the same run as the token use summary.
   **Decided (owner, 2026-11-19, M2-Q17; M2-10):** a catalog purge is one `catalog.purged`
   entry with the purge's ID and number, the revision it stored and how
   many revision texts, documents, proposals and events it changed, never

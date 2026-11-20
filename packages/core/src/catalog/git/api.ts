@@ -61,6 +61,94 @@ export const maxJournalPage = 1000
 export const maxRequestBodyBytes = 64 * 1024 * 1024
 
 /**
+ * The largest push body (plan §2.10): `POST git-receive-pack`, 64 MiB. A
+ * catalog at its 50 MiB text limit pushed at once, compressed, with room
+ * to spare; the same as the repositories' `receive.maxInputSize`.
+ */
+export const maxPushBodyBytes = 64 * 1024 * 1024
+/**
+ * The largest fetch body (plan §2.10): `POST git-upload-pack`, 4 MiB. Only
+ * negotiation lines: a fetch says which commits it wants and has, about 50
+ * bytes each, so this is room for some 80,000 of them.
+ */
+export const maxFetchBodyBytes = 4 * 1024 * 1024
+/**
+ * How many Git processes (`git http-backend` and what it starts) serve
+ * agents' fetches and pushes at once in the Git container (plan §2.10):
+ * Musashi has two cores, and `pack-objects` uses one each.
+ */
+export const maxGitProcesses = 4
+/** How many more requests wait for a Git process, at most `gitProcessWaitSeconds`. */
+export const maxQueuedGitProcesses = 16
+/**
+ * How long a request waits for a Git process before `429`: well inside the
+ * 30 seconds a fetch's body has to arrive at `web`.
+ */
+export const gitProcessWaitSeconds = 10
+/** How long one Git process may run (plan §2.10): a full clone on a slow link. */
+export const gitProcessSeconds = 600
+
+/** The two Git services the Git endpoint serves (plan §2.2). */
+export type GitService = "git-upload-pack" | "git-receive-pack"
+
+/** One of the four smart HTTP requests (plan §2.2, step 1). */
+export interface SmartHttpRequest {
+  /** Lowercase. */
+  workspaceId: string
+  service: GitService
+  /** `GET info/refs?service=…`; otherwise the service's `POST`. */
+  advertisement: boolean
+  /** The path below `/git`, as Git's `PATH_INFO`: `/<workspace ID>.git/info/refs`. */
+  pathInfo: string
+  /** `service=…` for `info/refs`, otherwise empty. */
+  query: string
+}
+
+const smartHttpPath =
+  /^\/git\/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\.git\/(info\/refs|git-upload-pack|git-receive-pack)$/
+
+/**
+ * Which smart HTTP request this is, or null for anything else: exactly
+ * `GET /git/<workspace ID>.git/info/refs?service=git-upload-pack` (or
+ * `git-receive-pack`) and `POST /git/<workspace ID>.git/git-upload-pack`
+ * (or `git-receive-pack`), with nothing else in the address. Git's "dumb"
+ * HTTP paths (`HEAD`, `objects/…`), other methods, other spellings and
+ * other query strings are not. `web` and the Git container both check.
+ */
+export function smartHttpRequest(
+  method: string,
+  pathname: string,
+  search: string,
+): SmartHttpRequest | null {
+  const match = smartHttpPath.exec(pathname)
+  if (!match) return null
+  const workspaceId = match[1]!.toLowerCase()
+  const what = match[2]!
+  if (what === "info/refs") {
+    if (method !== "GET") return null
+    const service = /^\?service=(git-upload-pack|git-receive-pack)$/.exec(
+      search,
+    )?.[1] as GitService | undefined
+    if (!service) return null
+    return {
+      workspaceId,
+      service,
+      advertisement: true,
+      pathInfo: `/${workspaceId}.git/info/refs`,
+      query: `service=${service}`,
+    }
+  }
+  if (method !== "POST" || search !== "") return null
+  return {
+    workspaceId,
+    service: what as GitService,
+    advertisement: false,
+    pathInfo: `/${workspaceId}.git/${what}`,
+    query: "",
+  }
+}
+
+/**
  * Who and what an authenticated request through `web` is about (plan §2.2):
  * the Git container trusts it only because the request carries the service
  * token.
