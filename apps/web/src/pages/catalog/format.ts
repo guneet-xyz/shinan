@@ -1,24 +1,39 @@
 import type {
   CatalogFact,
   CatalogFreshnessSummary,
+  CatalogSearchResult,
   FactState,
   ScalarValue,
 } from "@shinan/api-client"
 
 /**
- * The wiki page a catalog ID names (an ID may hold `/`): an entity's page;
- * for a type schema document (`schema/<type>`) its type's page; for
+ * The catalog page a catalog ID names (an ID may hold `/`): an entity's
+ * page; for a type schema document (`schema/<type>`) its type's page; for
  * `start-here`, Start here.
  */
 export function entityPath(workspaceId: string, id: string): string {
-  if (id === "start-here") return `/w/${workspaceId}/wiki/start-here`
+  if (id === "start-here") return catalogPath(workspaceId)
   const type = /^schema\/([a-z][a-z0-9]*(?:-[a-z0-9]+)*)$/.exec(id)?.[1]
-  if (type) return `/w/${workspaceId}/wiki/types/${type}`
-  return `/w/${workspaceId}/wiki/e/${id.split("/").map(encodeURIComponent).join("/")}`
+  if (type) return catalogPath(workspaceId, `/types/${type}`)
+  return catalogPath(
+    workspaceId,
+    `/p/${id.split("/").map(encodeURIComponent).join("/")}`,
+  )
 }
 
-export function wikiPath(workspaceId: string, path = ""): string {
-  return `/w/${workspaceId}/wiki${path}`
+/** An address in a workspace's catalog, such as `/search`. */
+export function catalogPath(workspaceId: string, path = ""): string {
+  return `/w/${workspaceId}/catalog${path}`
+}
+
+/**
+ * A fact's key as a label: dots, underscores and dashes become spaces, in
+ * sentence case, so `disk.data.size` reads "Disk data size". The key
+ * itself is in the page's source.
+ */
+export function factLabel(key: string): string {
+  const words = key.replace(/[._-]+/g, " ").trim()
+  return words.charAt(0).toLocaleUpperCase() + words.slice(1)
 }
 
 /**
@@ -101,7 +116,28 @@ export function valueText(value: ScalarValue | undefined): string {
   return value === null ? "null" : String(value)
 }
 
-/** An `http:` or `https:` address, which the wiki may link to. */
+/** An `http:` or `https:` address, which the catalog may link to. */
 export function isWebAddress(text: string): boolean {
   return /^https?:\/\/\S+$/i.test(text.trim())
+}
+
+/**
+ * One line of a search result: the best matching section's words, else
+ * the page's summary, without Markdown's marks, cut at about 160
+ * characters.
+ */
+export function snippet(result: CatalogSearchResult): string {
+  const section = result.sections[0]
+  const text = section
+    ? section.text
+        .split("\n")
+        .filter((line, i) => !(i === 0 && /^#{1,6}\s/.test(line)))
+        .join(" ")
+    : (result.entity.summary ?? "")
+  const plain = text
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/[`*_>#|~]+/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+  return plain.length > 160 ? `${plain.slice(0, 159).trimEnd()}…` : plain
 }

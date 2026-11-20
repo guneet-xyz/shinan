@@ -8,6 +8,7 @@ import {
   getCatalogStartHere,
   getCatalogTypeSchema,
   listCatalogPurges,
+  listCatalogTree,
   listCatalogTypeIndex,
   listCatalogTypeSchemas,
   previewCatalogPurge,
@@ -43,6 +44,14 @@ export function catalogRoutes(
       ctx(c),
       workspaceId(c),
       { id: requiredQuery(c, "id") },
+    )
+    return c.json(answer)
+  })
+
+  app.get(`${base}/tree`, async (c) => {
+    const answer: Api.CatalogTreeAnswer = await listCatalogTree(
+      ctx(c),
+      workspaceId(c),
     )
     return c.json(answer)
   })

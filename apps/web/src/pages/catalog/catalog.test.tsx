@@ -11,6 +11,28 @@ const answer = {
   index_behind: false,
 }
 
+/** A small catalog's tree, as the sidebar reads it. */
+const tree = {
+  ...answer,
+  attention: 2,
+  items: [
+    {
+      path: "machine/musashi.md",
+      id: "machine/musashi",
+      title: "Musashi",
+      kind: "entity",
+      status: "active",
+    },
+    {
+      path: "service/registry.md",
+      id: "service/registry",
+      title: "Container registry",
+      kind: "entity",
+      status: "active",
+    },
+  ],
+}
+
 const check = {
   checked: "2026-11-14",
   by: "guneet via opencode-daedalus",
@@ -181,7 +203,7 @@ const musashi: CatalogEntity = {
   problems: [],
 }
 
-const entityPath = `/w/${workspaceId}/wiki/e/machine/musashi`
+const entityPath = `/w/${workspaceId}/catalog/p/machine/musashi`
 
 function api(entity: CatalogEntity = musashi) {
   return fakeApi({
@@ -263,11 +285,11 @@ describe("an entity page", () => {
       within(links)
         .getByRole("link", { name: /Container registry/ })
         .getAttribute("href"),
-    ).toBe(`/w/${workspaceId}/wiki/e/service/registry`)
+    ).toBe(`/w/${workspaceId}/catalog/p/service/registry`)
     expect(links.textContent).toContain("for the whole workspace")
   })
 
-  it("renders the body without its raw HTML, with entity links to the wiki", async () => {
+  it("renders the body without its raw HTML, with entity links to the catalog", async () => {
     const { container } = renderApp(entityPath, api())
     const body = (
       await screen.findByRole("heading", { name: "Description" })
@@ -276,7 +298,7 @@ describe("an entity page", () => {
     expect(container.querySelector("script")).toBeNull()
     expect(
       within(body).getByRole("link", { name: "registry" }).getAttribute("href"),
-    ).toBe(`/w/${workspaceId}/wiki/e/service/registry`)
+    ).toBe(`/w/${workspaceId}/catalog/p/service/registry`)
     expect(body.querySelector("#section-cautions")?.textContent).toBe(
       "Cautions",
     )
@@ -309,7 +331,7 @@ describe("an entity page", () => {
         ],
       }
       renderApp(
-        `/w/${workspaceId}/wiki/e/service/registry`,
+        `/w/${workspaceId}/catalog/p/service/registry`,
         fakeApi({
           catalogEntity: (_w, id) =>
             // Answered later than the navigation, as over the network.
@@ -366,7 +388,7 @@ describe("an entity page", () => {
   })
 
   it("leads a former ID to the current page", async () => {
-    renderApp(`/w/${workspaceId}/wiki/e/machine/old-musashi`, api())
+    renderApp(`/w/${workspaceId}/catalog/p/machine/old-musashi`, api())
     await waitFor(() => expect(currentPath()).toBe(entityPath))
     expect(await screen.findByText(/is now/)).toBeTruthy()
   })
@@ -374,7 +396,7 @@ describe("an entity page", () => {
   it("answers not found for an unknown entity", async () => {
     const { apiError } = await import("../../test/render")
     renderApp(
-      `/w/${workspaceId}/wiki/e/machine/nowhere`,
+      `/w/${workspaceId}/catalog/p/machine/nowhere`,
       fakeApi({
         catalogEntity: () =>
           Promise.reject(
@@ -430,23 +452,23 @@ describe("start here", () => {
           },
         }),
     })
-    renderApp(`/w/${workspaceId}/wiki/start-here`, fake)
+    renderApp(`/w/${workspaceId}/catalog`, fake)
     const people = (
       await screen.findByRole("heading", { name: "For people" })
     ).closest("section")!
     const steps = within(people).getAllByRole("listitem")
     expect(steps.map((s) => s.textContent)).toEqual([
       "1Musashi(machine/musashi)The production host.",
-      "2DiscrepanciesWhat disagrees.",
+      "2These disagreeWhat disagrees.",
       "3Recent changesWhat changed.",
     ])
     expect(
       within(people)
-        .getByRole("link", { name: "Discrepancies" })
+        .getByRole("link", { name: "These disagree" })
         .getAttribute("href"),
-    ).toBe(`/w/${workspaceId}/wiki/lists/discrepancies`)
-    // Recent changes come from `main`'s commits with the catalog UI (GC-7):
-    // until then the step is not a link.
+    ).toBe(`/w/${workspaceId}/catalog/needs-attention`)
+    // Recent changes come from `main`'s commits later in GC-7: until then
+    // the step is not a link.
     expect(
       within(people).queryByRole("link", { name: "Recent changes" }),
     ).toBeNull()
@@ -463,25 +485,34 @@ describe("start here", () => {
     ).toBeNull()
   })
 
-  it("says when there is no start-here document", async () => {
+  it("says when there is no start-here page", async () => {
     renderApp(
-      `/w/${workspaceId}/wiki/start-here`,
-      fakeApi({
-        catalogStartHere: () =>
-          Promise.resolve({ ...answer, start_here: null }),
-      }),
+      `/w/${workspaceId}/catalog`,
+      fakeApi({ catalogTree: () => Promise.resolve(tree) }),
     )
     expect(
-      await screen.findByText(/This workspace has no start-here document yet/),
+      await screen.findByText(/There's no Start here page yet/),
     ).toBeTruthy()
     expect(screen.queryByRole("link", { name: "Write Start here" })).toBeNull()
   })
+
+  it("says what to do first in an empty catalog", async () => {
+    renderApp(`/w/${workspaceId}/catalog`, fakeApi())
+    expect(
+      await screen.findByRole("heading", { name: "Your catalog is empty." }),
+    ).toBeTruthy()
+    expect(
+      screen
+        .getByRole("link", { name: "Set up an agent" })
+        .getAttribute("href"),
+    ).toBe("/account/agents/setup")
+  })
 })
 
-describe("moving around the wiki", () => {
+describe("moving around the catalog", () => {
   it("indexes a type with its schema and a sortable table", async () => {
     renderApp(
-      `/w/${workspaceId}/wiki/types/machine`,
+      `/w/${workspaceId}/catalog/types/machine`,
       fakeApi({
         catalogType: () =>
           Promise.resolve({
@@ -577,7 +608,7 @@ describe("moving around the wiki", () => {
 
   it("says when a type's index holds only its first entities", async () => {
     renderApp(
-      `/w/${workspaceId}/wiki/types/domain`,
+      `/w/${workspaceId}/catalog/types/domain`,
       fakeApi({
         catalogType: () =>
           Promise.resolve({
@@ -634,72 +665,185 @@ describe("moving around the wiki", () => {
     ).toBeTruthy()
   })
 
-  it("searches, leaving out retired entities unless asked", async () => {
+  it("searches from the sidebar: titles, folders and one line, retired pages one click away", async () => {
+    const result = (
+      id: string,
+      title: string,
+      status: string,
+      text: string,
+    ) => ({
+      entity: {
+        id,
+        type: id.split("/")[0]!,
+        title,
+        summary: "The host.",
+        status,
+        owner: null,
+      },
+      rank: 1,
+      sections: [
+        {
+          heading: "Cautions",
+          level: 2,
+          anchor: "cautions",
+          text: `## Cautions\n\n${text}\n`,
+        },
+      ],
+    })
     const fake = fakeApi({
       catalogSearch: () =>
         Promise.resolve({
           ...answer,
           items: [
-            {
-              entity: {
-                id: "machine/musashi",
-                type: "machine",
-                title: "Musashi",
-                summary: "The host.",
-                status: "active",
-                owner: null,
-              },
-              rank: 1,
-              sections: [],
-            },
+            result(
+              "machine/musashi",
+              "Musashi",
+              "active",
+              "Never **reboot** on [Fridays](https://example.com).",
+            ),
+            result("machine/takezo", "Takezo", "retired", "Old."),
           ],
         }),
     })
-    renderApp(`/w/${workspaceId}/wiki`, fake)
+    renderApp(`/w/${workspaceId}/catalog`, fake)
+    const sidebar = await screen.findByRole("complementary")
     await userEvent.type(
-      await screen.findByLabelText("Search the catalog"),
-      "musashi",
+      within(sidebar).getByLabelText("Search the catalog"),
+      "musashi{Enter}",
     )
-    await userEvent.click(screen.getByRole("button", { name: "Search" }))
     await waitFor(() =>
-      expect(currentPath()).toBe(`/w/${workspaceId}/wiki/search?q=musashi`),
+      expect(currentPath()).toBe(`/w/${workspaceId}/catalog/search?q=musashi`),
     )
-    expect(await screen.findByRole("link", { name: /Musashi/ })).toBeTruthy()
+    const content = within(screen.getByRole("main"))
+    const link = await content.findByRole("link", { name: "Musashi" })
+    expect(link.getAttribute("href")).toBe(
+      `/w/${workspaceId}/catalog/p/machine/musashi`,
+    )
+    const item = link.closest("li")!
+    expect(item.textContent).toContain("machine")
+    expect(item.textContent).toContain("Never reboot on Fridays.")
+    expect(content.queryByRole("link", { name: "Takezo" })).toBeNull()
+    await userEvent.click(
+      content.getByRole("button", { name: "Show 1 retired page" }),
+    )
+    expect(content.getByRole("link", { name: "Takezo" })).toBeTruthy()
     expect(fake.catalogSearch).toHaveBeenCalledWith(workspaceId, {
       text: "musashi",
-      includeRetired: false,
+      includeRetired: true,
     })
   })
 
-  it("shows a workspace list with each fact's freshness", async () => {
+  it("lists what needs attention in short sections, by page title", async () => {
+    const page = {
+      id: "machine/musashi",
+      type: "machine",
+      title: "Musashi",
+      summary: null,
+      status: "active",
+      owner: null,
+    }
     renderApp(
-      `/w/${workspaceId}/wiki/lists/due-for-recheck`,
+      `/w/${workspaceId}/catalog/needs-attention`,
       fakeApi({
-        catalogList: () =>
+        catalogTree: () =>
+          Promise.resolve({
+            ...tree,
+            items: [
+              ...tree.items,
+              {
+                path: "machine/new\nline.md",
+                id: null,
+                title: null,
+                kind: "entity",
+                status: null,
+              },
+            ],
+          }),
+        catalogList: (_w, list) =>
           Promise.resolve({
             ...answer,
             next_offset: null,
-            items: [
-              {
-                entity: {
-                  id: "machine/musashi",
-                  type: "machine",
-                  title: "Musashi",
-                  summary: null,
-                  status: "active",
-                  owner: null,
-                },
-                fact: musashi.facts[2]!,
-              },
-            ],
+            items:
+              list === "discrepancies"
+                ? [
+                    {
+                      ...musashi.discrepancies[0]!,
+                      entity: page,
+                      fact_details: [],
+                    },
+                    {
+                      key: "role",
+                      values: ["a", "b"],
+                      accepted: true,
+                      facts: [],
+                      entity: page,
+                      fact_details: [],
+                    },
+                  ]
+                : list === "due-for-recheck"
+                  ? [{ entity: page, fact: musashi.facts[2]! }]
+                  : [
+                      {
+                        entity: page,
+                        fact: fact({
+                          key: "network.public_ipv6",
+                          state: "unknown",
+                          note: "Reachability not tested",
+                          check: null,
+                        }),
+                      },
+                    ],
           }),
       }),
     )
     expect(
-      await screen.findByRole("heading", { level: 1, name: "Due for recheck" }),
+      await screen.findByRole("heading", { level: 1, name: "Needs attention" }),
     ).toBeTruthy()
-    expect(await screen.findByText("due for recheck")).toBeTruthy()
-    expect(screen.getByText("checked 40 days ago")).toBeTruthy()
+    const main = within(screen.getByRole("main"))
+    const section = (name: string) =>
+      main.getByRole("heading", { level: 2, name }).closest("section")!
+    await main.findByRole("heading", { level: 2, name: "These disagree" })
+    // An accepted difference does not need attention.
+    expect(section("These disagree").textContent).toBe(
+      "These disagreeMusashiDisk data size: 128 GiB and 64 GB",
+    )
+    expect(section("Not checked in a while").textContent).toContain(
+      "checked 40 days ago",
+    )
+    expect(section("Unknown").textContent).toContain(
+      "Network public ipv6: Reachability not tested",
+    )
+    expect(section("Files that can't be read").textContent).toContain(
+      "machine/new⟨U+000A⟩line.md",
+    )
+  })
+
+  it("says when nothing needs attention", async () => {
+    renderApp(
+      `/w/${workspaceId}/catalog/needs-attention`,
+      fakeApi({
+        catalogList: () =>
+          Promise.resolve({ ...answer, next_offset: null, items: [] }),
+      }),
+    )
+    expect(await screen.findByText("Nothing needs attention.")).toBeTruthy()
+  })
+})
+
+describe("the wiki's old addresses", () => {
+  it.each([
+    ["wiki", "catalog"],
+    ["wiki/start-here", "catalog"],
+    [
+      "wiki/e/machine/musashi#section-cautions",
+      "catalog/p/machine/musashi#section-cautions",
+    ],
+    ["wiki/search?q=disk", "catalog/search?q=disk"],
+    ["wiki/lists/discrepancies", "catalog/needs-attention"],
+    ["wiki/types/machine", "catalog/types/machine"],
+  ])("/w/…/%s leads to /w/…/%s", async (from, to) => {
+    renderApp(`/w/${workspaceId}/${from}`, fakeApi())
+    await waitFor(() => expect(currentPath()).toBe(`/w/${workspaceId}/${to}`))
   })
 })
 
@@ -722,40 +866,45 @@ describe("the removed M2 screens", () => {
     ).toBeTruthy()
   })
 
-  const movingNotice =
-    "This catalog is moving to Git. It will show again once its repository has been made."
+  it("says the catalog is being set up while its repository is made, then shows it", async () => {
+    let calls = 0
+    const fake = fakeApi({
+      catalogTree: () =>
+        Promise.resolve(
+          calls++ === 0 ? { ...tree, catalog_commit: null, items: [] } : tree,
+        ),
+    })
+    renderApp(`/w/${workspaceId}/catalog`, fake)
+    expect(
+      await screen.findByText("Your catalog is being set up."),
+    ).toBeTruthy()
+    // It reads again by itself, a few seconds later.
+    expect(
+      await screen.findByText(
+        /There's no Start here page yet/,
+        {},
+        { timeout: 6000 },
+      ),
+    ).toBeTruthy()
+  }, 10_000)
 
-  it("says on the wiki home when the catalog has no repository yet", async () => {
-    // The default answer: no commit, not behind.
-    renderApp(`/w/${workspaceId}/wiki`, fakeApi())
-    expect(await screen.findByText(movingNotice)).toBeTruthy()
-  })
-
-  it.each([
-    ["being indexed", { catalog_commit: null, index_behind: true }],
-    [
-      "ready",
-      {
-        catalog_commit: "1234567890abcdef1234567890abcdef12345678",
-        index_behind: false,
-      },
-    ],
-  ])("says nothing of moving once the catalog is %s", async (_, answer) => {
+  it("says it is catching up while the index is behind", async () => {
     renderApp(
-      `/w/${workspaceId}/wiki`,
+      `/w/${workspaceId}/catalog`,
       fakeApi({
-        catalogTypes: () => Promise.resolve({ ...answer, items: [] }),
+        catalogStartHere: () =>
+          Promise.resolve({ ...answer, index_behind: true, start_here: null }),
       }),
     )
-    await screen.findByRole("heading", { level: 2, name: "Types" })
-    await waitFor(() => expect(screen.queryByText(/^Loading/)).toBeNull())
-    expect(screen.queryByText(movingNotice)).toBeNull()
+    expect(
+      await screen.findByText("Catching up with the latest changes…"),
+    ).toBeTruthy()
   })
 
-  it("leaves the wiki home with no editing or review", async () => {
-    renderApp(`/w/${workspaceId}/wiki`, fakeApi())
+  it("leaves Start here with no editing or review", async () => {
+    renderApp(`/w/${workspaceId}/catalog`, fakeApi())
     expect(
-      await screen.findByRole("heading", { level: 1, name: "Wiki" }),
+      await screen.findByRole("heading", { name: "Your catalog is empty." }),
     ).toBeTruthy()
     for (const name of ["New entity", "New type", "Catalog review", "Review"])
       expect(screen.queryByRole("link", { name })).toBeNull()

@@ -20,7 +20,6 @@ export function WorkspaceLayout() {
       <WorkspaceContext
         value={{ workspace: workspace.data, reload: workspace.reload }}
       >
-        <WorkspaceNav />
         <Outlet />
       </WorkspaceContext>
     )
@@ -28,25 +27,6 @@ export function WorkspaceLayout() {
   if (isApiError(workspace.error, "not-found")) return <NotFound />
   if (workspace.error) return <ErrorMessage error={workspace.error} />
   return <Loading />
-}
-
-/** The places of a workspace (human experience, map of the app). */
-function WorkspaceNav() {
-  const link = ({ isActive }: { isActive: boolean }) =>
-    cn(
-      "inline-flex h-8 items-center rounded-md px-3 text-sm font-medium text-foreground/70 outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring",
-      isActive && "bg-muted text-foreground",
-    )
-  return (
-    <nav aria-label="Workspace" className="mb-6 flex gap-1">
-      <NavLink to="wiki" className={link}>
-        Wiki
-      </NavLink>
-      <NavLink to="settings" className={link}>
-        Settings
-      </NavLink>
-    </nav>
-  )
 }
 
 /**

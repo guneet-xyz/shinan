@@ -20,7 +20,7 @@ import { linkTarget, sectionElementId } from "./links"
  *
  * - `http:`, `https:` and `mailto:` addresses;
  * - entity references (catalog §2.4), such as `machine/musashi#cautions`,
- *   rewritten to the wiki's own page;
+ *   rewritten to the catalog's own page;
  * - `#section` links within the page.
  *
  * Anything else (`javascript:`, `data:`, relative paths) is shown as its
@@ -31,7 +31,7 @@ const markdown = createMarkdown()
 
 export interface MarkdownProps {
   text: string
-  /** The path of an entity's wiki page, for entity references. */
+  /** The path of an entity's catalog page, for entity references. */
   entityPath: (id: string) => string
   /**
    * The anchors of the body's headings, in order (from the agent index), so

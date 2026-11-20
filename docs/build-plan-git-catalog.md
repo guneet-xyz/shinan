@@ -854,7 +854,9 @@ later improvement cycle would otherwise have to remove
   search box, Start here, Recent changes and Needs attention, then the file
   tree of `main` (folders such as `machine/`
   and `service/`, then files, each shown by its `title` with the file name
-  beside it; folders collapsible; the current page highlighted), then
+  beside it; folders collapsible; the current page highlighted. As built in
+  GC-7, following the [product brief](https://github.com/guneet-xyz/shinan/issues/169#issuecomment-7029844112):
+  titles only, with the file name on the page itself), then
   Settings and Your account; the page on the right. On narrow screens the
   sidebar folds into a menu. shadcn/ui components and the existing light and dark themes
   ([D-055](decisions/D-055-tailwind-and-shadcn.md)).

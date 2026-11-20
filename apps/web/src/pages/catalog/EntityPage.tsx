@@ -14,12 +14,12 @@ import { NotFound } from "../NotFound"
 import { EntityPageContext, useEntityPage } from "./context"
 import { EntityLink, FactRow, linkClass, MaybeLink } from "./facts"
 import {
+  catalogPath,
   entityPath,
   freshnessSummary,
   isWebAddress,
   summaryParts,
   valueText,
-  wikiPath,
 } from "./format"
 import { Markdown } from "./markdown"
 import { IndexBehind, PageNotice } from "./notices"
@@ -141,7 +141,7 @@ export function EntityHeader() {
           <dd>
             {entity.type ? (
               <Link
-                to={wikiPath(workspaceId, `/types/${entity.type}`)}
+                to={catalogPath(workspaceId, `/types/${entity.type}`)}
                 className={linkClass}
               >
                 {entity.type}

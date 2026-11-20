@@ -139,6 +139,19 @@ describe("the catalog for the catalog pages", () => {
     )
   })
 
+  it("reads the tree for the sidebar", async () => {
+    const { status, body } = await get<Api.CatalogTreeAnswer>(ws("/tree"))
+    expect(status).toBe(200)
+    expect(body).toMatchObject({ catalog_commit: commit, index_behind: false })
+    expect(body.items.map((i) => [i.path, i.title])).toEqual([
+      ["machine/musashi.md", "Musashi"],
+      ["person/guneet.md", "guneet"],
+      ["service/registry.md", "Container registry"],
+    ])
+    expect(body.attention).toBe(1)
+    expect((await get(ws("/tree"), outsider)).status).toBe(404)
+  })
+
   it("reads types, a type's index, search, lists and start here", async () => {
     const types = await get<Api.CatalogTypeSchemasAnswer>(ws("/types"))
     expect(types.body.items.map((t) => t.type)).toContain("machine")

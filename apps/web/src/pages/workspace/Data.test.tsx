@@ -107,7 +107,7 @@ describe("the data screen", () => {
       screen
         .getByRole("link", { name: "machine/daedalus" })
         .getAttribute("href"),
-    ).toBe(`/w/${workspaceId}/wiki/e/machine/daedalus`)
+    ).toBe(`/w/${workspaceId}/catalog/p/machine/daedalus`)
     // The text is gone from the form.
     expect(
       screen.getByLabelText<HTMLTextAreaElement>("Text to purge").value,

@@ -3,12 +3,12 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import * as fixtures from "../../test/catalog-index-fixtures.js"
 import { asPerson, newPerson, testDatabase } from "../../test/helpers.js"
 import { createMemoryGit } from "../../test/memory-git.js"
-import { InvalidInputError } from "../errors.js"
+import { InvalidInputError, NotFoundError } from "../errors.js"
 import type { Person } from "../identity/people.js"
 import { createWorkspace } from "../identity/workspaces.js"
 import { readDocumentId } from "./document/parse.js"
 import { updateWorkspaceIndex } from "./index/indexer.js"
-import { listCatalogTypeIndex } from "./wiki.js"
+import { listCatalogTree, listCatalogTypeIndex } from "./wiki.js"
 
 const { db, pool } = testDatabase()
 
@@ -18,12 +18,13 @@ afterAll(async () => {
 
 let owner: Person
 let workspaceId: string
+let git: ReturnType<typeof createMemoryGit>
 
 beforeAll(async () => {
   owner = await newPerson(db, "owner")
   workspaceId = (await createWorkspace(asPerson(db, owner), { name: "Wiki" }))
     .workspace.id
-  const git = createMemoryGit()
+  git = createMemoryGit()
   git.create(
     workspaceId,
     Object.fromEntries(
@@ -64,5 +65,49 @@ describe("the index per entity type", () => {
         type: "x\u0000",
       }),
     ).rejects.toBeInstanceOf(InvalidInputError)
+  })
+})
+
+describe("the catalog's tree", () => {
+  it("lists every page but start here, by path, with titles and what needs attention", async () => {
+    const tree = await listCatalogTree(asPerson(db, owner), workspaceId)
+    expect(tree).toMatchObject({ index_behind: false })
+    expect(tree.catalog_commit).toMatch(/^[0-9a-f]{40}$/)
+    expect(tree.items.map((i) => i.path)).toEqual(
+      fixtures.allDocuments
+        .map((t) => `${readDocumentId(t)}.md`)
+        .filter((p) => p !== "start-here.md")
+        .sort(),
+    )
+    expect(tree.items.find((i) => i.path === "machine/musashi.md")).toEqual({
+      path: "machine/musashi.md",
+      id: "machine/musashi",
+      title: "Musashi",
+      kind: "entity",
+      status: "active",
+    })
+    expect(tree.items.find((i) => i.path === "schema/domain.md")).toMatchObject(
+      { kind: "schema", title: "Domain" },
+    )
+    // Musashi's disk sizes disagree and its IPv6 is unknown; the runbook's
+    // last run is unknown; the domain is due for a recheck.
+    expect(tree.attention).toBe(4)
+
+    // A file whose name cannot be read needs attention too.
+    git.push(workspaceId, { "machine/new\nline.md": fixtures.daedalus })
+    await updateWorkspaceIndex(db, git, workspaceId)
+    const after = await listCatalogTree(asPerson(db, owner), workspaceId)
+    expect(after.attention).toBe(5)
+    expect(after.items.find((i) => i.id === null)).toMatchObject({
+      path: "machine/new\nline.md",
+      title: null,
+    })
+  })
+
+  it("is for the workspace's members only", async () => {
+    const stranger = await newPerson(db, "stranger")
+    await expect(
+      listCatalogTree(asPerson(db, stranger), workspaceId),
+    ).rejects.toBeInstanceOf(NotFoundError)
   })
 })

@@ -163,6 +163,23 @@ export interface CatalogTypeSchemaDetails extends CatalogTypeSchema {
   body: CatalogSection[]
 }
 
+/** One file of `main` in the catalog's tree. */
+export interface CatalogTreeItem {
+  /** Its path on `main`, such as `machine/musashi.md`. */
+  path: string
+  /** Its catalog ID; null when the file could not be read. */
+  id: string | null
+  title: string | null
+  kind: string
+  status: string | null
+}
+
+/** The catalog's tree for the sidebar, and how many things need attention. */
+export interface CatalogTreeAnswer extends CatalogAnswer {
+  items: CatalogTreeItem[]
+  attention: number
+}
+
 export interface CatalogTypeSchemasAnswer extends CatalogAnswer {
   items: CatalogTypeSchema[]
 }

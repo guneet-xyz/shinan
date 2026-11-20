@@ -337,7 +337,7 @@ function PurgeText(props: { onPurged: () => void }) {
                 {done.newProblems.map((page) => (
                   <li key={page.id}>
                     <Link
-                      to={`/w/${workspace.id}/wiki/e/${page.id.split("/").map(encodeURIComponent).join("/")}`}
+                      to={`/w/${workspace.id}/catalog/p/${page.id.split("/").map(encodeURIComponent).join("/")}`}
                       className="rounded-sm font-medium text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring"
                     >
                       {page.id}

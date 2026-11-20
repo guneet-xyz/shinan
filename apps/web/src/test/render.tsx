@@ -18,6 +18,9 @@ import { App } from "../App"
 
 export const workspaceId = "11111111-1111-4111-8111-111111111111"
 
+/** The commit of `main` the fake catalog stands at. */
+export const catalogCommit = "1234567890abcdef1234567890abcdef12345678"
+
 export const person: Account["person"] = {
   id: "22222222-2222-4222-8222-222222222222",
   handle: "guneet",
@@ -135,9 +138,21 @@ export function fakeApi(overrides: Partial<ApiClient> = {}): Fake {
     invitationsForYou: () => Promise.resolve([]),
     workspace: () => Promise.resolve(workspace),
     members: () => Promise.resolve([ownerMember, contributorMember]),
-    // A workspace opens on the wiki's home page.
-    catalogTypes: () =>
-      Promise.resolve({ catalog_commit: null, index_behind: false, items: [] }),
+    // The sidebar shows the workspace's catalog, and a workspace opens on
+    // Start here: an empty catalog, ready.
+    catalogTree: () =>
+      Promise.resolve({
+        catalog_commit: catalogCommit,
+        index_behind: false,
+        items: [],
+        attention: 0,
+      }),
+    catalogStartHere: () =>
+      Promise.resolve({
+        catalog_commit: catalogCommit,
+        index_behind: false,
+        start_here: null,
+      }),
   }
   const names: (keyof ApiClient)[] = [
     "status",
@@ -188,6 +203,7 @@ export function fakeApi(overrides: Partial<ApiClient> = {}): Fake {
     "disableAgent",
     "enableAgent",
     "catalogEntity",
+    "catalogTree",
     "catalogTypes",
     "catalogType",
     "catalogTypeIndex",

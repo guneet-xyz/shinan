@@ -1,5 +1,5 @@
 /*
- * Which link destinations in catalog Markdown the wiki follows (security
+ * Which link destinations in catalog Markdown the catalog follows (security
  * checklist 10.3): web and mail addresses, entity references (catalog
  * §2.4) and sections of the page. Everything else is shown as text.
  */
@@ -15,7 +15,7 @@ const scheme = /^([a-z][a-z0-9+.-]*):/i
 /**
  * An entity or type schema ID (catalog §2.4; `ids.ts` in core): a type and
  * a slug, both lowercase kebab-case. Nothing else, so no `.` or `..`
- * segment, empty segment or extra `/` can make a link leave the wiki.
+ * segment, empty segment or extra `/` can make a link leave the catalog.
  * Besides entities, it names type schema documents (`schema/<type>`), and
  * `start-here` is the one ID without a type; `entityPath` leads each to
  * its own page.
