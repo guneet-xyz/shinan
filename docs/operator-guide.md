@@ -464,8 +464,12 @@ docker compose run --rm --no-deps worker catalog-index check [<workspace-id>]
 
 `web` reaches the Git container too (the same `SHINAN_GIT_URL` and token):
 a page's History, View source, "Last changed" and the README shown as Start
-here are read from the repository. Without it, those say "This isn't
-available right now" and the rest of the catalog works.
+here are read from the repository, and agents' clones, fetches and pushes
+at `/git/` are forwarded to it. Without it, those pages say "This isn't
+available right now" and the rest of the catalog works, while fetches and
+pushes are answered "the Git service is not set up on this installation";
+in production
+`web` refuses to start without it.
 
 While an update or a rebuild runs, the catalog pages keep reading the old
 index, marked as behind.

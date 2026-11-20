@@ -1268,8 +1268,10 @@ the body is read:
    anything. Each push's `POST` counts against its agent's 60 pushes in 10
    minutes. Core also builds the context for the Git container.
 
-**Forwarding.** `web` sends the request to `SHINAN_GIT_URL` with
-`Authorization: Bearer <service token>` and the `Shinan-Git-Context` header
+**Forwarding.** `web` sends the request to `SHINAN_GIT_URL` through the
+one Git client it also reads the catalog pages with (its `smartHttp`
+requests stream both ways and get a longer time limit than API calls: Git's
+own 10 minutes, plus a minute), with `Authorization: Bearer <service token>` and the `Shinan-Git-Context` header
 (request ID, workspace, agent, member, person, the pusher's written form,
 whether the token may push, the workspace's member handles; the allowed
 "not a secret" values arrive with GC-3a). It forwards only `Content-Type`,

@@ -53,7 +53,11 @@ export interface GitClient {
    */
   smartHttp(
     pathAndQuery: string,
-    input: { method: string; headers: Record<string, string>; timeoutMs: number },
+    input: {
+      method: string
+      headers: Record<string, string>
+      timeoutMs: number
+    },
   ): ClientRequest
   /** The repository's `main`, or `null` if the workspace has none. */
   getRepository(workspaceId: string): Promise<RepositoryInfo | null>

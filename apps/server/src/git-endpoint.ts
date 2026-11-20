@@ -22,6 +22,7 @@ import {
   throttleAddress,
 } from "@shinan/core"
 import type {
+  GitClient,
   GitRequestContext,
   RequestInfo,
   SmartHttpRequest,

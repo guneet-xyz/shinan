@@ -19,7 +19,11 @@ import { serve } from "@hono/node-server"
 import type { ServerType } from "@hono/node-server"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 
-import { createAgentToken, createWorkspace } from "@shinan/core"
+import {
+  createAgentToken,
+  createGitClient,
+  createWorkspace,
+} from "@shinan/core"
 import type { JobQueue } from "@shinan/core"
 import { schema } from "@shinan/db"
 import { connectTestDatabase } from "@shinan/db/testing"
@@ -201,10 +205,10 @@ process.exitCode = 1
     jobs,
     installationUrl,
     rateLimit: false,
-    git: {
+    gitClient: createGitClient({
       url: `http://127.0.0.1:${(gitServer.address() as AddressInfo).port}`,
       serviceToken,
-    },
+    }),
     receiveSeconds,
   })
   webServer = serve({
