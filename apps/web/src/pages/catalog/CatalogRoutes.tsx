@@ -5,6 +5,7 @@ import { PageRoute } from "./DocumentPage"
 import { catalogPath } from "./format"
 import { HistoryPage } from "./HistoryPage"
 import { CatalogHome, NeedsAttentionPage, SearchPage } from "./pages"
+import { RecentChangesPage } from "./RecentChangesPage"
 import { SourcePage } from "./SourcePage"
 
 /**
@@ -17,6 +18,7 @@ export default function CatalogRoutes() {
     <Routes>
       <Route index element={<CatalogHome />} />
       <Route path="search" element={<SearchPage />} />
+      <Route path="changes" element={<RecentChangesPage />} />
       <Route path="needs-attention" element={<NeedsAttentionPage />} />
       <Route path="types/:type" element={<TypeRedirect />} />
       <Route path="p/*" element={<PageRoute />} />

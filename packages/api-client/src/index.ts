@@ -1,5 +1,6 @@
 import type {
   CatalogAnswer,
+  CatalogChangesAnswer,
   CatalogDocumentAnswer,
   CatalogEntityAnswer,
   CatalogHistoryAnswer,
@@ -685,6 +686,17 @@ export function createApiClient(options: ApiClientOptions = {}) {
         "GET",
         `${catalog(workspaceId)}/history${search({
           id,
+          after: options.after,
+          limit: options.limit?.toString(),
+        })}`,
+      ),
+    catalogChanges: (
+      workspaceId: string,
+      options: { after?: string; limit?: number } = {},
+    ) =>
+      request<CatalogChangesAnswer>(
+        "GET",
+        `${catalog(workspaceId)}/changes${search({
           after: options.after,
           limit: options.limit?.toString(),
         })}`,

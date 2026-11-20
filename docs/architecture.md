@@ -253,7 +253,7 @@ no shell. As built (GC-1b,
   unread. Calls go one way: `web`, `worker` and `migrate` call it; it calls
   nobody and writes nothing to PostgreSQL. In GC-1b only `worker` calls it
   (to create repositories); `web` joins in GC-7 (to read a page's
-  history, its source and the README, at the index's commit) and GC-2 (the
+  history, its source, the README and Recent changes, at the index's commit) and GC-2 (the
   Git endpoint), and `migrate` in GC-6. A person holds at most 2 of
   `web`'s reads for the catalog pages at once (4 per network address), so
   one browser can't take the container's 4 reads from the index updates.

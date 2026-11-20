@@ -233,6 +233,16 @@ export type {
   CatalogSourceJson,
   HistoryCursors,
 } from "./catalog/pages.js"
+export {
+  changedPagesShown,
+  changesPageLimit,
+  listCatalogChanges,
+} from "./catalog/changes.js"
+export type {
+  CatalogChangesAnswer,
+  CatalogRecentChangeJson,
+  ChangedPageJson,
+} from "./catalog/changes.js"
 export * from "./catalog/purge/index.js"
 export {
   decodeGitContext,

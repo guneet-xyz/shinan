@@ -142,7 +142,7 @@ happen yet.
 as built in GC-7 ([#169](https://github.com/guneet-xyz/shinan/issues/169)).**
 
 - **What it holds, top to bottom:** "Shinan" and the workspace switcher, a
-  search box ("Search the catalog…"), Start here, Needs attention (with how
+  search box ("Search the catalog…"), Start here, Recent changes, Needs attention (with how
   many things need it, when there are any), the catalog's folders, then
   Settings, Your account, and Installation for installation operators.
 - **The folders** are those of `main`, by their names in the repository
@@ -907,7 +907,8 @@ order:
    "74 GiB · checked 40 days ago · due for a recheck". The state shows only
    when it isn't "seen": "should be 128 GiB", "planned 128 GiB", "unknown:
    reachability not tested". A key with several values lists each with its
-   own age. A key whose values disagree says "disagree · show both checks":
+   own age. A key whose values disagree says "disagree · show both checks"
+   ("disagree · hide checks" while open):
    the sentence at the top has the values, and the button opens each value
    with its age and its check ("128 GiB · seen 6 days ago", then when, by
    whom, what was checked and the source). Relations are links to the other page by
@@ -949,6 +950,20 @@ order:
   page is refused, so History never shows a commit off the index's `main`.
 - **Code blocks** in a body scroll sideways when a line is long, by
   keyboard too.
+- **Recent changes** (`…/catalog/changes`, in the sidebar under Start
+  here; GQ-6) lists `main`'s commits from the one the index is at, newest
+  first, by day, as History does: the message's first line as the
+  headline, the start of the rest, the time and the short commit ID, then
+  up to three pages it changed by title ("Project 1, Project 2, Project 3
+  and 2 more"). A file that isn't a page now (`README.md`, a deleted page)
+  shows by its name. **Merges:** a merge whose changes all came with the
+  merged commits is left out, since those commits are listed themselves; a
+  merge that changed a file itself (a conflict resolved) stays, with only
+  the files it changed itself. 30 changes at a time, then "Show older
+  changes" by signed cursor. It is the review after the fact, now that
+  changes need no approval. **Who pushed each change** comes with the push
+  log (GC-3a); until then no name is shown (commit authors aren't
+  trusted, D-061). Start here's "recent-changes" step links here.
 - **View source** (`…/catalog/source/<ID>`) shows the file as it is, with
   hidden characters marked and long lines wrapped, and a Copy button that
   copies it exactly.
@@ -1232,6 +1247,8 @@ details (D-015).
 ### Workspace settings
 
 > **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-7](build-plan-git-catalog.md#gc-7-the-catalog-ui)): the "Catalog" screen holds the clone URL, "not a secret" values and purge (GC-5 removed the strict setting). Until then, this section describes M2 as built (v0.3.0).
+>
+> **As built in GC-7 ([#169](https://github.com/guneet-xyz/shinan/issues/169)):** a **Catalog** tab, for every member, between Agents and Security log. It holds "Address for agents": the address agents clone the catalog from (`https://<installation>/git/<workspace ID>.git`), read only, with a Copy button, and "Agents clone the catalog from here. Set up an agent →". The "not a secret" values (GC-3) and removing text from the catalog's history (GC-8) join it with their packages; until GC-8, M2's purge stays under Data.
 
 For workspace owners. Contributors see three of these screens read only:
 General, Members and Security log (only the entries they made or that are

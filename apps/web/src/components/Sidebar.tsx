@@ -74,6 +74,12 @@ export function Sidebar(props: { workspaceId: string | undefined }) {
               Start here
             </NavLink>
             <NavLink
+              to={catalogPath(workspaceId, "/changes")}
+              className={navLink}
+            >
+              Recent changes
+            </NavLink>
+            <NavLink
               to={catalogPath(workspaceId, "/needs-attention")}
               className={navLink}
             >

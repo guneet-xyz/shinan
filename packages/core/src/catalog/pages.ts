@@ -105,7 +105,7 @@ export async function getCatalogDocument(
 }
 
 /** Where a page is in the index: its path and the commit the index is at. */
-async function locate(
+export async function locate(
   ctx: Context,
   workspaceId: string,
   id: string | null,
@@ -143,7 +143,7 @@ async function locate(
 }
 
 /** The Git container, or why it can't be asked. */
-function requireGit(git: GitClient | undefined): GitClient {
+export function requireGit(git: GitClient | undefined): GitClient {
   if (!git)
     throw new UnavailableError(
       "The catalog's repository can't be read right now",
@@ -156,7 +156,7 @@ function requireGit(git: GitClient | undefined): GitClient {
  * found, a bad request is invalid input, and the rest means the repository
  * can't be read right now.
  */
-async function fromGit<T>(read: () => Promise<T>): Promise<T> {
+export async function fromGit<T>(read: () => Promise<T>): Promise<T> {
   try {
     return await read()
   } catch (error) {
@@ -213,7 +213,7 @@ function cut(text: string, limit: number): string {
   return `${text.slice(0, end).trimEnd()}…`
 }
 
-function changeJson(commit: CommitInfo): CatalogChangeJson {
+export function changeJson(commit: CommitInfo): CatalogChangeJson {
   const time = commit.committer?.time ?? commit.author?.time
   const message = commit.message.replace(/\r\n?/g, "\n").trim()
   const newline = message.indexOf("\n")
@@ -338,7 +338,7 @@ export async function getCatalogPageHistory(
 }
 
 /** Why a cursor was refused: it isn't one Shinan gave out for this page. */
-const staleCursor =
+export const staleCursor =
   "That list of changes is out of date: open History again to see older changes"
 
 /** A file's text, or why it can't be shown. */
