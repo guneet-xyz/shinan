@@ -66,6 +66,8 @@ writeSecret(
 writeSecret("session_secret", randomBytes(32).toString("base64url"))
 writeSecret("ses_access_key_id", "unused-in-this-test")
 writeSecret("ses_secret_access_key", "unused-in-this-test")
+const gitServiceToken = randomBytes(32).toString("base64url")
+writeSecret("git_service_token", gitServiceToken)
 writeFileSync(
   join(dir, ".env"),
   [
@@ -210,7 +212,9 @@ function writableAppFiles() {
     const notRunnable = programs.filter((p) => { try { fs.accessSync(p, fs.constants.X_OK); return false } catch { return true } })
     const shells = ["/bin/sh", "/bin/bash", "/bin/dash", "/usr/bin/sh", "/usr/bin/bash", "/usr/bin/dash", "/bin/busybox", "/usr/bin/perl", "/usr/bin/python3"]
       .filter((p) => { try { fs.lstatSync(p); return true } catch { return false } })
-    console.log(JSON.stringify({ uid: process.getuid(), checked, writable, loose, unreadable, libraries, notRunnable, shells }))`
+    const c = fs.statSync("/var/lib/shinan/catalog")
+    const catalog = c.uid + ":" + c.gid + " " + (c.mode & 0o7777).toString(8) + " " + fs.readdirSync("/var/lib/shinan/catalog").length
+    console.log(JSON.stringify({ uid: process.getuid(), checked, writable, loose, unreadable, libraries, notRunnable, shells, catalog }))`
   return JSON.parse(
     execFileSync(
       "docker",
@@ -271,6 +275,55 @@ async function healthy() {
   return inspect("web", "{{.State.Health.Status}}") === "healthy"
 }
 
+/**
+ * Asks the Git container from a container on `network`, as `worker` does:
+ * Node.js in the Shinan image, with the given token (or none). Answers the
+ * status and body, or the error's code when nothing answered.
+ */
+function askGit(network, path, token) {
+  const script = `
+    const headers = process.env.TOKEN ? { authorization: "Bearer " + process.env.TOKEN } : {}
+    fetch("http://git:3000" + process.env.ASK, { headers, signal: AbortSignal.timeout(5000) })
+      .then(async (r) => console.log(JSON.stringify({ status: r.status, body: await r.json() })))
+      .catch((e) => console.log(JSON.stringify({ error: e.cause?.code ?? e.name })))`
+  return JSON.parse(
+    execFileSync(
+      "docker",
+      [
+        "run",
+        "--rm",
+        "--network",
+        `${project}_${network}`,
+        "--env",
+        `ASK=${path}`,
+        "--env",
+        `TOKEN=${token ?? ""}`,
+        "--entrypoint",
+        "/nodejs/bin/node",
+        image,
+        "-e",
+        script,
+      ],
+      { encoding: "utf8" },
+    ),
+  )
+}
+
+function psql(query) {
+  return compose(
+    "exec",
+    "-T",
+    "postgres",
+    "psql",
+    "-U",
+    "shinan",
+    "-d",
+    "shinan",
+    "-Atc",
+    query,
+  ).trim()
+}
+
 async function run() {
   const files = writableAppFiles()
   check(
@@ -306,6 +359,11 @@ async function run() {
     files.shells.length === 0,
     "the image has no shell and no interpreter but Node.js" +
       (files.shells.length ? ` (found: ${files.shells.join(", ")})` : ""),
+  )
+
+  check(
+    files.catalog === "65532:65532 700 0",
+    `the git role's volume folder is empty and the image's user's alone (${files.catalog})`,
   )
 
   const git = gitInImage()
@@ -364,7 +422,16 @@ async function run() {
     "web is healthy (its internal /readyz answers inside the container)",
   )
 
-  for (const service of ["web", "worker", "migrate"]) {
+  await waitFor(
+    "git to be healthy",
+    () => inspect("git", "{{.State.Health.Status}}") === "healthy",
+  )
+  check(
+    true,
+    "git is healthy (its internal /readyz answers inside the container): its start checks passed",
+  )
+
+  for (const service of ["web", "worker", "migrate", "git"]) {
     check(
       inspect(
         service,
@@ -378,6 +445,36 @@ async function run() {
     "web publishes only port 3000, not the internal listener",
   )
   check(publishedPorts("postgres").length === 0, "PostgreSQL publishes no port")
+  check(publishedPorts("git").length === 0, "git publishes no port")
+  const gitNetworks = Object.keys(
+    JSON.parse(inspect("git", "{{json .NetworkSettings.Networks}}")),
+  )
+  const gitNetworkInternal = execFileSync(
+    "docker",
+    ["network", "inspect", "--format", "{{.Internal}}", `${project}_git`],
+    { encoding: "utf8" },
+  ).trim()
+  check(
+    gitNetworks.join(" ") === `${project}_git` && gitNetworkInternal === "true",
+    "git is only on the internal git network",
+  )
+  check(
+    inspect("git", "{{range .Config.Env}}{{println .}}{{end}}")
+      .split("\n")
+      .filter((v) => /DATABASE|SESSION|SES_|GITHUB/.test(v)).length === 0,
+    "git has no database address and no secret but its service token",
+  )
+  check(
+    askGit("git", "/journal").status === 401 &&
+      askGit("git", "/journal", "x".repeat(43)).status === 401 &&
+      askGit("git", "/journal", gitServiceToken).status === 200,
+    "on its network, git answers 401 without the service token or with a wrong one, and 200 with it",
+  )
+  const outside = askGit("egress", "/journal", gitServiceToken)
+  check(
+    outside.error !== undefined,
+    `from outside its network, git cannot be reached (${outside.error})`,
+  )
 
   const log = compose("logs", "--no-color", "web")
   const links = [...log.matchAll(/(https:\/\/\S+\/setup)#(\S+)/g)]
@@ -452,26 +549,45 @@ async function run() {
     body: { name: "First workspace" },
   })
   check(workspace.status === 201, "the operator creates a workspace")
-
-  const addresses = compose(
-    "exec",
-    "-T",
-    "postgres",
-    "psql",
-    "-U",
-    "shinan",
-    "-d",
-    "shinan",
-    "-Atc",
-    "select distinct host(network_address) from security_log where action = 'sign-in.succeeded'",
+  const { id: workspaceId } = await workspace.json()
+  const firstCommit = await waitFor("the workspace's repository", () => {
+    const commit = psql(
+      `select first_commit from catalog_repositories where workspace_id = '${workspaceId}' and first_commit is not null`,
+    )
+    return commit || null
+  })
+  const repository = askGit(
+    "git",
+    `/repositories/${workspaceId}/tree?commit=main`,
+    gitServiceToken,
   )
-    .trim()
-    .split("\n")
+  check(
+    repository.status === 200 &&
+      repository.body.commit === firstCommit &&
+      repository.body.entries.map((e) => e.path).join(",") === "README.md",
+    "the worker had git create the workspace's repository, with a first commit holding README.md",
+  )
+
+  const addresses = psql(
+    "select distinct host(network_address) from security_log where action = 'sign-in.succeeded'",
+  ).split("\n")
   check(
     addresses.length === 1 &&
       addresses[0] !== "" &&
       addresses[0] !== proxyAddress,
     `the security log has the visitor's address (${addresses[0]}), not the proxy's`,
+  )
+
+  compose("restart", "git")
+  await sleep(2000)
+  await waitFor(
+    "git to be healthy again",
+    () => inspect("git", "{{.State.Health.Status}}") === "healthy",
+  )
+  const kept = askGit("git", `/repositories/${workspaceId}`, gitServiceToken)
+  check(
+    kept.status === 200 && kept.body.main === firstCommit,
+    "after a restart, git still has the repository on its volume",
   )
 
   compose("restart", "web")

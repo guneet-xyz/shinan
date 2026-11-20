@@ -1,3 +1,4 @@
+import { catalogRepositoryQueue } from "./catalog/git/repositories.js"
 import { catalogIndexRebuildQueue } from "./catalog/index/maintain.js"
 import { emailQueue } from "./email/queue.js"
 import type { QueueDefinition } from "./jobs.js"
@@ -9,4 +10,5 @@ import type { QueueDefinition } from "./jobs.js"
 export const jobQueues: readonly QueueDefinition[] = [
   emailQueue,
   catalogIndexRebuildQueue,
+  catalogRepositoryQueue,
 ]

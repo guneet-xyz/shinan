@@ -6,6 +6,7 @@ import {
   createWorkspaceAsOwner,
   inWorkspace,
 } from "../authorize.js"
+import { requestCatalogRepository } from "../catalog/git/repositories.js"
 import type { Context, WorkspaceScope } from "../context.js"
 import { NotFoundError, RuleViolationError } from "../errors.js"
 import { appendEvent } from "../events.js"
@@ -43,6 +44,13 @@ export async function createWorkspace(
       installation,
       name,
     )
+    // Its catalog repository, made by the worker (Git-based catalog plan
+    // §2.4).
+    await requestCatalogRepository({
+      tx: scope.tx,
+      jobs: scope.jobs,
+      workspaceId: workspace.id,
+    })
     await appendEvent(scope, {
       kind: "workspace.created",
       subjects: [{ type: "member", id: member.id }],

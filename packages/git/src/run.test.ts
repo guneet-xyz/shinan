@@ -106,6 +106,10 @@ describe("the environment Git starts with", () => {
     const refused = [
       // The clean environment's own, every one of them.
       ...Object.keys(git.environment()),
+      // The repository is gitDir's alone.
+      "GIT_DIR",
+      "GIT_WORK_TREE",
+      "GIT_COMMON_DIR",
       // Configuration and Git's programs.
       "GIT_CONFIG",
       "GIT_CONFIG_SYSTEM",

@@ -317,8 +317,14 @@ proves a push, a refusal and a fetch inside the built image.
 - **Architecture §4.1 changes:** PostgreSQL no longer holds everything; the
   catalog's text lives in the volume, and everything else (push log, index,
   events, identity) in PostgreSQL.
-- A repository is created with its workspace (`web` asks the Git container),
-  and removed with it when workspace deletion exists.
+- A repository is created with its workspace, and removed with it when
+  workspace deletion exists. As built (GC-1b): the transaction that creates
+  the workspace records the request (`catalog_repositories`) and queues a
+  job, and the worker asks the Git container, retrying while it is down;
+  the worker asks again at start for any request still open. Reason: the
+  workspace and the request commit together, so no workspace is left
+  without its repository, and the Git container is never called inside a
+  database transaction. (The plan first said `web` asks.)
 
 ### 2.5 Checks on push
 

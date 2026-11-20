@@ -19,8 +19,6 @@ not apply to anyone else's installation.
 
 ## What you need
 
-> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-1](build-plan-git-catalog.md#gc-1-git-in-the-image-and-the-git-container)): the Git container and its volume. Until then, this section describes M2 as built (v0.3.0).
-
 - Docker with Compose v2.
 - A host name for the installation and an **HTTPS reverse proxy** in front of
   it (Caddy, nginx, Traefik). Shinan refuses an `http:` address in
@@ -29,32 +27,36 @@ not apply to anyone else's installation.
   user's access key ([architecture §9](architecture.md#9-email-and-notifications)).
   Sign-in needs email, including the first start.
 - Optionally, a GitHub App for GitHub sign-in (see [below](#github-sign-in)).
-- Memory for the containers' limits: 2,432 MiB (about 2.4 GiB) while running
+- Memory for the containers' limits: 3,456 MiB (about 3.4 GiB) while running
   (PostgreSQL 512 MiB, `web` 1,536 MiB, which the next release reviews
-  for the Git-based catalog, `worker` 384 MiB), and 2,688 MiB (about 2.6 GiB) while `migrate` (256 MiB)
-  runs at each start.
+  for the Git-based catalog, `worker` 384 MiB, `git` 1,024 MiB), and
+  3,712 MiB (about 3.6 GiB) while `migrate` (256 MiB) runs at each start.
+- Disk for two volumes you keep: PostgreSQL's (`postgres`) and the catalog's
+  Git repositories (`catalog`, see [Backups](#backups-your-responsibility)).
 
 ## What runs
 
-> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-1](build-plan-git-catalog.md#gc-1-git-in-the-image-and-the-git-container)): the `shinan-git` service. Until then, this section describes M2 as built (v0.3.0).
-
-| Service    | Role                                                                                       | Networks            |
-| ---------- | ------------------------------------------------------------------------------------------ | ------------------- |
-| `postgres` | PostgreSQL 18; data in the `postgres` volume                                               | `backend`           |
-| `migrate`  | Applies new database migrations and prepares the job queue, then exits; runs on every `up` | `backend`           |
-| `web`      | Pages, API and sign-in; published on `127.0.0.1` only, for your proxy                      | `backend`, `egress` |
-| `worker`   | Background jobs: sends email through SES                                                   | `backend`, `egress` |
+| Service    | Role                                                                                                                             | Networks                   |
+| ---------- | -------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
+| `postgres` | PostgreSQL 18; data in the `postgres` volume                                                                                     | `backend`                  |
+| `migrate`  | Applies new database migrations and prepares the job queue, then exits; runs on every `up`                                       | `backend`                  |
+| `web`      | Pages, API and sign-in; published on `127.0.0.1` only, for your proxy                                                            | `backend`, `egress`        |
+| `worker`   | Background jobs: sends email through SES; has `git` make each new workspace's repository                                         | `backend`, `egress`, `git` |
+| `git`      | The catalog's Git repositories, one per workspace, in the `catalog` volume; answers only the other roles, with the service token | `git`                      |
 
 `backend` has no internet access; `egress` gives `web` (GitHub sign-in) and
-`worker` (SES) outgoing access. Every Shinan container runs as an unprivileged
+`worker` (SES) outgoing access. `git` is internal too, and the Git container
+is on no other network: it has no database address, no internet access, no
+published port and no secret but the service token. It refuses to start
+without that token, if its volume can be written by anyone but the image's
+user, or if its push hook would not run. Every Shinan container runs as an unprivileged
 user with a read-only file system, no Linux capabilities and
 `no-new-privileges`. `web`'s health check (`/healthz`, `/readyz`) is served on
 a separate listener inside the container (port 3001), which is never
-published; Docker runs it with `shinan health`.
+published; Docker runs it with `shinan health`. `git` has the same kind of
+health check, on its own internal listener.
 
 ## Setting up
-
-> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-1](build-plan-git-catalog.md#gc-1-git-in-the-image-and-the-git-container)): the Git container, its volume and the service token. Until then, this section describes M2 as built (v0.3.0).
 
 All files go in one directory, next to `compose.yml`.
 
@@ -66,7 +68,7 @@ All files go in one directory, next to `compose.yml`.
    ```
 
    The image runs every role: `web` (the default), `worker`, `migrate`,
-   `health` and the [recovery commands](#recovery-commands).
+   `git`, `health` and the [recovery commands](#recovery-commands).
 
 2. **Settings** that are not secret go in `.env`: copy
    [`deploy/.env.example`](../deploy/.env.example) and fill it in.
@@ -81,6 +83,7 @@ All files go in one directory, next to `compose.yml`.
    | `EMAIL_FROM`             | The address Shinan sends from, verified in SES                                                                                                                                                                      |
    | `SES_REGION`             | The SES region, such as `us-east-1`                                                                                                                                                                                 |
    | `SES_CONFIGURATION_SET`  | Optional SES configuration set                                                                                                                                                                                      |
+   | `SHINAN_GIT_MEMORY`      | The Git container's memory limit (default `1024m`)                                                                                                                                                                  |
 
    The [README's settings table](../README.md#developing-locally) lists every
    variable Shinan reads.
@@ -104,20 +107,27 @@ All files go in one directory, next to `compose.yml`.
    printf '%s' "$password" > secrets/postgres_password
    printf 'postgres://shinan:%s@postgres:5432/shinan' "$password" > secrets/database_url
    openssl rand -base64 48 > secrets/session_secret
+   openssl rand -base64 32 | tr -d '\n' > secrets/git_service_token
    ```
 
    Then put the SES user's access key ID in `secrets/ses_access_key_id` and its
    secret key in `secrets/ses_secret_access_key`, typed or pasted into an
    editor rather than given as a command argument.
 
-   | File                    | Used by                    | What it is                                                                    |
-   | ----------------------- | -------------------------- | ----------------------------------------------------------------------------- |
-   | `postgres_password`     | `postgres`                 | The database password; set once, when the database is first created           |
-   | `database_url`          | `migrate`, `web`, `worker` | The connection string, with the same password                                 |
-   | `session_secret`        | `web`                      | Signs sign-in cookies; at least 32 characters. Changing it signs everyone out |
-   | `ses_access_key_id`     | `worker`                   | The SES user's access key ID                                                  |
-   | `ses_secret_access_key` | `worker`                   | Its secret key                                                                |
-   | `github_client_secret`  | `web`, only with GitHub    | The GitHub App's client secret                                                |
+   | File                    | Used by                    | What it is                                                                                                              |
+   | ----------------------- | -------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+   | `postgres_password`     | `postgres`                 | The database password; set once, when the database is first created                                                     |
+   | `database_url`          | `migrate`, `web`, `worker` | The connection string, with the same password                                                                           |
+   | `session_secret`        | `web`                      | Signs sign-in cookies; at least 32 characters. Changing it signs everyone out                                           |
+   | `ses_access_key_id`     | `worker`                   | The SES user's access key ID                                                                                            |
+   | `ses_secret_access_key` | `worker`                   | Its secret key                                                                                                          |
+   | `github_client_secret`  | `web`, only with GitHub    | The GitHub App's client secret                                                                                          |
+   | `git_service_token`     | `git`, `worker`            | Lets the other roles call the Git container; at least 32 characters, no spaces. Changing it needs all of them restarted |
+
+   The `catalog` volume is created on the first start, owned by the image's
+   user (65532) with mode `0700`. If you mount a folder there instead, give
+   it that owner and mode: the Git container refuses a folder others can
+   write.
 
 ### Reverse proxy
 

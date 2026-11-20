@@ -6,6 +6,7 @@
 #   docker run <image> web       pages, API and the built web app
 #   docker run <image> worker    background jobs and email
 #   docker run <image> migrate   prepare the database, then exit
+#   docker run <image> git       the catalog's repositories, for the others
 #   docker run <image> health    container health check of the web role
 #
 # The build stages run on the machine's own architecture and the runtime
@@ -122,6 +123,11 @@ COPY --from=build /src/packages/skill/skill packages/skill/skill
 # no shell, and not with `COPY --chmod`, whose `X` older builders (BuildKit
 # before v0.21, as in Docker Engine before 28.1) ignore without an error.
 RUN chown -R 0:0 /src && chmod -R u=rwX,go=rX /src
+# The git role's volume folder (SHINAN_CATALOG_DIR): empty, and the image's
+# user's alone. A named volume mounted there starts with this owner and
+# mode. Copied with its parent, so COPY keeps both.
+RUN install -d -m 0755 /var-lib-shinan \
+ && install -d -m 0700 -o 65532 -g 65532 /var-lib-shinan/catalog
 
 # Distroless: Node.js and nothing else, no shell or package manager. Runs as
 # the unprivileged `nonroot` user (65532). /app and everything in it is owned
@@ -138,6 +144,7 @@ ENV NODE_ENV=production \
     INTERNAL_PORT=3001
 COPY --from=production /src /app
 COPY --from=git /out /
+COPY --from=production /var-lib-shinan /var/lib/shinan
 WORKDIR /app
 USER nonroot
 EXPOSE 3000

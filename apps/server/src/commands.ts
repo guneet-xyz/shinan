@@ -1,8 +1,10 @@
+import { accessSync, constants } from "node:fs"
 import { serve } from "@hono/node-server"
 
 import {
   changeEmailOf,
   checkCatalogIndexes,
+  createGitClient,
   endSessionsOf,
   NotFoundError,
   prepareSetupLink,
@@ -23,12 +25,22 @@ import {
 } from "@shinan/db"
 import { createSesSender, createSmtpSender } from "@shinan/email"
 import type { EmailSender } from "@shinan/email"
+import { createGit } from "@shinan/git"
 import { loadSkillCatalog } from "@shinan/skill"
 
 import type { SignIn } from "./api/sign-in.js"
 import { createApp, createInternalApp } from "./app.js"
-import { readDatabaseUrl, readEmailConfig, readWebConfig } from "./config.js"
+import {
+  readDatabaseUrl,
+  readEmailConfig,
+  readGitClientConfig,
+  readWebConfig,
+} from "./config.js"
 import type { EmailConfig, Env } from "./config.js"
+import { createGitApp, createGitInternalApp } from "./git/app.js"
+import { openJournal } from "./git/journal.js"
+import { checkGitRole, readGitRoleConfig } from "./git/startup.js"
+import { cleanTemporary, createRepositoryStore } from "./git/store.js"
 import { checkHealth } from "./health.js"
 import { listenerOptions } from "./in-flight.js"
 import { connectJobQueue, migrateJobQueue, startWorker } from "./jobs.js"
@@ -40,6 +52,8 @@ Commands:
   web       Serve the API and, in production, the web app
   worker    Run background jobs
   migrate   Prepare the database (migrations, job queue, installation), then exit
+  git       Serve the catalog's Git repositories to web, worker and migrate,
+            on an internal network only (needs SHINAN_GIT_SERVICE_TOKEN)
   health    Exit 0 if the web role on this machine is ready (for container
             health checks; asks its internal listener's /readyz)
 
@@ -79,6 +93,9 @@ export async function runCommand(
       return 0
     case "migrate":
       await runMigrate(env)
+      return 0
+    case "git":
+      await runGit(env)
       return 0
     case "health":
       return checkHealth(env)
@@ -286,12 +303,19 @@ interface Listener {
   fetch: (request: Request) => Response | Promise<Response>
   host: string
   port: number
+  /** Node's server options; default `listenerOptions()`. */
+  serverOptions?: Record<string, unknown>
 }
 
 async function serveUntilShutdown(listeners: Listener[]): Promise<void> {
-  const servers = listeners.map(({ name, fetch, host, port }) =>
+  const servers = listeners.map(({ name, fetch, host, port, serverOptions }) =>
     serve(
-      { fetch, hostname: host, port, serverOptions: listenerOptions() },
+      {
+        fetch,
+        hostname: host,
+        port,
+        serverOptions: serverOptions ?? listenerOptions(),
+      },
       (info) => {
         console.info(
           `${productName} ${name} listening on http://${info.address}:${info.port}`,
@@ -311,15 +335,71 @@ async function serveUntilShutdown(listeners: Listener[]): Promise<void> {
   )
 }
 
+/**
+ * The `git` role (Git-based catalog plan §2.2, D-065): the repositories and
+ * Git, behind the service token, with no database and no other secret. It
+ * refuses to start without its token, with a volume others can write, or
+ * with a push hook that would not run.
+ */
+async function runGit(env: Env): Promise<void> {
+  const config = readGitRoleConfig(env)
+  const git = createGit()
+  checkGitRole({ git, catalogDir: config.catalogDir })
+  cleanTemporary(config.catalogDir)
+  const store = createRepositoryStore({ root: config.catalogDir, git })
+  const journal = openJournal(config.catalogDir)
+  const app = createGitApp({
+    serviceToken: config.serviceToken,
+    store,
+    journal,
+  })
+  const internal = createGitInternalApp({
+    ready: () => {
+      try {
+        accessSync(config.catalogDir, constants.W_OK)
+        return true
+      } catch {
+        return false
+      }
+    },
+  })
+  await serveUntilShutdown([
+    {
+      name: "git",
+      fetch: app.fetch,
+      host: config.host,
+      port: config.port,
+      serverOptions: {
+        // Room for the context header (64 KiB) and the others.
+        maxHeaderSize: 80 * 1024,
+        // A push's body may take 120 seconds to arrive (plan §2.10).
+        ...listenerOptions(120),
+      },
+    },
+    {
+      name: "internal (health checks)",
+      fetch: internal.fetch,
+      ...config.internal,
+    },
+  ])
+  console.info(`${productName} git stopped`)
+}
+
 async function runWorker(env: Env): Promise<void> {
   const databaseUrl = readDatabaseUrl(env)
   const emailConfig = readEmailConfig(env)
+  const gitConfig = readGitClientConfig(env)
   const emailSender = createEmailSender(emailConfig)
   const { db, pool } = createDatabase(databaseUrl)
   // Rebuilds and checks keep type schemas parsed (catalog §9).
   const stopWatchingPurges = watchCatalogPurges({ db, actor: shinan })
   try {
-    const worker = await startWorker({ databaseUrl, db, emailSender })
+    const worker = await startWorker({
+      databaseUrl,
+      db,
+      emailSender,
+      git: gitConfig ? createGitClient(gitConfig) : undefined,
+    })
     console.info(
       `${productName} worker started, sending email through ${emailConfig.transport}`,
     )

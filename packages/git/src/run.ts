@@ -36,12 +36,17 @@ export const MAX_STDERR_BYTES = 64 * 1024
 
 /**
  * Variables a caller's `env` may not set, besides those of the clean
- * environment itself ({@link Git.environment}): Git's configuration and
- * exec path, the variables that make Git run a command or write a trace
+ * environment itself ({@link Git.environment}): the repository's location,
+ * Git's configuration and exec path, the variables that make Git run a command or write a trace
  * file, and the ones that change how Node.js (Shinan's hooks) or the
  * dynamic loader start.
  */
 const REFUSED = new Set([
+  // The repository is chosen by `gitDir` alone: GIT_COMMON_DIR would send
+  // reads of refs and configuration to another repository.
+  "GIT_DIR",
+  "GIT_WORK_TREE",
+  "GIT_COMMON_DIR",
   "GIT_CONFIG",
   "GIT_EXEC_PATH",
   "GIT_TEMPLATE_DIR",

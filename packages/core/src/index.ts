@@ -217,3 +217,40 @@ export type {
   TypeIndexItemJson,
 } from "./catalog/wiki.js"
 export * from "./catalog/purge/index.js"
+export {
+  decodeGitContext,
+  encodeGitContext,
+  gitContextHeader,
+  gitContextMaxLength,
+  GitContextError,
+  maxAllowedValues,
+  maxContextMemberHandles,
+  maxDocumentsPerRead,
+  maxFileBytes,
+  maxHistoryPage,
+  maxJournalPage,
+  maxRequestBodyBytes,
+  serviceTokenMinLength,
+} from "./catalog/git/api.js"
+export type {
+  CommitIdentityInfo,
+  CommitInfo,
+  CommitRef,
+  DocumentRead,
+  GitRequestContext,
+  JournalEntry,
+  RepositoryFile,
+  RepositoryInfo,
+  TreeChange as GitTreeChange,
+  TreeEntry as GitTreeEntry,
+} from "./catalog/git/api.js"
+export { createGitClient, GitServiceError } from "./catalog/git/client.js"
+export type { GitClient, GitClientOptions } from "./catalog/git/client.js"
+export {
+  catalogRepositoryQueue,
+  createCatalogRepository,
+  repositoryFirstCommitMessage,
+  repositoryReadme,
+  requestPendingCatalogRepositories,
+} from "./catalog/git/repositories.js"
+export type { CatalogRepositoryJob } from "./catalog/git/repositories.js"

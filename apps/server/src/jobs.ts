@@ -3,7 +3,9 @@ import type { ConstructorOptions } from "pg-boss"
 
 import {
   catalogIndexRebuildQueue,
+  catalogRepositoryQueue,
   checkCatalogIndexes,
+  createCatalogRepository,
   deliverEmail,
   emailQueue,
   EmailRetryError,
@@ -15,12 +17,15 @@ import {
   pruneSignInRecords,
   rebuildCatalogIndex,
   requestCatalogIndexRebuilds,
+  requestPendingCatalogRepositories,
   shinan,
   summarizeAgentTokenUse,
 } from "@shinan/core"
 import type {
   CatalogIndexRebuildJob,
+  CatalogRepositoryJob,
   EmailJob,
+  GitClient,
   WorkspaceIndexCheck,
 } from "@shinan/core"
 import { createLimitedLog, errorSummary } from "@shinan/db"
@@ -124,6 +129,11 @@ export interface WorkerOptions {
   emailSender: EmailSender
   /** Seconds between checks for new jobs; pg-boss's default is 2. */
   pollingIntervalSeconds?: number
+  /**
+   * The Git container, for making workspaces' repositories. Without it
+   * (development only), their jobs wait.
+   */
+  git?: GitClient
 }
 
 export interface Worker {
@@ -225,6 +235,36 @@ export async function startWorker(options: WorkerOptions): Promise<Worker> {
   await safely("catalog-index-rebuilds", () =>
     requestCatalogIndexRebuilds({ db: options.db, actor: shinan, jobs: boss }),
   ).catch(() => {})
+
+  const git = options.git
+  if (git) {
+    await boss.work(catalogRepositoryQueue.name, polling, async ([job]) => {
+      const { workspaceId } = job!.data as CatalogRepositoryJob
+      const made = await safely(catalogRepositoryQueue.name, () =>
+        createCatalogRepository(
+          { db: options.db, actor: shinan },
+          { workspaceId },
+          git,
+        ),
+      )
+      console.info(
+        `Catalog repository of workspace ${workspaceId} ${made.created ? "created" : "already there"} at ${made.firstCommit}`,
+      )
+      return made
+    })
+    // Repositories asked for whose jobs were lost or ran out of retries.
+    await safely("catalog-repositories", () =>
+      requestPendingCatalogRepositories({
+        db: options.db,
+        actor: shinan,
+        jobs: boss,
+      }),
+    ).catch(() => {})
+  } else {
+    console.warn(
+      "SHINAN_GIT_URL is not set: workspaces' catalog repositories wait until a worker has it",
+    )
+  }
 
   await boss.work(
     emailQueue.name,
