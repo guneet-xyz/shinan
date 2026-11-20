@@ -23,15 +23,17 @@ import {
   createCatalogRepository,
   createGitClient,
   createWorkspace,
+  getCatalogPurgeStatus,
   previewCatalogPurge,
   purgeCatalogText,
+  purgeFollowing,
   purgeMarker,
   PurgeScanner,
   shinan,
   storeCatalogJournal,
   updateCatalogIndex,
 } from "@shinan/core"
-import type { Context, GitClient, JobQueue } from "@shinan/core"
+import type { CatalogPurge, Context, GitClient, JobQueue } from "@shinan/core"
 import { and, eq, schema, sql } from "@shinan/db"
 import { connectTestDatabase } from "@shinan/db/testing"
 import {
@@ -346,6 +348,38 @@ async function tablesHolding(text: string): Promise<string[]> {
   return [...new Set(found)]
 }
 
+purgeFollowing.intervalMs = 20
+
+/** Removes `text` as the owner does, and waits until the removal is recorded. */
+async function remove(text: string, reason: string): Promise<CatalogPurge> {
+  const started = await purgeCatalogText(asOwner, client, workspaceId, {
+    text,
+    reason,
+  })
+  for (let status = started; ;) {
+    if (status.state === "done") return status.purge!
+    if (status.state !== "running")
+      throw new Error(`The removal ended ${status.state}: ${status.message}`)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    status = await getCatalogPurgeStatus(
+      asOwner,
+      client,
+      workspaceId,
+      started.id,
+    )
+  }
+}
+
+/** Runs the Git container's part of a purge to its end, as `web` follows it. */
+async function gitPart(purgeId: string, text: string) {
+  await client.startPurge(workspaceId, { purgeId, text })
+  for (;;) {
+    const status = await client.purgeStatus(workspaceId, purgeId)
+    if (status.state !== "running") return status
+    await new Promise((resolve) => setTimeout(resolve, 20))
+  }
+}
+
 /** A page `main` accepts, with a fact check group by `by` if given. */
 const page = (id: string, summary: string, by?: string) => `---
 id: ${id}
@@ -538,15 +572,17 @@ describe(
       expect(preview.indexDocuments).toBe(1)
       expect(JSON.stringify(preview)).not.toContain(word)
 
-      const purge = await purgeCatalogText(asOwner, client, workspaceId, {
-        text: secret,
-        reason: "A passphrase was pushed to the catalog.",
-      })
+      const purge = await remove(
+        secret,
+        "A passphrase was pushed to the catalog.",
+      )
       expect(purge.counts.history).toMatchObject({
         commits: 4,
         messages: 1,
         renamedBranches: 2,
-        journalEntries: 1,
+        // Stored before the rewrite: its branch name is purged in the
+        // push log instead.
+        journalEntries: 0,
       })
       expect(purge.counts.history!.removedCommits).toBeGreaterThanOrEqual(3)
 
@@ -668,7 +704,7 @@ describe(
       })
     })
 
-    it("finishes a purge stopped by a restart, and one whose database part failed, without rewriting twice", async () => {
+    it("keeps pushes out until a purge that failed after its swap is finished, then refuses the removed commits", async () => {
       const secret = `ember-${Math.random().toString(36).slice(2, 12)}-quartz`
       const folder = await cloneAs("alpha")
       await commit(
@@ -680,53 +716,119 @@ describe(
       expect((await pushAs("alpha", folder, "HEAD:refs/heads/main")).code).toBe(
         0,
       )
-      const before = await store.main(workspaceId)
+      const old = await store.main(workspaceId)
 
-      // The Git container fails right after the swap, before it journals the
-      // rewrite: its record still says `swapping`.
-      const crash = new Error("stopped")
-      const original = journal.append.bind(journal)
-      let failing = true
-      journal.append = (kind, data) => {
-        if (failing && kind === "repository.rewritten")
-          return Promise.reject(crash)
-        return original(kind, data)
+      // Writing the removed commits fails, every time, right after the swap.
+      const original = records.addPurgedCommits.bind(records)
+      records.addPurgedCommits = () => {
+        throw Object.assign(new Error("EIO"), { code: "EIO" })
       }
-      await expect(
-        client.purge(workspaceId, {
-          purgeId: "00000000-0000-4000-8000-000000000001",
-          text: secret,
-        }),
-      ).rejects.toThrow()
-      failing = false
-      journal.append = original
-      expect(await store.main(workspaceId)).not.toBe(before)
+      const purgeId = "00000000-0000-4000-8000-000000000001"
+      const failed = await gitPart(purgeId, secret)
+      expect(failed).toMatchObject({ state: "failed" })
+      expect(failed.message).toMatch(/could not finish recording it/)
+      expect(records.purge(workspaceId, purgeId)?.phase).toBe("swapped")
+      expect(await store.main(workspaceId)).not.toBe(old)
 
-      // A restart (or the next purge) finishes it from its record: the
-      // repository's branches are the record's, so the swap was done.
-      expect(
-        records.purge(workspaceId, "00000000-0000-4000-8000-000000000001")
-          ?.phase,
-      ).toBe("swapping")
+      // Meanwhile every push is refused, an old commit as much as new work,
+      // and the minute check of the push log leaves the repository alone.
+      for (const refspec of [`${old}:refs/heads/back`, "HEAD:refs/heads/x"]) {
+        const refused = await pushAs("alpha", folder, refspec)
+        expect(refused.code).not.toBe(0)
+        expect(remote(refused.stderr).join("\n")).toContain(
+          "Shinan is removing text from this catalog's history: push again in a few minutes",
+        )
+      }
+      expect((await client.listRefs(workspaceId))?.busy).toBe(true)
+
+      // A second purge doesn't take it for abandoned: it finishes it first.
+      records.addPurgedCommits = original
       await purges.recover()
-      expect(
-        records.purge(workspaceId, "00000000-0000-4000-8000-000000000001")
-          ?.phase,
-      ).toBe("done")
-      expect(records.purgedCommits(workspaceId).has(before!)).toBe(true)
+      expect(records.purge(workspaceId, purgeId)?.phase).toBe("done")
+      expect(records.purgedCommits(workspaceId).has(old!)).toBe(true)
+      const back = await pushAs("alpha", folder, `${old}:refs/heads/back`)
+      expect(back.code).not.toBe(0)
+      expect(remote(back.stderr).join("\n")).toContain(
+        "this commit was removed by a purge",
+      )
 
-      // `web` never recorded it: removing the text again finishes the
-      // database part under the rewrite's ID, without rewriting.
+      // `web` never recorded it. Another text does not finish it…
+      await expect(
+        remove("some-other-text-entirely", "Something else."),
+      ).rejects.toThrow(/nothing-to-purge|holds this text|failed/)
+      const listed = await getCatalogPurgeStatus(
+        asOwner,
+        client,
+        workspaceId,
+        purgeId,
+      )
+      expect(listed.state).toBe("unfinished")
+      // …the same text does, under the rewrite's ID, without rewriting.
       const main = await store.main(workspaceId)
-      const purge = await purgeCatalogText(asOwner, client, workspaceId, {
-        text: secret,
-        reason: "Finishing.",
-      })
-      expect(purge.id).toBe("00000000-0000-4000-8000-000000000001")
+      const purge = await remove(secret, "Finishing.")
+      expect(purge.id).toBe(purgeId)
       expect(purge.counts.history?.commits).toBe(1)
       expect(await store.main(workspaceId)).toBe(main)
       expect(await volumeHolding(secret)).toEqual([])
       expect(await tablesHolding(secret)).toEqual([])
+    })
+
+    it("writes a page's ID and aliases as its path, so main takes unrelated pushes and fix-ups afterwards", async () => {
+      const word = `quibble${Math.random().toString(36).slice(2, 8)}`
+      const folder = await cloneAs("alpha")
+      await commit(
+        "alpha",
+        folder,
+        {
+          [`machine/${word}-box.md`]: page(
+            `machine/${word}-box`,
+            "A box.",
+          ).replace(
+            "status: active",
+            `status: active\naliases: [machine/old-${word}]`,
+          ),
+        },
+        "Box",
+      )
+      const pushed = await pushAs("alpha", folder, "HEAD:refs/heads/main")
+      expect(remote(pushed.stderr)).toEqual([])
+      await remove(word, "A name that must go.")
+
+      const fresh = await cloneAs("beta")
+      const text = readFileSync(join(fresh, "machine/purged-box.md"), "utf8")
+      expect(text).toContain("id: machine/purged-box")
+      expect(text).toContain("aliases: [machine/old-purged]")
+      // An unrelated push, then a fix-up of the purged page.
+      await commit("beta", fresh, {
+        "machine/other.md": page("machine/other", "Another machine."),
+      })
+      const unrelated = await pushAs("beta", fresh, "HEAD:refs/heads/main")
+      expect(remote(unrelated.stderr)).toEqual([])
+      expect(unrelated.code).toBe(0)
+      await commit("beta", fresh, {
+        "machine/purged-box.md": text.replace("A box.", "A box, renamed."),
+      })
+      const fixup = await pushAs("beta", fresh, "HEAD:refs/heads/main")
+      expect(remote(fixup.stderr)).toEqual([])
+      expect(fixup.code).toBe(0)
+    })
+
+    it("refuses pushes at once while a purge holds the repository, saying why", async () => {
+      const release = (await push.exclusive(workspaceId, 0, "purge"))!
+      try {
+        const folder = await cloneAs("alpha")
+        await commit("alpha", folder, {
+          "machine/waiting.md": page("machine/waiting", "Waits."),
+        })
+        const started = Date.now()
+        const refused = await pushAs("alpha", folder, "HEAD:refs/heads/w")
+        expect(Date.now() - started).toBeLessThan(10_000)
+        expect(remote(refused.stderr).join("\n")).toContain(
+          "Shinan is removing text from this catalog's history: push again in a few minutes",
+        )
+      } finally {
+        release()
+      }
     })
   },
 )

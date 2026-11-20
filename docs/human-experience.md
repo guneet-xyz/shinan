@@ -1329,7 +1329,14 @@ on top of it, as the skill says. Removing takes a reason, which must not
 repeat the text, then "**This can't be undone.** Shinan rewrites the
 catalog's history and deletes the old one. Every change that held the text
 gets a new ID.", typing "remove", and the one red button, **Remove from
-Shinan's history**. Afterwards, until the owner leaves the page, the top of
+Shinan's history**. While it runs, the page says "Removing… On a large
+catalog this takes a few minutes; you can leave this page, and the removal
+goes on", and asks the server how it stands every 3 seconds. The preview
+also says where the text may appear encoded ("It may also appear encoded,
+which Shinan does not remove: base64 (2 places)… Shinan removes only the
+text as written; ask an agent to look at those files"), and that
+removing this text finishes an earlier removal that didn't (only the same
+text can). Afterwards, until the owner leaves the page, the top of
 the section says "Removed from Shinan's history (removal N). Now:" with
 three ordered steps: change the secret where it was issued; ask whoever
 runs each agent's machine to delete its copy and make a new one (step 2 of

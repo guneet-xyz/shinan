@@ -23,15 +23,18 @@ import type { Context } from "../../context.js"
 import {
   BusyError,
   InvalidInputError,
+  NotFoundError,
   RuleViolationError,
   UnavailableError,
 } from "../../errors.js"
 import { appendEvent } from "../../events.js"
 import { recordSecurityEntry } from "../../security-log.js"
 import type {
+  PurgeEncoding,
   PurgeForm,
   RepositoryPurgePreview,
   RepositoryPurgeResult,
+  RepositoryPurgeStatus,
 } from "../git/api.js"
 import type { GitClient } from "../git/client.js"
 import { GitServiceError } from "../git/client.js"
@@ -41,10 +44,12 @@ import { requestCatalogIndexRebuildIn } from "../index/maintain.js"
 import { PurgeMatcher, spaces } from "./matcher.js"
 import {
   checkPurgeText,
+  encodedStrings,
   purgeForms,
   purgeLimits,
   purgeMarker,
   purgeNameMarker,
+  replaceKeepingIds,
 } from "./scanner.js"
 
 /**
@@ -113,10 +118,19 @@ export interface CatalogPurgePreview {
    */
   alsoWrittenAs: { form: PurgeForm; text: string; places: number }[]
   /**
-   * Rewrites of the history whose database part did not finish: removing
-   * any text again finishes them.
+   * Places that may hold it encoded (base64, every byte percent-encoded,
+   * quoted-printable, UTF-16, another letter case), which a purge does not
+   * remove: only the exact text is removed. Reported for the owner to have
+   * them checked (review of #197).
+   */
+  mayAppearEncoded: { encoding: PurgeEncoding; places: number }[]
+  /**
+   * Rewrites of the history whose removal was not recorded: removing the
+   * same text again finishes each.
    */
   unfinished: number
+  /** Whether this text is that of one of them: removing it finishes it. */
+  finishesUnfinished: boolean
 }
 
 /** A purge, as operations return it: never the purged text. */
@@ -177,19 +191,32 @@ export async function previewCatalogPurge(
         indexDocuments: (await indexHolding(tx, workspace, match)).length,
         moves: (await movesHolding(tx, workspace, match)).length,
         forms: await encodedForms(tx, workspace, match.text),
-        unfinished: (await unfinishedRewrites(tx, workspace)).length,
+        encodings: await encodingsInEvents(tx, workspace, match.text),
+        unfinished: (await unfinishedRewrites(tx, workspace)).map((r) => r.id),
       }
     },
     snapshotRead,
   )
+  const client = requireGit(git)
   const history = await fromGit(() =>
-    requireGit(git).previewPurge(found.workspace, { text: found.text }),
+    client.previewPurge(found.workspace, { text: found.text }),
   )
   const places = new Map(found.forms.map((f) => [f.form, f]))
   for (const f of history?.alsoWrittenAs ?? []) {
     const known = places.get(f.form)
     if (known) known.places += f.places
   }
+  const encodings = new Map(found.encodings.map((e) => [e.encoding, e.places]))
+  for (const e of history?.mayAppearEncoded ?? [])
+    encodings.set(e.encoding, (encodings.get(e.encoding) ?? 0) + e.places)
+  let finishes = false
+  for (const purgeId of found.unfinished)
+    if (
+      await fromGit(() =>
+        client.isPurgeText(found.workspace, { purgeId, text: found.text }),
+      )
+    )
+      finishes = true
   return {
     history,
     pushLog: found.pushLog,
@@ -198,40 +225,76 @@ export async function previewCatalogPurge(
     moves: found.moves,
     acrossLines: history?.acrossLines ?? 0,
     alsoWrittenAs: [...places.values()].filter((f) => f.places > 0),
-    unfinished: found.unfinished,
+    mayAppearEncoded: [...encodings]
+      .filter(([, places]) => places > 0)
+      .map(([encoding, places]) => ({ encoding, places })),
+    unfinished: found.unfinished.length,
+    finishesUnfinished: finishes,
   }
 }
 
+/** Where a purge stands, as `purgeCatalogText` and `getCatalogPurgeStatus` give it. */
+export interface CatalogPurgeStatus {
+  id: string
+  /**
+   * `running`: the Git container is rewriting the history; `done`: recorded
+   * (`purge`); `failed`: nothing more will happen (`message` says why);
+   * `unfinished`: the history was rewritten but not recorded: removing the
+   * same text again finishes it.
+   */
+  state: "running" | "done" | "failed" | "unfinished"
+  purge?: CatalogPurge
+  /** Why it failed, or what to do; never the text. */
+  message?: string
+  /** When it failed on a rule, such as `nothing-to-purge`: the rule. */
+  rule?: string
+}
+
+/** How often a running purge is asked how it stands; tests make it shorter. */
+export const purgeFollowing = { intervalMs: 2000 }
+
+/** How long a purge's outcome is kept in this process's memory; the database keeps the rest. */
+const outcomeMs = 24 * 60 * 60 * 1000
+
+/** The purges this process follows, and their recent outcomes. */
+const following = new Map<
+  string,
+  { workspaceId: string; status: CatalogPurgeStatus; at: number }
+>()
+
+const unfinishedMessage =
+  "The text was removed from the catalog's history, but the removal was not recorded: remove the same text again to finish it"
+
 /**
  * Removes a text from the workspace's catalog (catalog §9; architecture
- * §4.4; plan §2.9), in three steps, none of them inside another:
+ * §4.4; plan §2.9). The history's rewrite can take minutes, so it runs as
+ * a job this process follows; the answer is the purge's status, `running`
+ * until the job ends (`getCatalogPurgeStatus`). In steps, none inside
+ * another:
  *
  * 1. Checks that the actor is a workspace owner who signed in again
  *    recently, and the text and the reason.
- * 2. Asks the Git container to rewrite the repository's history without
- *    the text (`GitClient.purge`), under a new purge ID, then stores its
- *    journal, which records the rewrite (`catalog_rewrites`) and each
- *    rewritten commit's first pusher.
- * 3. In one transaction: records the purge (who, when, why, never the
- *    text); replaces the text in branch names of the push log, in events
- *    and in the record of the move into Git (`purgeTargets`); drops index
- *    rows that hold it; checks that the text is
- *    nowhere left in what it purges; appends a `catalog.purged` event and
- *    a security-log entry with counts only; and asks for a rebuild of the
- *    index from the new `main`.
+ * 2. Stores the Git container's journal, so every rewrite it made is
+ *    known. A rewrite whose database part never ran, of this same text (by
+ *    its keyed hash, `GitClient.isPurgeText`), is finished at once, under
+ *    its own ID. A rewrite is never finished under another text.
+ * 3. Otherwise starts the Git container's rewrite under a new purge ID and
+ *    follows it. When it ends, stores the journal (the rewrite becomes a
+ *    `catalog_rewrites` row, and each rewritten commit's first pusher
+ *    follows) and records the purge (`recordPurge`).
  *
- * If step 3 fails after a rewrite, removing the text again finishes it:
- * the history no longer holds the text, so it is not rewritten twice, and
- * the purge takes the ID of the rewrite whose database part was missing.
- * Copies outside Shinan, such as agents' clones, exports, backups and
- * model providers, are not reached: a purged secret must still be rotated.
+ * The text stays in this process's memory while it follows the job. If
+ * the process stops meanwhile, the rewrite stays listed as unfinished until
+ * the owner removes the same text again. Copies outside Shinan, such as
+ * agents' clones, exports, backups and model providers, are not reached: a
+ * purged secret must still be rotated.
  */
 export async function purgeCatalogText(
   ctx: Context,
   git: GitClient | undefined,
   workspaceId: string,
   input: { text: unknown; reason: unknown },
-): Promise<CatalogPurge> {
+): Promise<CatalogPurgeStatus> {
   const checked = await inWorkspace(
     ctx,
     workspaceId,
@@ -247,22 +310,217 @@ export async function purgeCatalogText(
     snapshotRead,
   )
   const client = requireGit(git)
-  const purgeId = randomUUID()
-  const history = await fromGit(() =>
-    client.purge(checked.workspace, { purgeId, text: checked.text }),
-  )
-  // The journal holds the rewrite's records: this one's, or an earlier
-  // one's whose database part this purge finishes.
-  try {
-    if (history) await storeCatalogJournal({ ...ctx, actor: shinan }, client)
-  } catch (error) {
-    if (history?.rewritten)
-      throw new UnavailableError(
-        "The catalog's history was rewritten, but its record has not reached the database: remove the text again in a minute to finish",
-        { cause: error },
-      )
+  await storeCatalogJournal({ ...ctx, actor: shinan }, client).catch(() => {})
+
+  // An earlier rewrite of this same text, never recorded: finished now.
+  for (const rewrite of await unfinishedOf(ctx, checked.workspace)) {
+    const same = await fromGit(() =>
+      client.isPurgeText(checked.workspace, {
+        purgeId: rewrite.id,
+        text: checked.text,
+      }),
+    )
+    if (!same) continue
+    const purge = await recordPurge(ctx, checked, {
+      id: rewrite.id,
+      rewritten: true,
+      history: null,
+    })
+    return { id: purge.id, state: "done", purge }
   }
 
+  sweepFollowing()
+  if (
+    [...following.values()].some(
+      (f) =>
+        f.workspaceId === checked.workspace && f.status.state === "running",
+    )
+  )
+    throw busyRemoving()
+  const purgeId = randomUUID()
+  const started = await fromGit(() =>
+    client.startPurge(checked.workspace, { purgeId, text: checked.text }),
+  )
+  if (!started) {
+    // No repository yet: only what the database holds.
+    const purge = await recordPurge(ctx, checked, {
+      id: purgeId,
+      rewritten: false,
+      history: null,
+    })
+    return { id: purge.id, state: "done", purge }
+  }
+  const status: CatalogPurgeStatus = { id: purgeId, state: "running" }
+  const entry = { workspaceId: checked.workspace, status, at: Date.now() }
+  following.set(purgeId, entry)
+  void follow(ctx, client, checked, purgeId).then((outcome) => {
+    entry.status = outcome
+    entry.at = Date.now()
+  })
+  return status
+}
+
+/**
+ * Where a purge stands: recorded, followed by this process, a rewrite not
+ * recorded, or the Git container's job. Counts only, never the text; any
+ * member may ask, as for `listCatalogPurges`.
+ */
+export async function getCatalogPurgeStatus(
+  ctx: Context,
+  git: GitClient | undefined,
+  workspaceId: string,
+  purgeId: string,
+): Promise<CatalogPurgeStatus> {
+  const found = await inWorkspace(
+    ctx,
+    workspaceId,
+    "workspace.read",
+    async (scope) => {
+      if (!/^[0-9a-f-]{36}$/.test(purgeId)) throw new NotFoundError()
+      const [row] = await scope.tx
+        .select()
+        .from(schema.catalogPurges)
+        .where(
+          and(
+            eq(schema.catalogPurges.workspaceId, scope.workspaceId),
+            eq(schema.catalogPurges.id, purgeId),
+          ),
+        )
+      const unfinished = (await unfinishedRewrites(scope.tx, scope.workspaceId))
+        .map((r) => r.id)
+        .includes(purgeId)
+      return { workspace: scope.workspaceId, row, unfinished }
+    },
+    snapshotRead,
+  )
+  if (found.row)
+    return { id: purgeId, state: "done", purge: purgeOf(found.row) }
+  const followed = following.get(purgeId)
+  if (followed?.workspaceId === found.workspace) return followed.status
+  if (found.unfinished)
+    return { id: purgeId, state: "unfinished", message: unfinishedMessage }
+  const job = await fromGit(() =>
+    requireGit(git).purgeStatus(found.workspace, purgeId),
+  )
+  if (job?.state === "running") return { id: purgeId, state: "running" }
+  if (job?.state === "done")
+    return { id: purgeId, state: "unfinished", message: unfinishedMessage }
+  throw new NotFoundError()
+}
+
+/** Follows a Git container's purge to its end, then records it. */
+async function follow(
+  ctx: Context,
+  client: GitClient,
+  checked: { workspace: string; text: string; reason: string },
+  purgeId: string,
+): Promise<CatalogPurgeStatus> {
+  let failures = 0
+  let job: RepositoryPurgeStatus
+  for (;;) {
+    await new Promise((resolve) =>
+      setTimeout(resolve, purgeFollowing.intervalMs),
+    )
+    try {
+      job = await client.purgeStatus(checked.workspace, purgeId)
+      failures = 0
+    } catch {
+      // The Git container may be restarting: asked again, for a while.
+      if (++failures > 60)
+        return { id: purgeId, state: "unfinished", message: unfinishedMessage }
+      continue
+    }
+    if (job.state !== "running") break
+  }
+  if (job.state === "failed" || job.state === "unknown")
+    return {
+      id: purgeId,
+      state: "failed",
+      message:
+        job.message ??
+        "Shinan could not remove the text: nothing was changed; try again",
+    }
+  const result = job.result!
+  try {
+    if (result.rewritten)
+      for (let attempt = 1; ; attempt++) {
+        try {
+          await storeCatalogJournal({ ...ctx, actor: shinan }, client)
+          break
+        } catch (error) {
+          if (attempt >= 5) throw error
+          await new Promise((resolve) => setTimeout(resolve, 1000 * attempt))
+        }
+      }
+    const purge = await recordPurge(ctx, checked, {
+      id: purgeId,
+      rewritten: result.rewritten,
+      history: result,
+    })
+    return { id: purgeId, state: "done", purge }
+  } catch (error) {
+    if (error instanceof RuleViolationError)
+      return {
+        id: purgeId,
+        state: "failed",
+        message: error.message,
+        rule: error.rule,
+      }
+    return result.rewritten
+      ? { id: purgeId, state: "unfinished", message: unfinishedMessage }
+      : {
+          id: purgeId,
+          state: "failed",
+          message: "Shinan could not record the removal: try again",
+        }
+  }
+}
+
+function sweepFollowing(): void {
+  for (const [id, f] of following)
+    if (f.status.state !== "running" && Date.now() - f.at > outcomeMs)
+      following.delete(id)
+}
+
+function busyRemoving(): BusyError {
+  return new BusyError(
+    "purge-running",
+    "Text is already being removed from this catalog's history: try again in a few minutes",
+    60,
+  )
+}
+
+/** The workspace's rewrites no purge record covers yet, oldest first. */
+async function unfinishedOf(ctx: Context, workspaceId: string) {
+  return inWorkspace(
+    ctx,
+    workspaceId,
+    "catalog.purge",
+    (scope) => unfinishedRewrites(scope.tx, scope.workspaceId),
+    snapshotRead,
+  )
+}
+
+/**
+ * The database part of a purge, in one transaction: records the purge
+ * (who, when, why, never the text) under `id`, the ID of the Git
+ * container's rewrite when there was one; replaces the text in branch
+ * names of the push log, in events and in the record of the move into Git
+ * (`purgeTargets`); drops index rows that hold it; checks that the text is
+ * nowhere left in what it purges; appends a `catalog.purged` event and a
+ * security-log entry with counts only; and asks for a rebuild of the index
+ * from the new `main`.
+ */
+async function recordPurge(
+  ctx: Context,
+  checked: { workspace: string; text: string; reason: string },
+  input: {
+    id: string
+    rewritten: boolean
+    history: RepositoryPurgeResult | null
+  },
+): Promise<CatalogPurge> {
+  const { history } = input
   const purge = await inWorkspace(
     ctx,
     checked.workspace,
@@ -275,18 +533,19 @@ export async function purgeCatalogText(
       await tx.execute(
         sql`select pg_advisory_xact_lock(hashtext(${`catalog-purge:${workspace}`}))`,
       )
-      // Which rewrite this purge records: its own, or the newest one whose
-      // database part never finished.
-      const unfinished = await unfinishedRewrites(tx, workspace)
-      const own = history?.rewritten
-        ? unfinished.find((r) => r.id === purgeId)
-        : undefined
-      if (history?.rewritten && !own)
-        throw new UnavailableError(
-          "The catalog's history was rewritten, but its record has not reached the database: remove the text again in a minute to finish",
-        )
-      const rewrite = own ?? unfinished.at(-1)
-      const id = rewrite?.id ?? purgeId
+      const [rewrite] = input.rewritten
+        ? await tx
+            .select()
+            .from(schema.catalogRewrites)
+            .where(
+              and(
+                eq(schema.catalogRewrites.workspaceId, workspace),
+                eq(schema.catalogRewrites.id, input.id),
+              ),
+            )
+        : []
+      if (input.rewritten && !rewrite)
+        throw new UnavailableError(unfinishedMessage)
 
       const p = schema.catalogPurges
       const [{ next }] = (await tx
@@ -297,7 +556,7 @@ export async function purgeCatalogText(
       const [row] = await tx
         .insert(p)
         .values({
-          id,
+          id: input.id,
           workspaceId: workspace,
           number: next,
           actorKind: scope.actor.kind,
@@ -317,12 +576,7 @@ export async function purgeCatalogText(
       const index = await dropIndexRows(tx, workspace, match)
       const moves = await purgeMoves(tx, workspace, match)
       const historyCounts: CatalogPurgeHistoryCounts | undefined = rewrite
-        ? {
-            ...rewrite.counts,
-            journalEntries:
-              rewrite.counts.journalEntries +
-              (own ? 0 : (history?.journalEntries ?? 0)),
-          }
+        ? rewrite.counts
         : history && history.journalEntries > 0
           ? historyOf(history)
           : undefined
@@ -461,6 +715,8 @@ async function fromGit<T>(call: () => Promise<T>): Promise<T | null> {
     if (error.status === 404) return null
     if (error.status === 409 && error.code === "busy")
       throw new BusyError("busy", error.message, 30)
+    if (error.status === 409 && error.code === "purge-running")
+      throw busyRemoving()
     if (error.status === 400 && error.code.startsWith("text"))
       throw new InvalidInputError(error.code, error.message)
     if (error.status === 422 && error.code === "purge-too-slow")
@@ -473,8 +729,9 @@ async function fromGit<T>(call: () => Promise<T>): Promise<T | null> {
 }
 
 /**
- * Rewrites of the workspace's history that no purge record covers: newer
- * than its newest purge, oldest first.
+ * Rewrites of the workspace's history that no purge record covers yet,
+ * oldest first: each stays listed until a purge of the same text finishes
+ * it (review of #197).
  */
 async function unfinishedRewrites(tx: Transaction, workspaceId: string) {
   const w = schema.catalogRewrites
@@ -485,7 +742,7 @@ async function unfinishedRewrites(tx: Transaction, workspaceId: string) {
     .where(
       and(
         eq(w.workspaceId, workspaceId),
-        sql`not exists (select 1 from ${p} where ${p.workspaceId} = ${w.workspaceId} and (${p.id} = ${w.id} or ${p.createdAt} > ${w.rewrittenAt}))`,
+        sql`not exists (select 1 from ${p} where ${p.id} = ${w.id})`,
       ),
     )
     .orderBy(w.rewrittenAt, w.journalEntry)
@@ -758,6 +1015,42 @@ async function encodedForms(
   return result
 }
 
+/**
+ * How many of the workspace's events may hold the text encoded: as
+ * base64, with every byte percent-encoded, or in another letter case.
+ */
+async function encodingsInEvents(
+  tx: Transaction,
+  workspaceId: string,
+  text: string,
+): Promise<{ encoding: PurgeEncoding; places: number }[]> {
+  const e = schema.events
+  const value = sql`(${e.summary} || ' ' || ${e.data}::text)`
+  const result: { encoding: PurgeEncoding; places: number }[] = []
+  for (const { encoding, strings, anyCase } of encodedStrings(text)) {
+    if (strings.length === 0) continue
+    const any = sql.join(
+      strings.map((s) =>
+        anyCase
+          ? sql`strpos(lower(${value}), ${s.toLowerCase()}) > 0`
+          : sql`strpos(${value}, ${s}) > 0`,
+      ),
+      sql` or `,
+    )
+    const exact =
+      encoding === "other-case"
+        ? sql` and strpos(${value}, ${text}) = 0`
+        : sql``
+    const [row] = (
+      await tx.execute<{ places: number }>(
+        sql`select count(*)::int as places from ${e} where ${e.workspaceId} = ${workspaceId} and (${any})${exact}`,
+      )
+    ).rows
+    result.push({ encoding, places: row!.places })
+  }
+  return result
+}
+
 /** The workspace's events that hold the text. */
 async function eventsHolding(
   tx: Transaction,
@@ -802,7 +1095,7 @@ async function purgeMoves(
   workspaceId: string,
   match: PurgeMatcher,
 ): Promise<number> {
-  const plain = (s: string) => match.replace(s, purgeMarker)
+  const plain = (s: string) => replaceKeepingIds(match, s, purgeMarker)
   const rows = await movesHolding(tx, workspaceId, match)
   for (const row of rows)
     await tx
@@ -825,7 +1118,7 @@ async function purgeEvents(
   match: PurgeMatcher,
 ): Promise<number[]> {
   const purged: number[] = []
-  const plain = (s: string) => match.replace(s, purgeMarker)
+  const plain = (s: string) => replaceKeepingIds(match, s, purgeMarker)
   for (const row of await eventCandidates(tx, workspaceId, match)) {
     await match.pause()
     if (!holdsJson({ summary: row.summary, data: row.data }, match)) continue

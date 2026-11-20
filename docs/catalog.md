@@ -1573,7 +1573,9 @@ change the source of truth, or the checks and history mean nothing.
       occurrence is replaced by `(purged)` in every version of every file,
       in commit messages and in commit authors' and committers' names and
       emails, on every branch; and by `purged` in file and folder names and
-      branch names, which may not hold brackets. Shinan's own records
+      branch names, which may not hold brackets, and in catalog IDs
+      wherever they are written (a page's `id`, its aliases, references),
+      so a page's ID still equals its path. Shinan's own records
       follow: branch names in the push log and the first-pusher record,
       timeline events, catalog IDs in the record of the catalog's move
       into Git (GC-6), and the agent index (rebuilt from the new `main`).
@@ -1603,6 +1605,11 @@ change the source of truth, or the checks and history mean nothing.
       by whoever first pushed the commit it replaces (D-066), so the `by`
       rule (§8.3) holds on the new history and another agent can still
       merge an agent's rewritten branch.
+    - **Only the exact text** (whitespace aside) is removed. The preview
+      also reports places that may hold it encoded (base64, every byte
+      percent-encoded, quoted-printable, UTF-16, another letter case), for
+      the owner to have them checked; they are not removed (review of
+      #197).
     - **Shown first.** Before anything changes the owner sees where the
       text is: how many changes (commits) to the catalog, on `main` and on
       agents' branches; change messages; branch names; the pages that show
@@ -1617,9 +1624,11 @@ change the source of truth, or the checks and history mean nothing.
       top ([plan §2.9](build-plan-git-catalog.md#29-undo-and-purge)).
     - **Recorded:** a `catalog.purged` event with who, why and the counts;
       a security-log entry with the counts. Neither holds the text, and
-      the reason may not repeat it. The purge's record keeps its ID, so a
-      purge whose database part failed after the rewrite is finished by
-      running it again, without rewriting twice.
+      the reason may not repeat it. A purge runs in the background and
+      can take minutes on a large history. A rewrite that was never
+      recorded stays listed as unfinished until the owner removes the
+      same text again, which records it without rewriting; it is never
+      recorded under another text.
     - **(M2, v0.3.0)** purged M2's stored revisions, proposals and comments
       and stored the cleaned latest text as a new revision; GC-6 moved the
       catalog into Git and dropped those tables.

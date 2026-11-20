@@ -20,7 +20,10 @@ export function errorMessage(error: unknown): string {
       case "length-required":
         return "That could not be sent. Reload the page and try again."
       case "too-many-requests":
-        return "Too many attempts. Wait a minute and try again."
+        // Busy, not too many: a removal of text runs, or a push is checked.
+        return error.rule === "purge-running" || error.rule === "busy"
+          ? error.message
+          : "Too many attempts. Wait a minute and try again."
       case "not-implemented":
         return "This is not available on this installation."
       case "unavailable":

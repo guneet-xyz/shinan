@@ -10,7 +10,7 @@ import type {
   RepositoryFile,
   RepositoryInfo,
   RepositoryPurgePreview,
-  RepositoryPurgeResult,
+  RepositoryPurgeStatus,
   RepositoryRefs,
   TreeChange,
   TreeEntry,
@@ -131,15 +131,28 @@ export interface GitClient {
     input: { text: string },
   ): Promise<RepositoryPurgePreview>
   /**
-   * Removes a purge text from the repository's whole history, with the
-   * push lock held (refused `busy` while a push is being checked), and
-   * from the journal entries not yet acknowledged. Safe to repeat: a
-   * repository that holds no copy is not rewritten again.
+   * Starts removing a purge text from the repository's whole history and
+   * from the journal entries not yet acknowledged (plan §2.9), as a job:
+   * answers at once, `running` (refused `busy` while another purge of the
+   * repository runs). Follow it with `purgeStatus`.
    */
-  purge(
+  startPurge(
     workspaceId: string,
     input: { purgeId: string; text: string },
-  ): Promise<RepositoryPurgeResult>
+  ): Promise<RepositoryPurgeStatus>
+  /** Where a purge stands. */
+  purgeStatus(
+    workspaceId: string,
+    purgeId: string,
+  ): Promise<RepositoryPurgeStatus>
+  /**
+   * Whether `text` is the text of the Git container's purge `purgeId`
+   * (by its keyed hash): the only text that may finish that purge.
+   */
+  isPurgeText(
+    workspaceId: string,
+    input: { purgeId: string; text: string },
+  ): Promise<boolean>
 }
 
 type Json = Record<string, unknown>
@@ -322,17 +335,33 @@ export function createGitClient(options: GitClientOptions): GitClient {
         timeoutMs: purgeTimeoutMs,
       })) as unknown as RepositoryPurgePreview
     },
-    async purge(workspaceId, input) {
-      return (await call("POST", repository(workspaceId, "/purge"), {
+    async startPurge(workspaceId, input) {
+      return (await call("POST", repository(workspaceId, "/purges"), {
         body: { purgeId: input.purgeId, text: input.text },
-        timeoutMs: purgeTimeoutMs,
-      })) as unknown as RepositoryPurgeResult
+      })) as unknown as RepositoryPurgeStatus
+    },
+    async purgeStatus(workspaceId, purgeId) {
+      return (await call(
+        "GET",
+        repository(workspaceId, `/purges/${encodeURIComponent(purgeId)}`),
+      )) as unknown as RepositoryPurgeStatus
+    },
+    async isPurgeText(workspaceId, input) {
+      const body = await call(
+        "POST",
+        repository(
+          workspaceId,
+          `/purges/${encodeURIComponent(input.purgeId)}/text`,
+        ),
+        { body: { text: input.text } },
+      )
+      return body?.matches === true
     },
   }
 }
 
 /**
- * How long a purge's preview or rewrite may take: 10 minutes, like one Git
- * process (plan §2.10). A catalog at its limits is rewritten in far less.
+ * How long a purge's preview may take: 10 minutes, like one Git process
+ * (plan §2.10). A purge itself runs as a job, followed by `purgeStatus`.
  */
 const purgeTimeoutMs = 10 * 60 * 1000

@@ -64,8 +64,11 @@ export type {
 export {
   commitTexts,
   joinIdentity,
+  listObjects,
   quotePath,
+  reachableObjects,
   readAllObjects,
+  readObjects,
   readHistory,
   rewriteHistory,
   splitIdentity,

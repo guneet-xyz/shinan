@@ -11,6 +11,9 @@ import {
   workspace,
   workspaceId,
 } from "../../test/render"
+import { removalPolling } from "./removal"
+
+removalPolling.intervalMs = 1
 
 const path = `/w/${workspaceId}/settings/catalog/remove-text`
 const secret = "plum-otter-1234-lantern"
@@ -26,6 +29,7 @@ const preview: CatalogPurgePreview = {
     acrossLines: 1,
     structure: [{ path: "machine/daedalus.md", where: "alias" }],
     alsoWrittenAs: [],
+    mayAppearEncoded: [],
     journalEntries: 0,
   },
   pushLog: 2,
@@ -34,7 +38,9 @@ const preview: CatalogPurgePreview = {
   moves: 0,
   acrossLines: 1,
   alsoWrittenAs: [],
+  mayAppearEncoded: [],
   unfinished: 0,
+  finishesUnfinished: false,
 }
 
 const nowhere: CatalogPurgePreview = {
@@ -54,7 +60,9 @@ const nowhere: CatalogPurgePreview = {
   moves: 0,
   acrossLines: 0,
   alsoWrittenAs: [],
+  mayAppearEncoded: [],
   unfinished: 0,
+  finishesUnfinished: false,
 }
 
 const removal: CatalogPurge = {
@@ -100,7 +108,15 @@ describe("removing text from the catalog's history", () => {
     const api = fakeApi({
       catalogPurges: () => Promise.resolve([]),
       previewCatalogPurge: () => Promise.resolve(preview),
-      purgeCatalogText: () => Promise.resolve(removal),
+      // A removal that runs a while: asked once more before it is done.
+      purgeCatalogText: () =>
+        Promise.resolve({ id: removal.id, state: "running" as const }),
+      catalogPurgeStatus: () =>
+        Promise.resolve({
+          id: removal.id,
+          state: "done" as const,
+          purge: removal,
+        }),
     })
     renderApp(path, api)
 
@@ -261,5 +277,50 @@ describe("removing text from the catalog's history", () => {
       ),
     ).toBeTruthy()
     expect(screen.queryByLabelText("Text to remove")).toBeNull()
+  })
+
+  it("says what may be left encoded, offers to finish an earlier removal, and shows why a removal failed", async () => {
+    const api = fakeApi({
+      catalogPurges: () => Promise.resolve([]),
+      previewCatalogPurge: () =>
+        Promise.resolve({
+          ...nowhere,
+          mayAppearEncoded: [{ encoding: "base64", places: 2 }],
+          unfinished: 1,
+          finishesUnfinished: true,
+        }),
+      purgeCatalogText: () =>
+        Promise.resolve({ id: removal.id, state: "running" as const }),
+      catalogPurgeStatus: () =>
+        Promise.resolve({
+          id: removal.id,
+          state: "unfinished" as const,
+          message: "The removal was not recorded: remove the same text again",
+        }),
+    })
+    renderApp(path, api)
+    await userEvent.type(await screen.findByLabelText("Text to remove"), secret)
+    await userEvent.click(screen.getByRole("button", { name: "Find it" }))
+    expect(
+      await screen.findByText(
+        /It may also appear encoded, which Shinan does not remove: base64 \(2 places\)/,
+      ),
+    ).toBeTruthy()
+    expect(
+      screen.getByText("an earlier removal of this text that didn't finish"),
+    ).toBeTruthy()
+    await userEvent.type(screen.getByLabelText("Reason"), "Finishing.")
+    await userEvent.type(
+      screen.getByLabelText("Type remove to confirm"),
+      "remove",
+    )
+    await userEvent.click(
+      screen.getByRole("button", { name: "Remove from Shinan's history" }),
+    )
+    expect(
+      await screen.findByText(
+        "The removal was not recorded: remove the same text again",
+      ),
+    ).toBeTruthy()
   })
 })

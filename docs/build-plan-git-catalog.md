@@ -402,6 +402,11 @@ the tree of the old one:
 4. **Layout** ([2.1](#21-the-repository-layout-and-rules)): only the allowed
    paths; each path matches its document's ID; no ID that resolved before has
    disappeared.
+   **As built (review of #197):** layout is charged to the push like
+   validation: a file `main` already holds as it was (the same path, mode
+   and content) is never the push's problem, and an old "ID" that was
+   never a valid one is not one that disappeared, so a problem `main`
+   holds (left by a purge, say) blocks no unrelated push and no fix-up.
 5. **Validation**, every rule of [catalog §8.3](catalog.md#83-validation-on-push),
    charged to the push as M2 charged a proposal: every blocking problem in the
    documents the push adds or changes, and any problem it newly causes
@@ -710,17 +715,26 @@ operator's to clean, and the secret is rotated.
   - **Commit authors and committers, file and folder names** are purged
     too, not only contents and messages; names (and branch names) get
     `purged`, since `(purged)`'s brackets are not allowed in branch names
-    or in paths on `main`. A branch name made invalid or taken is made
+    or in paths on `main`, and so do catalog IDs wherever they are written
+    (a page's `id`, its aliases, references), so a page's ID still equals
+    its path (review of #197). A branch name made invalid or taken is made
     unique (`purged-2`); `main` keeps its name.
   - **The removed-commits list** holds every commit the old repository
     held that the new one does not, unreachable ones included, so a clone
     can't bring back a deleted branch's copy either.
-  - **The purge ID** is made by `web` for each attempt; `catalog_purges`
-    takes the ID of the rewrite it records, so "running it again" finishes
-    the newest rewrite no purge record covers. A repository holding no copy
-    at all is not rewritten. Before the swap the Git container checks every
-    object of the new repository; afterwards it finishes from the purge's
-    record alone, also after a restart.
+  - **A job, mostly without the push lock** (review of #197): the Git
+    container scans, rewrites and checks without the lock, then takes it
+    for the swap and what follows (seconds; done again under the lock if a
+    push moved a branch meanwhile). `web` follows the job and records it
+    when it ends; the screen polls. A repository holding no copy at all is
+    not rewritten.
+  - **The purge ID** is made by `web` for each attempt, and `catalog_purges`
+    takes the ID of the rewrite it records. A rewrite never recorded stays
+    listed until a purge of the same text (by an HMAC of it kept on the
+    volume) finishes it under its own ID; never under another text.
+  - **After the swap,** until the removed commits and every record are
+    written, every push is refused, and the work is retried every minute;
+    a failure there never lets a removed commit back.
   - **The record of groups ever on `main`** (GC-3b) gets the text replaced
     as `main` did, rather than being rebuilt from the new history; a group
     where the replacement can't be made is dropped (the next push to

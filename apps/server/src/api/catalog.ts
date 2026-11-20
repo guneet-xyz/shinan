@@ -9,6 +9,7 @@ import {
   getCatalogList,
   getCatalogPageHistory,
   getCatalogPageSource,
+  getCatalogPurgeStatus,
   getCatalogReadme,
   getCatalogStartHere,
   getCatalogState,
@@ -26,6 +27,7 @@ import {
 import type {
   CatalogList,
   CatalogPurge,
+  CatalogPurgeStatus,
   Context,
   EntityStatus,
   GitClient,
@@ -249,13 +251,25 @@ export function catalogRoutes(
     return c.json(answer)
   })
 
+  // A purge runs as a job: answered `running` (202) at once, then followed
+  // by its status (review of #197).
   app.post(`${base}/purge`, async (c) => {
     const body = await purgeBody(c)
-    const purge = await purgeCatalogText(ctx(c), git, workspaceId(c), {
+    const status = await purgeCatalogText(ctx(c), git, workspaceId(c), {
       text: body.text,
       reason: body.reason,
     })
-    return c.json(purgeJson(purge))
+    return c.json(statusJson(status), status.state === "running" ? 202 : 200)
+  })
+
+  app.get(`${base}/purges/:purgeId`, async (c) => {
+    const status = await getCatalogPurgeStatus(
+      ctx(c),
+      git,
+      workspaceId(c),
+      c.req.param("purgeId"),
+    )
+    return c.json(statusJson(status))
   })
 
   app.get(`${base}/purges`, async (c) => {
@@ -275,6 +289,16 @@ async function purgeBody(
 
 function purgeJson(purge: CatalogPurge): Api.CatalogPurge {
   return { ...purge, createdAt: purge.createdAt.toISOString() }
+}
+
+function statusJson(status: CatalogPurgeStatus): Api.CatalogPurgeStatus {
+  return {
+    id: status.id,
+    state: status.state,
+    ...(status.purge ? { purge: purgeJson(status.purge) } : {}),
+    ...(status.message ? { message: status.message } : {}),
+    ...(status.rule ? { rule: status.rule } : {}),
+  }
 }
 
 function requiredQuery(c: HonoContext, name: string): string {

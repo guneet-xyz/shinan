@@ -1,7 +1,11 @@
 import { InvalidInputError } from "../../errors.js"
-import { parseCatalogDocument } from "../document/index.js"
+import {
+  isDocumentPath,
+  isEntityId,
+  parseCatalogDocument,
+} from "../document/index.js"
 import { splitFrontmatter } from "../document/parse.js"
-import type { PurgeForm } from "../git/api.js"
+import type { PurgeEncoding, PurgeForm } from "../git/api.js"
 import { PurgeMatcher } from "./matcher.js"
 
 /** What replaces purged text. Plain words in brackets, so YAML still reads it as text. */
@@ -13,6 +17,50 @@ export const purgeMarker = "(purged)"
  * allowed in branch names, or in paths on `main`).
  */
 export const purgeNameMarker = "purged"
+
+/** The characters of a catalog ID. */
+const idCharacter = /[a-z0-9/-]/
+
+/** Whether `id` is an ID a document can have: an entity's, a type schema's or start-here's. */
+function documentId(id: string): boolean {
+  return id === "start-here" || isEntityId(id) || isDocumentPath(`${id}.md`)
+}
+
+/**
+ * `value` with every place that holds the text (`matcher`) replaced by
+ * `marker`, except where the place is part of a catalog ID (a page's `id`,
+ * an alias, a reference, a link): there by `purgeNameMarker`, as in the
+ * page's path, so the ID stays an ID and still equals its path (review of
+ * #197). Again until none is left, as `PurgeMatcher.replace`.
+ */
+export function replaceKeepingIds(
+  matcher: PurgeMatcher,
+  value: string,
+  marker: string,
+): string {
+  let result = value
+  for (let pass = 0; ; pass++) {
+    const found = matcher.matches(result)
+    if (found.length === 0) return result
+    if (pass === 10) throw new Error("Purging a text did not finish")
+    let out = ""
+    let from = 0
+    for (const m of found) {
+      let left = m.start
+      while (left > 0 && idCharacter.test(result[left - 1]!)) left--
+      let right = m.end
+      while (right < result.length && idCharacter.test(result[right]!)) right++
+      const asName = documentId(
+        result.slice(left, m.start) +
+          purgeNameMarker +
+          result.slice(m.end, right),
+      )
+      out += result.slice(from, m.start) + (asName ? purgeNameMarker : marker)
+      from = m.end
+    }
+    result = out + result.slice(from)
+  }
+}
 
 /**
  * **Proposed (M2-10):** the text to purge is 4 to 10,000 characters, so it
@@ -81,6 +129,98 @@ export function purgeForms(
   })
 }
 
+/**
+ * How to find the text in the encodings a purge does not reach: base64 at
+ * each of the three byte alignments (the stable middle of each, at least 8
+ * characters), every byte percent-encoded (in any case), quoted-printable
+ * with soft line breaks, UTF-16 (both byte orders), and in another letter
+ * case than written.
+ */
+function encodingsOf(text: string): {
+  encoding: PurgeEncoding
+  find: (bytes: Buffer, lower: () => Buffer) => boolean
+}[] {
+  const raw = Buffer.from(text, "utf8")
+  const base64 = base64Cores(raw)
+  const everyByte = everyBytePercent(raw)
+  const le = Buffer.from(text, "utf16le")
+  const be = Buffer.from(le).swap16()
+  const lowerText = Buffer.from(raw.toString("latin1").toLowerCase(), "latin1")
+  return [
+    {
+      encoding: "base64",
+      find: (bytes) => base64.some((b) => bytes.includes(b)),
+    },
+    {
+      encoding: "percent-every-byte",
+      find: (bytes, lower) => lower().includes(everyByte),
+    },
+    {
+      encoding: "quoted-printable",
+      find: (bytes) =>
+        bytes.includes("=\n") &&
+        !bytes.includes(raw) &&
+        Buffer.from(
+          bytes.toString("latin1").replace(/=\r?\n/g, ""),
+          "latin1",
+        ).includes(raw),
+    },
+    {
+      encoding: "utf-16",
+      find: (bytes) => bytes.includes(le) || bytes.includes(be),
+    },
+    {
+      encoding: "other-case",
+      find: (bytes, lower) =>
+        !bytes.includes(raw) && lower().includes(lowerText),
+    },
+  ]
+}
+
+/**
+ * The encodings of the text that can be searched for as strings (in the
+ * database's events): base64 at each alignment, every byte
+ * percent-encoded, and the text in another case.
+ */
+export function encodedStrings(
+  text: string,
+): { encoding: PurgeEncoding; strings: string[]; anyCase: boolean }[] {
+  const raw = Buffer.from(text, "utf8")
+  return [
+    {
+      encoding: "base64",
+      strings: base64Cores(raw).map((b) => b.toString("latin1")),
+      anyCase: false,
+    },
+    {
+      encoding: "percent-every-byte",
+      strings: [everyBytePercent(raw).toString("latin1")],
+      anyCase: true,
+    },
+    { encoding: "other-case", strings: [text], anyCase: true },
+  ]
+}
+
+/** The stable middle of the text's base64 at each of the three byte alignments. */
+function base64Cores(raw: Buffer): Buffer[] {
+  return [0, 1, 2]
+    .map((pad) => {
+      const encoded = Buffer.concat([Buffer.alloc(pad), raw]).toString("base64")
+      const start = [0, 2, 3][pad]!
+      const end =
+        (pad + raw.length) % 3 === 0 ? encoded.length : encoded.length - 4
+      return Buffer.from(encoded.slice(start, end), "latin1")
+    })
+    .filter((b) => b.length >= 8)
+}
+
+function everyBytePercent(raw: Buffer): Buffer {
+  return Buffer.from(
+    [...raw].map((b) => `%${b.toString(16).padStart(2, "0")}`).join(""),
+    "latin1",
+  )
+}
+
 /** Every character but ASCII letters and digits as `%XX`, byte by byte. */
 function percentEncoded(text: string): string {
   return [...new TextEncoder().encode(text)]
@@ -119,6 +259,10 @@ export class PurgeScanner {
   /** The text, checked (`checkPurgeText`). */
   readonly purgeText: string
   private readonly forms: { form: PurgeForm; bytes: Buffer; anyCase: boolean }[]
+  private readonly encodings: {
+    encoding: PurgeEncoding
+    find: (bytes: Buffer, lower: () => Buffer) => boolean
+  }[]
 
   constructor(text: string, options: { limitMs?: number } = {}) {
     this.purgeText = checkPurgeText(text)
@@ -128,6 +272,7 @@ export class PurgeScanner {
       bytes: Buffer.from(f.anyCase ? f.text.toLowerCase() : f.text, "utf8"),
       anyCase: f.anyCase,
     }))
+    this.encodings = encodingsOf(text)
     this.text = new PurgeMatcher(text, options)
     const bytes = Buffer.from(text, "utf8").toString("latin1")
     this.raw = bytes === text ? this.text : new PurgeMatcher(bytes, options)
@@ -180,7 +325,9 @@ export class PurgeScanner {
   replace(value: Buffer, marker: string): Buffer {
     const { matcher, value: v, utf8: isText } = this.view(value)
     if (!matcher.test(v)) return value
-    const replaced = matcher.replace(v, marker)
+    const replaced = isText
+      ? replaceKeepingIds(matcher, v, marker)
+      : matcher.replace(v, marker)
     return Buffer.from(replaced, isText ? "utf8" : "latin1")
   }
 
@@ -212,6 +359,20 @@ export class PurgeScanner {
   }
 
   /**
+   * The encodings `value` may hold the text in (`PurgeEncoding`): what a
+   * purge leaves, to report. Checked only where the text itself is not.
+   */
+  encodingsIn(value: Uint8Array): PurgeEncoding[] {
+    const bytes = Buffer.from(value.buffer, value.byteOffset, value.byteLength)
+    let lower: Buffer | undefined
+    const lowered = () =>
+      (lower ??= Buffer.from(bytes.toString("latin1").toLowerCase(), "latin1"))
+    return this.encodings
+      .filter((e) => e.find(bytes, lowered))
+      .map((e) => e.encoding)
+  }
+
+  /**
    * A document's title as the catalog will show it after the purge (the
    * text replaced by `purgeMarker`), or null if it has none or is not a
    * catalog document.
@@ -225,7 +386,9 @@ export class PurgeScanner {
     }
     const title = parseCatalogDocument(text).title
     if (title === null || title.trim() === "") return null
-    return this.text.test(title) ? this.text.replace(title, purgeMarker) : title
+    return this.text.test(title)
+      ? replaceKeepingIds(this.text, title, purgeMarker)
+      : title
   }
 
   /**

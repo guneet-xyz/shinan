@@ -1283,8 +1283,10 @@ kinds (**proposed**):
   `catalog.secret-allow-removed` when a workspace owner allows a value as
   "not a secret" or stops allowing it (its fingerprint only), and
   `catalog.unlogged-update` when a repository's branch is not where the
-  push log says it should be (the ref, the commit found and the one
-  logged), and, at the installation's level, `catalog.journal-set-aside`
+  push log says it should be (the commit found and the one logged, and the
+  branch by its fingerprint, `sha256:` of its name, since a name may hold
+  text a purge removes and the security log is never purged; review of
+  #197), and, at the installation's level, `catalog.journal-set-aside`
   for a Git journal entry that could not be stored (its number, kind,
   workspace and reason, never its data). Fetches and pushes are recorded as the
   [Git-based catalog plan §2.14](build-plan-git-catalog.md#214-permissions-scopes-and-the-security-log)
@@ -1306,8 +1308,9 @@ kinds (**proposed**):
   renamed in `catalog_push_refs`, `catalog_commit_first_pushes` and
   `catalog_rewrites` (the rewrite the purge made: the branches after it),
   and each rewritten commit's first pusher row names the commit it
-  replaces. Security-log entries keep any branch name they recorded
-  (`catalog.unlogged-update`), as every entry is never purged.
+  replaces. No security-log entry holds a branch name
+  (`catalog.unlogged-update` keeps its fingerprint), and while a purge is
+  unfinished the minute check skips the repository.
 - **Decided (owner, O-47, N-8, N-13, [#25](https://github.com/guneet-xyz/shinan/issues/25)):**
   the security log is kept forever, and no security-log entry can ever be
   purged, by anyone: neither installation-level entries nor a workspace's

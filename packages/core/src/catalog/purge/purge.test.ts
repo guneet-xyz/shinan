@@ -39,9 +39,12 @@ import { GitServiceError } from "../git/client.js"
 import type { GitClient } from "../git/client.js"
 import { storeCatalogJournal } from "../git/push-log.js"
 import { PurgeMatcher } from "./matcher.js"
+import type { CatalogPurge } from "./purge.js"
 import {
+  getCatalogPurgeStatus,
   listCatalogPurges,
   previewCatalogPurge as previewWith,
+  purgeFollowing,
   purgeMarker,
   purgeCatalogText as purgeWith,
 } from "./purge.js"
@@ -67,6 +70,7 @@ const noHistory: RepositoryPurgePreview = {
   acrossLines: 0,
   structure: [],
   alsoWrittenAs: [],
+  mayAppearEncoded: [],
   journalEntries: 0,
 }
 const jobs = { send: () => Promise.resolve(null) }
@@ -76,11 +80,36 @@ const gitJournal = {
   last: 0,
 }
 let gitPurge: (input: { purgeId: string }) => RepositoryPurgeResult
+/** The stand-in's purges, by ID: their results and texts. */
+const gitPurges = new Map<
+  string,
+  { result: RepositoryPurgeResult; text: string }
+>()
 const git = refuseDuringTransactions(
   {
     previewPurge: () => Promise.resolve(noHistory),
-    purge: (_workspaceId: string, input: { purgeId: string }) =>
-      Promise.resolve(gitPurge(input)),
+    startPurge: (
+      _workspaceId: string,
+      input: { purgeId: string; text: string },
+    ) => {
+      gitPurges.set(input.purgeId, {
+        result: gitPurge(input),
+        text: input.text,
+      })
+      return Promise.resolve({ purgeId: input.purgeId, state: "running" })
+    },
+    purgeStatus: (_workspaceId: string, purgeId: string) => {
+      const found = gitPurges.get(purgeId)
+      return Promise.resolve(
+        found
+          ? { purgeId, state: "done", result: found.result }
+          : { purgeId, state: "unknown" },
+      )
+    },
+    isPurgeText: (
+      _workspaceId: string,
+      input: { purgeId: string; text: string },
+    ) => Promise.resolve(gitPurges.get(input.purgeId)?.text === input.text),
     readJournal: ({ after }: { after: number }) =>
       Promise.resolve({
         journalId: gitJournal.id,
@@ -100,11 +129,29 @@ const previewCatalogPurge = (
   workspaceId: string,
   input: { text: unknown },
 ) => previewWith(ctx, git, workspaceId, input)
-const purgeCatalogText = (
+purgeFollowing.intervalMs = 5
+
+/**
+ * Removes a text and waits for the removal's end, as the screen does:
+ * the purge, or the rule it failed on as core's error.
+ */
+async function purgeCatalogText(
   ctx: Context,
   workspaceId: string,
   input: { text: unknown; reason: unknown },
-) => purgeWith(ctx, git, workspaceId, input)
+  client: GitClient = git,
+): Promise<CatalogPurge> {
+  const started = await purgeWith(ctx, client, workspaceId, input)
+  for (let status = started; ;) {
+    if (status.state === "done") return status.purge!
+    if (status.state === "failed" && status.rule)
+      throw new RuleViolationError(status.rule, status.message!)
+    if (status.state !== "running")
+      throw new Error(`The removal ended ${status.state}`)
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    status = await getCatalogPurgeStatus(ctx, client, workspaceId, started.id)
+  }
+}
 
 /** Appends an entry to the stand-in's journal, as the Git container would. */
 function journalEntry(kind: string, data: Record<string, unknown>) {
@@ -221,7 +268,9 @@ const none = {
   indexDocuments: 0,
   moves: 0,
   acrossLines: 0,
+  mayAppearEncoded: [],
   unfinished: 0,
+  finishesUnfinished: false,
 }
 
 describe("purging catalog text", { timeout: 60_000 }, () => {
@@ -568,7 +617,32 @@ describe("purging catalog text", { timeout: 60_000 }, () => {
     const preview = await previewCatalogPurge(asOwner, workspaceId, {
       text: secret,
     })
+    // The Git container knows the rewrite's text by its keyed hash.
+    gitPurges.set(rewrite, {
+      text: secret,
+      result: {
+        purgeId: rewrite,
+        rewritten: true,
+        ...counts,
+      },
+    })
     expect(preview).toMatchObject({ pushLog: 2, unfinished: 1 })
+    expect(
+      await previewCatalogPurge(asOwner, workspaceId, { text: secret }),
+    ).toMatchObject({ finishesUnfinished: true })
+
+    // Another text never finishes it, and it stays listed.
+    await expect(
+      purgeCatalogText({ ...asOwner, jobs }, workspaceId, {
+        text: "a different text altogether",
+        reason: "Something else.",
+      }),
+    ).rejects.toMatchObject({ rule: "nothing-to-purge" })
+    expect(
+      await previewCatalogPurge(asOwner, workspaceId, {
+        text: "a different text altogether",
+      }),
+    ).toMatchObject({ unfinished: 1, finishesUnfinished: false })
 
     const purge = await purgeCatalogText({ ...asOwner, jobs }, workspaceId, {
       text: secret,
@@ -607,20 +681,31 @@ describe("purging catalog text", { timeout: 60_000 }, () => {
     ).toMatchObject({ unfinished: 0 })
   })
 
-  it("is refused while a push is being checked, and needs the Git container", async () => {
+  it("is refused while another removal runs, and needs the Git container", async () => {
     await plant()
     const busy = refuseDuringTransactions(
       {
-        purge: () =>
+        readJournal: () =>
+          Promise.resolve({ journalId: gitJournal.id, entries: [], last: 0 }),
+        startPurge: () =>
           Promise.reject(
-            new GitServiceError(409, "busy", "A push is being checked"),
+            new GitServiceError(
+              409,
+              "purge-running",
+              "Text is already being removed",
+            ),
           ),
       } as unknown as GitClient,
       "git",
     )
-    await expect(
-      purgeWith(asOwner, busy, workspaceId, { text: secret, reason: "Leak." }),
-    ).rejects.toBeInstanceOf(BusyError)
+    const refused: unknown = await purgeWith(asOwner, busy, workspaceId, {
+      text: secret,
+      reason: "Leak.",
+    }).catch((error: unknown) => error)
+    expect(refused).toBeInstanceOf(BusyError)
+    expect((refused as BusyError).message).toBe(
+      "Text is already being removed from this catalog's history: try again in a few minutes",
+    )
     await expect(
       purgeWith(asOwner, undefined, workspaceId, {
         text: secret,
@@ -658,8 +743,9 @@ describe("purging catalog text", { timeout: 60_000 }, () => {
       .from(schema.catalogMoves)
       .where(eq(schema.catalogMoves.workspaceId, workspaceId))
     expect(move).toMatchObject({
-      waitingProposals: [{ number: 8, touches: [`machine/${purgeMarker}`] }],
-      problems: [{ document: `machine/${purgeMarker}` }],
+      // Catalog IDs keep their form: the text becomes `purged`, as in paths.
+      waitingProposals: [{ number: 8, touches: ["machine/purged"] }],
+      problems: [{ document: "machine/purged" }],
     })
     // Outside a purge's own transaction, the record never changes.
     await expect(

@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process"
+import { createHash } from "node:crypto"
 import {
   chmodSync,
   mkdirSync,
@@ -1142,7 +1143,11 @@ describe("branches, main and the push log", () => {
     expect(entry).toMatchObject({
       workspaceId,
       actorKind: "shinan",
-      details: { ref: "refs/heads/sneaky", commit: firstCommit, logged: null },
+      details: {
+        ref: `sha256:${createHash("sha256").update("refs/heads/sneaky").digest("hex")}`,
+        commit: firstCommit,
+        logged: null,
+      },
     })
     await store.git.run(["update-ref", "-d", "refs/heads/sneaky"], {
       gitDir: store.pathOf(workspaceId),

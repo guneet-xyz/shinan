@@ -445,6 +445,8 @@ export interface RepositoryPurgePreview {
   structure: { path: string; where: "id" | "alias" | "key" | "frontmatter" }[]
   /** Places that hold it in an encoded form the purge does not reach. */
   alsoWrittenAs: { form: PurgeForm; places: number }[]
+  /** Places that may hold it encoded (`PurgeEncoding`), which a purge does not reach. */
+  mayAppearEncoded: { encoding: PurgeEncoding; places: number }[]
   /** Journal entries not stored yet that hold it (branch names of pushes). */
   journalEntries: number
 }
@@ -452,8 +454,31 @@ export interface RepositoryPurgePreview {
 /** An encoded form of a purge text that a purge of the text itself does not reach. */
 export type PurgeForm = "url" | "percent" | "html" | "escaped"
 
+/**
+ * An encoding a purge text may also appear in, which a purge does not
+ * remove: only the exact text (whitespace aside) is removed (review of
+ * #197). Reported so the owner can have it checked.
+ */
+export type PurgeEncoding =
+  "base64" | "percent-every-byte" | "quoted-printable" | "utf-16" | "other-case"
+
 /** The most paths a purge preview lists. */
 export const maxPurgePaths = 100
+
+/**
+ * Where the Git container's part of a purge stands: a purge runs as a job
+ * the caller follows (review of #197), since a large history takes minutes.
+ * `unknown`: no such purge (or it stopped with the Git container before
+ * its swap: nothing changed).
+ */
+export interface RepositoryPurgeStatus {
+  purgeId: string
+  state: "running" | "done" | "failed" | "unknown"
+  /** When `done`. */
+  result?: RepositoryPurgeResult
+  /** When `failed`: why, never the text. */
+  message?: string
+}
 
 /** What the Git container's part of a purge did (plan §2.9). */
 export interface RepositoryPurgeResult {

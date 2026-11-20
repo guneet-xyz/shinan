@@ -411,7 +411,7 @@ async function runGit(env: Env): Promise<void> {
     records,
     onUpdated: (workspaceId) => pruner.soon(workspaceId),
   })
-  const purges = createPurges({ store, journal, records, push })
+  const purges = createPurges({ store, journal, records, push, gate })
   // A purge stopped by a restart is finished, or its repository put back,
   // before `.tmp/` is emptied (plan §2.9).
   await purges.recover()
@@ -446,6 +446,8 @@ async function runGit(env: Env): Promise<void> {
     if (id) pruner.soon(id)
   }
   const stopPruning = pruner.start()
+  // A purge stopped after its swap is finished (pushes wait until then).
+  const stopFinishing = purges.keepFinishing()
   const internal = createGitInternalApp({
     ready: () => {
       try {
@@ -476,6 +478,7 @@ async function runGit(env: Env): Promise<void> {
     },
   ])
   stopPruning()
+  stopFinishing()
   await new Promise<void>((resolve) => hooks.close(() => resolve()))
   console.info(`${productName} git stopped`)
 }

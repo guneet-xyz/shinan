@@ -78,6 +78,39 @@ describe("matching a purge text in what Git stores", () => {
     expect(scanner.title(Buffer.from([0xff, 0xfe]))).toBeNull()
   })
 
+  it("writes the text as `purged` where it is part of a catalog ID, and `(purged)` elsewhere", () => {
+    const scanner = new PurgeScanner("quibbleworth")
+    const page = Buffer.from(
+      "---\nid: machine/quibbleworth-box\naliases: [machine/old-quibbleworth]\nsummary: Was quibbleworth.\n---\n\nSee [it](machine/quibbleworth-box).\n",
+    )
+    expect(scanner.replace(page, purgeMarker).toString()).toBe(
+      `---\nid: machine/purged-box\naliases: [machine/old-purged]\nsummary: Was ${purgeMarker}.\n---\n\nSee [it](machine/purged-box).\n`,
+    )
+  })
+
+  it("reports encodings it does not remove: base64, every byte percent-encoded, quoted-printable, UTF-16 and another case", () => {
+    const text = "quibbleworthsecret"
+    const scanner = new PurgeScanner(text)
+    const raw = Buffer.from(text)
+    const encodedIn = (value: Buffer) => scanner.encodingsIn(value)
+    for (const pad of ["", "a", "ab"])
+      expect(
+        encodedIn(Buffer.from(Buffer.from(pad + text).toString("base64"))),
+      ).toContain("base64")
+    expect(
+      encodedIn(
+        Buffer.from([...raw].map((b) => `%${b.toString(16)}`).join("")),
+      ),
+    ).toEqual(["percent-every-byte"])
+    expect(encodedIn(Buffer.from("x quibble=\nworthsecret y"))).toEqual([
+      "quoted-printable",
+    ])
+    expect(encodedIn(Buffer.from(text, "utf16le"))).toEqual(["utf-16"])
+    expect(encodedIn(Buffer.from(text, "utf16le").swap16())).toEqual(["utf-16"])
+    expect(encodedIn(Buffer.from(text.toUpperCase()))).toEqual(["other-case"])
+    expect(encodedIn(Buffer.from(`plain ${text}`))).toEqual([])
+  })
+
   it("checks the text as M2 did", () => {
     expect(() => new PurgeScanner("abc")).toThrow(InvalidInputError)
     expect(() => new PurgeScanner("urged")).toThrow(InvalidInputError)

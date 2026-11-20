@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto"
+import { createHash, randomUUID } from "node:crypto"
 import { afterAll, beforeEach, describe, expect, it } from "vitest"
 
 import { and, eq, schema, sql } from "@shinan/db"
@@ -432,9 +432,16 @@ describe("checkCatalogRefs", () => {
         ),
       )
       .orderBy(schema.securityLog.id)
+    // The branch by its fingerprint only: the security log is never purged.
+    const fingerprint = (ref: string) =>
+      `sha256:${createHash("sha256").update(ref).digest("hex")}`
     expect(entries.map((e) => e.details)).toEqual([
-      { ref: "refs/heads/main", commit: commit("c"), logged: commit("a") },
-      { ref: "refs/heads/y", commit: commit("d"), logged: null },
+      {
+        ref: fingerprint("refs/heads/main"),
+        commit: commit("c"),
+        logged: commit("a"),
+      },
+      { ref: fingerprint("refs/heads/y"), commit: commit("d"), logged: null },
     ])
   })
 })

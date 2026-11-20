@@ -1,3 +1,4 @@
+import { createHmac, randomBytes } from "node:crypto"
 import {
   closeSync,
   existsSync,
@@ -31,14 +32,19 @@ export interface FirstPush {
 
 /**
  * A purge's own record beside the repository (plan §2.9): what its rewrite
- * did, by commit and branch, never the text. Written before the old
- * repository is swapped out (`swapping`), so a restart can finish what
- * follows the swap (`done`).
+ * did, by commit and branch, and a keyed hash of its text (`textHash`),
+ * never the text. Written before the old repository is swapped out
+ * (`swapping`), marked `swapped` right after the swap, and `done` once
+ * everything that follows is written. While a record is `swapping` or
+ * `swapped` every push is refused, so no removed commit comes back before
+ * `purged-commits` holds it (review of #197).
  */
 export interface PurgeRecord {
   purgeId: string
-  phase: "swapping" | "done" | "abandoned"
+  phase: "swapping" | "swapped" | "done" | "abandoned"
   at: string
+  /** HMAC-SHA256 of the text under the volume's purge key (`Records.textHash`). */
+  textHash: string
   /** Commits whose ID changed: the old ID and the new one. */
   rewritten: [string, string][]
   /** Commits the old repository held that the new one does not. */
@@ -115,6 +121,14 @@ export interface Records {
   purges(workspaceId: string): PurgeRecord[]
   /** The workspaces with any purge record. */
   purgedWorkspaces(): string[]
+  /** Whether a purge of the workspace has swapped, or is swapping, and is not done. */
+  unfinishedPurge(workspaceId: string): boolean
+  /**
+   * A keyed hash of a purge text (HMAC-SHA256 under a random key made on
+   * the volume once, `records/purge-key`, which never leaves it): how a
+   * purge's text is recognized again without being kept.
+   */
+  textHash(text: string): string
   /** Writes a purge's record, synced to disk before it returns. */
   writePurge(workspaceId: string, record: PurgeRecord): void
 }
@@ -189,6 +203,16 @@ export function openRecords(root: string): Records {
     }
     groupsLoaded.set(workspaceId, groups)
     return groups
+  }
+
+  let key: Buffer | undefined
+  const purgeKey = () => {
+    if (key) return key
+    const file = join(folder, "purge-key")
+    if (!existsSync(file))
+      writeDurably(folder, "purge-key", randomBytes(32).toString("hex"))
+    key = Buffer.from(readFileSync(file, "utf8").trim(), "hex")
+    return key
   }
 
   const purgedCommits = (workspaceId: string): ReadonlySet<string> => {
@@ -345,6 +369,20 @@ export function openRecords(root: string): Records {
           (name) =>
             JSON.parse(readFileSync(join(folder, name), "utf8")) as PurgeRecord,
         )
+    },
+    unfinishedPurge(workspaceId) {
+      const folder = join(folderOf(workspaceId), "purges")
+      if (!existsSync(folder)) return false
+      return readdirSync(folder).some((name) => {
+        if (!/^[0-9a-f-]{36}\.json$/.test(name)) return false
+        const { phase } = JSON.parse(
+          readFileSync(join(folder, name), "utf8"),
+        ) as PurgeRecord
+        return phase === "swapping" || phase === "swapped"
+      })
+    },
+    textHash(text) {
+      return createHmac("sha256", purgeKey()).update(text).digest("hex")
     },
     purgedWorkspaces() {
       return readdirSync(folder).filter(

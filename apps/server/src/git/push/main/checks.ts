@@ -1,5 +1,6 @@
 import {
   isDocumentPath,
+  isEntityId,
   maxDocumentBytes as maxReadDocumentBytes,
   parseCatalogDocument,
   readCatalog,
@@ -124,8 +125,14 @@ export async function checkMain(
     const before = await treeFiles(git, input, input.from)
     const after = await treeFiles(git, input, input.to)
 
-    // 4. Layout.
+    // 4. Layout, charged to the push: a file already on `main` as it was
+    // (the same path, mode and content) is never the push's problem, so a
+    // problem `main` already holds (left by a purge, say) blocks no push.
+    const kept = new Set(before.map((f) => `${f.mode} ${f.oid} ${f.path}`))
+    const unchanged = (file: TreeFile) =>
+      kept.has(`${file.mode} ${file.oid} ${file.path}`)
     for (const file of after) {
+      if (unchanged(file)) continue
       const why = layoutProblem(file)
       if (why)
         problems.push({
@@ -155,8 +162,12 @@ export async function checkMain(
     const newDocs = new Map<string, CatalogDocument>()
     for (const file of documentsAfter) newDocs.set(file.path, await read(file))
 
-    // Each document's ID is its path.
+    // Each document's ID is its path, for the documents the push adds or changes.
+    const unchangedPaths = new Set(
+      documentsAfter.filter(unchanged).map((f) => f.path),
+    )
     for (const [path, document] of newDocs) {
+      if (unchangedPaths.has(path)) continue
       const expected = path.slice(0, -".md".length)
       if (document.id !== null && document.id !== expected) {
         problems.push({
@@ -179,6 +190,8 @@ export async function checkMain(
     }
     const now = resolving(newDocs.values())
     for (const id of resolving(oldDocs.values())) {
+      // An old "ID" that was never a valid one resolved nothing.
+      if (!validId(id)) continue
       if (!now.has(id)) {
         problems.push({
           code: "id-disappeared",
@@ -420,6 +433,15 @@ export function inPushVoice(message: string): string {
     ? `${message[0]!.toLowerCase()}${message.slice(1)}`
     : message
   return start.endsWith(".") ? start.slice(0, -1) : start
+}
+
+/** Whether `id` is an ID a document could have: an entity's, a type schema's or start-here's. */
+function validId(id: string): boolean {
+  return (
+    id === "start-here" ||
+    isEntityId(id) ||
+    (id.startsWith("schema/") && isDocumentPath(`${id}.md`))
+  )
 }
 
 /** A document's fact check groups, with what makes each the same group. */

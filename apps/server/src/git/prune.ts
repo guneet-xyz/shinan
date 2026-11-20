@@ -11,41 +11,81 @@ import type { RepositoryStore } from "./store.js"
  * is pruned waits for it.
  */
 export interface RepositoryGate {
-  /** Before a Git process starts on the repository; call the result when it has ended. */
-  enter(workspaceId: string): Promise<() => void>
+  /**
+   * Before a Git process starts on the repository; call the result when it
+   * has ended. `kill` ends the process, for `drain`.
+   */
+  enter(workspaceId: string, kill?: () => void): Promise<() => void>
   /**
    * Runs `work` while no Git process runs on the repository and none
    * starts; null, without running it, if one is running.
    */
   whenIdle<T>(workspaceId: string, work: () => Promise<T>): Promise<T | null>
+  /**
+   * Holds back new Git processes on the repository, ends the running ones
+   * (a clone or fetch of what is about to be removed) and waits up to
+   * `waitMs` for them to be gone, for a purge's swap. Call the result to
+   * let processes start again.
+   */
+  drain(workspaceId: string, waitMs: number): Promise<() => void>
 }
 
 export function createRepositoryGate(): RepositoryGate {
-  const running = new Map<string, number>()
+  const running = new Map<string, Set<() => void>>()
   const busy = new Map<string, Promise<unknown>>()
+  const idle = new Map<string, (() => void)[]>()
+  const count = (workspaceId: string) => running.get(workspaceId)?.size ?? 0
   return {
-    async enter(workspaceId) {
+    async enter(workspaceId, kill = () => {}) {
       for (let held = busy.get(workspaceId); held; held = busy.get(workspaceId))
         await held.catch(() => {})
-      running.set(workspaceId, (running.get(workspaceId) ?? 0) + 1)
+      const handles = running.get(workspaceId) ?? new Set()
+      running.set(workspaceId, handles)
+      const handle = () => kill()
+      handles.add(handle)
       let left = false
       return () => {
         if (left) return
         left = true
-        const n = (running.get(workspaceId) ?? 1) - 1
-        if (n === 0) running.delete(workspaceId)
-        else running.set(workspaceId, n)
+        handles.delete(handle)
+        if (handles.size === 0) {
+          running.delete(workspaceId)
+          for (const wake of idle.get(workspaceId)?.splice(0) ?? []) wake()
+        }
       }
     },
     async whenIdle(workspaceId, work) {
-      if ((running.get(workspaceId) ?? 0) > 0 || busy.has(workspaceId))
-        return null
+      if (count(workspaceId) > 0 || busy.has(workspaceId)) return null
       const done = work()
       busy.set(workspaceId, done)
       try {
         return await done
       } finally {
         busy.delete(workspaceId)
+      }
+    },
+    async drain(workspaceId, waitMs) {
+      for (let held = busy.get(workspaceId); held; held = busy.get(workspaceId))
+        await held.catch(() => {})
+      let open!: () => void
+      busy.set(workspaceId, new Promise<void>((resolve) => (open = resolve)))
+      for (const kill of running.get(workspaceId) ?? []) kill()
+      if (count(workspaceId) > 0)
+        await new Promise<void>((resolve) => {
+          const timer = setTimeout(resolve, waitMs)
+          const list = idle.get(workspaceId) ?? []
+          idle.set(workspaceId, list)
+          list.push(() => {
+            clearTimeout(timer)
+            resolve()
+          })
+        })
+      let released = false
+      return () => {
+        if (released) return
+        released = true
+        busy.delete(workspaceId)
+        open()
       }
     },
   }

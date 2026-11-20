@@ -61,7 +61,11 @@ export interface PushService {
    * a purge's rewrite (plan §2.9): its release, or null if a push held it
    * for `waitMs`. Pushes meanwhile wait, then are refused as busy.
    */
-  exclusive(workspaceId: string, waitMs: number): Promise<(() => void) | null>
+  exclusive(
+    workspaceId: string,
+    waitMs: number,
+    holder?: "purge",
+  ): Promise<(() => void) | null>
   /**
    * Marks the repository's history rewritten (a purge swapped it): a push
    * that started before is refused once it reaches its checks, since what
@@ -128,6 +132,11 @@ export function createPushService(options: {
   const locks = options.locks ?? createPushLocks()
   const sessions = new Map<string, State>()
   const generations = new Map<string, number>()
+  /** Repositories whose lock a purge holds. */
+  const purging = new Set<string>()
+  /** Whether a purge holds the repository, or left it unfinished (`Records.unfinishedPurge`). */
+  const removing = (workspaceId: string) =>
+    purging.has(workspaceId) || records.unfinishedPurge(workspaceId)
   const git = store.git
 
   const service: PushService = {
@@ -159,7 +168,9 @@ export function createPushService(options: {
       }
     },
     async refs(workspaceId) {
-      const release = await locks.acquire(workspaceId, 0)
+      const release = removing(workspaceId)
+        ? null
+        : await locks.acquire(workspaceId, 0)
       if (!release) {
         return {
           workspaceId,
@@ -193,7 +204,15 @@ export function createPushService(options: {
         release()
       }
     },
-    exclusive: (workspaceId, waitMs) => locks.acquire(workspaceId, waitMs),
+    async exclusive(workspaceId, waitMs, holder) {
+      const release = await locks.acquire(workspaceId, waitMs)
+      if (!release || holder !== "purge") return release
+      purging.add(workspaceId)
+      return () => {
+        purging.delete(workspaceId)
+        release()
+      }
+    },
     rewritten(workspaceId) {
       generations.set(workspaceId, (generations.get(workspaceId) ?? 0) + 1)
     },
@@ -499,11 +518,19 @@ export function createPushService(options: {
     }
     const limits: PushLimits = { ...pushLimits, ...options.limits }
     let mainWarnings: Problem[] = []
-    const release = await locks.acquire(
-      context.workspaceId,
-      limits.lockWaitSeconds * 1000,
-    )
-    if (!release) {
+    // While text is being removed from the history, pushes are refused at
+    // once, with how long to wait (review of #197).
+    const release = removing(context.workspaceId)
+      ? null
+      : await locks.acquire(context.workspaceId, limits.lockWaitSeconds * 1000)
+    if (!release && removing(context.workspaceId)) {
+      problems.push({
+        code: "busy",
+        where: "",
+        message:
+          "Shinan is removing text from this catalog's history: push again in a few minutes",
+      })
+    } else if (!release) {
       problems.push({
         code: "busy",
         where: "",

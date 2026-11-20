@@ -6,9 +6,12 @@ import { afterEach, describe, expect, it } from "vitest"
 import {
   commitTexts,
   joinIdentity,
+  listObjects,
   quotePath,
+  reachableObjects,
   readAllObjects,
   readHistory,
+  readObjects,
   rewriteHistory,
   splitIdentity,
   treeEntryNames,
@@ -250,6 +253,35 @@ describe("reading every object", () => {
     expect(objects.get(main)).toBe("commit")
     expect(objects.get(loose)).toBe("commit")
     expect([...objects.values()].filter((t) => t === "blob")).toHaveLength(2)
+  })
+})
+
+describe("listing and reading objects", () => {
+  it("lists every object, tells the reachable ones, and reads the ones asked for", async () => {
+    const gitDir = await repository()
+    const main = await commitFiles(
+      git,
+      gitDir,
+      { "a.md": "a\n" },
+      { ref: "refs/heads/main" },
+    )
+    const loose = await commitFiles(
+      git,
+      gitDir,
+      { "b.md": "dangling\n" },
+      { parents: [main] },
+    )
+    const all = await listObjects(git, gitDir)
+    expect(all.get(main)).toBe("commit")
+    expect(all.get(loose)).toBe("commit")
+    const reached = await reachableObjects(git, gitDir)
+    expect(reached.has(main)).toBe(true)
+    expect(reached.has(loose)).toBe(false)
+    const read: string[] = []
+    await readObjects(git, gitDir, [loose, "0".repeat(40), main], (o) => {
+      read.push(`${o.type} ${o.oid}`)
+    })
+    expect(read).toEqual([`commit ${loose}`, `commit ${main}`])
   })
 })
 

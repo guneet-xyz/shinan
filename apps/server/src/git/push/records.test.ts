@@ -201,6 +201,7 @@ describe("a purge's changes to the records", () => {
       purgeId,
       phase: "done",
       at: "2026-11-20T00:00:00.000Z",
+      textHash: records.textHash("leaked"),
       rewritten: [],
       removed: [],
       refs: [{ ref: "refs/heads/notes-leaked", commit: "c".repeat(40) }],
@@ -221,6 +222,14 @@ describe("a purge's changes to the records", () => {
       { ref: "refs/heads/notes-purged", commit: "c".repeat(40) },
     ])
     expect(reopened.purgedWorkspaces()).toEqual([workspaceId])
+    // The text is known again by its keyed hash only, with the same key.
+    expect(reopened.purge(workspaceId, purgeId)?.textHash).toBe(
+      reopened.textHash("leaked"),
+    )
+    expect(openRecords(folder()).textHash("leaked")).not.toBe(
+      reopened.textHash("leaked"),
+    )
+    expect(reopened.unfinishedPurge(workspaceId)).toBe(false)
   })
 
   it("replaces the text in the groups ever on main, and drops a group it can't clean", () => {

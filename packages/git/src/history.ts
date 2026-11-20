@@ -704,3 +704,104 @@ export function commitTexts(commit: Buffer): Buffer[] {
   if (end >= 0) texts.push(commit.subarray(end + 2))
   return texts
 }
+
+/** Every object a repository holds, reachable or not, by ID and type (`cat-file --batch-check`). */
+export async function listObjects(
+  git: Git,
+  gitDir: string,
+  options: { timeoutMs?: number } = {},
+): Promise<Map<string, StoredObject["type"]>> {
+  const { stdout } = await git.run(
+    [
+      "cat-file",
+      "--batch-all-objects",
+      "--unordered",
+      "--batch-check=%(objectname) %(objecttype)",
+    ],
+    {
+      gitDir,
+      timeoutMs: options.timeoutMs,
+      maxOutputBytes: 1024 * 1024 * 1024,
+    },
+  )
+  const objects = new Map<string, StoredObject["type"]>()
+  for (const line of stdout.toString("latin1").split("\n")) {
+    const space = line.indexOf(" ")
+    if (space > 0)
+      objects.set(
+        line.slice(0, space),
+        line.slice(space + 1) as StoredObject["type"],
+      )
+  }
+  return objects
+}
+
+/** The objects the repository's refs reach (`rev-list --objects --all`). */
+export async function reachableObjects(
+  git: Git,
+  gitDir: string,
+  options: { timeoutMs?: number } = {},
+): Promise<Set<string>> {
+  const { stdout } = await git.run(["rev-list", "--objects", "--all"], {
+    gitDir,
+    timeoutMs: options.timeoutMs,
+    maxOutputBytes: 1024 * 1024 * 1024,
+  })
+  const reached = new Set<string>()
+  for (const line of stdout.toString("latin1").split("\n"))
+    if (line.length >= 40)
+      reached.add(
+        line.slice(0, line.indexOf(" ") < 0 ? line.length : line.indexOf(" ")),
+      )
+  return reached
+}
+
+/** The given objects' contents, one at a time (`cat-file --batch`), streamed. */
+export async function readObjects(
+  git: Git,
+  gitDir: string,
+  oids: Iterable<string>,
+  onObject: (object: StoredObject) => Promise<void> | void,
+  options: { timeoutMs?: number } = {},
+): Promise<void> {
+  const proc = git.spawn(["cat-file", "--batch"], {
+    gitDir,
+    timeoutMs: options.timeoutMs,
+  })
+  const stderr = errorsOf(proc)
+  const list = [...oids]
+  // Written while it is read, so neither side waits on a full pipe.
+  const writing = (async () => {
+    for (const oid of list)
+      if (!proc.child.stdin.write(`${oid}\n`))
+        await new Promise<void>((resolve) =>
+          proc.child.stdin.once("drain", resolve),
+        )
+    proc.child.stdin.end()
+  })().catch(() => {})
+  const reader = new StreamReader(proc.child.stdout)
+  try {
+    for (let i = 0; i < list.length; i++) {
+      const header = await reader.line()
+      if (header === null) break
+      const match =
+        /^([0-9a-f]{40}|[0-9a-f]{64}) (blob|tree|commit|tag) (\d+)$/.exec(
+          header.toString("latin1"),
+        )
+      if (!match) continue
+      const content = await reader.bytes(Number(match[3]))
+      await reader.bytes(1)
+      await onObject({
+        oid: match[1]!,
+        type: match[2] as StoredObject["type"],
+        content,
+      })
+    }
+  } catch (error) {
+    proc.kill()
+    await proc.ended
+    throw error
+  }
+  await writing
+  await ended(proc, "cat-file", stderr)
+}

@@ -242,6 +242,7 @@ export function fakeApi(overrides: Partial<ApiClient> = {}): Fake {
     "catalogStartHere",
     "previewCatalogPurge",
     "purgeCatalogText",
+    "catalogPurgeStatus",
     "catalogPurges",
   ]
   const fake = {} as Record<string, unknown>

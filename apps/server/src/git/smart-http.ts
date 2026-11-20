@@ -324,8 +324,15 @@ export function createSmartHttp(options: {
         { "retry-after": String(gitProcessWaitSeconds) },
       )
     }
-    // A repository being pruned is not read meanwhile.
-    const leave = (await options.gate?.enter(target.workspaceId)) ?? (() => {})
+    // A repository being pruned or swapped by a purge is not read meanwhile,
+    // and a purge's swap ends this process (`gate.drain`).
+    let drainedEarly = false
+    let killProcess: () => void = () => {
+      drainedEarly = true
+    }
+    const leave =
+      (await options.gate?.enter(target.workspaceId, () => killProcess())) ??
+      (() => {})
     const release = () => {
       leave()
       place()
@@ -360,6 +367,14 @@ export function createSmartHttp(options: {
       env[hookUrlVariable] = options.push!.hookUrl!
     }
 
+    if (drainedEarly) {
+      release()
+      removeSpool()
+      void session?.end()
+      return gitText(503, gitMessages.busy, {
+        "retry-after": String(gitProcessWaitSeconds),
+      })
+    }
     let spawned: ReturnType<RepositoryStore["git"]["spawn"]>
     try {
       spawned = store.git.spawn(
@@ -376,6 +391,7 @@ export function createSmartHttp(options: {
       throw error
     }
     const { child, kill } = spawned
+    killProcess = kill
     const ended = spawned.ended.then(async (end) => {
       // The push is recorded before the next Git process may start.
       await session?.end()

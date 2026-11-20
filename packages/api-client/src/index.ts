@@ -350,6 +350,7 @@ export interface CatalogPurgePreview {
     acrossLines: number
     structure: { path: string; where: "id" | "alias" | "key" | "frontmatter" }[]
     alsoWrittenAs: { form: CatalogPurgeForm; places: number }[]
+    mayAppearEncoded: { encoding: CatalogPurgeEncoding; places: number }[]
     journalEntries: number
   } | null
   pushLog: number
@@ -361,11 +362,29 @@ export interface CatalogPurgePreview {
   acrossLines: number
   /** Copies in encoded forms a removal does not reach; `text` is the form to remove. */
   alsoWrittenAs: { form: CatalogPurgeForm; text: string; places: number }[]
-  /** Rewrites of the history whose database part did not finish. */
+  /** Places that may hold it encoded, which removing it does not reach. */
+  mayAppearEncoded: { encoding: CatalogPurgeEncoding; places: number }[]
+  /** Rewrites of the history whose removal was not recorded. */
   unfinished: number
+  /** Whether this text finishes one of them. */
+  finishesUnfinished: boolean
 }
 
 export type CatalogPurgeForm = "url" | "percent" | "html" | "escaped"
+
+/** An encoding the text may also appear in, which removing it does not reach. */
+export type CatalogPurgeEncoding =
+  "base64" | "percent-every-byte" | "quoted-printable" | "utf-16" | "other-case"
+
+/** Where a removal stands: running, recorded, failed, or rewritten but not recorded. */
+export interface CatalogPurgeStatus {
+  id: string
+  state: "running" | "done" | "failed" | "unfinished"
+  purge?: CatalogPurge
+  message?: string
+  /** When it failed on a rule, such as `nothing-to-purge`. */
+  rule?: string
+}
 
 /** A catalog purge: who, when, why and how much, never the purged text. */
 export interface CatalogPurge {
@@ -829,7 +848,17 @@ export function createApiClient(options: ApiClientOptions = {}) {
     purgeCatalogText: (
       workspaceId: string,
       input: { text: string; reason: string },
-    ) => request<CatalogPurge>("POST", `${catalog(workspaceId)}/purge`, input),
+    ) =>
+      request<CatalogPurgeStatus>(
+        "POST",
+        `${catalog(workspaceId)}/purge`,
+        input,
+      ),
+    catalogPurgeStatus: (workspaceId: string, purgeId: string) =>
+      request<CatalogPurgeStatus>(
+        "GET",
+        `${catalog(workspaceId)}/purges/${encodeURIComponent(purgeId)}`,
+      ),
     catalogPurges: (workspaceId: string) =>
       request<CatalogPurge[]>("GET", `${catalog(workspaceId)}/purges`),
   }

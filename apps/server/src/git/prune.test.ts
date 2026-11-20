@@ -123,4 +123,26 @@ describe("pruning repositories after pushes", () => {
     ;(await entering)()
     expect(entered).toBe(true)
   })
+
+  it("ends the Git processes running at a purge's swap, and holds back new ones until it is done", async () => {
+    const gate = createRepositoryGate()
+    let killed = 0
+    const held: { leave?: () => void } = {}
+    held.leave = await gate.enter(workspaceId, () => {
+      killed++
+      held.leave?.()
+    })
+    const reopen = await gate.drain(workspaceId, 1000)
+    expect(killed).toBe(1)
+    let entered = false
+    const waiting = gate.enter(workspaceId).then((l) => {
+      entered = true
+      return l
+    })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(entered).toBe(false)
+    reopen()
+    ;(await waiting)()
+    expect(entered).toBe(true)
+  })
 })

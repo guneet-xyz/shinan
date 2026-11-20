@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto"
+
 import { and, databaseErrorCode, desc, eq, schema, sql } from "@shinan/db"
 import type { CatalogPurgeHistoryCounts, Transaction } from "@shinan/db"
 
@@ -658,7 +660,14 @@ export async function checkCatalogRefs(
           const commit = actual.get(ref) ?? null
           const logged = expected.get(ref) ?? null
           if (commit === logged) continue
-          const details = { ref, commit, logged }
+          // The security log is never purged (D-049), so a branch's name,
+          // which may hold text a purge removes, is kept as its
+          // fingerprint only (review of #197).
+          const details = {
+            ref: `sha256:${createHash("sha256").update(ref).digest("hex")}`,
+            commit,
+            logged,
+          }
           const [seen] = await scope.tx
             .select({ id: schema.securityLog.id })
             .from(schema.securityLog)

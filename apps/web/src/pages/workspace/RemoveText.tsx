@@ -19,9 +19,15 @@ import { Textarea } from "@/components/ui/textarea"
 import { useAction } from "../../action"
 import { useApi, useResource } from "../../api"
 import { Actions, OrderedRows, Section } from "../../components/page"
-import { ErrorMessage, Loading, Notice } from "../../components/status"
+import {
+  ErrorAlert,
+  ErrorMessage,
+  Loading,
+  Notice,
+} from "../../components/status"
 import { formatTime } from "../../format"
 import { useWorkspace } from "./context"
+import { removalPolling } from "./removal"
 
 /** The word a workspace owner types to confirm. */
 const confirmWord = "remove"
@@ -88,6 +94,7 @@ function RemoveForm(props: { onRemoved: () => void }) {
   const [reason, setReason] = useState("")
   const [typed, setTyped] = useState("")
   const [done, setDone] = useState<CatalogPurge>()
+  const [failure, setFailure] = useState<string>()
   const find = useAction()
   const remove = useAction()
 
@@ -106,11 +113,29 @@ function RemoveForm(props: { onRemoved: () => void }) {
   const confirm = (event: FormEvent) => {
     event.preventDefault()
     if (!found) return
+    setFailure(undefined)
     remove.run(
-      () =>
-        api
-          .purgeCatalogText(workspace.id, { text: found.text, reason })
-          .then(setDone),
+      async () => {
+        // A large catalog takes minutes: the removal runs on the server,
+        // and the page asks how it stands (review of #197).
+        let status = await api.purgeCatalogText(workspace.id, {
+          text: found.text,
+          reason,
+        })
+        while (status.state === "running") {
+          await new Promise((resolve) =>
+            setTimeout(resolve, removalPolling.intervalMs),
+          )
+          status = await api.catalogPurgeStatus(workspace.id, status.id)
+        }
+        if (status.state !== "done" || !status.purge) {
+          setFailure(
+            status.message ?? "Shinan could not remove the text: try again",
+          )
+          return
+        }
+        setDone(status.purge)
+      },
       () => {
         // The text is kept only in this form's memory, and only until now.
         setText("")
@@ -163,7 +188,8 @@ function RemoveForm(props: { onRemoved: () => void }) {
             />
             <FieldDescription>
               Exactly as it was written, at least 4 characters. Spaces and line
-              breaks need not match. Nothing changes until you confirm.
+              breaks need not match; copies in another encoding, such as base64,
+              are not removed. Nothing changes until you confirm.
             </FieldDescription>
           </Field>
           <div>
@@ -179,7 +205,20 @@ function RemoveForm(props: { onRemoved: () => void }) {
           Shinan doesn't hold this text anywhere in this catalog. Nothing to
           remove.
           {preview.unfinished > 0 &&
-            " An earlier removal didn't finish: remove any text again to finish it."}
+            ` ${plural(preview.unfinished, "earlier removal")} didn't finish: remove the same text again to finish ${preview.unfinished === 1 ? "it" : "each"}.`}
+        </Notice>
+      )}
+      {preview && preview.mayAppearEncoded.length > 0 && (
+        <Notice>
+          It may also appear encoded, which Shinan does not remove:{" "}
+          {preview.mayAppearEncoded
+            .map(
+              (e) =>
+                `${encodingNames[e.encoding]} (${plural(e.places, "place")})`,
+            )
+            .join(", ")}
+          . Shinan removes only the text as written; ask an agent to look at
+          those files.
         </Notice>
       )}
       {preview && preview.alsoWrittenAs.length > 0 && (
@@ -320,7 +359,14 @@ function RemoveForm(props: { onRemoved: () => void }) {
           </form>
         </div>
       )}
+      {remove.pending && (
+        <Notice>
+          Removing… On a large catalog this takes a few minutes; you can leave
+          this page, and the removal goes on.
+        </Notice>
+      )}
       {remove.error !== undefined && <ErrorMessage error={remove.error} />}
+      {failure !== undefined && <ErrorAlert>{failure}</ErrorAlert>}
     </Section>
   )
 }
@@ -375,6 +421,8 @@ function AfterRemoval(props: { removal: CatalogPurge }) {
 function placesOf(preview: CatalogPurgePreview): string[] {
   const places: string[] = []
   const history = preview.history
+  if (preview.finishesUnfinished)
+    places.push("an earlier removal of this text that didn't finish")
   if (history) {
     const { commits, messages } = history
     if (commits.main + commits.branches > 0)
@@ -464,6 +512,17 @@ const formNames: Record<
   percent: "Percent-encoded",
   html: "With HTML entities",
   escaped: "With JSON or YAML escapes",
+}
+
+const encodingNames: Record<
+  CatalogPurgePreview["mayAppearEncoded"][number]["encoding"],
+  string
+> = {
+  base64: "base64",
+  "percent-every-byte": "percent-encoded byte by byte",
+  "quoted-printable": "quoted-printable",
+  "utf-16": "UTF-16",
+  "other-case": "in other letter case",
 }
 
 const structureNames: Record<

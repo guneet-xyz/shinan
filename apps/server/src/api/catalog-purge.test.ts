@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 
 import type * as Api from "@shinan/api-client"
-import { addMember, createWorkspace } from "@shinan/core"
+import { addMember, createWorkspace, purgeFollowing } from "@shinan/core"
 import type { GitClient, JobQueue, Person } from "@shinan/core"
 import { schema } from "@shinan/db"
 import { connectTestDatabase } from "@shinan/db/testing"
@@ -30,22 +30,30 @@ const history = {
   acrossLines: 0,
   structure: [],
   alsoWrittenAs: [],
+  mayAppearEncoded: [],
   journalEntries: 0,
 }
 const gitClient = {
   previewPurge: () => Promise.resolve(history),
-  purge: (_: string, input: { purgeId: string }) =>
+  startPurge: (_: string, input: { purgeId: string }) =>
+    Promise.resolve({ purgeId: input.purgeId, state: "running" }),
+  purgeStatus: (_: string, purgeId: string) =>
     Promise.resolve({
-      purgeId: input.purgeId,
-      rewritten: false,
-      commits: 0,
-      rewrittenCommits: 0,
-      removedCommits: 0,
-      files: 0,
-      messages: 0,
-      renamedBranches: 0,
-      journalEntries: 0,
+      purgeId,
+      state: "done",
+      result: {
+        purgeId,
+        rewritten: false,
+        commits: 0,
+        rewrittenCommits: 0,
+        removedCommits: 0,
+        files: 0,
+        messages: 0,
+        renamedBranches: 0,
+        journalEntries: 0,
+      },
     }),
+  isPurgeText: () => Promise.resolve(false),
   readJournal: () =>
     Promise.resolve({
       journalId: "0b6a3a52-6e3f-4cf1-9a11-6a1c6a7d2f01",
@@ -124,6 +132,22 @@ async function call<T>(
   return { status: response.status, text, body: JSON.parse(text) as T }
 }
 
+purgeFollowing.intervalMs = 5
+
+/** Asks how a removal stands until it is no longer running. */
+async function until(id: string): Promise<Api.CatalogPurgeStatus> {
+  for (;;) {
+    const status = await call<Api.CatalogPurgeStatus>(
+      "GET",
+      ws(`/purges/${id}`),
+      { who: contributor },
+    )
+    expect(status.status).toBe(200)
+    if (status.body.state !== "running") return status.body
+    await new Promise((resolve) => setTimeout(resolve, 5))
+  }
+}
+
 describe("catalog purge over the API", () => {
   it("is for workspace owners who signed in again recently", async () => {
     const preview = { body: { text: secret } }
@@ -164,14 +188,19 @@ describe("catalog purge over the API", () => {
       moves: 0,
       acrossLines: 0,
       alsoWrittenAs: [],
+      mayAppearEncoded: [],
       unfinished: 0,
+      finishesUnfinished: false,
     })
 
-    const purged = await call<Api.CatalogPurge>("POST", ws("/purge"), {
+    // A job: answered `running` at once, then followed by its status.
+    const started = await call<Api.CatalogPurgeStatus>("POST", ws("/purge"), {
       body: { text: secret, reason: "A passphrase leaked." },
     })
-    expect(purged.status).toBe(200)
-    expect(purged.text).not.toContain(secret)
+    expect(started.status).toBe(202)
+    expect(started.body.state).toBe("running")
+    expect(started.text).not.toContain(secret)
+    const purged = { body: (await until(started.body.id)).purge! }
     expect(purged.body).toMatchObject({
       number: 1,
       purgedBy: owner.handle,
@@ -184,10 +213,12 @@ describe("catalog purge over the API", () => {
     })
     expect(purges.body).toEqual([purged.body])
 
-    const again = await call<Api.ErrorBody>("POST", ws("/purge"), {
+    const again = await call<Api.CatalogPurgeStatus>("POST", ws("/purge"), {
       body: { text: secret, reason: "Again." },
     })
-    expect(again.status).toBe(409)
-    expect(again.body.rule).toBe("nothing-to-purge")
+    expect(await until(again.body.id)).toMatchObject({
+      state: "failed",
+      rule: "nothing-to-purge",
+    })
   })
 })

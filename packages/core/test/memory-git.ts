@@ -403,7 +403,9 @@ export function createMemoryGit(): MemoryGit {
     acknowledgeJournal: notHere,
     listRefs: notHere,
     previewPurge: notHere,
-    purge: notHere,
+    startPurge: notHere,
+    purgeStatus: notHere,
+    isPurgeText: notHere,
     smartHttp: () => {
       throw new Error("Not part of the memory Git client")
     },

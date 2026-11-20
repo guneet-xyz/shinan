@@ -442,24 +442,51 @@ export function createGitApp(options: {
       return c.json(await options.purges.preview(workspace(c), body.text))
     },
   )
-  app.post("/repositories/:workspaceId/purge", limit(64 * 1024), async (c) => {
-    if (!options.purges) return fail(c, 404, "not-found", "Not found")
-    const body = await jsonBody(c)
-    if (typeof body.text !== "string") bad("text must be a string")
+  // A purge runs as a job (review of #197): started here, then followed.
+  const purgeId = (value: unknown) => {
     if (
-      typeof body.purgeId !== "string" ||
+      typeof value !== "string" ||
       !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(
-        body.purgeId,
+        value,
       )
     )
       bad("purgeId must be a UUID")
+    return value
+  }
+  app.post("/repositories/:workspaceId/purges", limit(64 * 1024), async (c) => {
+    if (!options.purges) return fail(c, 404, "not-found", "Not found")
+    const body = await jsonBody(c)
+    if (typeof body.text !== "string") bad("text must be a string")
     return c.json(
-      await options.purges.purge(workspace(c), {
-        purgeId: body.purgeId,
+      options.purges.start(workspace(c), {
+        purgeId: purgeId(body.purgeId),
         text: body.text,
       }),
+      202,
     )
   })
+  app.get("/repositories/:workspaceId/purges/:purgeId", (c) => {
+    if (!options.purges) return fail(c, 404, "not-found", "Not found")
+    return c.json(
+      options.purges.status(workspace(c), purgeId(c.req.param("purgeId"))),
+    )
+  })
+  app.post(
+    "/repositories/:workspaceId/purges/:purgeId/text",
+    limit(64 * 1024),
+    async (c) => {
+      if (!options.purges) return fail(c, 404, "not-found", "Not found")
+      const body = await jsonBody(c)
+      if (typeof body.text !== "string") bad("text must be a string")
+      return c.json({
+        matches: options.purges.isText(
+          workspace(c),
+          purgeId(c.req.param("purgeId")),
+          body.text,
+        ),
+      })
+    },
+  )
 
   app.get("/journal", (c) =>
     c.json({

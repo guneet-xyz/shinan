@@ -623,13 +623,26 @@ gc --prune=now`). Shinan refuses any push that brings an old commit
    docker compose exec -T postgres psql -U shinan -d shinan -c "vacuum full catalog_push_refs, catalog_commit_first_pushes, catalog_rewrites, events, catalog_index_documents, catalog_index_facts, catalog_index_relations, catalog_index_discrepancies, catalog_index_sections, catalog_moves"
    ```
 
-While the Git container rewrites a repository, pushes to it wait and are
-refused as busy; a purge waits up to 30 seconds for a push being checked.
-If the Git container stops during a purge, it finishes the purge, or puts
-the repository back as it was, when it starts again; if `web` fails after
-the rewrite, the owner removes the text again to finish (nothing is
-rewritten twice). The index is rebuilt from the new `main` by the worker.
-Every `web` and `worker` process forgets parsed catalog text within a minute
+A purge runs in the background: the owner's page shows "Removing…" and
+asks how it stands. The Git container reads and rewrites the history while
+pushes go on, then holds pushes back for the swap only (seconds: 1.3 s for
+a branch of 20,000 pages and 6,002 commits, measured on Daedalus; the
+whole purge took two minutes). Pushes meanwhile are refused with "Shinan is
+removing text from this catalog's history: push again in a few minutes";
+a second purge of the same catalog is refused until the first ends. Clones
+and fetches running at the swap are ended, so nobody gets the old history
+afterwards. The Git container's log has one line per purge with how long
+it took and how long pushes were held back, never the text.
+
+If something fails after the swap (a full or failing disk, say), every push
+to that catalog stays refused until the Git container has written the
+removed commits and its records; it retries every minute and at start, so
+fix the disk and it finishes by itself. If the Git container stops during
+a purge, it finishes the purge, or puts the repository back as it was, when
+it starts again. If `web` stops while a purge runs, the rewrite stays
+listed as unfinished until the owner removes the same text again, which
+records it without rewriting. The index is rebuilt from the new `main` by
+the worker. Every `web` and `worker` process forgets parsed catalog text within a minute
 of a purge; nothing needs restarting.
 
 The `git` role also removes, from each repository a push changed, the
