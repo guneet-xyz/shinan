@@ -103,6 +103,26 @@ describe("setting up an agent", () => {
     ).toContain('"guneet via opencode-daedalus"')
   })
 
+  it("shows the whole command on request", async () => {
+    renderApp(
+      "/account/agents/setup",
+      fakeApi({ yourAgents: () => Promise.resolve([agent]) }),
+    )
+    const command = await screen.findByText(/git clone/, {
+      selector: "pre code",
+    })
+    const block = command.parentElement!
+    expect(block.className).toContain("overflow-x-auto")
+    await userEvent.click(
+      screen.getByRole("button", { name: "Show the whole command" }),
+    )
+    expect(block.className).toContain("whitespace-pre-wrap")
+    await userEvent.click(
+      screen.getByRole("button", { name: "Show on one line" }),
+    )
+    expect(block.className).toContain("overflow-x-auto")
+  })
+
   it("copies the configuration", async () => {
     const user = userEvent.setup()
     const writeText = vi.spyOn(navigator.clipboard, "writeText")

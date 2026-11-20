@@ -553,8 +553,10 @@ accepted with the plan):**
   fix it in a new commit and push again; remove the worktree and delete the
   branch. Branches are pushed only to share unfinished work and deleted once
   merged. Retire rather than delete; keep old IDs in `aliases`. Undo is
-  `git revert`. After a purge, reset onto the new history and never push old
-  commits back.
+  `git revert`. On a refusal, the agent does what the output's last lines
+  say: a new commit, or for problems inside its commits, rewriting them
+  with `git rebase -i origin/main` (product review of #176). After a purge,
+  it resets onto the new history and never pushes old commits back.
 - **Writing fact checks by hand:** `checked` is the real time of the check,
   never rounded and never the time of writing or pushing
   ([#158](https://github.com/guneet-xyz/shinan/issues/158)); `by` is the
@@ -649,7 +651,9 @@ Your agents and from the token shown once (in a new tab, so the token stays
 on screen, with `?agent=<id>` so the page fills in that agent). It fills in
 the installation's own address, the agent's workspace and its written form,
 and gives four steps of one sentence each, with how each works behind a
-"What does this do?" disclosure. The command is built in
+"What does this do?" disclosure. Step 2's long one-line command has a
+"Show the whole command" button that wraps it, so a person can read it
+before running it (product review of #176). The command is built in
 `packages/skill/src/setup.ts`, which the page shows and a test runs with a
 real `git`, so the two cannot differ.
 
@@ -723,10 +727,19 @@ real `git`, so the two cannot differ.
    `GIT_TRACE_CURL`, `GIT_CURL_VERBOSE` and `GIT_TRACE_PACKET` show
    `Authorization: Basic <redacted>`, never the token; with
    `GIT_TRACE_REDACT=0` the header appears, so the skill forbids turning
-   redaction off.
+   redaction off. Configuration given on the command line
+   (`git -c credential.helper=…`) or through `GIT_CONFIG_COUNT`,
+   `GIT_CONFIG_KEY_<n>` and `GIT_CONFIG_VALUE_<n>` is read after the clone's,
+   so it could add a helper back; the skill names both and forbids them. A
+   refused token never makes Git prompt for a password, even in a terminal
+   without `GIT_TERMINAL_PROMPT=0`: the helper's answer was refused, so Git
+   fails with "Authentication failed" (tested in a pseudo-terminal, where
+   the same Git without a helper does prompt).
 
-3. **Add Shinan to OpenCode:** the skill in
-   `~/.config/opencode/opencode.jsonc` (or an `opencode.jsonc` in a folder
+3. **Add Shinan to OpenCode:** the page says to merge the block into the
+   global OpenCode config (`~/.config/opencode/opencode.jsonc` or
+   `opencode.json`), keeping other settings and adding to any `skills` and
+   `permissions` already there (or into an `opencode.jsonc` in a folder
    above the projects that should use Shinan), with the `shinan` MCP server
    entry of an earlier setup removed (owner, GD-6,
    [D-063](decisions/D-063-no-mcp-for-the-catalog.md)):

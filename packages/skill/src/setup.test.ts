@@ -226,6 +226,63 @@ describe("the agent setup, with a real git", () => {
     }
   })
 
+  /**
+   * Runs `git` in a pseudo-terminal (util-linux `script`), without
+   * `GIT_TERMINAL_PROMPT=0`, so Git could prompt if it wanted to. Ends when
+   * Git ends, or as soon as it prompts.
+   */
+  const gitInTerminal = (args: string[], cwd: string) =>
+    new Promise<{ code: number | null; output: string; prompted: boolean }>(
+      (resolve, reject) => {
+        const quoted = args.map((a) => `'${a.replaceAll("'", "'\\''")}'`)
+        const terminalEnv: Record<string, string | undefined> = env()
+        delete terminalEnv.GIT_TERMINAL_PROMPT
+        const child = spawn(
+          "script",
+          ["-qec", `git ${quoted.join(" ")}`, "/dev/null"],
+          { env: terminalEnv, cwd, stdio: ["pipe", "pipe", "pipe"] },
+        )
+        let output = ""
+        let prompted = false
+        const timer = setTimeout(() => child.kill("SIGKILL"), 15_000)
+        const read = (chunk: Buffer) => {
+          output += String(chunk)
+          if (!prompted && /(Username|Password) for /.test(output)) {
+            prompted = true
+            child.kill("SIGKILL")
+          }
+        }
+        child.stdout.on("data", read)
+        child.stderr.on("data", read)
+        child.on("error", reject)
+        child.on("close", (code) => {
+          clearTimeout(timer)
+          resolve({ code, output, prompted })
+        })
+      },
+    )
+
+  it("never prompts for a password when the token is refused, even in a terminal", async () => {
+    // Outside the clone no helper answers, so Git prompts: the terminal
+    // works, and the check below is not vacuous.
+    const outside = await gitInTerminal(
+      ["ls-remote", catalogRepositoryUrl(server.origin, workspaceId)],
+      home,
+    )
+    expect(outside.prompted, outside.output).toBe(true)
+
+    const file = join(home, ".config", "shinan", "token")
+    await writeFile(file, "a-revoked-token\n")
+    try {
+      const refused = await gitInTerminal(["fetch", "origin"], clone)
+      expect(refused.prompted, refused.output).toBe(false)
+      expect(refused.code).not.toBe(0)
+      expect(refused.output).toMatch(/Authentication failed/)
+    } finally {
+      await writeFile(file, `${token}\n`)
+    }
+  })
+
   it("leaves other helpers working outside the clone", async () => {
     // The checks above are not vacuous: outside the clone, Git asks the
     // global helpers, which have nothing to give.

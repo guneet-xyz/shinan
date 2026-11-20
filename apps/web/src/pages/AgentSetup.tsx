@@ -123,6 +123,7 @@ export function AgentSetup() {
           </p>
           <CodeBlock
             label="Setup command"
+            wrappable
             code={setupCommand({ origin, workspaceId, by })}
           />
           <WhatItDoes>
@@ -154,7 +155,9 @@ export function AgentSetup() {
         </Section>
         <Section title="3. Add Shinan to OpenCode">
           <p className="text-sm">
-            Add this to <Code>~/.config/opencode/opencode.jsonc</Code>.
+            Merge this into your global OpenCode config (
+            <Code>~/.config/opencode/opencode.jsonc</Code> or{" "}
+            <Code>opencode.json</Code>).
           </p>
           <CodeBlock
             label="OpenCode configuration"
@@ -165,10 +168,13 @@ export function AgentSetup() {
               It loads Shinan&apos;s skill, which teaches the agent to read the
               catalog and push its changes, from{" "}
               <Code>{`${origin}/skills/`}</Code>. The rule stops OpenCode&apos;s
-              file reader from opening the token&apos;s folder. To use Shinan
-              only for some projects, put it in an <Code>opencode.jsonc</Code>{" "}
-              in a folder above them instead. If an older setup added a{" "}
-              <Code>shinan</Code> MCP server, remove it.
+              file reader from opening the token&apos;s folder. Merge it with
+              what the file already holds: keep your other settings, and add the
+              skill and the rule to any <Code>skills</Code> and{" "}
+              <Code>permissions</Code> you have. To use Shinan only for some
+              projects, merge it into an <Code>opencode.jsonc</Code> in a folder
+              above them instead. If an older setup added a <Code>shinan</Code>{" "}
+              MCP server, remove it.
             </p>
           </WhatItDoes>
         </Section>
@@ -223,8 +229,14 @@ function WhatItDoes(props: { children: ReactNode }) {
 }
 
 /** A block of text to copy onto the machine, with a copy button. */
-function CodeBlock(props: { label: string; code: string }) {
+function CodeBlock(props: {
+  label: string
+  code: string
+  /** Offers to wrap a long one-line command, so it can be read whole. */
+  wrappable?: boolean
+}) {
   const [copied, setCopied] = useState(false)
+  const [wrapped, setWrapped] = useState(false)
   const copy = () => {
     void navigator.clipboard?.writeText(props.code).then(
       () => setCopied(true),
@@ -236,11 +248,13 @@ function CodeBlock(props: { label: string; code: string }) {
       <figcaption className="sr-only">{props.label}</figcaption>
       <pre
         tabIndex={0}
-        className="overflow-x-auto rounded-lg border bg-muted p-3 font-mono text-xs leading-relaxed sm:text-sm"
+        className={`rounded-lg border bg-muted p-3 font-mono text-xs leading-relaxed sm:text-sm ${
+          wrapped ? "break-all whitespace-pre-wrap" : "overflow-x-auto"
+        }`}
       >
         <code>{props.code}</code>
       </pre>
-      <div>
+      <div className="flex flex-wrap gap-2">
         <Button
           type="button"
           variant="outline"
@@ -256,6 +270,16 @@ function CodeBlock(props: { label: string; code: string }) {
           )}
           {copied ? "Copied" : "Copy"}
         </Button>
+        {props.wrappable && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => setWrapped((w) => !w)}
+          >
+            {wrapped ? "Show on one line" : "Show the whole command"}
+          </Button>
+        )}
       </div>
     </figure>
   )

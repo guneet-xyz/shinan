@@ -70,9 +70,12 @@ catalog at once. Nobody approves it first.
   that file, and never put the token in a file, a command or a message.
   Never put it in a remote URL (as `agent:<token>@` before the host): Git would keep
   it in `.git/config` and send it like the helper does, so Shinan could not
-  tell. Never change or add credential helpers (in any Git configuration or
-  with `-c`) and never set `GIT_TRACE_REDACT=0`, which makes Git's trace
-  output show the token. If Git says your token is missing, revoked or not
+  tell. Never change or add credential helpers: not in any Git
+  configuration file, not with `git -c credential.helper=…` (or
+  `credential.<url>.helper`), and not through the `GIT_CONFIG_COUNT`,
+  `GIT_CONFIG_KEY_<n>` and `GIT_CONFIG_VALUE_<n>` environment variables.
+  Never set `GIT_TRACE_REDACT=0`, which makes Git's trace output show the
+  token. If Git says your token is missing, revoked or not
   accepted, tell your person; do not go looking for it.
 - **Say which commit.** When you rely on the catalog, name `main`'s commit
   you read (`git rev-parse --short origin/main`).

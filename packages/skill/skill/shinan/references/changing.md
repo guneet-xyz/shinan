@@ -21,7 +21,7 @@ git worktree add -b disk-resize ../disk-resize origin/main && cd ../disk-resize 
 git add -A && git commit -m "Record the data disk after the resize (SHN-12)"  # 4. commit
 git fetch origin && git rebase origin/main          # 5. bring in what others pushed
 git push origin HEAD:main                           # 6. push
-# 7. read every remote: line; if refused, fix in a new commit and push again
+# 7. read every remote: line; if refused, do what its last lines say (a new commit, or rewrite yours with git rebase -i origin/main)
 cd - && git worktree remove ../disk-resize && git branch -D disk-resize  # 8. clean up
 ```
 
