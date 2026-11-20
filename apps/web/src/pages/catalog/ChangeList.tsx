@@ -6,6 +6,7 @@ import type { CatalogChange } from "@shinan/api-client"
 import { Button } from "@/components/ui/button"
 
 import { ErrorMessage } from "../../components/status"
+import { pusherText } from "./format"
 import { VisibleText } from "./VisibleText"
 
 /*
@@ -13,7 +14,9 @@ import { VisibleText } from "./VisibleText"
  * page's History), newest first under day headings. Each change is its
  * message's first line as the headline, the start of the rest under it,
  * then who and when and the short commit ID, so a person can tell an agent
- * "revert abc1234". Who pushed it comes from the push log (GC-3a).
+ * "revert abc1234". Who pushed it, and when it reached `main`, come from
+ * the push log, which Shinan records: a commit's author and time are
+ * written by the agent (D-061).
  */
 
 const dayFormat = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" })
@@ -165,7 +168,12 @@ function ChangeItem(props: {
         </p>
       )}
       <p className="text-xs text-muted-foreground">
-        {/* GC-3a: "Guneet, through OpenCode on Daedalus · ", from the push log. */}
+        {change.pushed_by && (
+          <>
+            <VisibleText text={pusherText(change.pushed_by)} oneLine />
+            {" · "}
+          </>
+        )}
         {change.time && (
           <time dateTime={change.time}>
             {(props.ownDate ? dateTimeFormat : clockFormat).format(

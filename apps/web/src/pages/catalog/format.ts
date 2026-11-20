@@ -1,4 +1,5 @@
 import type {
+  CatalogPusher,
   CatalogSearchResult,
   FactState,
   ScalarValue,
@@ -98,6 +99,16 @@ export function relativeTime(iso: string, now = Date.now()): string {
  */
 export function byText(by: string): string {
   return by.replace(/^(\S+) via (\S+)$/, "$1, through $2")
+}
+
+/**
+ * Who first pushed a change, as people read it: "Guneet, through OpenCode
+ * on Daedalus", or "Shinan" for a change Shinan made itself.
+ */
+export function pusherText(pusher: CatalogPusher): string {
+  return pusher.kind === "shinan"
+    ? "Shinan"
+    : `${pusher.person}, through ${pusher.agent}`
 }
 
 /** Values in a sentence: "a", "a and b", "a, b and c". */

@@ -2,7 +2,11 @@ import { screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { describe, expect, it, vi } from "vitest"
 
-import type { CatalogEntity, CatalogHistoryAnswer } from "@shinan/api-client"
+import type {
+  CatalogEntity,
+  CatalogHistoryAnswer,
+  CatalogPusher,
+} from "@shinan/api-client"
 
 import { answer, check, musashi, tree } from "../../test/catalog"
 import {
@@ -33,7 +37,12 @@ const unavailable = () =>
 
 /** A history answer with these changes, newest first. */
 function history(
-  changes: { message: string; minutesAgo: number; commit?: string }[],
+  changes: {
+    message: string
+    minutesAgo: number
+    commit?: string
+    pushed_by?: CatalogPusher | null
+  }[],
   next_after: string | null = null,
 ): CatalogHistoryAnswer {
   return {
@@ -45,8 +54,9 @@ function history(
       subject: c.message.split("\n")[0]!,
       body: c.message.split("\n").slice(1).join("\n").trim(),
       time: new Date(Date.now() - c.minutesAgo * 60_000).toISOString(),
+      time_source: "main" as const,
       merge: false,
-      pushed_by: null,
+      pushed_by: c.pushed_by ?? null,
     })),
     next_after,
   }
@@ -260,7 +270,19 @@ describe("a page", () => {
       musashiPath,
       api(musashi, {
         catalogHistory: () =>
-          Promise.resolve(history([{ message: "Recheck", minutesAgo: 150 }])),
+          Promise.resolve(
+            history([
+              {
+                message: "Recheck",
+                minutesAgo: 150,
+                pushed_by: {
+                  kind: "agent",
+                  person: "Guneet",
+                  agent: "OpenCode on Daedalus",
+                },
+              },
+            ]),
+          ),
       }),
     )
     const footer = (
@@ -268,7 +290,7 @@ describe("a page", () => {
     ).closest("footer")!
     await waitFor(() =>
       expect(footer.textContent).toContain(
-        "Last changed 2 hours ago · History · View source",
+        "Last changed 2 hours ago by Guneet, through OpenCode on Daedalus · History · View source",
       ),
     )
     expect(
@@ -862,13 +884,15 @@ describe("recent changes", () => {
     commit: string,
     pages: { path: string; id: string | null; title: string | null }[],
     page_count = pages.length,
+    pushed_by: CatalogPusher | null = null,
   ) => ({
     commit: commit.repeat(40),
     subject,
     body: "",
     time: new Date(Date.now() - minutesAgo * 60_000).toISOString(),
+    time_source: "main" as const,
     merge: false,
-    pushed_by: null,
+    pushed_by,
     pages,
     page_count,
     page_count_at_least: false,
@@ -902,6 +926,11 @@ describe("recent changes", () => {
                     "a",
                     projects,
                     5,
+                    {
+                      kind: "agent",
+                      person: "Guneet",
+                      agent: "OpenCode on Daedalus",
+                    },
                   ),
                   change("Recheck Musashi and Daedalus", 2, "b", [
                     {
@@ -915,9 +944,14 @@ describe("recent changes", () => {
                       title: "Daedalus",
                     },
                   ]),
-                  change("Write the README", 3, "c", [
-                    { path: "README.md", id: null, title: null },
-                  ]),
+                  change(
+                    "Write the README",
+                    3,
+                    "c",
+                    [{ path: "README.md", id: null, title: null }],
+                    1,
+                    { kind: "shinan" },
+                  ),
                 ],
                 next_after: "opaque-cursor",
               },
@@ -940,7 +974,11 @@ describe("recent changes", () => {
     expect(items[0]!.textContent).toContain(
       "Add five projects ⟨U+202E⟩ (hidden character: right-to-left override) gnp.exe",
     )
-    expect(items[0]!.textContent).toContain("aaaaaaa")
+    // Who pushed it, then when it reached main, then the short ID.
+    expect(items[0]!.querySelectorAll("p")[1]!.textContent).toMatch(
+      /^Guneet, through OpenCode on Daedalus · \d{1,2}:\d\d\s?[AP]M · aaaaaaa$/,
+    )
+    expect(items[2]!.textContent).toContain("Shinan · ")
     expect(items[0]!.textContent).toContain(
       "Project 1, Project 2, Project 3 and 2 more",
     )

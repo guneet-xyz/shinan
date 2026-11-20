@@ -192,6 +192,10 @@ export interface CatalogDocumentAnswer extends CatalogAnswer {
   document: CatalogDocument
 }
 
+/** Who first pushed a change: an agent for a person, or Shinan itself. */
+export type CatalogPusher =
+  { kind: "agent"; person: string; agent: string } | { kind: "shinan" }
+
 /** One change of a page: a commit of `main` that changed its file. */
 export interface CatalogChange {
   commit: string
@@ -199,11 +203,12 @@ export interface CatalogChange {
   subject: string
   /** The start of the rest of the message, about 1,000 characters at most. */
   body: string
-  /** When it was committed (ISO 8601), as the commit says. */
+  /** When it reached `main`, from the push log; else its commit time. */
   time: string | null
+  time_source: "main" | "commit"
   merge: boolean
-  /** Who pushed it, from the push log (GC-3a); null until then. */
-  pushed_by: null
+  /** Who first pushed it, from the push log; null when it has no record. */
+  pushed_by: CatalogPusher | null
 }
 
 export interface CatalogHistoryAnswer extends CatalogAnswer {

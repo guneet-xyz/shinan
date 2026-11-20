@@ -233,6 +233,7 @@ export type {
   CatalogSourceJson,
   HistoryCursors,
 } from "./catalog/pages.js"
+export type { CommitPushJson, PusherJson } from "./catalog/pushers.js"
 export {
   changedPagesShown,
   changesPageLimit,

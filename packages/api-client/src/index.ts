@@ -597,6 +597,28 @@ export function createApiClient(options: ApiClientOptions = {}) {
 
     members: (workspaceId: string) =>
       request<Member[]>("GET", `${workspace(workspaceId)}/members`),
+
+    /** The values the owners allowed as "not a secret" (GQ-2), owners only. */
+    catalogAllowedValues: (workspaceId: string) =>
+      request<CatalogAllowedValue[]>(
+        "GET",
+        `${workspace(workspaceId)}/catalog/allowed-values`,
+      ),
+    /** Allows a value, or the fingerprint a refusal showed; needs a recent sign-in. */
+    allowCatalogValue: (
+      workspaceId: string,
+      input: { value: string } | { fingerprint: string },
+    ) =>
+      request<CatalogAllowedValue>(
+        "POST",
+        `${workspace(workspaceId)}/catalog/allowed-values`,
+        input,
+      ),
+    removeCatalogAllowedValue: (workspaceId: string, fingerprint: string) =>
+      request<void>(
+        "DELETE",
+        `${workspace(workspaceId)}/catalog/allowed-values/${encodeURIComponent(fingerprint)}`,
+      ),
     changeRole: (workspaceId: string, memberId: string, role: Role) =>
       request<Member>(
         "PATCH",
