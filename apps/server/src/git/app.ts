@@ -18,7 +18,7 @@ import type { LimitedLog } from "@shinan/db"
 import { GitError } from "@shinan/git"
 
 import type { Journal } from "./journal.js"
-import { JournalError } from "./journal.js"
+import { JournalDamagedError, JournalError } from "./journal.js"
 import type { RepositoryStore } from "./store.js"
 import { StoreError } from "./store.js"
 
@@ -94,6 +94,10 @@ export function createGitApp(options: {
   app.onError((error, c) => {
     if (error instanceof StoreError)
       return fail(c, error.status, error.code, error.message)
+    if (error instanceof JournalDamagedError) {
+      log(`Git API ${c.req.method}: ${error.message}`)
+      return fail(c, 500, "journal-damaged", error.message)
+    }
     if (error instanceof JournalError)
       return fail(c, 400, "invalid-request", error.message)
     if (error instanceof GitContextError)

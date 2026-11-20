@@ -1,6 +1,12 @@
 import { spawn } from "node:child_process"
 import type { ChildProcessWithoutNullStreams } from "node:child_process"
-import { accessSync, constants, mkdtempSync } from "node:fs"
+import {
+  accessSync,
+  constants,
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+} from "node:fs"
 import { tmpdir } from "node:os"
 import { delimiter, dirname, isAbsolute, join } from "node:path"
 
@@ -17,8 +23,8 @@ export interface GitOptions {
    */
   binary?: string
   /**
-   * The folder Git sees as `HOME`. It must stay empty. Default: a new
-   * private folder under the system's temporary folder, made on first use.
+   * The folder Git sees as `HOME`. It must stay empty. Default:
+   * {@link privateHome}, one folder per user, made on first use.
    */
   home?: string
   /** Default time limit for one Git process, in milliseconds. */
@@ -188,6 +194,38 @@ export function findProgram(
   return null
 }
 
+/**
+ * The empty folder Git sees as `HOME`: `shinan-git-home-<uid>` in the
+ * temporary folder, one for every process of this user, so none is left
+ * behind however a process ends. Made on first use with mode 0700, and
+ * refused unless it is a real folder (not a link), this user's, private
+ * and empty: in a shared temporary folder, another user could have made it
+ * first, with a configuration in it.
+ */
+export function privateHome(temporaryDir = tmpdir()): string {
+  const uid = process.getuid?.() ?? 0
+  const folder = join(temporaryDir, `shinan-git-home-${uid}`)
+  try {
+    mkdirSync(folder, { mode: 0o700 })
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error
+  }
+  const stat = lstatSync(folder)
+  if (
+    !stat.isDirectory() ||
+    stat.uid !== uid ||
+    (stat.mode & 0o077) !== 0 ||
+    readdirSync(folder).length > 0
+  ) {
+    throw new GitError(
+      "start",
+      "git",
+      `${folder} must be an empty folder of this user's with mode 0700; remove it`,
+    )
+  }
+  return folder
+}
+
 export function createGit(options: GitOptions = {}): Git {
   const binary = options.binary ?? findProgram("git")
   if (!binary || !isAbsolute(binary)) {
@@ -202,8 +240,7 @@ export function createGit(options: GitOptions = {}): Git {
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
   const maxOutputBytes = options.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES
   let home = options.home
-  const homeFolder = () =>
-    (home ??= mkdtempSync(join(tmpdir(), "shinan-git-home-")))
+  const homeFolder = () => (home ??= privateHome())
 
   const environment = (): Record<string, string> => ({
     // Git finds its own programs (`git upload-pack` and the like) through

@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs"
+import { mkdtempSync, readFileSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
@@ -32,9 +32,54 @@ function identityPart(value: string, what: string): string {
 }
 
 /**
+ * Whether a path part is one Git refuses to check out, in any case, with
+ * the spellings Windows and macOS file systems read as the same name (Git's
+ * `verify_path`): `.git`, `.git.`, `.git ` and `git~1`.
+ */
+function isGitFolder(part: string): boolean {
+  const name = part.toLowerCase().replace(/[. ]+$/, "")
+  return name === ".git" || name === "git~1"
+}
+
+/** Refuses a commit's files Git or its clients would not take. */
+function checkFiles(files: readonly CommitFile[]): void {
+  const seen = new Set<string>()
+  for (const file of files) {
+    treePath(file.path)
+    if (file.path.endsWith("/") || seen.has(file.path)) {
+      throw new GitError(
+        "start",
+        "update-index",
+        "Each file needs its own path",
+      )
+    }
+    const parts = file.path.split("/")
+    if (parts.some(isGitFolder)) {
+      throw new GitError(
+        "start",
+        "update-index",
+        "A path cannot hold a .git folder",
+      )
+    }
+    if (
+      parts.at(-1)!.toLowerCase().startsWith(".gitmodules") &&
+      (file.mode ?? "100644") === "120000"
+    ) {
+      throw new GitError(
+        "start",
+        "update-index",
+        ".gitmodules cannot be a symbolic link",
+      )
+    }
+    seen.add(file.path)
+  }
+}
+
+/**
  * Writes the blobs, trees and a commit holding exactly `files`, with
  * `parents`, and returns the commit's ID. Moves no ref. It uses a temporary
- * index, so it works in a bare repository.
+ * index, so it works in a bare repository, and four Git processes whatever
+ * the number of files (`fast-import` for the blobs).
  */
 export async function writeCommit(
   git: Git,
@@ -44,28 +89,24 @@ export async function writeCommit(
     message: string
     identity: CommitIdentity
     parents?: readonly string[]
+    /**
+     * Where the files' bytes are staged for Git, briefly. Default: the
+     * system's temporary folder, which in a container may be memory.
+     */
+    temporaryDir?: string
   },
 ): Promise<string> {
   const parents = input.parents ?? []
   if (!parents.every(isObjectId)) {
     throw new GitError("start", "commit-tree", "Parents are full object IDs")
   }
-  const seen = new Set<string>()
-  for (const file of input.files) {
-    treePath(file.path)
-    if (file.path.endsWith("/") || seen.has(file.path)) {
-      throw new GitError(
-        "start",
-        "update-index",
-        "Each file needs its own path",
-      )
-    }
-    seen.add(file.path)
-  }
+  checkFiles(input.files)
   const time = `${input.identity.time ?? Math.floor(Date.now() / 1000)} +0000`
   const name = identityPart(input.identity.name, "name")
   const email = identityPart(input.identity.email, "email address")
-  const folder = mkdtempSync(join(tmpdir(), "shinan-git-index-"))
+  const folder = mkdtempSync(
+    join(input.temporaryDir ?? tmpdir(), "shinan-git-index-"),
+  )
   const env = {
     GIT_INDEX_FILE: join(folder, "index"),
     GIT_AUTHOR_NAME: name,
@@ -75,20 +116,54 @@ export async function writeCommit(
     GIT_COMMITTER_EMAIL: email,
     GIT_COMMITTER_DATE: time,
   }
-  const text = async (args: string[], input?: string | Uint8Array) =>
-    (await git.run(args, { gitDir, env, input })).stdout.toString("utf8").trim()
+  const text = async (args: string[], stdin?: string | Uint8Array) =>
+    (await git.run(args, { gitDir, env, input: stdin })).stdout
+      .toString("utf8")
+      .trim()
   try {
-    // One `update-index --index-info` for every file, so a commit of many
-    // files starts few processes.
-    const entries: string[] = []
-    for (const file of input.files) {
-      const oid = await text(["hash-object", "-w", "--stdin"], file.content)
-      entries.push(`${file.mode ?? "100644"} ${oid}\t${file.path}`)
+    // Every blob through one `git fast-import`, which writes them as one
+    // pack (synced once, as `core.fsync` asks) rather than one file each,
+    // and reports their IDs in a marks file.
+    const oids: string[] = []
+    if (input.files.length > 0) {
+      const parts: Buffer[] = []
+      input.files.forEach((file, i) => {
+        const content = Buffer.from(file.content)
+        parts.push(
+          Buffer.from(`blob\nmark :${i + 1}\ndata ${content.length}\n`),
+          content,
+          Buffer.from("\n"),
+        )
+      })
+      const marks = join(folder, "marks")
+      await git.run(["fast-import", "--quiet", `--export-marks=${marks}`], {
+        gitDir,
+        env,
+        input: Buffer.concat(parts),
+      })
+      const byMark = new Map<number, string>()
+      for (const line of readFileSync(marks, "utf8").split("\n")) {
+        const match = /^:(\d+) ([0-9a-f]+)$/.exec(line)
+        if (match) byMark.set(Number(match[1]), match[2]!)
+      }
+      input.files.forEach((_, i) => oids.push(byMark.get(i + 1) ?? ""))
     }
-    await text(
-      ["update-index", "--add", "-z", "--index-info"],
-      `${entries.join("\0")}\0`,
+    if (oids.length !== input.files.length || !oids.every(isObjectId)) {
+      throw new GitError(
+        "exit",
+        "fast-import",
+        "git fast-import gave an answer Shinan cannot read",
+      )
+    }
+    const entries = input.files.map(
+      (file, i) => `${file.mode ?? "100644"} ${oids[i]}\t${file.path}`,
     )
+    if (entries.length > 0) {
+      await text(
+        ["update-index", "--add", "-z", "--index-info"],
+        `${entries.join("\0")}\0`,
+      )
+    }
     const tree = await text(["write-tree"])
     return await text(
       [

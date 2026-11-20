@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 
 import {
+  changedPaths,
   diffTrees,
   emptyTree,
   history,
@@ -10,6 +11,7 @@ import {
 } from "./read.js"
 import { createGit } from "./run.js"
 import { commitFiles, createFixtureRepository } from "./testing.js"
+import { writeCommit } from "./write.js"
 
 const git = createGit()
 let repository: Awaited<ReturnType<typeof createFixtureRepository>>
@@ -249,6 +251,36 @@ describe("history", () => {
     ).toBe(third)
   })
 
+  it("reads only the start of a commit above its limit, and says so", async () => {
+    const long = await writeCommit(git, repository.gitDir, {
+      files: [{ path: "README.md", content: "# Catalog\n" }],
+      message: `Long\n\n${"é".repeat(300_000)}\n`,
+      identity: {
+        name: "Fixture Author",
+        email: "a@example.com",
+        time: 1_790_000_400,
+      },
+      parents: [third],
+    })
+    const [read, before] = await history(git, repository.gitDir, long, {
+      limit: 2,
+      maxCommitBytes: 4096,
+    })
+    expect(read).toMatchObject({
+      oid: long,
+      parents: [third],
+      author: { name: "Fixture Author", time: 1_790_000_400 },
+      truncated: true,
+    })
+    expect(read!.message.startsWith("Long\n\néé")).toBe(true)
+    expect(Buffer.byteLength(read!.message)).toBeLessThan(4096)
+    expect(read!.message).not.toContain("\uFFFD")
+    expect(before).toMatchObject({ oid: third, truncated: false })
+    const whole = await history(git, repository.gitDir, long, { limit: 1 })
+    expect(whole[0]!.truncated).toBe(true)
+    expect(Buffer.byteLength(whole[0]!.message)).toBeLessThanOrEqual(256 * 1024)
+  })
+
   it("refuses counts that are not whole numbers", async () => {
     await expect(
       history(git, repository.gitDir, "refs/heads/main", { limit: -1 }),
@@ -256,6 +288,100 @@ describe("history", () => {
     await expect(
       history(git, repository.gitDir, "refs/heads/main", { limit: 1.5 }),
     ).rejects.toMatchObject({ kind: "start" })
+  })
+})
+
+describe("changedPaths", () => {
+  it("lists what each commit changed against its first parent, in the order asked", async () => {
+    const merge = await commitFiles(
+      git,
+      repository.gitDir,
+      { "README.md": "# Branch\n", "merged.md": "m\n" },
+      { parents: [third, branch], message: "Merge\n" },
+    )
+    const changes = await changedPaths(git, repository.gitDir, [
+      third,
+      first,
+      merge,
+      second,
+    ])
+    expect([...changes.keys()]).toEqual([third, first, merge, second])
+    expect(changes.get(first)).toEqual({
+      changes: [{ status: "added", path: "README.md" }],
+      count: 1,
+      truncated: false,
+    })
+    expect(changes.get(third)!.changes).toEqual([
+      { status: "modified", path: "README.md" },
+      { status: "added", path: "link.md" },
+      { status: "deleted", path: "machine/daedalus.md" },
+      { status: "added", path: "service/email.md" },
+      { status: "modified", path: "start-here.md" },
+    ])
+    // A merge: against its first parent only.
+    expect(changes.get(merge)!.changes.map((c) => c.path)).toEqual([
+      "README.md",
+      "link.md",
+      "machine/musashi.md",
+      "merged.md",
+      "service/email.md",
+      "start-here.md",
+    ])
+  })
+
+  it("keeps only the first paths of a commit that changed many, and counts the rest", async () => {
+    const many = await commitFiles(
+      git,
+      repository.gitDir,
+      Object.fromEntries(
+        Array.from({ length: 300 }, (_, i) => [
+          `thing/${String(i).padStart(3, "0")}.md`,
+          `${i}\n`,
+        ]),
+      ),
+      { parents: [first], message: "Many\n" },
+    )
+    const changes = (
+      await changedPaths(git, repository.gitDir, [many], { maxPerCommit: 3 })
+    ).get(many)!
+    expect(changes).toMatchObject({ count: 301, truncated: true })
+    expect(changes.changes.map((c) => c.path)).toEqual([
+      "README.md",
+      "thing/000.md",
+      "thing/001.md",
+    ])
+  })
+
+  it("lists nothing for a commit that changed nothing, wherever it is in the list", async () => {
+    const same = await commitFiles(
+      git,
+      repository.gitDir,
+      { "README.md": "# Catalog\n" },
+      { parents: [first], message: "Nothing\n" },
+    )
+    const changes = await changedPaths(git, repository.gitDir, [
+      first,
+      same,
+      second,
+      same,
+    ])
+    expect(changes.get(same)).toEqual({
+      changes: [],
+      count: 0,
+      truncated: false,
+    })
+    expect(changes.get(first)!.count).toBe(1)
+    expect(changes.get(second)!.count).toBe(3)
+    expect(
+      (await changedPaths(git, repository.gitDir, [same])).get(same),
+    ).toEqual({ changes: [], count: 0, truncated: false })
+  })
+
+  it("takes object IDs only, and nothing for nothing", async () => {
+    await expect(
+      changedPaths(git, repository.gitDir, ["refs/heads/main"]),
+    ).rejects.toMatchObject({ kind: "start" })
+    expect((await changedPaths(git, repository.gitDir, [])).size).toBe(0)
   })
 })
 
@@ -294,6 +420,7 @@ describe("parseCommit", () => {
         timezone: "-0700",
       },
       message: "Merge\n\nbody with\n\nblank lines\n",
+      truncated: false,
     })
   })
 

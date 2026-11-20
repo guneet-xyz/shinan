@@ -22,6 +22,23 @@ export class JournalError extends Error {
   override name = "JournalError"
 }
 
+/**
+ * A journal entry that cannot be read: answered 500 and logged with its
+ * number, and kept for an operator. Reading and acknowledging stop there.
+ */
+export class JournalDamagedError extends Error {
+  override name = "JournalDamagedError"
+  constructor(
+    readonly entry: number,
+    options?: ErrorOptions,
+  ) {
+    super(
+      `Journal entry ${entry} is damaged; it is kept in journal/entries for an operator`,
+      options,
+    )
+  }
+}
+
 export interface Journal {
   /**
    * Appends an entry and returns it once it is on disk. Numbers rise by
@@ -93,6 +110,40 @@ export function openJournal(root: string): Journal {
 
   let tail: Promise<unknown> = Promise.resolve()
 
+  /**
+   * Entry `n`, or `null` if it is gone (acknowledged meanwhile). Anything
+   * else wrong with it is an error, never a skip: the entry is a record
+   * PostgreSQL has not stored yet.
+   */
+  const readEntry = (n: number): JournalEntry | null => {
+    let text: string
+    try {
+      text = readFileSync(join(entries, entryName(n)), "utf8")
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return null
+      throw new JournalDamagedError(n, { cause: error })
+    }
+    let entry: unknown
+    try {
+      entry = JSON.parse(text)
+    } catch (error) {
+      throw new JournalDamagedError(n, { cause: error })
+    }
+    const e = entry as Partial<JournalEntry> | null
+    if (
+      typeof e !== "object" ||
+      e === null ||
+      e.number !== n ||
+      typeof e.kind !== "string" ||
+      typeof e.recordedAt !== "string" ||
+      typeof e.data !== "object" ||
+      e.data === null
+    ) {
+      throw new JournalDamagedError(n)
+    }
+    return e as JournalEntry
+  }
+
   const numbers = () =>
     readdirSync(entries)
       .map((name) => entryPattern.exec(name)?.[1])
@@ -141,16 +192,8 @@ export function openJournal(root: string): Journal {
         .filter((n) => n > after)
         .slice(0, limit)
         .flatMap((n) => {
-          try {
-            return [
-              JSON.parse(
-                readFileSync(join(entries, entryName(n)), "utf8"),
-              ) as JournalEntry,
-            ]
-          } catch {
-            // Acknowledged meanwhile.
-            return []
-          }
+          const entry = readEntry(n)
+          return entry ? [entry] : []
         })
     },
     acknowledge(through) {
@@ -161,6 +204,9 @@ export function openJournal(root: string): Journal {
       let deleted = 0
       for (const n of numbers()) {
         if (n > through) break
+        // An entry is deleted only once it reads whole: a damaged one stays
+        // for an operator, and nothing after it is acknowledged.
+        if (!readEntry(n)) continue
         rmSync(join(entries, entryName(n)), { force: true })
         deleted++
       }

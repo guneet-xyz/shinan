@@ -230,9 +230,17 @@ export interface Commit {
   /** `null` when the header cannot be read as a name, address and time. */
   author: Identity | null
   committer: Identity | null
-  /** The whole message, decoded as UTF-8. */
+  /** The message, decoded as UTF-8; only its start when `truncated`. */
   message: string
+  /**
+   * Whether the commit was larger than the reader's limit, so only its
+   * start was read: its headers and the start of its message.
+   */
+  truncated: boolean
 }
+
+/** The most of one commit object {@link history} reads: 256 KiB. */
+export const DEFAULT_MAX_COMMIT_BYTES = 256 * 1024
 
 function identity(value: string | undefined): Identity | null {
   const match = value?.match(/^(.*) <([^<>]*)> (\d+) ([+-]\d{4})$/)
@@ -272,7 +280,192 @@ export function parseCommit(oid: string, content: Buffer): Commit {
     author: identity(headers.get("author")?.[0]),
     committer: identity(headers.get("committer")?.[0]),
     message: split < 0 ? "" : text.slice(split + 2),
+    truncated: false,
   }
+}
+
+/**
+ * The first `maxBytes` of a commit object, without reading the rest: Git
+ * is stopped once that much has arrived.
+ */
+async function readCommitStart(
+  git: Git,
+  gitDir: string,
+  oid: string,
+  maxBytes: number,
+  options: ReadOptions,
+): Promise<Buffer> {
+  const proc = git.spawn(["cat-file", "commit", oid], {
+    gitDir,
+    env: options.env,
+    timeoutMs: options.timeoutMs,
+  })
+  const chunks: Buffer[] = []
+  let size = 0
+  proc.child.stdout.on("data", (chunk: Buffer) => {
+    if (size >= maxBytes) return
+    const part = chunk.subarray(0, maxBytes - size)
+    chunks.push(part)
+    size += part.length
+    if (size >= maxBytes) proc.kill()
+  })
+  proc.child.stdin.end()
+  await proc.ended
+  return Buffer.concat(chunks)
+}
+
+/** What one commit changed, as {@link changedPaths} lists it. */
+export interface CommitChanges {
+  /** At most the limit asked for, in Git's order. */
+  changes: { status: ChangeStatus; path: string }[]
+  /** How many paths it changed in all. */
+  count: number
+  /** Whether `changes` lists fewer than `count`. */
+  truncated: boolean
+}
+
+/** The most changed paths {@link history} lists for one commit: 50. */
+export const DEFAULT_MAX_CHANGES_PER_COMMIT = 50
+
+/**
+ * The paths each commit changed, against its first parent (a root commit
+ * against the empty tree), without rename detection: Git's
+ * `--name-status`. Git compares the commits' trees, never parsing a whole
+ * commit (a commit's message may be many megabytes), and its output is read
+ * as it comes, keeping only the first `maxPerCommit` paths of each commit:
+ * a commit that changed many thousands of files costs time, not memory.
+ */
+export async function changedPaths(
+  git: Git,
+  gitDir: string,
+  commits: readonly string[],
+  options: ReadOptions & {
+    maxPerCommit?: number
+    maxCommitBytes?: number
+  } = {},
+): Promise<Map<string, CommitChanges>> {
+  if (!commits.every(isObjectId)) {
+    throw new GitError(
+      "start",
+      "diff-tree",
+      "Changed paths are asked for by object ID",
+    )
+  }
+  const max = options.maxPerCommit ?? DEFAULT_MAX_CHANGES_PER_COMMIT
+  const result = new Map<string, CommitChanges>()
+  if (commits.length === 0) return result
+
+  // Each commit's tree and its first parent's, read within the limit.
+  const heads = new Map(
+    (await readCommits(git, gitDir, [...new Set(commits)], options)).map(
+      (c) => [c.oid, c],
+    ),
+  )
+  const outside = [
+    ...new Set(
+      [...heads.values()]
+        .map((c) => c.parents[0])
+        .filter((p): p is string => p !== undefined && !heads.has(p)),
+    ),
+  ]
+  for (const parent of await readCommits(git, gitDir, outside, options)) {
+    heads.set(parent.oid, parent)
+  }
+  const empty = await emptyTree(git, gitDir, options)
+  const lines = commits.map((oid) => {
+    const commit = heads.get(oid)!
+    const parent = commit.parents[0]
+    return `${parent ? heads.get(parent)!.tree : empty} ${commit.tree}`
+  })
+
+  // Every pair gets a header line (`--always`), in the order sent, so the
+  // n-th header is the n-th commit's.
+  const proc = git.spawn(
+    [
+      "diff-tree",
+      "--stdin",
+      "--always",
+      "-r",
+      "-z",
+      "--no-renames",
+      "--name-status",
+    ],
+    { gitDir, env: options.env, timeoutMs: options.timeoutMs },
+  )
+  let index = -1
+  let current: CommitChanges | undefined
+  let status: ChangeStatus | undefined
+  let rest: Buffer = Buffer.alloc(0)
+  let failure: Error | undefined
+  const fail = (message: string) => {
+    failure ??= new GitError("exit", "diff-tree", message)
+    proc.kill()
+  }
+  const header = /^[0-9a-f]{40,64} [0-9a-f]{40,64}$/
+  // One NUL-ended field: a path, or headers and a status joined by line
+  // breaks (`<old> <new>\nM`), or the end of the output.
+  const field = (text: string) => {
+    if (status !== undefined) {
+      if (current) {
+        current.count++
+        if (current.changes.length < max)
+          current.changes.push({ status, path: text })
+        else current.truncated = true
+      }
+      status = undefined
+      return
+    }
+    const segments = text.split("\n")
+    const last = segments.pop()!
+    for (const segment of segments) {
+      if (!header.test(segment))
+        return fail("git diff-tree gave a line Shinan cannot read")
+      index++
+      const oid = commits[index]
+      if (oid === undefined)
+        return fail("git diff-tree answered a pair nobody sent")
+      current = { changes: [], count: 0, truncated: false }
+      result.set(oid, current)
+    }
+    if (last === "") return
+    const next = STATUS[last]
+    if (!next) return fail("git diff-tree gave a line Shinan cannot read")
+    status = next
+  }
+  proc.child.stdout.on("data", (chunk: Buffer) => {
+    let data = rest.length ? Buffer.concat([rest, chunk]) : chunk
+    for (let end = data.indexOf(0); end >= 0; end = data.indexOf(0)) {
+      field(data.subarray(0, end).toString("utf8"))
+      data = data.subarray(end + 1)
+    }
+    // A path is at most 4 KiB; anything longer is not Git's output.
+    if (data.length > 64 * 1024)
+      fail("git diff-tree gave a field too long to read")
+    rest = data
+  })
+  proc.child.stdin.end(`${lines.join("\n")}\n`)
+  const ended = await proc.ended
+  if (rest.length) field(`${rest.toString("utf8")}`)
+  if (failure) throw failure
+  if (ended.timedOut) {
+    throw new GitError(
+      "timeout",
+      "diff-tree",
+      "git diff-tree took too long and was stopped",
+    )
+  }
+  if (ended.code !== 0) {
+    throw new GitError(
+      "exit",
+      "diff-tree",
+      `git diff-tree failed (exit code ${ended.code ?? "none"})`,
+      ended.code,
+    )
+  }
+  if (result.size !== new Set(commits).size) {
+    throw new GitError("exit", "diff-tree", "git diff-tree left out a commit")
+  }
+  return result
 }
 
 /**
@@ -283,7 +476,13 @@ export async function history(
   git: Git,
   gitDir: string,
   rev: string,
-  options: ReadOptions & { limit: number; skip?: number; path?: string },
+  options: ReadOptions & {
+    limit: number
+    skip?: number
+    path?: string
+    /** Commits larger than this are read only this far. Default 256 KiB. */
+    maxCommitBytes?: number
+  },
 ): Promise<Commit[]> {
   const { stdout } = await git.run(
     [
@@ -300,11 +499,51 @@ export async function history(
   )
   const oids = stdout.toString("utf8").split("\n").filter(Boolean)
   if (oids.length === 0) return []
-  const reader = openCatFile(git, gitDir, options)
+  return readCommits(git, gitDir, oids, options)
+}
+
+/**
+ * Reads commits by full ID, each only up to `maxCommitBytes` (default
+ * 256 KiB): a larger one comes back with its headers and the start of its
+ * message, `truncated`. However large the commits, this holds at most that
+ * much of each.
+ */
+export async function readCommits(
+  git: Git,
+  gitDir: string,
+  oids: readonly string[],
+  options: ReadOptions & { maxCommitBytes?: number } = {},
+): Promise<Commit[]> {
+  if (!oids.every(isObjectId)) {
+    throw new GitError("start", "cat-file", "Commits are read by object ID")
+  }
+  if (oids.length === 0) return []
+  const maxCommitBytes = options.maxCommitBytes ?? DEFAULT_MAX_COMMIT_BYTES
+  const reader = openCatFile(git, gitDir, {
+    ...options,
+    maxObjectBytes: maxCommitBytes,
+  })
   try {
     const commits: Commit[] = []
     for (const oid of oids) {
       const object = await reader.read(oid)
+      if (object === "too-large") {
+        const start = await readCommitStart(
+          git,
+          gitDir,
+          oid,
+          maxCommitBytes,
+          options,
+        )
+        const commit = parseCommit(oid, start)
+        commits.push({
+          ...commit,
+          // A character cut in two at the limit is dropped.
+          message: commit.message.replace(/\uFFFD$/, ""),
+          truncated: true,
+        })
+        continue
+      }
       if (typeof object === "string" || object.type !== "commit") {
         throw new GitError(
           "exit",

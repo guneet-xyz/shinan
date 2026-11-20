@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process"
-import { mkdtempSync, rmSync } from "node:fs"
+import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
@@ -285,6 +285,8 @@ describe("repositories", () => {
       { ...ok, message: "" },
       { ...ok, files: [] },
       { ...ok, files: [{ path: "../x", content: base64("a") }] },
+      { ...ok, files: [{ path: ".git/config", content: base64("a") }] },
+      { ...ok, files: [{ path: "a/.GIT/hooks/x", content: base64("a") }] },
       { ...ok, files: [{ path: "a.md" }] },
       {
         ...ok,
@@ -419,6 +421,52 @@ describe("the read API", () => {
     ])
   })
 
+  it("lists, with each commit, the paths it changed", async () => {
+    const history = await get("/history")
+    expect(
+      (history.body.commits as Record<string, unknown>[]).map((c) => ({
+        changes: c.changes,
+        changeCount: c.changeCount,
+        changesTruncated: c.changesTruncated,
+      })),
+    ).toEqual([
+      {
+        changes: [
+          { status: "added", path: "big.bin" },
+          { status: "added", path: "machine/musashi.md" },
+        ],
+        changeCount: 2,
+        changesTruncated: false,
+      },
+      {
+        changes: [{ status: "added", path: "README.md" }],
+        changeCount: 1,
+        changesTruncated: false,
+      },
+    ])
+    // A page of one path's history still lists each commit's whole change.
+    const one = await get("/history?path=machine/musashi.md")
+    expect(
+      (one.body.commits as { changeCount: number }[]).map((c) => c.changeCount),
+    ).toEqual([2])
+  })
+
+  it("marks commits too large to read whole as truncated", async () => {
+    const history = await get("/history")
+    expect(
+      (history.body.commits as { truncated: boolean }[]).map(
+        (c) => c.truncated,
+      ),
+    ).toEqual([false, false])
+  })
+
+  it("refuses to skip more than a million commits", async () => {
+    expect((await get("/history?skip=1000000")).status).toBe(200)
+    for (const skip of ["1000001", "999999999999999"]) {
+      expect((await get(`/history?skip=${skip}`)).status, skip).toBe(400)
+    }
+  })
+
   it("refuses revisions that are not main or a full commit ID, and paths that are not plain", async () => {
     for (const path of [
       "/tree?commit=HEAD",
@@ -443,12 +491,70 @@ describe("the read API", () => {
   })
 })
 
+describe("a documents read", () => {
+  it("returns at most its byte budget; documents past it are deferred", async () => {
+    const folder = mkdtempSync(join(tmpdir(), "shinan-git-budget-"))
+    try {
+      const store = createRepositoryStore({
+        root: folder,
+        git,
+        hooksDirectory: hooks,
+        maxResponseBytes: 25,
+      })
+      const budgetApp = createGitApp({
+        serviceToken: token,
+        store,
+        journal: openJournal(folder),
+        log: () => {},
+      })
+      const id = "9c9c1a2e-3d4f-4a5b-8c6d-7e8f9a0b1c2d"
+      const ten = (n: number) => ({
+        path: `p/${n}.md`,
+        content: new TextEncoder().encode(`${n}`.padEnd(10, "x")),
+      })
+      await store.create(id, {
+        message: "Start\n",
+        files: [0, 1, 2, 3].map(ten),
+      })
+      const response = await budgetApp.request(
+        `/repositories/${id}/documents`,
+        {
+          method: "POST",
+          headers: { ...auth, "content-type": "application/json" },
+          body: JSON.stringify({
+            paths: ["p/0.md", "p/1.md", "nothing.md", "p/2.md", "p/3.md"],
+          }),
+        },
+      )
+      const body = (await response.json()) as {
+        documents: Record<string, unknown>[]
+      }
+      expect(
+        body.documents.map((d) => Object.keys(d).sort().join(",")),
+      ).toEqual([
+        "content,oid,path,size",
+        "content,oid,path,size",
+        "missing,path",
+        "deferred,path,size",
+        "deferred,path,size",
+      ])
+      expect(body.documents[3]).toEqual({
+        path: "p/2.md",
+        deferred: true,
+        size: 10,
+      })
+    } finally {
+      rmSync(folder, { recursive: true, force: true })
+    }
+  })
+})
+
 describe("the journal", () => {
   it("is read in order and acknowledged idempotently; numbers are never reused", async () => {
     const folder = mkdtempSync(join(tmpdir(), "shinan-git-journal-"))
     try {
       const own = openJournal(folder)
-      const journalApp = createGitApp({
+      let journalApp = createGitApp({
         serviceToken: token,
         store: createRepositoryStore({
           root: folder,
@@ -516,6 +622,37 @@ describe("the journal", () => {
       expect(reopened.last()).toBe(3)
       expect((await reopened.append("push.test", {})).number).toBe(4)
       await expect(reopened.append("Not a kind", {})).rejects.toThrow()
+      // A damaged entry is never skipped or deleted: reads and
+      // acknowledgements stop at it, with its number.
+      // The role restarts with the reopened journal.
+      journalApp = createGitApp({
+        serviceToken: token,
+        store: createRepositoryStore({
+          root: folder,
+          git,
+          hooksDirectory: hooks,
+        }),
+        journal: reopened,
+        log: () => {},
+      })
+      await reopened.append("push.test", { n: 5 })
+      await reopened.append("push.test", { n: 6 })
+      writeFileSync(
+        join(folder, "journal", "entries", "0000000000000005.json"),
+        "{not json",
+      )
+      const damaged = await call("/journal?after=3")
+      expect(damaged.status).toBe(500)
+      expect(damaged.body).toMatchObject({ error: "journal-damaged" })
+      expect(String(damaged.body.message)).toContain(
+        "Journal entry 5 is damaged",
+      )
+      expect((await call("/journal?after=5")).status).toBe(200)
+      expect((await ack(6)).status).toBe(500)
+      expect(readdirSync(join(folder, "journal", "entries")).sort()).toEqual([
+        "0000000000000005.json",
+        "0000000000000006.json",
+      ])
       for (const query of ["after=-1", "after=x", "limit=0", "limit=1001"]) {
         expect((await call(`/journal?${query}`)).status, query).toBe(400)
       }

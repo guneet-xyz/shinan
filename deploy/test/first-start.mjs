@@ -309,6 +309,95 @@ function askGit(network, path, token) {
   )
 }
 
+/**
+ * A request to the Git container that answers only a summary of what came
+ * back, for answers too large to pass through a command's output.
+ */
+function askGitSummary(path, body) {
+  const script = `
+    fetch("http://git:3000" + process.env.ASK, {
+      method: process.env.BODY ? "POST" : "GET",
+      headers: { authorization: "Bearer " + process.env.TOKEN, "content-type": "application/json" },
+      body: process.env.BODY || undefined,
+      signal: AbortSignal.timeout(120000),
+    })
+      .then(async (r) => {
+        const b = await r.json()
+        const documents = b.documents ?? []
+        const commits = b.commits ?? []
+        console.log(JSON.stringify({
+          status: r.status,
+          read: documents.filter((d) => d.content).length,
+          bytes: documents.reduce((n, d) => n + (d.content ? Buffer.from(d.content, "base64").length : 0), 0),
+          deferred: documents.filter((d) => d.deferred).length,
+          commits: commits.length,
+          truncated: commits.filter((c) => c.truncated).length,
+          longest: Math.max(0, ...commits.map((c) => Buffer.byteLength(c.message))),
+          changesTruncated: commits.filter((c) => c.changesTruncated).length,
+          mostChanges: Math.max(0, ...commits.map((c) => c.changes.length)),
+          mostChanged: Math.max(0, ...commits.map((c) => c.changeCount)),
+        }))
+      })
+      .catch((e) => console.log(JSON.stringify({ error: e.cause?.code ?? e.name })))`
+  return JSON.parse(
+    execFileSync(
+      "docker",
+      [
+        "run",
+        "--rm",
+        "--network",
+        `${project}_git`,
+        "--env",
+        `ASK=${path}`,
+        "--env",
+        `TOKEN=${gitServiceToken}`,
+        "--env",
+        `BODY=${body ? JSON.stringify(body) : ""}`,
+        "--entrypoint",
+        "/nodejs/bin/node",
+        image,
+        "-e",
+        script,
+      ],
+      { encoding: "utf8" },
+    ),
+  )
+}
+
+/**
+ * Inside the running `git` container, as its own user: a repository whose
+ * commits are heavy to read but light to store, as an agent could push
+ * them from GC-3 on. Its `main` has 1,000 paths to one 1 MiB blob, on top
+ * of 70 commits with 15 MiB messages.
+ */
+function writeHeavyRepository(workspaceId) {
+  const script = `
+    const { randomBytes } = await import("node:crypto")
+    const { createGit, writeCommit } = await import("/app/packages/git/dist/index.js")
+    const git = createGit()
+    const gitDir = "/var/lib/shinan/catalog/${workspaceId}.git"
+    const identity = { name: "Test", email: "test@example.com" }
+    let head = (await git.run(["rev-parse", "refs/heads/main"], { gitDir })).stdout.toString().trim()
+    const message = "Long\\n\\n" + "x".repeat(15 * 1024 * 1024) + "\\n"
+    for (let i = 0; i < 70; i++) {
+      head = await writeCommit(git, gitDir, { files: [{ path: "README.md", content: "# Catalog\\n" }], message, identity, parents: [head], temporaryDir: gitDir })
+    }
+    const blob = (await git.run(["hash-object", "-w", "--stdin"], { gitDir, input: randomBytes(1024 * 1024) })).stdout.toString().trim()
+    const env = { GIT_INDEX_FILE: gitDir + "/heavy-index" }
+    const entries = Array.from({ length: 1000 }, (_, i) => "100644 " + blob + "\\tthing/" + i + ".md").join("\\n") + "\\n"
+    await git.run(["update-index", "--add", "--index-info"], { gitDir, env, input: entries })
+    const tree = (await git.run(["write-tree"], { gitDir, env })).stdout.toString().trim()
+    head = (await git.run(["commit-tree", "-p", head, "-m", "Many", tree], { gitDir, env: { ...env, GIT_AUTHOR_NAME: "T", GIT_AUTHOR_EMAIL: "t@example.com", GIT_COMMITTER_NAME: "T", GIT_COMMITTER_EMAIL: "t@example.com" } })).stdout.toString().trim()
+    await git.run(["update-ref", "refs/heads/main", head], { gitDir })
+    console.log(head)`
+  const id = compose("ps", "--quiet", "git").trim()
+  return execFileSync(
+    "docker",
+    ["exec", id, "/nodejs/bin/node", "--input-type=module", "-e", script],
+    { encoding: "utf8" },
+  ).trim()
+}
+
 function psql(query) {
   return compose(
     "exec",
@@ -576,6 +665,60 @@ async function run() {
       addresses[0] !== "" &&
       addresses[0] !== proxyAddress,
     `the security log has the visitor's address (${addresses[0]}), not the proxy's`,
+  )
+
+  // The read API's limits keep one request inside the Git container's
+  // memory limit (1,024 MiB here), however a repository's commits are made.
+  const heavyId = "0f9c1a2e-3d4f-4a5b-8c6d-7e8f9a0b1c2d"
+  check(
+    askGit("git", `/repositories/${heavyId}`, gitServiceToken).status === 404,
+    "a second repository does not exist yet",
+  )
+  const made = execFileSync(
+    "docker",
+    [
+      "run",
+      "--rm",
+      "--network",
+      `${project}_git`,
+      "--entrypoint",
+      "/nodejs/bin/node",
+      image,
+      "-e",
+      `fetch("http://git:3000/repositories/${heavyId}", { method: "PUT", headers: { authorization: "Bearer ${gitServiceToken}", "content-type": "application/json" }, body: JSON.stringify({ message: "Start\\n", files: [{ path: "README.md", content: "Iw==" }] }) }).then((r) => console.log(r.status))`,
+    ],
+    { encoding: "utf8" },
+  ).trim()
+  writeHeavyRepository(heavyId)
+  const restartsBefore = inspect("git", "{{.RestartCount}}")
+  const documents = askGitSummary(`/repositories/${heavyId}/documents`, {
+    paths: Array.from({ length: 1000 }, (_, i) => `thing/${i}.md`),
+  })
+  check(
+    made === "201" &&
+      documents.status === 200 &&
+      documents.read === 32 &&
+      documents.bytes === 32 * 1024 * 1024 &&
+      documents.deferred === 968,
+    `a read of 1,000 documents of 1 MiB returns 32 MiB and defers the rest (${JSON.stringify(documents)})`,
+  )
+  const history = askGitSummary(`/repositories/${heavyId}/history?limit=100`)
+  check(
+    history.status === 200 &&
+      history.commits === 72 &&
+      history.truncated === 70 &&
+      history.longest <= 256 * 1024 &&
+      history.changesTruncated === 1 &&
+      history.mostChanges === 50 &&
+      history.mostChanged === 1001,
+    `a page of 70 commits with 15 MiB messages returns them truncated to 256 KiB, and a commit's 1,001 changed paths as 50 (${JSON.stringify(history)})`,
+  )
+  check(
+    inspect(
+      "git",
+      "{{.RestartCount}} {{.State.OOMKilled}} {{.State.Status}}",
+    ) === `${restartsBefore} false running`,
+    "git stayed up within its memory limit through both reads",
   )
 
   compose("restart", "git")

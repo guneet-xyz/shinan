@@ -43,7 +43,7 @@ export function readGitRoleConfig(
   const serviceToken = readServiceToken(env, readFile)
   if (!serviceToken) {
     throw new SettingsError(
-      "SHINAN_GIT_SERVICE_TOKEN is not set: the git role refuses to start without its service token",
+      "SHINAN_GIT_SERVICE_TOKEN is not set: the git role refuses to start without its service token. Set it or SHINAN_GIT_SERVICE_TOKEN_FILE; see the operator guide, 'Setting up'",
     )
   }
   const catalogDir = env.SHINAN_CATALOG_DIR || defaultCatalogDir
@@ -92,12 +92,12 @@ export function checkGitRole(options: {
     folder = statSync(options.catalogDir)
   } catch {
     throw new SettingsError(
-      `SHINAN_CATALOG_DIR (${options.catalogDir}) does not exist`,
+      `SHINAN_CATALOG_DIR (${options.catalogDir}) does not exist; create it owned by user 65532 with mode 0700`,
     )
   }
   if (!folder.isDirectory()) {
     throw new SettingsError(
-      `SHINAN_CATALOG_DIR (${options.catalogDir}) is not a folder`,
+      `SHINAN_CATALOG_DIR (${options.catalogDir}) is not a folder; make it a folder owned by user 65532 with mode 0700`,
     )
   }
   try {
@@ -107,7 +107,7 @@ export function checkGitRole(options: {
     )
   } catch {
     throw new SettingsError(
-      `SHINAN_CATALOG_DIR (${options.catalogDir}) is not writable by this user (${process.getuid?.() ?? "?"})`,
+      `SHINAN_CATALOG_DIR (${options.catalogDir}) is not writable by this user (${process.getuid?.() ?? "?"}); give it to that user (chown ${process.getuid?.() ?? 65532}) with mode 0700`,
     )
   }
   if (folder.mode & 0o022) {
@@ -129,14 +129,16 @@ export function checkGitRole(options: {
   try {
     stat = lstatSync(hook)
   } catch {
-    throw new SettingsError(`Git's pre-receive hook (${hook}) is missing`)
+    throw new SettingsError(
+      `Git's pre-receive hook (${hook}) is missing. The image is damaged; use the published image unchanged.`,
+    )
   }
   try {
     if (!stat.isFile()) throw new Error("not a file")
     accessSync(hook, constants.X_OK)
   } catch {
     throw new SettingsError(
-      `Git's pre-receive hook (${hook}) is not an executable file`,
+      `Git's pre-receive hook (${hook}) is not an executable file. The image is damaged or its hooks folder is mounted noexec; use the published image unchanged.`,
     )
   }
 
@@ -158,7 +160,11 @@ export function checkGitRole(options: {
       ["init", "--quiet", "--bare", "--template=", gitDir],
       { env, cwd: probe, encoding: "utf8", timeout: 30_000 },
     )
-    if (init.status !== 0) throw new SettingsError("Git does not run")
+    if (init.status !== 0) {
+      throw new SettingsError(
+        `Git does not run (\`${options.git.binary} init\` failed). The image is damaged; use the published image unchanged.`,
+      )
+    }
     run(["config", "core.hooksPath", hooks])
     // Shinan's hooks start what they write with "Shinan:", which shows that
     // the hook itself ran and refused, not Git failing to start it.
@@ -169,7 +175,7 @@ export function checkGitRole(options: {
       !dry.stderr.includes("Shinan:")
     ) {
       throw new SettingsError(
-        "Git's pre-receive hook did not refuse a dry run: it did not run (a noexec mount, a missing interpreter?) or it lets pushes through",
+        "Git's pre-receive hook did not refuse a dry run: it did not run, or it lets pushes through. The image is damaged or its hooks folder is mounted noexec; use the published image unchanged.",
       )
     }
   } finally {

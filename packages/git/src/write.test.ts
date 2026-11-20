@@ -20,6 +20,34 @@ const identity = {
 }
 
 describe("writeCommit", () => {
+  it("writes 20,000 files with a few Git processes, in seconds", async () => {
+    const files = Array.from({ length: 20_000 }, (_, i) => ({
+      path: `thing/n-${i}.md`,
+      content: `# Thing ${i}\n`,
+    }))
+    const started = Date.now()
+    const commit = await writeCommit(git, repository.gitDir, {
+      files,
+      message: "Many\n",
+      identity,
+    })
+    expect(Date.now() - started).toBeLessThan(20_000)
+    const entries = await listTree(git, repository.gitDir, commit)
+    expect(entries).toHaveLength(20_000)
+    expect(entries.find((e) => e.path === "thing/n-19999.md")).toMatchObject({
+      size: "# Thing 19999\n".length,
+    })
+  })
+
+  it("writes a commit with no files", async () => {
+    const commit = await writeCommit(git, repository.gitDir, {
+      files: [],
+      message: "Empty\n",
+      identity,
+    })
+    expect(await listTree(git, repository.gitDir, commit)).toEqual([])
+  })
+
   it("writes exactly the files given, in folders, with a parent", async () => {
     const first = await writeCommit(git, repository.gitDir, {
       files: [{ path: "README.md", content: "# Catalog\n" }],
@@ -76,6 +104,24 @@ describe("writeCommit", () => {
         ],
       }),
     ).rejects.toMatchObject({ kind: "start" })
+    for (const path of [
+      ".git/config",
+      "a/.GIT/hooks/pre-receive",
+      "a/.git./x",
+      "a/.git /x",
+      "GIT~1/config",
+    ]) {
+      await expect(
+        write({ files: [{ path, content: "a" }] }),
+        path,
+      ).rejects.toMatchObject({ kind: "start" })
+    }
+    await expect(
+      write({ files: [{ path: ".gitmodules", content: "x", mode: "120000" }] }),
+    ).rejects.toMatchObject({ kind: "start" })
+    await expect(
+      write({ files: [{ path: "a/.gitignore.md", content: "x" }] }),
+    ).resolves.toMatch(/^[0-9a-f]{40}$/)
     await expect(write({ parents: ["main"] })).rejects.toMatchObject({
       kind: "start",
     })

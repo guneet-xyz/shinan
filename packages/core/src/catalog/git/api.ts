@@ -23,6 +23,16 @@ export const maxContextMemberHandles = 1000
 export const maxFileBytes = 1024 * 1024
 /** The most documents one read asks for. */
 export const maxDocumentsPerRead = 1000
+/**
+ * The most document bytes one read returns, 32 MiB: documents past it come
+ * back `deferred`, for the caller to ask for again. Keeps one response well
+ * inside the Git container's memory, whatever a commit holds.
+ */
+export const maxDocumentsResponseBytes = 32 * 1024 * 1024
+/** The most changed paths a history page lists for one commit. */
+export const maxChangesPerCommit = 50
+/** The most commits a history page may skip. */
+export const maxHistorySkip = 1_000_000
 /** The most commits one history page holds. */
 export const maxHistoryPage = 100
 /** The most journal entries one read returns. */
@@ -188,10 +198,16 @@ export interface TreeEntry {
   size: number | null
 }
 
+/**
+ * One document of a read: its content; or missing (no file there); or too
+ * large (above `maxFileBytes`); or deferred (past the response's
+ * `maxDocumentsResponseBytes`: ask for it again).
+ */
 export type DocumentRead =
   | { path: string; oid: string; size: number; content: Uint8Array }
   | { path: string; missing: true }
   | { path: string; tooLarge: true; size: number }
+  | { path: string; deferred: true; size: number }
 
 export interface TreeChange {
   status: "added" | "deleted" | "modified" | "type-changed"
@@ -215,7 +231,19 @@ export interface CommitInfo {
   parents: string[]
   author: CommitIdentityInfo | null
   committer: CommitIdentityInfo | null
+  /** Only its start when `truncated`. */
   message: string
+  /** Whether the commit was too large to read whole (over 256 KiB). */
+  truncated: boolean
+  /**
+   * The paths it changed against its first parent (a root commit: against
+   * nothing), at most `maxChangesPerCommit`, in Git's order.
+   */
+  changes: { status: TreeChange["status"]; path: string }[]
+  /** How many paths it changed in all. */
+  changeCount: number
+  /** Whether `changes` lists fewer than `changeCount`. */
+  changesTruncated: boolean
 }
 
 /** One journal entry: what the Git container recorded for `web` to store. */

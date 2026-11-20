@@ -12,16 +12,21 @@ export { writeCommit } from "./write.js"
 export type { CommitFile, CommitIdentity } from "./write.js"
 export { isBranchRef, isObjectId, objectName } from "./names.js"
 export {
+  changedPaths,
+  DEFAULT_MAX_CHANGES_PER_COMMIT,
+  DEFAULT_MAX_COMMIT_BYTES,
   diffTrees,
   emptyTree,
   history,
   listTree,
   newCommits,
   parseCommit,
+  readCommits,
 } from "./read.js"
 export type {
   ChangeStatus,
   Commit,
+  CommitChanges,
   EntryType,
   Identity,
   ReadOptions,
@@ -36,6 +41,7 @@ export {
   findProgram,
   GitError,
   MAX_STDERR_BYTES,
+  privateHome,
 } from "./run.js"
 export type {
   Git,

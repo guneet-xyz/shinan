@@ -140,6 +140,21 @@ describe("a new workspace's repository", () => {
     ).not.toContain(workspaceId)
   })
 
+  it("starts with a README that reads in a terminal and says what matters first", () => {
+    const lines = repositoryReadme.split("\n")
+    expect(Math.max(...lines.map((line) => line.length))).toBeLessThan(76)
+    for (const point of [
+      "Only the `main`",
+      "Write `start-here.md` first.",
+      "goes live at once",
+      "No secrets, ever.",
+      "the `shinan` skill, at `/skills/`",
+      "You can change this file",
+    ]) {
+      expect(repositoryReadme.replaceAll("\n", " ")).toContain(point)
+    }
+  })
+
   it("stays asked for while the Git container is down", async () => {
     const git = fakeGit()
     git.fail(true)

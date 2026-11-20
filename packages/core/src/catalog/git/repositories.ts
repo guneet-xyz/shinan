@@ -31,14 +31,30 @@ export interface CatalogRepositoryJob {
   workspaceId: string
 }
 
-/** The first commit's only file in a new workspace's repository. */
+/**
+ * The first commit's only file in a new workspace's repository: what an
+ * agent reads on its first clone, and what the catalog shows people until
+ * there is a `start-here.md` (product review of #185). Lines stay under 76
+ * columns, for a terminal as well as the browser.
+ */
 export const repositoryReadme = `# Catalog
 
-This repository is a Shinan workspace's catalog. Its \`main\` branch is the
-catalog: one Markdown document per entity, at \`<type>/<slug>.md\` (its ID
-plus \`.md\`), type schemas at \`schema/<type>.md\`, and \`start-here.md\`.
-Shinan checks every push; the \`shinan\` skill explains how to change the
-catalog and what a refused push means.
+This is your workspace's catalog in Shinan: what you know about your
+projects, machines and services, as Markdown pages. Only the \`main\`
+branch is the catalog; other branches are for unfinished work.
+
+- **One page per thing,** in a folder for its kind:
+  \`machine/musashi.md\`, \`service/email.md\`. A page's path is its ID
+  plus \`.md\`.
+- **Write \`start-here.md\` first.** It is the page people and agents
+  read before anything else.
+- **A push to \`main\` goes live at once.** Shinan checks every push and
+  refuses one with a problem, saying why; nobody approves it first.
+- **No secrets, ever.** Write where a secret is kept, never its value.
+
+Agents: the \`shinan\` skill, at \`/skills/\` on this Shinan's address,
+explains the page format, how to change the catalog and what a refused
+push means. You can change this file; it is not a catalog page.
 `
 
 /** The first commit's message in a new workspace's repository. */

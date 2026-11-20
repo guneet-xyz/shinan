@@ -1,6 +1,7 @@
 import {
   closeSync,
   fsyncSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   openSync,
@@ -11,7 +12,14 @@ import {
 } from "node:fs"
 import { join } from "node:path"
 
-import { maxDocumentsPerRead, maxFileBytes, maxHistoryPage } from "@shinan/core"
+import {
+  maxChangesPerCommit,
+  maxDocumentsPerRead,
+  maxDocumentsResponseBytes,
+  maxFileBytes,
+  maxHistoryPage,
+  maxHistorySkip,
+} from "@shinan/core"
 import type {
   CommitInfo,
   CommitRef,
@@ -21,6 +29,7 @@ import type {
   GitTreeEntry as TreeEntry,
 } from "@shinan/core"
 import {
+  changedPaths,
   diffTrees,
   GitError,
   history,
@@ -138,8 +147,14 @@ export function createRepositoryStore(options: {
   root: string
   git: Git
   hooksDirectory?: string
+  /** The most document bytes one read returns; default `maxDocumentsResponseBytes`. */
+  maxResponseBytes?: number
 }): RepositoryStore {
   const { root, git } = options
+  const maxResponseBytes = options.maxResponseBytes ?? maxDocumentsResponseBytes
+  // Reads that hold document or commit bytes take turns, a few at a time,
+  // so several at once stay inside the container's memory too.
+  const heavy = limitConcurrency(4)
   const hooks = options.hooksDirectory ?? imageHooks
   const temporary = join(root, ".tmp")
   const creating = new Map<
@@ -250,9 +265,12 @@ export function createRepositoryStore(options: {
         files: input.files,
         message: input.message,
         identity: shinanIdentity,
+        // On the volume, not in /tmp, which is memory in the container.
+        temporaryDir: folder,
       })
       // Create only: the ref must not exist yet.
       await git.run(["update-ref", "refs/heads/main", commit, ""], { gitDir })
+      syncRepository(gitDir)
       try {
         renameSync(gitDir, target)
       } catch (error) {
@@ -309,33 +327,43 @@ export function createRepositoryStore(options: {
         path,
         name: objectName(commit, path),
       }))
-      const reader = openCatFile(git, gitDir, { maxObjectBytes: maxFileBytes })
-      try {
-        const documents: DocumentRead[] = []
-        for (const { path, name } of names) {
-          // The size from the object's header, before anything is inflated.
-          const info = await reader.info(name)
-          if (!info || info.type !== "blob") {
-            documents.push({ path, missing: true })
-          } else if (info.size > maxFileBytes) {
-            documents.push({ path, tooLarge: true, size: info.size })
-          } else {
-            const object = await reader.read(info.oid)
-            if (typeof object === "string")
+      return heavy(async () => {
+        const reader = openCatFile(git, gitDir, {
+          maxObjectBytes: maxFileBytes,
+        })
+        try {
+          const documents: DocumentRead[] = []
+          let budget = maxResponseBytes
+          for (const { path, name } of names) {
+            // The size from the object's header, before anything is inflated.
+            const info = await reader.info(name)
+            if (!info || info.type !== "blob") {
               documents.push({ path, missing: true })
-            else
-              documents.push({
-                path,
-                oid: object.oid,
-                size: object.size,
-                content: object.content,
-              })
+            } else if (info.size > maxFileBytes) {
+              documents.push({ path, tooLarge: true, size: info.size })
+            } else if (info.size > budget) {
+              // Past this response's budget: the caller asks again.
+              budget = 0
+              documents.push({ path, deferred: true, size: info.size })
+            } else {
+              budget -= info.size
+              const object = await reader.read(info.oid)
+              if (typeof object === "string")
+                documents.push({ path, missing: true })
+              else
+                documents.push({
+                  path,
+                  oid: object.oid,
+                  size: object.size,
+                  content: object.content,
+                })
+            }
           }
+          return { commit, documents }
+        } finally {
+          await reader.close()
         }
-        return { commit, documents }
-      } finally {
-        await reader.close()
-      }
+      })
     },
     async diff(workspaceId, input) {
       const { gitDir, commit: to } = await resolve(workspaceId, input.to)
@@ -346,6 +374,13 @@ export function createRepositoryStore(options: {
       return { from, to, changes: await diffTrees(git, gitDir, from, to) }
     },
     async history(workspaceId, input) {
+      if ((input.skip ?? 0) > maxHistorySkip) {
+        throw new StoreError(
+          400,
+          "invalid-request",
+          `A page can skip at most ${maxHistorySkip} commits`,
+        )
+      }
       if (input.limit < 1 || input.limit > maxHistoryPage) {
         throw new StoreError(
           400,
@@ -354,25 +389,96 @@ export function createRepositoryStore(options: {
         )
       }
       const { gitDir, commit } = await resolve(workspaceId, input.commit)
-      const commits = await history(git, gitDir, commit, {
-        limit: input.limit,
-        skip: input.skip,
-        path: input.path,
+      // Each commit is read only up to 256 KiB (a longer message comes back
+      // truncated), so a page of 100 stays small.
+      // With each commit, the paths it changed: at most 50 kept per commit
+      // as Git's output streams by, so a page stays small too.
+      const { commits, changes } = await heavy(async () => {
+        const commits = await history(git, gitDir, commit, {
+          limit: input.limit,
+          skip: input.skip,
+          path: input.path,
+          maxCommitBytes: maxCommitBytes,
+        })
+        const changes = await changedPaths(
+          git,
+          gitDir,
+          commits.map((c) => c.oid),
+          { maxPerCommit: maxChangesPerCommit },
+        )
+        return { commits, changes }
       })
       return {
         commit,
         commits: commits.map(
-          ({ oid, parents, author, committer, message }) => ({
-            oid,
-            parents,
-            author,
-            committer,
-            message,
-          }),
+          ({ oid, parents, author, committer, message, truncated }) => {
+            const changed = changes.get(oid)
+            return {
+              oid,
+              parents,
+              author,
+              committer,
+              message,
+              truncated,
+              changes: changed?.changes ?? [],
+              changeCount: changed?.count ?? 0,
+              changesTruncated: changed?.truncated ?? false,
+            }
+          },
         ),
       }
     },
   }
+}
+
+/** The most of one commit a history page reads: 256 KiB. */
+export const maxCommitBytes = 256 * 1024
+
+/** Runs at most `max` of the given jobs at once; the others wait their turn. */
+function limitConcurrency(max: number) {
+  let running = 0
+  const waiting: (() => void)[] = []
+  return async <T>(job: () => Promise<T>): Promise<T> => {
+    if (running >= max)
+      await new Promise<void>((resolve) => waiting.push(resolve))
+    running++
+    try {
+      return await job()
+    } finally {
+      running--
+      waiting.shift()?.()
+    }
+  }
+}
+
+/**
+ * fsyncs a new repository's files and folders, so its configuration (and
+ * with it `core.hooksPath`), `HEAD` and refs survive a power loss once it
+ * is renamed into place. Loose objects are left out: Git synced them as it
+ * wrote them (`core.fsync`), and there may be many.
+ */
+function syncRepository(gitDir: string): void {
+  const visit = (path: string, objects: boolean) => {
+    const stat = lstatSync(path)
+    if (stat.isSymbolicLink()) return
+    if (stat.isDirectory()) {
+      for (const name of readdirSync(path)) {
+        visit(
+          join(path, name),
+          objects || (path === gitDir && name === "objects"),
+        )
+      }
+    } else if (objects) {
+      return
+    }
+    const fd = openSync(path, "r")
+    try {
+      fsyncSync(fd)
+    } finally {
+      closeSync(fd)
+    }
+  }
+  visit(gitDir, false)
 }
 
 /** Removes what an interrupted creation left in `.tmp/`. */
