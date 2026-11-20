@@ -403,14 +403,8 @@ function placesOf(preview: CatalogPurgePreview): string[] {
     places.push(
       `${plural(preview.indexDocuments, "page")} in the catalog's search`,
     )
-  const earlier =
-    preview.earlier.revisionTexts +
-    preview.earlier.proposals +
-    preview.earlier.comments
-  if (earlier > 0)
-    places.push(
-      `${plural(earlier, "copy", "copies")} from before the catalog moved into Git`,
-    )
+  if (preview.moves > 0)
+    places.push("the record of the catalog's move into Git")
   return places
 }
 

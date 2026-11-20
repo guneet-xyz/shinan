@@ -1319,8 +1319,8 @@ one); the AI providers that read it. The owner types the text and chooses
 **Find it**; spaces and line breaks need not match. Shinan lists where it
 is in plain words, as an ordinary list: changes to the catalog (and how
 many only on agents' branches), changes' messages or authors, branch names,
-entries in Shinan's push records and on the timeline, copies from before
-the catalog moved into Git; the pages that show it now, by title and path
+entries in Shinan's push records and on the timeline, the record of the
+catalog's move into Git; the pages that show it now, by title and path
 ("Musashi (machine/musashi.md)"); places found across a line break, to
 check; pages whose structure changes; and copies written another way (in a
 link, with HTML entities, escapes), each with **Find this form**. It says

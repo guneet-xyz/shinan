@@ -121,7 +121,6 @@ afterAll(async () => {
   await pool.end()
 })
 
-
 let owner: Person
 let contributor: Person
 let workspaceId: string
