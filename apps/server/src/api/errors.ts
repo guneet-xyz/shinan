@@ -9,6 +9,7 @@ import {
   NotFoundError,
   ReauthenticationRequiredError,
   RuleViolationError,
+  UnavailableError,
 } from "@shinan/core"
 import { createLimitedLog, errorFrames, errorSummary } from "@shinan/db"
 import type { LimitedLog } from "@shinan/db"
@@ -80,6 +81,14 @@ function handleError(error: Error, c: Context, log: LimitedLog) {
       message: error.message,
       rule: error.rule,
     })
+  }
+  if (error instanceof UnavailableError) {
+    const response = errorResponse(c, 503, {
+      error: "unavailable",
+      message: error.message,
+    })
+    response.headers.set("retry-after", "30")
+    return response
   }
   if (error instanceof BadRequestError) {
     return errorResponse(c, 422, {

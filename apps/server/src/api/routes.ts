@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto"
 import { Hono } from "hono"
 import type { Context as HonoContext } from "hono"
 import { bodyLimit } from "hono/body-limit"
@@ -26,6 +27,7 @@ import {
   getEmailChange,
   getInstallation,
   getWorkspace,
+  historyCursors,
   issueAgentToken,
   leaveWorkspace,
   listAgents,
@@ -55,6 +57,7 @@ import type {
   Agent,
   Context,
   Event,
+  GitClient,
   Invitation,
   InvitationForYou,
   IssuedToken,
@@ -96,6 +99,16 @@ export interface ApiOptions {
   trustedProxies?: TrustedProxies
   /** Per-address rate limits (architecture §10.1); on unless turned off. */
   rateLimit?: boolean
+  /**
+   * The Git container, for what the catalog pages read from the repository
+   * (a page's history and source, the README). Without it those answer 503.
+   */
+  gitClient?: GitClient
+  /**
+   * The key History's cursors are signed with, such as the session secret;
+   * a random one when not given, which lasts as long as the process.
+   */
+  historyCursorKey?: string
 }
 
 /**
@@ -135,6 +148,8 @@ export function createApi({
   installationUrl,
   trustedProxies = noTrustedProxies,
   rateLimit = true,
+  gitClient,
+  historyCursorKey,
 }: ApiOptions) {
   const api = new Hono()
   const onError = errorHandler()
@@ -642,7 +657,11 @@ export function createApi({
     },
   )
 
-  catalogRoutes(signedIn, ctx)
+  catalogRoutes(signedIn, ctx, {
+    git: gitClient,
+    cursors: historyCursors(historyCursorKey ?? randomBytes(32)),
+    requestInfo,
+  })
 
   api.route("/", signedIn)
   api.all("*", (c) =>

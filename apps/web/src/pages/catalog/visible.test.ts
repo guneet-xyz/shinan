@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { hasHidden, visible } from "./visible"
+import { hasHidden, hiddenName, visible, visibleParts } from "./visible"
 
 const marker = (code: number) =>
   `⟨U+${code.toString(16).toUpperCase().padStart(4, "0")}⟩`
@@ -35,5 +35,34 @@ describe("hidden characters", () => {
     const text = "One\r\n\ttwo: café, 日本語, ✓ 👍🏽, e\u0301"
     expect(visible(text)).toBe(text)
     expect(hasHidden(text)).toBe(false)
+  })
+
+  it("splits text into plain runs and named hidden characters", () => {
+    expect(visibleParts("Invoice \u202Egnp.exe\u202C")).toEqual([
+      "Invoice ",
+      { marker: marker(0x202e), name: "right-to-left override" },
+      "gnp.exe",
+      { marker: marker(0x202c), name: "pop directional formatting" },
+    ])
+    expect(visibleParts("one\ntwo")).toEqual(["one\ntwo"])
+    expect(visibleParts("one\ntwo", { oneLine: true })).toEqual([
+      "one",
+      { marker: marker(0x0a), name: "line break" },
+      "two",
+    ])
+    expect(visibleParts("")).toEqual([])
+    expect(hasHidden("one\ntwo")).toBe(false)
+    expect(hasHidden("one\ntwo", { oneLine: true })).toBe(true)
+  })
+
+  it.each([
+    [0x200b, "zero-width space"],
+    [0xfe0f, "variation selector"],
+    [0xe0041, "tag character"],
+    [0x0007, "control character"],
+    [0x2062, "invisible operator"],
+    [0x00ad, "soft hyphen"],
+  ])("names U+%s", (code, name) => {
+    expect(hiddenName(String.fromCodePoint(code))).toBe(name)
   })
 })

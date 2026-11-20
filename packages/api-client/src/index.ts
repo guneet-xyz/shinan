@@ -1,9 +1,13 @@
 import type {
   CatalogAnswer,
+  CatalogDocumentAnswer,
   CatalogEntityAnswer,
+  CatalogHistoryAnswer,
   CatalogList,
   CatalogListAnswer,
+  CatalogReadmeAnswer,
   CatalogSearchAnswer,
+  CatalogSourceAnswer,
   CatalogTreeAnswer,
   CatalogTypeIndexAnswer,
   CatalogTypeSchemaAnswer,
@@ -417,6 +421,7 @@ export type ErrorCode =
   | "payload-too-large"
   | "length-required"
   | "not-implemented"
+  | "unavailable"
   | "internal"
 
 export interface ErrorBody {
@@ -655,6 +660,31 @@ export function createApiClient(options: ApiClientOptions = {}) {
         "GET",
         `${catalog(workspaceId)}/entity${search({ id })}`,
       ),
+    catalogDocument: (workspaceId: string, id: string) =>
+      request<CatalogDocumentAnswer>(
+        "GET",
+        `${catalog(workspaceId)}/document${search({ id })}`,
+      ),
+    catalogHistory: (
+      workspaceId: string,
+      id: string,
+      options: { after?: string; limit?: number } = {},
+    ) =>
+      request<CatalogHistoryAnswer>(
+        "GET",
+        `${catalog(workspaceId)}/history${search({
+          id,
+          after: options.after,
+          limit: options.limit?.toString(),
+        })}`,
+      ),
+    catalogSource: (workspaceId: string, id: string) =>
+      request<CatalogSourceAnswer>(
+        "GET",
+        `${catalog(workspaceId)}/source${search({ id })}`,
+      ),
+    catalogReadme: (workspaceId: string) =>
+      request<CatalogReadmeAnswer>("GET", `${catalog(workspaceId)}/readme`),
     catalogState: (workspaceId: string) =>
       request<CatalogAnswer>("GET", `${catalog(workspaceId)}/state`),
     catalogTree: (workspaceId: string) =>

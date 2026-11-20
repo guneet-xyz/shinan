@@ -20,6 +20,7 @@ export {
   NotFoundError,
   ReauthenticationRequiredError,
   RuleViolationError,
+  UnavailableError,
 } from "./errors.js"
 export type { RefusalReason } from "./errors.js"
 export { listEvents, pageSize } from "./events.js"
@@ -215,6 +216,23 @@ export type {
   TypeIndexAnswer,
   TypeIndexItemJson,
 } from "./catalog/wiki.js"
+export {
+  getCatalogDocument,
+  getCatalogPageHistory,
+  getCatalogPageSource,
+  getCatalogReadme,
+  changeBodyLimit,
+  changeSubjectLimit,
+  historyCursors,
+  historyPageLimit,
+} from "./catalog/pages.js"
+export type {
+  CatalogChangeJson,
+  CatalogDocumentJson,
+  CatalogHistoryAnswer,
+  CatalogSourceJson,
+  HistoryCursors,
+} from "./catalog/pages.js"
 export * from "./catalog/purge/index.js"
 export {
   decodeGitContext,

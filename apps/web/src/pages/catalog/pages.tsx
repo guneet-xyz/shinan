@@ -13,23 +13,27 @@ import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
 import { useApi, useResource } from "../../api"
-import { catalogState, useCatalogTree } from "../../catalog-tree"
+import {
+  catalogState,
+  useCatalogTree,
+  useIndexBehind,
+} from "../../catalog-tree"
 import { PageHeader } from "../../components/page"
 import { ErrorMessage, Loading } from "../../components/status"
 import { useWorkspace } from "../workspace/context"
 import {
   ageText,
+  andList,
   entityPath,
   factLabel,
   listLinkClass,
   snippet,
   stateLabels,
-  titleText,
   valueText,
 } from "./format"
 import { BeingSetUp, IndexBehind } from "./notices"
-import { StartHerePage } from "./StartHerePage"
-import { visible } from "./visible"
+import { StartHere } from "./StartHere"
+import { TitleText, VisibleText } from "./VisibleText"
 
 /**
  * The catalog's first page, Start here (human experience, the catalog):
@@ -43,7 +47,7 @@ export function CatalogHome() {
   if (tree?.error) return <ErrorMessage error={tree.error} />
   if (!tree?.data) return <Loading />
   if (catalogState(tree.data) === "setting-up") return <BeingSetUp />
-  return <StartHerePage pages={tree.data.items.length} />
+  return <StartHere pages={tree.data.items.length} />
 }
 
 /** A link to a page by its title. */
@@ -58,7 +62,7 @@ function PageLink(props: {
       to={entityPath(props.workspaceId, props.id)}
       className={cn(listLinkClass, props.className)}
     >
-      {titleText(props.title, props.id)}
+      <TitleText title={props.title} id={props.id} />
     </Link>
   )
 }
@@ -85,6 +89,10 @@ export function SearchPage() {
       ? Promise.resolve(null)
       : api.catalogSearch(workspace.id, { text, includeRetired: true }),
   )
+  const searchBehind = useIndexBehind(
+    workspace.id,
+    results.data?.index_behind ?? false,
+  )
   const items = results.data?.items ?? []
   const retired = items.filter((i) => i.entity.status === "retired")
   const shown = showRetired
@@ -99,7 +107,7 @@ export function SearchPage() {
       </PageHeader>
       {results.error ? <ErrorMessage error={results.error} /> : null}
       {results.loading && <Loading />}
-      {results.data && <IndexBehind behind={results.data.index_behind} />}
+      {results.data && <IndexBehind behind={searchBehind} />}
       {results.data && shown.length === 0 && retired.length === 0 && (
         <p className="text-sm">Nothing matches.</p>
       )}
@@ -115,13 +123,13 @@ export function SearchPage() {
                   className="min-w-0 wrap-anywhere"
                 />
                 <span className="min-w-0 text-xs wrap-anywhere text-muted-foreground">
-                  {visible(folderOf(item.entity.id), { oneLine: true })}
+                  <VisibleText text={folderOf(item.entity.id)} oneLine />
                   {item.entity.status === "retired" && " · retired"}
                 </span>
               </p>
               {snippet(item) && (
                 <p className="min-w-0 text-sm wrap-anywhere text-muted-foreground">
-                  {visible(snippet(item), { oneLine: true })}
+                  <VisibleText text={snippet(item)} oneLine />
                 </p>
               )}
             </li>
@@ -140,12 +148,6 @@ export function SearchPage() {
       )}
     </div>
   )
-}
-
-/** Values in a sentence: "a", "a and b", "a, b and c". */
-function andList(values: readonly string[]): string {
-  if (values.length <= 1) return values.join("")
-  return `${values.slice(0, -1).join(", ")} and ${values[values.length - 1]}`
 }
 
 /** A fact in one line: its value, or what is known about it. */
@@ -193,6 +195,7 @@ export function NeedsAttentionPage() {
       ? (state.tree.data?.items.filter((i) => i.id === null) ?? [])
       : []
   const data = lists.data
+  const attentionBehind = useIndexBehind(workspace.id, data?.behind ?? false)
   const empty =
     data &&
     data.disagree.length + data.due.length + data.unknown.length === 0 &&
@@ -202,7 +205,7 @@ export function NeedsAttentionPage() {
       <PageHeader title="Needs attention" />
       {lists.error ? <ErrorMessage error={lists.error} /> : null}
       {lists.loading && <Loading />}
-      {data && <IndexBehind behind={data.behind} />}
+      {data && <IndexBehind behind={attentionBehind} />}
       {empty && <p className="text-sm">Nothing needs attention.</p>}
       {data && data.disagree.length > 0 && (
         <AttentionList title="These disagree">
@@ -248,7 +251,7 @@ export function NeedsAttentionPage() {
           {unreadable.map((item) => (
             <li key={item.path} className="flex flex-col gap-0.5">
               <code className="text-sm wrap-anywhere">
-                {visible(item.path, { oneLine: true })}
+                <VisibleText text={item.path} oneLine />
               </code>
               <span className="text-sm text-muted-foreground">
                 Shinan can't read this file as a page. An agent can fix it by
@@ -286,7 +289,7 @@ function AttentionItem(props: {
         className="self-start wrap-anywhere"
       />
       <span className="min-w-0 text-sm wrap-anywhere text-muted-foreground">
-        {visible(props.line, { oneLine: true })}
+        <VisibleText text={props.line} oneLine />
       </span>
     </li>
   )

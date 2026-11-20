@@ -252,7 +252,15 @@ no shell. As built (GC-1b,
   time; any other request gets `401` and nothing else, the context header
   unread. Calls go one way: `web`, `worker` and `migrate` call it; it calls
   nobody and writes nothing to PostgreSQL. In GC-1b only `worker` calls it
-  (to create repositories); `web` joins in GC-2 and `migrate` in GC-6.
+  (to create repositories); `web` joins in GC-7 (to read a page's
+  history, its source and the README, at the index's commit) and GC-2 (the
+  Git endpoint), and `migrate` in GC-6. A person holds at most 2 of
+  `web`'s reads for the catalog pages at once (4 per network address), so
+  one browser can't take the container's 4 reads from the index updates.
+  History pages by cursors `web` signs (HMAC with the session secret, over
+  the workspace, the file and the commit), so the browser can only start a
+  page of history on a commit `web` listed from the index's `main`, never
+  on another branch.
 - **Its API** (JSON; the typed client is core's `createGitClient`):
   `GET`/`PUT /repositories/<workspace ID>` (`main`'s commit; create with a
   first commit by Shinan, once), `GET …/tree`, `POST …/documents`,

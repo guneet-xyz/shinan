@@ -153,6 +153,27 @@ export function fakeApi(overrides: Partial<ApiClient> = {}): Fake {
         index_behind: false,
         start_here: null,
       }),
+    // No start-here document and no README; a page's footer reads its
+    // last change, of which there are none.
+    catalogDocument: () =>
+      Promise.reject(
+        apiError(404, { error: "not-found", message: "Not found" }),
+      ),
+    catalogReadme: () =>
+      Promise.resolve({
+        catalog_commit: catalogCommit,
+        index_behind: false,
+        readme: null,
+      }),
+    catalogHistory: (_w, id) =>
+      Promise.resolve({
+        catalog_commit: catalogCommit,
+        index_behind: false,
+        path: `${id}.md`,
+        title: null,
+        changes: [],
+        next_after: null,
+      }),
   }
   const names: (keyof ApiClient)[] = [
     "status",
@@ -204,6 +225,10 @@ export function fakeApi(overrides: Partial<ApiClient> = {}): Fake {
     "enableAgent",
     "catalogEntity",
     "catalogState",
+    "catalogDocument",
+    "catalogHistory",
+    "catalogSource",
+    "catalogReadme",
     "catalogTree",
     "catalogTypes",
     "catalogType",

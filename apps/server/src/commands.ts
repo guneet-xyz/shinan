@@ -117,6 +117,8 @@ export async function runCommand(
 async function runWeb(env: Env): Promise<void> {
   const config = readWebConfig(env)
   const databaseUrl = readDatabaseUrl(env)
+  // The Git container, for what the catalog pages read from the repository.
+  const gitConfig = readGitClientConfig(env)
   const { db, pool } = createDatabase(databaseUrl)
   const jobs = await connectJobQueue(databaseUrl)
   let signIn: SignIn | undefined
@@ -142,6 +144,10 @@ async function runWeb(env: Env): Promise<void> {
       trustedProxies: config.trustedProxies,
       webDistDir: config.webDistDir,
       skills: await loadSkillCatalog(),
+      gitClient: gitConfig ? createGitClient(gitConfig) : undefined,
+      // History's cursors last across restarts: signed with the session
+      // secret (with their own label, so they never pass for anything else).
+      historyCursorKey: config.sessionSecret,
     })
     const internal = createInternalApp({
       checkDatabase: () => checkDatabase(pool),

@@ -39,7 +39,7 @@ import {
 import type { Folder } from "../catalog-tree"
 import { roleNames } from "../format"
 import { catalogPath, entityPath } from "../pages/catalog/format"
-import { visible } from "../pages/catalog/visible"
+import { VisibleText } from "../pages/catalog/VisibleText"
 
 /**
  * The app's one navigation (Git-based catalog plan §3; owner, 2026-11-20):
@@ -160,6 +160,9 @@ function SearchBox(props: { workspaceId: string }) {
 /** How many pages of a folder show at first, and how many more each time. */
 export const folderPageStep = 100
 
+/** How many more pages "Show more" adds. */
+const moreStep = folderPageStep * 5
+
 function CatalogTree(props: {
   workspaceId: string
   items: readonly CatalogTreeItem[]
@@ -261,7 +264,7 @@ const FolderSection = memo(function FolderSection(props: {
       >
         <Icon aria-hidden="true" className="size-4 shrink-0" />
         <span className="truncate">
-          {visible(folder.name, { oneLine: true })}
+          <VisibleText text={folder.name} oneLine />
         </span>
       </button>
       {props.open && (
@@ -322,10 +325,14 @@ function PageList(props: {
         <li>
           <button
             type="button"
-            onClick={() => setShown((n) => n + folderPageStep * 5)}
+            onClick={() => setShown((n) => n + moreStep)}
             className="flex min-h-8 items-center rounded-md px-2 text-sm text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring"
           >
-            Show more ({more.toLocaleString()} more)
+            {more > moreStep
+              ? `Show ${moreStep} more (${more.toLocaleString()} left)`
+              : more === 1
+                ? "Show 1 more"
+                : `Show the last ${more.toLocaleString()}`}
           </button>
         </li>
       )}
@@ -352,7 +359,7 @@ const PageLink = memo(function PageLink(props: {
       )}
     >
       <span className="min-w-0 wrap-anywhere">
-        {visible(props.title, { oneLine: true })}
+        <VisibleText text={props.title} oneLine />
       </span>
     </Link>
   )

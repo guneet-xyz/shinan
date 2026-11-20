@@ -1,9 +1,9 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest"
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest"
 
 import type * as Api from "@shinan/api-client"
 import { createWorkspace } from "@shinan/core"
 import type { JobQueue, Person } from "@shinan/core"
-import { pushCatalogFiles } from "@shinan/core/testing"
+import { catalogTestGit, pushCatalogFiles } from "@shinan/core/testing"
 import { connectTestDatabase } from "@shinan/db/testing"
 
 import { insertPerson } from "../../test/people.js"
@@ -17,13 +17,16 @@ afterAll(async () => {
 })
 
 const jobs: JobQueue = { send: () => Promise.resolve(null) }
-const api = createApi({
+const options = {
   db,
   signIn: testSignIn,
   jobs,
   installationUrl: "http://shinan.test",
   rateLimit: false,
-})
+}
+const api = createApi({ ...options, gitClient: catalogTestGit })
+/** `web` without the Git container: what reads the repository is unavailable. */
+const withoutGit = createApi(options)
 
 const person = (handle: string) => `---
 id: person/${handle}
@@ -139,6 +142,78 @@ describe("the catalog for the catalog pages", () => {
     )
   })
 
+  it("reads the start-here and type schema documents as pages", async () => {
+    const { status, body } = await get<Api.CatalogDocumentAnswer>(
+      ws("/document?id=start-here"),
+    )
+    expect(status).toBe(200)
+    expect(body.document).toMatchObject({
+      id: "start-here",
+      kind: "start-here",
+      title: "Start here",
+    })
+    expect((await get(ws("/document?id=machine/musashi"))).status).toBe(404)
+    expect((await get(ws("/document"))).status).toBe(422)
+    expect((await get(ws("/document?id=start-here"), outsider)).status).toBe(
+      404,
+    )
+  })
+
+  it("reads a page's history and source, and the README, from the repository", async () => {
+    const history = await get<Api.CatalogHistoryAnswer>(
+      ws("/history?id=machine/musashi&limit=1"),
+    )
+    expect(history.status).toBe(200)
+    expect(history.body).toMatchObject({
+      catalog_commit: commit,
+      path: "machine/musashi.md",
+      title: "Musashi",
+      next_after: null,
+    })
+    expect(history.body.changes).toEqual([
+      expect.objectContaining({ commit, merge: false, pushed_by: null }),
+    ])
+    expect(
+      (await get(ws("/history?id=machine/musashi&after=main"))).status,
+    ).toBe(422)
+    expect((await get(ws("/history?id=machine/musashi&limit=0"))).status).toBe(
+      422,
+    )
+
+    const source = await get<Api.CatalogSourceAnswer>(
+      ws("/source?id=machine/musashi"),
+    )
+    expect(source.status).toBe(200)
+    expect(source.body.source).toEqual({
+      path: "machine/musashi.md",
+      text: musashi,
+      size: musashi.length,
+    })
+
+    const readme = await get<Api.CatalogReadmeAnswer>(ws("/readme"))
+    expect(readme.body.readme).toMatchObject({
+      path: "README.md",
+      text: "# Catalog\n",
+    })
+
+    for (const path of [
+      "/history?id=machine/musashi",
+      "/source?id=machine/musashi",
+      "/readme",
+    ])
+      expect((await get(ws(path), outsider)).status).toBe(404)
+  })
+
+  it("says the repository can't be read right now without the Git container", async () => {
+    const response = await withoutGit.request(
+      ws("/history?id=machine/musashi"),
+      { headers: { origin: "http://shinan.test", ...as(owner) } },
+    )
+    expect(response.status).toBe(503)
+    expect(response.headers.get("retry-after")).toBe("30")
+    expect(await response.json()).toMatchObject({ error: "unavailable" })
+  })
+
   it("reads the tree for the sidebar", async () => {
     const { status, body } = await get<Api.CatalogTreeAnswer>(ws("/tree"))
     expect(status).toBe(200)
@@ -210,13 +285,12 @@ describe("the catalog for the catalog pages", () => {
     // "Preview as agent", "opened" markers and the editable form are gone
     // with M2's wiki editing (Git-based catalog plan §1.2); revision
     // history, earlier text and changes since a revision with M2's revision
-    // store (GC-4).
+    // store (GC-4); a page's history now comes from the repository.
     for (const path of [
       "/start-here/agent-preview",
       "/opened?id=machine/musashi",
       "/editable?id=machine/musashi",
       "/changes",
-      "/history?id=machine/musashi",
       "/text?id=machine/musashi&revision=1",
     ])
       expect((await get(ws(path))).status, path).toBe(404)
@@ -234,5 +308,103 @@ describe("the catalog for the catalog pages", () => {
       headers: { origin: "http://shinan.test" },
     })
     expect(anonymous.status).toBe(401)
+  })
+})
+
+describe("History, View source and the README, from the repository", () => {
+  it("takes the workspace ID in any case", async () => {
+    for (const path of [
+      "/history?id=machine/musashi",
+      "/source?id=machine/musashi",
+      "/readme",
+    ])
+      expect(
+        (await get(`/workspaces/${workspaceId.toUpperCase()}/catalog${path}`))
+          .status,
+        path,
+      ).toBe(200)
+  })
+
+  it("pages History only by cursors it gave out, never from a branch's commit", async () => {
+    await pushCatalogFiles(db, workspaceId, {
+      "machine/musashi.md": `${musashi}\nRechecked.\n`,
+    })
+    const indexed = await pushCatalogFiles(db, workspaceId, {
+      "machine/musashi.md": `${musashi}\nRechecked again.\n`,
+    })
+    // A commit only on a branch: `main` is back where the index is.
+    const branchOnly = catalogTestGit.push(
+      workspaceId,
+      { "machine/musashi.md": `${musashi}\nSecret plan.\n` },
+      "Branch only: secret plan to retire Musashi",
+    )
+    catalogTestGit.setMain(workspaceId, indexed)
+
+    const first = await get<Api.CatalogHistoryAnswer>(
+      ws("/history?id=machine/musashi&limit=1"),
+    )
+    expect(first.body.changes.map((c) => c.commit)).toEqual([indexed])
+    const cursor = first.body.next_after!
+    expect(cursor).not.toMatch(/^[0-9a-f]{40}$/)
+    const second = await get<Api.CatalogHistoryAnswer>(
+      ws(`/history?id=machine/musashi&limit=1&after=${cursor}`),
+    )
+    expect(second.status).toBe(200)
+    expect(second.body.changes).toHaveLength(1)
+
+    for (const after of [
+      branchOnly,
+      `${branchOnly}.${cursor.split(".")[1]}`,
+      cursor.replace(/^[0-9a-f]{40}/, branchOnly),
+    ]) {
+      const refused = await get<Api.ErrorBody>(
+        ws(`/history?id=machine/musashi&after=${after}`),
+      )
+      expect(refused.status, after).toBe(422)
+      expect(refused.body.message).toMatch(/out of date/)
+    }
+    // Nor does another page's cursor fit this one.
+    expect(
+      (await get(ws(`/history?id=service/registry&after=${cursor}`))).status,
+    ).toBe(422)
+  })
+
+  it("lets one person read the repository only twice at once", async () => {
+    let release = () => {}
+    let waiting = 0
+    const gate = new Promise<void>((resolve) => (release = resolve))
+    const slow = new Proxy(catalogTestGit, {
+      get(target, key, receiver) {
+        if (key === "history" || key === "readDocuments") {
+          const read = Reflect.get(target, key, receiver) as (
+            ...args: unknown[]
+          ) => Promise<unknown>
+          return async (...args: unknown[]) => {
+            waiting++
+            await gate
+            return read(...args)
+          }
+        }
+        return Reflect.get(target, key, receiver) as unknown
+      },
+    })
+    const slowApi = createApi({ ...options, gitClient: slow })
+    const ask = (path: string, who: Person = owner) =>
+      Promise.resolve(
+        slowApi.request(ws(path), {
+          headers: { origin: "http://shinan.test", ...as(who) },
+        }),
+      )
+    const held = [ask("/history?id=machine/musashi"), ask("/readme")]
+    await vi.waitFor(() => expect(waiting).toBe(2))
+    const refused = await ask("/source?id=machine/musashi")
+    expect(refused.status).toBe(429)
+    expect(refused.headers.get("retry-after")).toBe("1")
+    expect(await refused.json()).toMatchObject({ error: "too-many-requests" })
+    // Pages from the index don't count.
+    expect((await ask("/entity?id=machine/musashi")).status).toBe(200)
+    release()
+    expect((await Promise.all(held)).map((r) => r.status)).toEqual([200, 200])
+    expect((await ask("/source?id=machine/musashi")).status).toBe(200)
   })
 })

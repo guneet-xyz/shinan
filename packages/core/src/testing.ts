@@ -34,6 +34,13 @@ export async function storeCatalogRevision(
 const git = createMemoryGit()
 
 /**
+ * The in-memory repositories `pushCatalogFiles` commits to, as a Git
+ * client: for tests of what reads the repository (a page's history and
+ * source).
+ */
+export const catalogTestGit: MemoryGit = git
+
+/**
  * Commits files to `main` of an in-memory repository standing in for the
  * workspace's catalog repository (made on first use), then brings the
  * workspace's agent index up to it, as the worker's index job does after a

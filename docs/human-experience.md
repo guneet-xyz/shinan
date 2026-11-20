@@ -870,7 +870,7 @@ Registering agents and revoking their tokens is under
 
 ## The catalog
 
-> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-7](build-plan-git-catalog.md#gc-7-the-catalog-ui)): people browse `main` as a file tree, rendered pages, search, "needs attention" and commit history, with no editing (D-064). Until then, this section describes M2 as built (v0.3.0).
+> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-7](build-plan-git-catalog.md#gc-7-the-catalog-ui)): people browse `main` as a file tree, rendered pages, search, "needs attention" and commit history, with no editing (D-064). [A page](#a-page) and [moving around the catalog](#moving-around-the-catalog) are as built in GC-7; the introduction below describes M2 (v0.3.0).
 
 The catalog pages show the catalog to people as readable pages (called "the
 wiki" until the owner renamed it, [D-064](decisions/D-064-catalog-not-wiki.md)). **Decided** (D-006).
@@ -880,74 +880,91 @@ review happen inside Shinan. **Decided** (owner, O-11, O-12, N-5, [#25]). The en
 [Catalog](catalog.md) document; this section is how they look and how people
 move around them.
 
-### An entity page
+### A page
 
-An entity page shows, in order of importance:
+**As built in GC-7 ([#169](https://github.com/guneet-xyz/shinan/issues/169)),
+from the [product brief](https://github.com/guneet-xyz/shinan/issues/169#issuecomment-7029844112).**
+It replaces M2's entity page (v0.3.0), whose header row, cards, freshness
+summary, "Owning sources" and "Not yet recorded" are gone. A page reads, in
+order:
 
-1. **Title, entity type, ID, entity status and entity owner** (or `unknown`).
-   The ID is written `<type>/<slug>`, and old IDs lead to the current page.
-   **Decided** (owner, O-15, [#25]). `deprecated` and `retired` entities say so
-   before anything else, with the date and a link to the replacement.
-   **Proposed**, following the glossary.
-2. **Pending catalog proposals:** removed with catalog approval
-   ([D-060](decisions/D-060-no-catalog-approval.md); GC-5b).
-3. **Discrepancies**, if any, with both sides' evidence. **Proposed**,
-   following [Catalog](catalog.md) section 10, which asks to show them prominently.
-4. **Owning sources.** Links to where the authoritative information lives,
-   shown before the facts. **Proposed.** Reason: link, don't copy.
-5. **Freshness summary.** One line: how many facts, the oldest last checked,
-   how many due for recheck, how many never checked, and how many `unknown`.
-   The only page-level date is the oldest last-checked time, calculated from
-   the facts. **Proposed**, following the glossary. Reason: checking one fact
-   does not refresh the others, so a stored page date would mislead.
-6. **Facts.** Each fact is one structured field or relation (**Decided**,
-   owner, O-13, [#25]) and shows its value, [freshness](#how-freshness-is-shown),
-   fact state, source (as a link where possible), who checked it and the check
-   scope. **Decided** that these are recorded (D-007). Presentation
-   **proposed**.
-7. **Body text.** The readable description.
-8. **Links.** Related entities, and pages that link to this one. **Proposed.**
-9. **Tasks.** Unfinished tasks related to this entity, and recently done ones.
-   **Proposed.** Reason: the owner can see what is changing about a project or
-   machine without searching.
-10. **History.** The entity's timeline. Any earlier catalog revision can be
-    opened and compared with the current one. **Proposed.** Reason: with no
-    Git mirror (N-5), the catalog pages are where people read a page's history.
+1. **A calm notice if it is retired or deprecated**, with where to go
+   instead: "This page is retired. See Email." Without a replacement, a
+   retired page "is kept for its history".
+2. **The title, then the summary as one line.** If the title has hidden
+   characters, one line under it says so ("This title has hidden
+   characters, shown as ⟨U+…⟩: they can make text read as something
+   else."), or "This page's title or summary has…" when the summary has
+   them. An old ID opens the current page, which says "You followed an
+   old address".
+3. **One sentence for each disagreement** not accepted, in a notice: "Two
+   checks disagree about disk data size: 128 GiB and 64 GB (both seen 5
+   days ago)." When the checks are of different ages, each value has its
+   own.
+4. **Facts**, as a short two-column list: the key as a label (dots,
+   underscores and dashes become spaces, in sentence case, so
+   `disk.data.size` reads "Disk data size"), then the value and its age:
+   "74 GiB · checked 40 days ago · due for a recheck". The state shows only
+   when it isn't "seen": "should be 128 GiB", "planned 128 GiB", "unknown:
+   reachability not tested". A key with several values lists each with its
+   own age. A key whose values disagree says "disagree · show both checks":
+   the sentence at the top has the values, and the button opens each value
+   with its age and its check ("128 GiB · seen 6 days ago", then when, by
+   whom, what was checked and the source). Relations are links to the other page by
+   title; a `secrets-in` fact reads "kept in Vault as musashi/ssh", never a
+   value. **The check is one tap away, on the age**: when, by whom (the
+   check's `by`, with "via" in words: "guneet, through opencode-daedalus"),
+   what was checked, the source and what wasn't checked.
+5. **The body**, rendered. A first heading that repeats the title is left
+   out, and the body's top headings sit at the level of the page's own.
+   Raw HTML is shown as text; only web and mail addresses, references to
+   other pages and links to a section of the page are links
+   ([security checklist 10.3](security-checklist.md#10-features-not-built-yet)).
+6. **Related pages:** pages that link to this one, by title, under plain
+   headings (the relation's inverse name, such as "Services", else "Linked
+   from"), and "Policies and runbooks that apply". Each page shows once,
+   under the first heading it belongs to. The page's own relations are among its facts.
+7. **The footer:** "Last changed 2 hours ago · History · View source", then
+   a quiet "About this page" line: its file, its ID only when it isn't the
+   file's name without `.md` (until push checks enforce that, GC-3), old
+   IDs, owner and status (and a decision's state). Who changed it comes from the push log
+   (GC-3a): a commit's author isn't trusted
+   ([D-061](decisions/D-061-push-authentication-and-push-log.md)), so until
+   then no name is shown. When the repository can't be read, "Last changed"
+   is left out.
 
-**Decided (owner, 2026-11-19, M2-Q17; M2-7, [#88](https://github.com/guneet-xyz/shinan/issues/88)):**
-details of the page as built.
-
-- **Owning sources** are the entity's repository, issue tracker and
-  documentation links (`repository`, `issue_tracker`, `docs.*`), what
-  configures it (`configured-by`), and the pinned web sources of its
-  `intended` facts. Reason: these are the places the catalog links to rather
-  than copies; other facts are the catalog's own observations.
-- **Facts** are grouped by key. A retired or deprecated entity says so above
-  its title, with the replacement when it names one. An old ID opens the
-  current page and says it moved.
-- **The body** is rendered in the browser from its Markdown, with the same
-  Markdown reader the index uses, so headings and links agree; its
-  headings carry the sections' anchors. Raw HTML is shown as text; only web
-  and mail addresses, entity references and links to a section of the page
-  are links ([security checklist 10.3](security-checklist.md#10-features-not-built-yet)).
-- **History** listed the catalog revisions that changed the page, each
-  comparable with the current text, and **Recent changes** every revision
-  of the catalog. Both read M2's revision store, which the agent index no
-  longer refers to; GC-4 removed them, with their routes, and GC-7 brings
-  them back from `main`'s commits and the push log (GQ-6). Until then a
-  start-here step to "Recent changes" is shown as plain text.
-- **Pending catalog proposals:** removed in GC-5b
-  ([D-060](decisions/D-060-no-catalog-approval.md)): the page no longer
-  lists them, since catalog review is gone.
-- **Links** in the body to a type schema document (`schema/<type>`) open
-  the type's page, and links to `start-here` open Start here. Since GC-5b,
-  Start here shows only its paths, not the document's own text (that came
-  from the removed editing route; GC-7 renders `start-here.md` as a page).
-  A "Waiting for approval" step no longer reads (GC-4): there is no catalog
-  approval to wait for.
-- **A page that could not be read in full** lists what could not be read.
-  The repair page that let a workspace owner correct its text was removed
-  in GC-5b ([changing the catalog from the browser](#changing-the-catalog-from-the-browser)).
+- **Type schema pages** (`schema/<type>`) are pages like any other: title,
+  summary, body and footer, with a muted line under the summary:
+  "Describes the pages in the `domain` folder." M2's type pages and type indexes are gone
+  (D-064: not by types); `…/catalog/types/<type>` leads to
+  `…/catalog/p/schema/<type>`.
+- **History** (`…/catalog/history/<ID>`) lists the changes of the page's
+  file on `main`, newest first, under "Today", "Yesterday" or the date.
+  Each is the change's message, its first line as the headline and the
+  start of the rest under it (about 1,000 characters at most; hidden
+  characters marked), when, and the short commit ID in muted text, so a
+  person can tell an agent "revert abc1234". "Show older changes" reads the
+  next 50 from the last one shown (by a cursor naming that commit, signed by
+  Shinan, not by a count to skip). A cursor Shinan didn't give out for the
+  page is refused, so History never shows a commit off the index's `main`.
+- **Code blocks** in a body scroll sideways when a line is long, by
+  keyboard too.
+- **View source** (`…/catalog/source/<ID>`) shows the file as it is, with
+  hidden characters marked and long lines wrapped, and a Copy button that
+  copies it exactly.
+- **History, View source and Last changed read the repository**, at the
+  commit the index is at, so they agree with the page. While `web` can't
+  reach the Git container they say "This isn't available right now. Try
+  again in a minute."
+- **Hidden characters** in anything an agent wrote and the page shows on
+  one line (titles, summaries, labels, values, check details, folder and
+  file names) show as markers such as `⟨U+202E⟩`. Hovering a marker shows
+  the character's name ("right-to-left override"); screen readers hear
+  "hidden character: right-to-left override" instead of the marker.
+- **A page that couldn't be read in full** says what couldn't be read.
+- **Catching up:** "Catching up with the latest changes…" follows where the
+  sidebar says the catalog stands now; once it has caught up, the page reads
+  its answer again.
 
 **Secrets.** Secrets never go in the catalog; the catalog records only where a
 secret lives, for example a path in a secrets manager such as Obscuro or
@@ -983,6 +1000,10 @@ where a recheck interval is set for its key in the type's schema. **Decided**
   each fact. The one-line freshness summary is the same on the page and in
   the type index: facts, the oldest check, how many are due, never checked
   and unknown.
+- **As built in GC-7 ([#169](https://github.com/guneet-xyz/shinan/issues/169)):**
+  the check is one tap away on the fact's age instead, "seen" gets no
+  label, a disagreement is one sentence at the top of the page, and the
+  freshness summary line is gone with the type index ([a page](#a-page)).
 
 ### Moving around the catalog
 
@@ -1031,9 +1052,17 @@ from the [product brief](https://github.com/guneet-xyz/shinan/issues/169#issueco
   - With no pages at all: "Your catalog is empty. Agents write it. Set up an
     agent, then ask it to add your first machine.", with a "Set up an
     agent" button.
-- **Type indexes** are gone from the catalog's first page (D-064: not by
-  types). A type's own page stays until pages are shown as the brief
-  describes (GC-7's next PR).
+- **Start here** is `start-here.md` rendered as a page, its people's steps
+  first as a numbered list, then its body. Without it, the catalog's
+  `README.md` is shown, its first heading as the title, with a line saying
+  so. Without either (or while the repository can't be read): "There's no
+  Start here page yet. Open a page from the folders, or ask an agent to
+  write start-here.md." An empty catalog shows its empty state whatever its
+  README says. The agents' path isn't shown: agents read the file.
+- **Type indexes and type pages** are gone (D-064: not by types): a type's
+  schema is a page in the `schema` folder.
+- **Large folders** in the sidebar show 100 pages, then "Show 500 more
+  (19,889 left)", and "Show the last 37" when fewer are left.
 
 ### Changing the catalog from the browser
 

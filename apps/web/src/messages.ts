@@ -23,6 +23,8 @@ export function errorMessage(error: unknown): string {
         return "Too many attempts. Wait a minute and try again."
       case "not-implemented":
         return "This is not available on this installation."
+      case "unavailable":
+        return "This isn't available right now. Try again in a minute."
     }
   }
   return "Something went wrong. Try again in a moment."
