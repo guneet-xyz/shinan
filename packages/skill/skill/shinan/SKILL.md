@@ -68,7 +68,7 @@ catalog at once. Nobody approves it first.
   helper that reads it from a file only when Shinan asks; that helper is
   the only way the token reaches Git. Never read, print, copy or ask for
   that file, and never put the token in a file, a command or a message.
-  Never put it in a remote URL (`https://agent:<token>@…`): Git would keep
+  Never put it in a remote URL (as `agent:<token>@` before the host): Git would keep
   it in `.git/config` and send it like the helper does, so Shinan could not
   tell. Never change or add credential helpers (in any Git configuration or
   with `-c`) and never set `GIT_TRACE_REDACT=0`, which makes Git's trace
