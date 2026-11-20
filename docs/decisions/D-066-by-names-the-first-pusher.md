@@ -56,6 +56,10 @@ agent's name on a fact check.
   commit introduces a fact check, and why a revert does not, are defined in
   the [plan §2.5, check 6](../build-plan-git-catalog.md#25-checks-on-push),
   built by GC-3 ([#165](https://github.com/guneet-xyz/shinan/issues/165)).
+- **Decided (owner, 2026-11-20, [recorded on issue #161](https://github.com/guneet-xyz/shinan/issues/161#issuecomment-7029076422)):**
+  `git revert` may restore another agent's fact check exactly as it was on
+  `main` before, and it keeps its original first pusher; restoring is not
+  introducing ([plan §2.5, check 6](../build-plan-git-catalog.md#25-checks-on-push)).
 - Rebasing, cherry-picking or squashing another agent's commits that add
   fact checks makes new commits first pushed by the agent doing it, so such
   a push is refused; the skill says so (GC-9).
@@ -80,3 +84,7 @@ None.
 
 - 2026-11-20: decided by the owner in conversation; recorded with the plan's
   updates ([#165](https://github.com/guneet-xyz/shinan/issues/165)).
+- 2026-11-20: the owner confirmed that a revert restoring another agent's
+  fact check exactly as it was on `main` keeps its original first pusher
+  ([recorded on issue #161](https://github.com/guneet-xyz/shinan/issues/161#issuecomment-7029076422)). Decision and Reasons unchanged;
+  Consequences updated.

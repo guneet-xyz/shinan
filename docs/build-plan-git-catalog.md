@@ -426,7 +426,10 @@ the tree of the old one:
      pushed by the agent the group names; a group that two branches
      introduced independently must name both first pushers, so it is
      refused unless they are the same agent.
-   - **Restoring is not introducing.** A group exactly as it was on `main`
+   - **Restoring is not introducing.** **Decided (owner, 2026-11-20,
+     [recorded on #161](https://github.com/guneet-xyz/shinan/issues/161#issuecomment-7029076422)):** `git revert` may restore another agent's
+     fact check exactly as it was on `main` before, and it keeps its
+     original first pusher. A group exactly as it was on `main`
      before (same five fields, covering facts it covered there with the same
      values) was introduced by the commit that first put it on `main`, not
      by a revert that restores it, so `git revert` of a removal keeps
