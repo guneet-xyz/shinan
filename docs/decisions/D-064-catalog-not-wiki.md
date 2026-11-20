@@ -50,6 +50,13 @@ GQ-6 to the plan ("Recent changes is the commit history").
 - The start-here document stays, as a page of the catalog.
 - The glossary's "wiki" entry and the plan's pillar change
   ([O-98](README.md#relationship-to-the-plan)).
+- **Decided (owner, 2026-11-20, [answers on issue #183](https://github.com/guneet-xyz/shinan/issues/183#issuecomment-7029973618)):**
+  the left-side navigation is built now as one sidebar for the whole app
+  (search, Start here, Recent changes, Needs attention, the catalog's
+  folders, Settings and Your account), in GC-7; the rest of navigation and
+  polish stays in the later cycle
+  ([plan §3](../build-plan-git-catalog.md#3-the-catalog-ui),
+  [D-067](D-067-product-owner-role.md)).
 
 ## Alternatives considered
 
@@ -73,3 +80,6 @@ None.
   answers GQ-1 to GQ-6 [on issue #161](https://github.com/guneet-xyz/shinan/issues/161#issuecomment-7007337638)).
 - 2026-11-19: the Context's link to human experience follows that section's
   rename to "The catalog" (GC-10, [#172](https://github.com/guneet-xyz/shinan/issues/172)); no change of decision.
+- 2026-11-20: Consequences updated for the owner's decision that GC-7
+  builds one left sidebar for the whole app
+  ([answers on issue #183](https://github.com/guneet-xyz/shinan/issues/183#issuecomment-7029973618)); no change of decision.

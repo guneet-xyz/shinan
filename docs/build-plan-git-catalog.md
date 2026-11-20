@@ -7,7 +7,9 @@ The owner's decisions are in [section 10.1](#101-owner-decisions) and the
 answers to the plan's questions in [section 10.2](#102-owner-answers-to-the-questions).
 The owner refined the answer GQ-3 on 2026-11-20
 ([recorded on #161](https://github.com/guneet-xyz/shinan/issues/161#issuecomment-7028895313),
-[D-066](decisions/D-066-by-names-the-first-pusher.md)).
+[D-066](decisions/D-066-by-names-the-first-pusher.md)). On 2026-11-20 the
+owner also decided that GC-7 builds one left sidebar for the whole app
+([answers on #183](https://github.com/guneet-xyz/shinan/issues/183#issuecomment-7029973618), [section 3](#3-the-catalog-ui)).
 
 M2, the catalog, is built and deployed as v0.3.0 at `shinan.guneet.dev`
 ([M2 build plan](build-plan-m2.md)). On 2026-11-19 the owner decided that it
@@ -89,14 +91,14 @@ documents together, in packages [GC-5](#gc-5-remove-the-m2-write-path),
 
 ### 1.4 Not in this plan
 
-| Not here                                                                                     | When, and why                                                                                                                                                               |
-| -------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Navigation and polish beyond a file tree, rendered pages and search; history views of a page | A later UI improvement cycle (owner, GD-9).                                                                                                                                 |
-| Showing branches in the browser                                                              | Not planned (owner, GD-3): the browser shows only `main`.                                                                                                                   |
-| Editing in the browser                                                                       | Not for now (owner, GD-7).                                                                                                                                                  |
-| A local validator for agents (CLI)                                                           | Later, with the CLI. Until then the check-only push ([2.5](#25-checks-on-push)) gives agents validation without changing `main`.                                            |
-| Git over SSH, Git for people (person tokens), mirroring to an outside host                   | Not planned. HTTPS with agent tokens is the decided transport (owner, GD-1, GD-4); outside hosting is excluded (GD-1).                                                      |
-| Automatic fact checks, export and import, the migration importer                             | As before ([M2 build plan §1](build-plan-m2.md#what-m2-does-not-deliver)). The catalog part of an export becomes the repository itself ([2.11](#211-backups-and-recovery)). |
+| Not here                                                                                                | When, and why                                                                                                                                                               |
+| ------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Navigation and polish beyond the app's left sidebar, rendered pages and search; history views of a page | A later UI improvement cycle (owner, GD-9).                                                                                                                                 |
+| Showing branches in the browser                                                                         | Not planned (owner, GD-3): the browser shows only `main`.                                                                                                                   |
+| Editing in the browser                                                                                  | Not for now (owner, GD-7).                                                                                                                                                  |
+| A local validator for agents (CLI)                                                                      | Later, with the CLI. Until then the check-only push ([2.5](#25-checks-on-push)) gives agents validation without changing `main`.                                            |
+| Git over SSH, Git for people (person tokens), mirroring to an outside host                              | Not planned. HTTPS with agent tokens is the decided transport (owner, GD-1, GD-4); outside hosting is excluded (GD-1).                                                      |
+| Automatic fact checks, export and import, the migration importer                                        | As before ([M2 build plan §1](build-plan-m2.md#what-m2-does-not-deliver)). The catalog part of an export becomes the repository itself ([2.11](#211-backups-and-recovery)). |
 
 ## 2. Design
 
@@ -821,14 +823,25 @@ types, simple and easy on the eyes; navigation and polish come later.
 no separate list: the catalog shows `main`'s commit history, with the pusher
 from the push log beside each commit.
 
+**Decided (owner, 2026-11-20, [answers on #183](https://github.com/guneet-xyz/shinan/issues/183#issuecomment-7029973618)):**
+GC-7 builds **one left sidebar for the whole app** now: search, Start here,
+Recent changes, Needs attention and the catalog's folders; Settings and Your
+account move into it, and the top tabs go. Reason: the product owner's
+recommendation ([#169](https://github.com/guneet-xyz/shinan/issues/169#issuecomment-7029844112)):
+one navigation instead of a file tree beside the existing tabs, which the
+later improvement cycle would otherwise have to remove
+([D-067](decisions/D-067-product-owner-role.md)).
+
 **Screens (accepted with the plan; GC-7 refines them)** (in `apps/web/src/pages/catalog/`, routes under
 `/catalog`, the navigation item "Catalog"):
 
-- **Layout:** the file tree of `main` on the left (folders such as `machine/`
+- **Layout:** the app's one left sidebar (owner, 2026-11-20, above): a
+  search box, Start here, Recent changes and Needs attention, then the file
+  tree of `main` (folders such as `machine/`
   and `service/`, then files, each shown by its `title` with the file name
-  beside it; folders collapsible; the current page highlighted), the page on
-  the right, a search box above the tree. On narrow screens the tree folds
-  into a menu. shadcn/ui components and the existing light and dark themes
+  beside it; folders collapsible; the current page highlighted), then
+  Settings and Your account; the page on the right. On narrow screens the
+  sidebar folds into a menu. shadcn/ui components and the existing light and dark themes
   ([D-055](decisions/D-055-tailwind-and-shadcn.md)).
 - **Landing page:** `start-here.md` rendered, or `README.md` when there is no
   start-here document, or an empty state linking to the agent setup page.
@@ -1243,7 +1256,8 @@ provenance from `index/`; GC-5 does not touch `index/`.
 
 ### GC-7: The catalog UI
 
-- [Section 3](#3-the-catalog-ui): the rename, the tree (a new API route
+- [Section 3](#3-the-catalog-ui): the rename, the app's one left sidebar
+  (owner, 2026-11-20), the tree (a new API route
   listing `main`'s tree from the index, with titles), the document page, the
   source view, search, "Needs attention", the commit history of `main` and of
   a page with the pushers from the push log (GQ-6), workspace settings

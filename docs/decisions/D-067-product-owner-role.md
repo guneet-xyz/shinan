@@ -53,7 +53,9 @@ information-dense designs and flows.
   user-facing PR alongside the code review, keeps the product principles, and
   the owner has the final say
   ([recorded on issue #183](https://github.com/guneet-xyz/shinan/issues/183#issuecomment-7029722159)).
-  Those mechanics are **proposed** in the
+  The owner then confirmed them on 2026-11-20, including the merge gate
+  (both reviews approve; the owner can always override)
+  ([answers on issue #183](https://github.com/guneet-xyz/shinan/issues/183#issuecomment-7029973618)); they are in the
   [build plan §4](../build-plan.md#4-how-the-work-is-done-proposed).
 
 ## Consequences
@@ -61,13 +63,22 @@ information-dense designs and flows.
 - The [product principles](../product-principles.md) are the yardstick for
   user-facing work; the build plan's process gains a product review
   ([§4](../build-plan.md#4-how-the-work-is-done-proposed)).
+- **Decided (owner, 2026-11-20, [answers on issue #183](https://github.com/guneet-xyz/shinan/issues/183#issuecomment-7029973618)):**
+  the product review step as the build plan §4 describes it, and a
+  user-facing PR merges only when both the code review and the product
+  review approve; the owner can always override.
+- **Decided (owner, 2026-11-20, [answers on issue #183](https://github.com/guneet-xyz/shinan/issues/183#issuecomment-7029973618)):**
+  GC-7 builds one left sidebar for the whole app now (search, Start here,
+  Recent changes, Needs attention, the catalog's folders; Settings and Your
+  account move into it)
+  ([Git-based catalog plan §3](../build-plan-git-catalog.md#3-the-catalog-ui)).
 - The reviewer agent keeps checking correctness, security, accessibility and
   the Content Security Policy; the product owner judges the experience and
   writes no production code.
 - Anything a simpler design would change in a decided behaviour goes to the
   owner with a recommendation; this record decides no screen by itself.
 - **Open:** the later navigation and polish cycle (GD-9) is where most of the
-  principles' examples land; its scope is the owner's to set
+  other principles' examples land; its scope is the owner's to set
   ([Git-based catalog plan §1.4](../build-plan-git-catalog.md#14-not-in-this-plan)).
 
 ## Alternatives considered
@@ -94,3 +105,7 @@ None.
 
 - 2026-11-20: decided by the owner in conversation; recorded with the
   product principles ([#183](https://github.com/guneet-xyz/shinan/issues/183)).
+- 2026-11-20: the owner confirmed how the role works, including the merge
+  gate, and decided that GC-7 builds one left sidebar for the whole app
+  ([answers on issue #183](https://github.com/guneet-xyz/shinan/issues/183#issuecomment-7029973618)). Decision and Reasons
+  unchanged; Notes and Consequences updated.

@@ -85,8 +85,9 @@ Library choices left open by architecture are settled in
 - **Product review.** **Decided (owner, 2026-11-20,
   [D-067](decisions/D-067-product-owner-role.md)):** a product owner agent
   puts the experience of people using Shinan first, against the
-  [product principles](product-principles.md). **Proposed** (how the role
-  works):
+  [product principles](product-principles.md). **Decided (owner,
+  2026-11-20, [answers on #183](https://github.com/guneet-xyz/shinan/issues/183#issuecomment-7029973618)):** how the
+  role works:
   - **Before a user-facing work package is built,** the product owner posts a
     short product brief on its issue: who it is for, the one or two jobs it
     must do, the screens and flows sketched in words, what to leave out, and
@@ -97,8 +98,9 @@ Library choices left open by architecture are settled in
     reviewer agent's code review, from screenshots (phone and desktop, light
     and dark), the wording and the flows. Findings are grouped "Must change",
     "Should change" and "Ideas". "Must change" is for what makes the product
-    harder to understand or use, not taste. A user-facing PR merges when CI
-    passes and both reviews approve.
+    harder to understand or use, not taste. A user-facing PR merges only
+    when CI passes and both the code review and the product review approve;
+    the owner can always override.
   - **User-facing** means screens and emails people see, and the text people
     or agents follow to set up and use Shinan (the setup page, the skill,
     the messages a refused `git push` prints).
