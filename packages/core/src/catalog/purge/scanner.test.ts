@@ -65,6 +65,19 @@ describe("matching a purge text in what Git stores", () => {
     expect(scanner.structure(document)).toEqual(["id"])
   })
 
+  it("gives a page's title as the catalog will show it", () => {
+    const scanner = new PurgeScanner("velvetlantern")
+    const page = (title: string) =>
+      Buffer.from(
+        `---\nid: machine/x\ntype: machine\ntitle: ${title}\nsummary: x\n---\n\n# X\n`,
+      )
+    expect(scanner.title(page("Musashi"))).toBe("Musashi")
+    expect(scanner.title(page("Host velvetlantern"))).toBe(
+      `Host ${purgeMarker}`,
+    )
+    expect(scanner.title(Buffer.from([0xff, 0xfe]))).toBeNull()
+  })
+
   it("checks the text as M2 did", () => {
     expect(() => new PurgeScanner("abc")).toThrow(InvalidInputError)
     expect(() => new PurgeScanner("urged")).toThrow(InvalidInputError)

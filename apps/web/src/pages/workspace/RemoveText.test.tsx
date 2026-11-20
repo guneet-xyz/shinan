@@ -21,7 +21,7 @@ const preview: CatalogPurgePreview = {
     files: { main: 1, branches: 1 },
     messages: { main: 0, branches: 1 },
     branchNames: 1,
-    currentFiles: ["machine/daedalus.md"],
+    currentFiles: [{ path: "machine/daedalus.md", title: "Daedalus" }],
     currentFilesMore: 0,
     acrossLines: 1,
     structure: [{ path: "machine/daedalus.md", where: "alias" }],
@@ -107,6 +107,12 @@ describe("removing text from the catalog's history", () => {
     expect(
       await screen.findByText("Copies outside Shinan keep the text"),
     ).toBeTruthy()
+    // Changing the secret comes first.
+    expect(
+      screen
+        .getAllByRole("listitem")[0]!
+        .textContent?.startsWith("If it is a secret, change it"),
+    ).toBe(true)
     expect(
       screen.getByText(/Whoever runs those machines deletes each copy/),
     ).toBeTruthy()
@@ -121,12 +127,15 @@ describe("removing text from the catalog's history", () => {
         "3 changes to the catalog (2 on agents' branches)",
       ),
     ).toBeTruthy()
+    expect(screen.getByText("1 change's message or author")).toBeTruthy()
+    expect(screen.getByText("1 branch name")).toBeTruthy()
+    expect(screen.getByText("2 entries in Shinan's push records")).toBeTruthy()
+    expect(screen.getByText("1 entry on the catalog's timeline")).toBeTruthy()
+    expect(screen.getByText("Daedalus (machine/daedalus.md)")).toBeTruthy()
     expect(
-      screen.getByText("1 change message, or who made the change"),
+      screen.getByText(/They redo any work they haven't pushed on top of it/),
     ).toBeTruthy()
-    expect(screen.getByText("1 branch name of agents")).toBeTruthy()
-    expect(screen.getByText("4 records Shinan keeps")).toBeTruthy()
-    expect(screen.getByText("machine/daedalus.md")).toBeTruthy()
+    expect(screen.getByText("This can't be undone.")).toBeTruthy()
     expect(
       screen.getByText(
         "machine/daedalus.md: the text is in one of its old IDs",
@@ -136,9 +145,11 @@ describe("removing text from the catalog's history", () => {
       screen.getByText(/Found across a line break in 1 place/),
     ).toBeTruthy()
     // No word of Git's own on the screen.
-    expect(screen.queryByText(/commit|\bpurge\b|rewrit/i)).toBeNull()
+    expect(screen.queryByText(/commit|\bpurge\b/i)).toBeNull()
 
-    const button = screen.getByRole("button", { name: "Remove everywhere" })
+    const button = screen.getByRole("button", {
+      name: "Remove from Shinan's history",
+    })
     await userEvent.type(
       screen.getByLabelText("Reason"),
       "A passphrase was pushed to the catalog.",
@@ -153,12 +164,32 @@ describe("removing text from the catalog's history", () => {
       text: secret,
       reason: "A passphrase was pushed to the catalog.",
     })
-    expect(await screen.findByText(/Removed \(removal 1\)/)).toBeTruthy()
+    const after = (
+      await screen.findByText("Removed from Shinan's history")
+    ).closest('[role="status"]')!
+    expect(after.textContent).toContain("Removed from Shinan's history")
+    expect(
+      [...after.querySelectorAll("ol > li")].map(
+        (li) => li.textContent?.split(".")[0],
+      ),
+    ).toEqual([
+      "If it was a secret, change it where it was issued",
+      "Ask whoever runs each agent's machine to delete its copy of the catalog and make a new one (step 2 of the Set up an agent page)",
+      "Tell your agents the history changed",
+    ])
+    expect(
+      screen
+        .getByRole("link", { name: "Set up an agent" })
+        .getAttribute("href"),
+    ).toBe("/account/agents/setup")
     // The text is gone from the form.
     expect(
       screen.getByLabelText<HTMLTextAreaElement>("Text to remove").value,
     ).toBe("")
     expect(api.catalogPurges).toHaveBeenCalledTimes(2)
+    // The steps stay while the owner looks for something else.
+    await userEvent.type(screen.getByLabelText("Text to remove"), "other")
+    expect(screen.getByText("Removed from Shinan's history")).toBeTruthy()
   })
 
   it("asks to sign in again before searching", async () => {
@@ -193,10 +224,12 @@ describe("removing text from the catalog's history", () => {
     await userEvent.type(await screen.findByLabelText("Text to remove"), secret)
     await userEvent.click(screen.getByRole("button", { name: "Find it" }))
     expect(
-      await screen.findByText(/Shinan keeps this text nowhere in this catalog/),
+      await screen.findByText(
+        "Shinan doesn't hold this text anywhere in this catalog. Nothing to remove.",
+      ),
     ).toBeTruthy()
     expect(
-      screen.queryByRole("button", { name: "Remove everywhere" }),
+      screen.queryByRole("button", { name: "Remove from Shinan's history" }),
     ).toBeNull()
     expect(screen.getByText("Percent-encoded")).toBeTruthy()
     await userEvent.click(
@@ -218,7 +251,9 @@ describe("removing text from the catalog's history", () => {
       await screen.findByText("A passphrase was pushed to the catalog."),
     ).toBeTruthy()
     expect(
-      screen.getByText("5 changes rewritten, 1 branch renamed, 4 records"),
+      screen.getByText(
+        "5 changes rewritten, 1 branch renamed, 2 push records cleaned, 1 timeline entry cleaned",
+      ),
     ).toBeTruthy()
     expect(
       screen.getByText(

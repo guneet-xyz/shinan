@@ -171,7 +171,7 @@ export function createPurges(options: {
     result.files = { main: files.main.size, branches: files.branches.size }
 
     // The files on `main` now, as the catalog shows them.
-    const current: string[] = []
+    const current: { path: string; title: string | null }[] = []
     if (await store.main(workspaceId)) {
       await readTreeBlobs(
         git,
@@ -182,13 +182,16 @@ export function createPurges(options: {
           const name = Buffer.from(path, "utf8")
           if (!scanner.holds(content) && !scanner.holds(name)) return
           const shown = renamePath(scanner, name)
-          current.push(shown)
+          current.push({
+            path: shown,
+            title: path.endsWith(".md") ? scanner.title(content) : null,
+          })
           for (const where of scanner.structure(content))
             result.structure.push({ path: shown, where })
         },
       )
     }
-    current.sort()
+    current.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
     result.currentFiles = current.slice(0, maxPurgePaths)
     result.currentFilesMore = current.length - result.currentFiles.length
     result.structure = result.structure.slice(0, maxPurgePaths)

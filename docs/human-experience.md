@@ -1310,25 +1310,36 @@ Settings › Catalog ends, for workspace owners, with "A secret or personal
 data reached the catalog? **Remove text from the catalog's history**", a
 page of its own ([catalog §9](catalog.md#9-history-and-purge)). It says in
 one paragraph what it does (the text becomes "(purged)" in every page and
-earlier version, change messages, every branch and Shinan's records; who,
-when and why is kept, never the text), then, calmly, that copies outside
-Shinan keep the text: every agent's copy of the catalog (whoever runs those
-machines deletes it and gets a new one), the AI providers that read it,
-and, for a secret, that it must be changed where it was issued. The owner
-types the text and chooses **Find it**; spaces and line breaks need not
-match. Shinan lists where it is in plain words: changes to the catalog
-(and how many only on agents' branches), change messages, branch names of
-agents, records Shinan keeps, copies from before the catalog moved into
-Git; the pages that show it now; places found across a line break, to
+earlier version, change messages, every branch and Shinan's records, and
+"purged" in a branch, file or folder name; who, when and why is kept, never
+the text), then, calmly, that copies outside Shinan keep the text: for a
+secret, first, that it must be changed where it was issued; every agent's
+copy of the catalog (whoever runs those machines deletes it and gets a new
+one); the AI providers that read it. The owner types the text and chooses
+**Find it**; spaces and line breaks need not match. Shinan lists where it
+is in plain words, as an ordinary list: changes to the catalog (and how
+many only on agents' branches), changes' messages or authors, branch names,
+entries in Shinan's push records and on the timeline, copies from before
+the catalog moved into Git; the pages that show it now, by title and path
+("Musashi (machine/musashi.md)"); places found across a line break, to
 check; pages whose structure changes; and copies written another way (in a
 link, with HTML entities, escapes), each with **Find this form**. It says
-that agents' next fetch gets the new history. Removing takes a reason,
-which must not repeat the text, and typing "remove". Afterwards it says
-again that agents' copies still have the text. The text stays only in the
-page's memory and is cleared once removed. Below, every member sees
-**Earlier removals**: who, when, why and how much, never the text.
-Contributors see the list and that only owners remove text. Exports come
-with a later milestone.
+that agents get the new history on their next fetch and redo unpushed work
+on top of it, as the skill says. Removing takes a reason, which must not
+repeat the text, then "**This can't be undone.** Shinan rewrites the
+catalog's history and deletes the old one. Every change that held the text
+gets a new ID.", typing "remove", and the one red button, **Remove from
+Shinan's history**. Afterwards, until the owner leaves the page, the top of
+the section says "Removed from Shinan's history (removal N). Now:" with
+three ordered steps: change the secret where it was issued; ask whoever
+runs each agent's machine to delete its copy and make a new one (step 2 of
+Set up an agent; old history is refused); tell your agents the history
+changed (the skill says what to do). Found nothing: "Shinan doesn't hold
+this text anywhere in this catalog. Nothing to remove." (Product review of
+#197.) The text stays only in the page's memory and is cleared once
+removed. Below, every member sees **Earlier removals**: who, when, why and
+how much, never the text. Contributors see the list and that only owners
+remove text. Exports come with a later milestone.
 
 Screen details:
 

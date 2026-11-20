@@ -433,9 +433,11 @@ export interface RepositoryPurgePreview {
   branchNames: number
   /**
    * Files on `main` now that hold it, by path as they would read after the
-   * purge, at most `maxPurgePaths`; `currentFilesMore` counts the rest.
+   * purge, with their titles as the catalog will show them (null for a
+   * file that has none), at most `maxPurgePaths`; `currentFilesMore`
+   * counts the rest.
    */
-  currentFiles: string[]
+  currentFiles: { path: string; title: string | null }[]
   currentFilesMore: number
   /** Of the places found, those found only across a line break. */
   acrossLines: number

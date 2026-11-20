@@ -18,7 +18,7 @@ import { Textarea } from "@/components/ui/textarea"
 
 import { useAction } from "../../action"
 import { useApi, useResource } from "../../api"
-import { Actions, Confirm, OrderedRows, Section } from "../../components/page"
+import { Actions, OrderedRows, Section } from "../../components/page"
 import { ErrorMessage, Loading, Notice } from "../../components/status"
 import { formatTime } from "../../format"
 import { useWorkspace } from "./context"
@@ -92,7 +92,6 @@ function RemoveForm(props: { onRemoved: () => void }) {
   const remove = useAction()
 
   const look = (wanted: string) => {
-    setDone(undefined)
     remove.clear()
     find.run(() =>
       api
@@ -129,22 +128,23 @@ function RemoveForm(props: { onRemoved: () => void }) {
   return (
     <Section
       title="Remove text from the catalog's history"
-      description="For a secret or personal data that reached the catalog. Shinan replaces the text with “(purged)” everywhere it keeps it: in every page and every earlier version, in change messages, on every branch, and in its own records. Who removed it, when and why is kept; the text never is."
+      description="For a secret or personal data that reached the catalog. Shinan replaces the text with “(purged)” everywhere it keeps it: in every page and every earlier version, in change messages, on every branch, and in its own records; in a branch, file or folder name it becomes “purged”. Who removed it, when and why is kept; the text never is."
     >
+      {done && <AfterRemoval removal={done} />}
       <Alert>
         <TriangleAlertIcon aria-hidden="true" />
         <AlertTitle>Copies outside Shinan keep the text</AlertTitle>
         <AlertDescription>
           <ul className="list-disc pl-5">
             <li>
+              If it is a secret, change it where it was issued: removing it here
+              does not make it safe again.
+            </li>
+            <li>
               Every agent's copy of the catalog still has it. Whoever runs those
               machines deletes each copy and gets a new one.
             </li>
             <li>The AI providers of agents that read it keep it too.</li>
-            <li>
-              If it is a secret, change it where it was issued: removing it here
-              does not make it safe again.
-            </li>
           </ul>
         </AlertDescription>
       </Alert>
@@ -159,10 +159,7 @@ function RemoveForm(props: { onRemoved: () => void }) {
               spellCheck={false}
               rows={2}
               value={text}
-              onChange={(event) => {
-                setText(event.target.value)
-                setDone(undefined)
-              }}
+              onChange={(event) => setText(event.target.value)}
             />
             <FieldDescription>
               Exactly as it was written, at least 4 characters. Spaces and line
@@ -179,7 +176,8 @@ function RemoveForm(props: { onRemoved: () => void }) {
       {find.error !== undefined && <ErrorMessage error={find.error} />}
       {preview && places.length === 0 && (
         <Notice>
-          Shinan keeps this text nowhere in this catalog.
+          Shinan doesn't hold this text anywhere in this catalog. Nothing to
+          remove.
           {preview.unfinished > 0 &&
             " An earlier removal didn't finish: remove any text again to finish it."}
         </Notice>
@@ -219,19 +217,25 @@ function RemoveForm(props: { onRemoved: () => void }) {
         </div>
       )}
       {preview && places.length > 0 && (
-        <Confirm>
-          <p className="font-medium">Shinan found this text in:</p>
-          <ul className="list-disc pl-5">
-            {places.map((place) => (
-              <li key={place}>{place}</li>
-            ))}
-          </ul>
+        <div className="flex flex-col gap-4 text-sm">
+          <div className="flex flex-col gap-1">
+            <p className="font-medium">Shinan found this text in:</p>
+            <ul className="list-disc pl-5">
+              {places.map((place) => (
+                <li key={place}>{place}</li>
+              ))}
+            </ul>
+          </div>
           {preview.history && preview.history.currentFiles.length > 0 && (
             <div className="flex flex-col gap-1">
               <p className="font-medium">Pages that show it now:</p>
               <ul className="list-disc pl-5 wrap-anywhere">
-                {preview.history.currentFiles.map((path) => (
-                  <li key={path}>{path}</li>
+                {preview.history.currentFiles.map((file) => (
+                  <li key={file.path}>
+                    {file.title === null
+                      ? file.path
+                      : `${file.title} (${file.path})`}
+                  </li>
                 ))}
                 {preview.history.currentFilesMore > 0 && (
                   <li>and {preview.history.currentFilesMore} more</li>
@@ -262,8 +266,8 @@ function RemoveForm(props: { onRemoved: () => void }) {
             </div>
           )}
           <p>
-            Agents' next fetch gets the new history. Work they have not pushed
-            yet is redone on top of it.
+            Agents get the new history on their next fetch. They redo any work
+            they haven't pushed on top of it; the skill says how.
           </p>
           <form onSubmit={confirm}>
             <FieldGroup>
@@ -276,10 +280,15 @@ function RemoveForm(props: { onRemoved: () => void }) {
                   value={reason}
                   onChange={(event) => setReason(event.target.value)}
                 />
-                <FieldDescription className="text-foreground">
+                <FieldDescription>
                   Kept with the record. Do not repeat the text here.
                 </FieldDescription>
               </Field>
+              <p>
+                <strong>This can't be undone.</strong> Shinan rewrites the
+                catalog's history and deletes the old one. Every change that
+                held the text gets a new ID.
+              </p>
               <Field>
                 <FieldLabel htmlFor="remove-confirm">
                   Type {confirmWord} to confirm
@@ -302,22 +311,63 @@ function RemoveForm(props: { onRemoved: () => void }) {
                     reason.trim() === ""
                   }
                 >
-                  {remove.pending ? "Removing…" : "Remove everywhere"}
+                  {remove.pending
+                    ? "Removing…"
+                    : "Remove from Shinan's history"}
                 </Button>
               </Actions>
             </FieldGroup>
           </form>
-        </Confirm>
+        </div>
       )}
       {remove.error !== undefined && <ErrorMessage error={remove.error} />}
-      {done && (
-        <Notice>
-          Removed (removal {done.number}). Agents' copies still have the text:
-          ask for each to be deleted and made again, and change a secret where
-          it was issued.
-        </Notice>
-      )}
     </Section>
+  )
+}
+
+/**
+ * What the owner does after a removal, in order, kept at the top of the
+ * section until they leave the page.
+ */
+function AfterRemoval(props: { removal: CatalogPurge }) {
+  return (
+    <div
+      role="status"
+      className="flex flex-col gap-2 rounded-lg border bg-muted/50 p-4 text-sm"
+    >
+      <p>
+        <span className="font-medium">Removed from Shinan's history</span>{" "}
+        (removal {props.removal.number}). Now:
+      </p>
+      <ol className="list-decimal space-y-1 pl-5">
+        <li>
+          <span className="font-medium">
+            If it was a secret, change it where it was issued.
+          </span>{" "}
+          It was exposed; removing it here doesn't make it safe.
+        </li>
+        <li>
+          <span className="font-medium">
+            Ask whoever runs each agent's machine to delete its copy of the
+            catalog and make a new one
+          </span>{" "}
+          (step 2 of the{" "}
+          <Link
+            to="/account/agents/setup"
+            className="font-medium underline underline-offset-4"
+          >
+            Set up an agent
+          </Link>{" "}
+          page). Shinan refuses any push of the old history.
+        </li>
+        <li>
+          <span className="font-medium">
+            Tell your agents the history changed.
+          </span>{" "}
+          The shinan skill tells them what to do.
+        </li>
+      </ol>
+    </div>
   )
 }
 
@@ -333,17 +383,26 @@ function placesOf(preview: CatalogPurgePreview): string[] {
       )
     if (messages.main + messages.branches > 0)
       places.push(
-        `${plural(messages.main + messages.branches, "change message")}, or who made the change`,
+        `${plural(messages.main + messages.branches, "change's message or author", "changes' messages or authors")}`,
       )
     if (history.branchNames > 0)
-      places.push(`${plural(history.branchNames, "branch name")} of agents`)
+      places.push(plural(history.branchNames, "branch name"))
   }
-  const records =
-    preview.pushLog +
-    preview.events +
-    preview.indexDocuments +
-    (history?.journalEntries ?? 0)
-  if (records > 0) places.push(`${plural(records, "record")} Shinan keeps`)
+  const pushRecords = preview.pushLog + (history?.journalEntries ?? 0)
+  if (pushRecords > 0)
+    places.push(
+      `${plural(pushRecords, "entry", "entries")} in Shinan's push records`,
+    )
+  if (preview.events > 0)
+    places.push(
+      `${plural(preview.events, "entry", "entries")} on the catalog's timeline`,
+    )
+  // The search index is made from the pages: counted only when no page
+  // shows the text now.
+  if (preview.indexDocuments > 0 && (history?.currentFiles.length ?? 0) === 0)
+    places.push(
+      `${plural(preview.indexDocuments, "page")} in the catalog's search`,
+    )
   const earlier =
     preview.earlier.revisionTexts +
     preview.earlier.proposals +
@@ -386,7 +445,7 @@ function RemovalList(props: { purges: CatalogPurge[] }) {
 
 /** What a removal changed, in one line. */
 function summary(p: CatalogPurge): string {
-  const { history, pushLog = 0, indexDocuments = 0 } = p.counts
+  const { history, pushLog = 0 } = p.counts
   const parts = [
     history &&
       history.rewrittenCommits > 0 &&
@@ -394,8 +453,9 @@ function summary(p: CatalogPurge): string {
     history &&
       history.renamedBranches > 0 &&
       `${plural(history.renamedBranches, "branch", "branches")} renamed`,
-    pushLog + p.counts.events + indexDocuments > 0 &&
-      `${plural(pushLog + p.counts.events + indexDocuments, "record")}`,
+    pushLog > 0 && `${plural(pushLog, "push record")} cleaned`,
+    p.counts.events > 0 &&
+      `${plural(p.counts.events, "timeline entry", "timeline entries")} cleaned`,
     p.counts.revisionTexts + p.counts.proposals + p.counts.comments > 0 &&
       `${plural(p.counts.revisionTexts + p.counts.proposals + p.counts.comments, "earlier copy", "earlier copies")}`,
   ].filter((part): part is string => typeof part === "string")

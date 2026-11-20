@@ -527,7 +527,9 @@ describe(
         commits: { main: 1, branches: 3 },
         messages: { main: 0, branches: 1 },
         branchNames: 2,
-        currentFiles: ["machine/musashi.md"],
+        currentFiles: [
+          { path: "machine/musashi.md", title: "machine/musashi" },
+        ],
         currentFilesMore: 0,
         journalEntries: 1,
       })

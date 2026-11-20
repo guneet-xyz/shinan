@@ -212,6 +212,23 @@ export class PurgeScanner {
   }
 
   /**
+   * A document's title as the catalog will show it after the purge (the
+   * text replaced by `purgeMarker`), or null if it has none or is not a
+   * catalog document.
+   */
+  title(content: Uint8Array): string | null {
+    let text: string
+    try {
+      text = utf8.decode(content)
+    } catch {
+      return null
+    }
+    const title = parseCatalogDocument(text).title
+    if (title === null || title.trim() === "") return null
+    return this.text.test(title) ? this.text.replace(title, purgeMarker) : title
+  }
+
+  /**
    * Where purging the text from a document on `main` changes its
    * structure, as M2's preview showed it: its ID, an alias, a frontmatter
    * key it ends at, or lines of the frontmatter it spans.

@@ -345,7 +345,7 @@ export interface CatalogPurgePreview {
     messages: CatalogPurgePlaces
     branchNames: number
     /** Files on `main` now that hold it, by path as they will read. */
-    currentFiles: string[]
+    currentFiles: { path: string; title: string | null }[]
     currentFilesMore: number
     acrossLines: number
     structure: { path: string; where: "id" | "alias" | "key" | "frontmatter" }[]
