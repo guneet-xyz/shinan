@@ -9,6 +9,22 @@ If your token is read-only, or Shinan is unavailable, record the update you
 owe (what, why and the evidence) on your task or in your report, and tell
 your person.
 
+## Quick path
+
+The usual change, start to finish. Read on when a step fails.
+
+```sh
+export GIT_TERMINAL_PROMPT=0
+cd "$(git config --global --get shinan.catalog)" && git fetch origin   # 1. fetch
+git worktree add -b disk-resize ../disk-resize origin/main && cd ../disk-resize  # 2. worktree
+# 3. edit the documents; fact checks name you, with the real check time (facts.md)
+git add -A && git commit -m "Record the data disk after the resize (SHN-12)"  # 4. commit
+git fetch origin && git rebase origin/main          # 5. bring in what others pushed
+git push origin HEAD:main                           # 6. push
+# 7. read every remote: line; if refused, fix in a new commit and push again
+cd - && git worktree remove ../disk-resize && git branch -D disk-resize  # 8. clean up
+```
+
 ## When to change it
 
 - **Your work changed or checked a durable fact the catalog records:**
@@ -49,7 +65,9 @@ cd ../disk-resize
    (or `git merge origin/main`). If a document conflicts, resolve it from
    the evidence and the check times, never by taking one side because it
    came last: two values with valid fact checks may both stay, as a
-   discrepancy. Keep every other fact check exactly as it was.
+   discrepancy. Keep every other fact check exactly as it was. If your
+   branch holds another agent's commits (you merged its branch), merge
+   `origin/main` instead of rebasing.
 4. **Check without changing anything,** when you are unsure:
    `git push -o check-only origin HEAD:main` runs every check for `main`,
    prints the result and always refuses, with "check only: nothing was
@@ -68,12 +86,23 @@ catalog, it is never shown, and nobody should rely on it. Delete it once it
 is merged or abandoned (`git push origin --delete <name>`). A repository
 holds at most 100 branches.
 
-**Never merge another agent's branch that adds fact checks** into `main`.
-Its fact checks name that agent, and a push must name its pusher in every
-new or changed fact check, so Shinan refuses it. Ask that agent to push its
-own work, or check the facts yourself and record your own fact checks. A
-branch without fact checks (body text, a new document's description) can be
-merged.
+**Other agents' work.** Shinan records which agent first pushed each
+commit, on any branch, and a fact check must name the agent that first
+pushed the commit introducing it.
+
+- **Merging** another agent's branch that it has pushed is fine
+  (`git merge origin/<branch>`, then push `main`): its commits keep their
+  first pusher, so its fact checks still name the right agent.
+- **Never rebase, cherry-pick or squash** another agent's commits that add
+  fact checks: that makes new commits, first pushed by you, whose fact
+  checks name someone else, and the push is refused. Rebase and squash only
+  your own work.
+- **Never write another agent's name** in a fact check, including while
+  resolving a merge conflict. If a conflict leaves a fact check that is
+  neither side's exactly, write it under your own fact check only if you
+  checked the facts, or keep one side as it was.
+- An agent's branch that was never pushed isn't yours to land: ask it to
+  push, or check the facts yourself and record your own fact checks.
 
 **Never force `main`.** Shinan refuses a push that deletes or rewrites it.
 
@@ -93,10 +122,9 @@ machine/new`, and add `machine/old` to `aliases`. A document's path is
 
 Undo a commit on `main` with `git revert <commit>`, then push it like any
 change; the commit message says why. It goes through the same checks. A
-revert that brings back an earlier fact check of someone else's counts as a
-fact check naming someone else, so it is refused: write those facts again
-under your own fact check if you checked them, or as `unknown`. Never
-rewrite `main`'s history.
+revert that restores another agent's fact check exactly as it was on `main`
+passes: it keeps naming the agent that first pushed it. Never rewrite
+`main`'s history.
 
 **After a purge,** a workspace owner has rewritten the history to remove
 leaked text, and your next fetch shows `main` forced. Reset your clone onto
@@ -169,82 +197,79 @@ the line, a code and a message, then warnings, which do not block:
 ```text
 remote: Shinan refused this push. Nothing was changed.
 remote: main: 2 blocking problems
-remote:   machine/build-1.md:9   by-not-pusher         "by: alex" but this push is by "alex via opencode-build-1"
+remote:   machine/build-1.md:9   by-not-first-pusher   "by: alex" but commit 1a2b3c4 was first pushed by "alex via opencode-build-1"
 remote:   machine/build-1.md:14  reference-unresolved  "service/ingres" is not a catalog ID or alias
 remote: main: 1 warning (does not block)
 remote:   machine/build-1.md:12  key-not-in-schema     "disk.cache.size" is not a key of type machine
 remote: Fix them in new commits and push again. The shinan skill explains each code.
 ```
 
-_The codes for pushes, refs and files below are to be confirmed against
-Shinan's push checks (GC-3); the document codes are Shinan's validation
-codes._ A suspected secret's value is never shown, only its kind, its
-place and a fingerprint (`sha256:…`).
+_The codes for pushes, refs and files are to be confirmed against Shinan's
+push checks (GC-3); the document codes are Shinan's validation codes._ A
+suspected secret's value is never shown, only its kind, its place and a
+fingerprint (`sha256:…`). Fixing means a new commit, unless the table says
+otherwise.
 
-**Every push, to any branch:**
+**Blocking**, the most likely first. "Any branch" means every push is
+checked for it; the rest are checked only when `main` changes.
 
-| Code                    | Means                                                                    | What to do                                                                                                  |
-| ----------------------- | ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------- |
-| `secret`                | A file, commit message or branch name holds a near-certain credential    | Rebuild your commits without it (`git reset --soft origin/main`, remove it, commit again); tell your person |
-| `ref-not-branch`        | Only branches (`refs/heads/…`) can be pushed: no tags or other refs      | Push a branch                                                                                               |
-| `ref-name-invalid`      | Branch names: at most 100 letters, digits, `.`, `_`, `/` and `-`         | Use another name                                                                                            |
-| `main-not-fast-forward` | The push would rewrite or delete `main`                                  | Fetch, rebase or merge onto `origin/main`, push again                                                       |
-| `too-many-branches`     | The repository already has 100 branches                                  | Delete merged branches                                                                                      |
-| `purged-commit`         | A commit was removed by a purge                                          | Reset onto the new history (see "After a purge")                                                            |
-| `symlink`               | A commit holds a symbolic link                                           | Replace it with a file                                                                                      |
-| `submodule`             | A commit holds a submodule                                               | Remove it                                                                                                   |
-| `file-too-large`        | A new file is larger than 1 MiB                                          | Shrink it; documents on `main` have 64 KiB                                                                  |
-| `too-many-commits`      | The push brings more than 1,000 new commits                              | Push in parts                                                                                               |
-| `repository-full`       | The repository is over its size limit; only branch deletions are allowed | Tell your person                                                                                            |
-| `busy`                  | Another push to `main` is being checked                                  | Push again in a minute                                                                                      |
-| `too-slow`              | Checking took longer than Shinan allows                                  | Push smaller changes                                                                                        |
-| `check-only`            | A check-only push: nothing was changed                                   | Nothing; push without `-o check-only` when ready                                                            |
+| Code                     | Means                                                                                          | What to do                                                                                                        |
+| ------------------------ | ---------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `by-not-first-pusher`    | A new or changed fact check doesn't name the agent that first pushed the commit introducing it | Write your own `by` from `shinan.by`; leave others' fact checks as they were; merge others' work, never rebase it |
+| `secret`                 | Any branch: a file, commit message or branch name holds a near-certain credential              | Rebuild your commits without it (`git reset --soft origin/main`, remove it, commit again); tell your person       |
+| `reference-unresolved`   | A reference does not resolve to an ID or alias                                                 | Fix the reference, or create the document                                                                         |
+| `frontmatter-invalid`    | The frontmatter is missing, is not YAML, or uses YAML Shinan does not read                     | Fix the YAML: plain maps, lists and scalars only                                                                  |
+| `fact-check-incomplete`  | A fact check lacks `checked`, `by`, `scope` or `source`                                        | Add the missing field                                                                                             |
+| `fact-check-missing`     | An `intended` or `observed` fact has no fact check                                             | Put it in a fact check group                                                                                      |
+| `date-invalid`           | A date or time is not written as Shinan reads them                                             | `2026-11-18`, or `2026-11-18T09:42:17Z` with an offset                                                            |
+| `checked-in-future`      | `checked` is in the future                                                                     | Write the real time of the check                                                                                  |
+| `identity-duplicate`     | Two current facts are the same fact                                                            | Keep one, or give a second observation its own `via`                                                              |
+| `cardinality`            | A single-valued key holds a list                                                               | One value, or two facts with different `via`                                                                      |
+| `fact-invalid`           | A fact's value or long form does not fit its key                                               | Fix the fact as [facts.md](facts.md) shows                                                                        |
+| `facts-invalid`          | `facts` or one of its groups is not shaped as [facts.md](facts.md) shows                       | Fix the group                                                                                                     |
+| `fact-check-invalid`     | A fact check's `by` is not a written actor                                                     | `<person handle> via <agent handle>`                                                                              |
+| `path-id-mismatch`       | A document's path is not its `id` plus `.md`                                                   | Move the file or fix the `id`                                                                                     |
+| `id-disappeared`         | An ID or alias that resolved before no longer does                                             | Restore the document and retire it, or keep the old ID in `aliases`                                               |
+| `path-not-allowed`       | A file or folder outside the layout, or an executable file                                     | Remove it, or move it to `<type>/<slug>.md`                                                                       |
+| `field-missing`          | A required document field is missing                                                           | Add it                                                                                                            |
+| `field-invalid`          | A document field has the wrong form, or does not belong                                        | Fix or remove it                                                                                                  |
+| `type-unknown`           | `type` names no built-in type and no active type schema                                        | Use a type in [types.md](types.md), or add `schema/<type>.md`                                                     |
+| `reference-type`         | A relation points to a type it may not                                                         | Point it at the right type ([types.md](types.md))                                                                 |
+| `planned-without-task`   | A `planned` fact names no task or accepted decision                                            | Add `task`                                                                                                        |
+| `id-duplicate`           | Two documents share an ID or alias                                                             | Remove the duplicate                                                                                              |
+| `unchecked-not-imported` | `checked: null` or `by: unknown` outside an imported document                                  | Write a real fact check, or move the fact to an `unknown` list                                                    |
+| `busy`                   | Any branch: another push to `main` is being checked                                            | Push again in a minute                                                                                            |
+| `main-not-fast-forward`  | Any branch: the push would rewrite or delete `main`                                            | Fetch, rebase your own commits or merge onto `origin/main`, push again                                            |
+| `check-only`             | Any branch: a check-only push; nothing was changed                                             | Nothing; push without `-o check-only` when ready                                                                  |
+| `schema-invalid`         | A type schema document is malformed                                                            | Fix it                                                                                                            |
+| `schema-breaks-entities` | A type schema change would break current documents of that type                                | Change those documents first, or keep the key                                                                     |
+| `start-here-invalid`     | The start-here document is malformed                                                           | Fix it                                                                                                            |
+| `too-large`              | A document is longer than 64 KiB                                                               | Split it                                                                                                          |
+| `body-invalid`           | The body is past what Shinan reads (very deep nesting, too many links)                         | Simplify the Markdown                                                                                             |
+| `ref-name-invalid`       | Any branch: branch names are at most 100 letters, digits, `.`, `_`, `/` and `-`                | Push under another name                                                                                           |
+| `ref-not-branch`         | Any branch: only branches (`refs/heads/…`) can be pushed, no tags or other refs                | Push a branch                                                                                                     |
+| `too-many-branches`      | Any branch: the repository already has 100 branches                                            | Delete merged branches                                                                                            |
+| `purged-commit`          | Any branch: a commit was removed by a purge                                                    | Reset onto the new history (see "After a purge")                                                                  |
+| `symlink`                | Any branch: a commit holds a symbolic link                                                     | Replace it with a file, rebuilding your commits                                                                   |
+| `submodule`              | Any branch: a commit holds a submodule                                                         | Remove it, rebuilding your commits                                                                                |
+| `file-too-large`         | Any branch: a new file is larger than 1 MiB                                                    | Shrink it; documents on `main` have 64 KiB                                                                        |
+| `too-many-commits`       | Any branch: the push brings more than 1,000 new commits                                        | Push in parts                                                                                                     |
+| `too-slow`               | Any branch: checking took longer than Shinan allows                                            | Push smaller changes                                                                                              |
+| `catalog-too-large`      | The catalog would pass 20,000 documents or 50 MiB of text                                      | Tell your person                                                                                                  |
+| `repository-full`        | Any branch: the repository is over its size limit; only branch deletions are allowed           | Tell your person                                                                                                  |
+| `read-failed`            | Shinan could not read a document: a bug in Shinan                                              | Tell your person, with the file                                                                                   |
 
-**Pushes to `main`,** on the whole new catalog:
+**Warnings** do not block the push, but read them: they are often a typo.
 
-| Code                     | Means                                                                      | What to do                                                          |
-| ------------------------ | -------------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| `path-not-allowed`       | A file or folder outside the layout, or an executable file                 | Remove it, or move it to `<type>/<slug>.md`                         |
-| `path-id-mismatch`       | A document's path is not its `id` plus `.md`                               | Move the file or fix the `id`                                       |
-| `id-disappeared`         | An ID or alias that resolved before no longer does                         | Restore the document and retire it, or keep the old ID in `aliases` |
-| `by-not-pusher`          | A new or changed fact check's `by` is not this push's agent and person     | Write your own `by`; leave other fact checks as they were           |
-| `catalog-too-large`      | The catalog would pass 20,000 documents or 50 MiB of text                  | Tell your person                                                    |
-| `too-large`              | A document is longer than 64 KiB                                           | Split it                                                            |
-| `frontmatter-invalid`    | The frontmatter is missing, is not YAML, or uses YAML Shinan does not read | Fix the YAML: plain maps, lists and scalars only                    |
-| `body-invalid`           | The body is past what Shinan reads (very deep nesting, too many links)     | Simplify the Markdown                                               |
-| `field-missing`          | A required document field is missing                                       | Add it                                                              |
-| `field-invalid`          | A document field has the wrong form, or does not belong                    | Fix or remove it                                                    |
-| `date-invalid`           | A date or time is not written as Shinan reads them                         | `2026-11-18`, or `2026-11-18T09:42:17Z` with an offset              |
-| `facts-invalid`          | `facts` or one of its groups is not shaped as [facts.md](facts.md) shows   | Fix the group                                                       |
-| `fact-invalid`           | A fact's value or long form does not fit its key                           | Fix the fact                                                        |
-| `cardinality`            | A single-valued key holds a list                                           | One value, or two facts with different `via`                        |
-| `schema-invalid`         | A type schema document is malformed                                        | Fix it                                                              |
-| `start-here-invalid`     | The start-here document is malformed                                       | Fix it                                                              |
-| `type-unknown`           | `type` names no built-in type and no active type schema                    | Use a type in [types.md](types.md), or add `schema/<type>.md`       |
-| `id-duplicate`           | Two documents share an ID or alias                                         | Remove the duplicate                                                |
-| `reference-unresolved`   | A reference does not resolve to an ID or alias                             | Fix the reference, or create the document                           |
-| `reference-type`         | A relation points to a type it may not                                     | Point it at the right type ([types.md](types.md))                   |
-| `fact-check-missing`     | An `intended` or `observed` fact has no fact check                         | Put it in a fact check group                                        |
-| `fact-check-incomplete`  | A fact check lacks `checked`, `by`, `scope` or `source`                    | Add the missing field                                               |
-| `fact-check-invalid`     | A fact check's `by` is not a written actor                                 | `<person handle> via <agent handle>`                                |
-| `checked-in-future`      | `checked` is in the future                                                 | Write the real time of the check                                    |
-| `unchecked-not-imported` | `checked: null` or `by: unknown` outside an imported document              | Write a real fact check, or move the fact to an `unknown` list      |
-| `planned-without-task`   | A `planned` fact names no task or accepted decision                        | Add `task`                                                          |
-| `identity-duplicate`     | Two current facts are the same fact                                        | Keep one, or give a second observation its own `via`                |
-| `schema-breaks-entities` | A type schema change would break current documents of that type            | Change those documents first, or keep the key                       |
-| `read-failed`            | Shinan could not read a document: a bug in Shinan                          | Tell your person, with the file                                     |
-
-**Warnings** do not block the push; fix them if they are yours:
-
-| Code                     | Means                                                                           |
-| ------------------------ | ------------------------------------------------------------------------------- |
-| `secret-suspected`       | Text looks like a secret. If it is one, remove it and tell your person at once  |
-| `key-not-in-schema`      | A key the type schema does not name: check its spelling in [types.md](types.md) |
-| `check-older`            | A new fact check is older than the one it replaces                              |
-| `task-status`            | A task status (`in progress`, …) written as a fact; tasks hold those            |
-| `start-here-retired`     | A start-here step points to a retired document                                  |
-| `start-here-discrepancy` | A start-here step points to a document with a discrepancy not accepted          |
-| `owner-not-member`       | An owner's `person` document is not linked to a current member                  |
+| Code                     | Means                                                                  | What to do                                                                           |
+| ------------------------ | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `key-not-in-schema`      | A key the type schema does not name                                    | Check its spelling in [types.md](types.md) or `schema/<type>.md`; fix it if it's off |
+| `secret-suspected`       | Text looks like a secret                                               | If it is one, remove it from history at once and tell your person                    |
+| `check-older`            | A new fact check is older than the one it replaces                     | Keep the newer check unless your evidence is better; say why in the commit           |
+| `task-status`            | A task status (`in progress`, …) written as a fact                     | Remove it: tasks hold their status                                                   |
+| `start-here-retired`     | A start-here step points to a retired document                         | Point it at the replacement, if your task covers start-here                          |
+| `start-here-discrepancy` | A start-here step points to a document with a discrepancy not accepted | Tell your person; resolve the discrepancy only from evidence                         |
+| `owner-not-member`       | An owner's `person` document is not linked to a current member         | Tell your person; don't change owners on your own                                    |
 
 **Errors from Git itself:** `401` or `Authentication failed` means your token
 is missing or revoked, `403` that it is read-only or this workspace is not

@@ -66,10 +66,11 @@ one group.
   A time in the future is refused.
 - `by`: **exactly your written form, `<person handle> via <agent handle>`**,
   such as `alex via opencode-build-1`. `git config --global --get shinan.by`
-  gives it on a machine set up for Shinan. Shinan refuses a push whose new or
-  changed fact check names anyone else, and the refusal says the form it
-  expected. Never write another member's or agent's name, or your person's
-  handle alone.
+  gives it on a machine set up for Shinan. A new or changed fact check must
+  name the agent that first pushed the commit introducing it, which for
+  your own commits is you; otherwise Shinan refuses the push, naming the
+  commit and the form it expected. Never write another member's or agent's
+  name, or your person's handle alone.
 - `scope`: what exactly you checked, in one line.
 - `source`: where the evidence is: a pinned URL, a repository revision, or a
   short description of the observation. Never raw logs or sensitive output.
@@ -93,7 +94,10 @@ one group.
 - **Another agent's or member's fact check** stays exactly as it is. You may
   remove facts from it (when you replace or remove them), and you may move a
   whole document unchanged, but any other edit to it makes it a changed fact
-  check that names someone else, and the push is refused.
+  check, introduced by your commit, that names someone else, and the push
+  is refused. Merging that agent's pushed branch keeps its fact checks
+  naming it; rebasing, cherry-picking or squashing its commits does not
+  ([changing.md](changing.md)).
 - **Nothing is removed by omission.** A value that no longer holds is
   removed on purpose, in a commit that says why.
 

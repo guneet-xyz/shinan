@@ -2,6 +2,8 @@ import { screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { describe, expect, it, vi } from "vitest"
 
+import { setupCommand } from "@shinan/skill/setup"
+
 import {
   agent,
   currentPath,
@@ -13,8 +15,6 @@ import {
 const other = {
   ...agent,
   id: "88888888-8888-4888-8888-888888888888",
-  workspaceId: "99999999-9999-4999-8999-999999999999",
-  workspaceName: "Other",
   handle: "claude-code-laptop",
   name: "Claude Code on Laptop",
 }
@@ -34,36 +34,37 @@ describe("setting up an agent", () => {
     ).toBeTruthy()
   })
 
-  it("gives this installation's addresses, and clones with Git's credential helper", async () => {
+  it("takes four steps, with one command to run on the machine", async () => {
     renderApp(
       "/account/agents/setup",
       fakeApi({ yourAgents: () => Promise.resolve([agent]) }),
     )
     const origin = window.location.origin
-
-    // The token is read without echo and written by a shell builtin into a
-    // file only its user can read, never given on a command line.
+    await screen.findByText(/opencode-daedalus/, { selector: "pre code" })
     expect(
-      (await screen.findByText(/umask 077/, { selector: "code" })).textContent,
-    ).toBe(
-      `bash -c 'umask 077; mkdir -p ~/.config/shinan && chmod 700 ~/.config/shinan && IFS= read -rs t && : > ~/.config/shinan/token && chmod 600 ~/.config/shinan/token && printf "%s\\n" "$t" > ~/.config/shinan/token'`,
-    )
-    // The credential helper in the clone's own settings, after an empty
-    // value that switches off every other helper for this address; it
-    // answers only `get`, from the token file.
+      screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent),
+    ).toEqual([
+      "1. Create a token for this machine",
+      "2. Run one command on the machine",
+      "3. Add Shinan to OpenCode",
+      "4. Check it",
+      "Keep the token safe",
+    ])
+    // The command is the tested one (packages/skill), for this
+    // installation, workspace and agent.
     expect(
-      (await screen.findByText(/git clone/, { selector: "pre code" }))
-        .textContent,
+      screen.getByText(/git clone/, { selector: "pre code" }).textContent,
     ).toBe(
-      [
-        "GIT_TERMINAL_PROMPT=0 git clone \\",
-        `  -c 'credential.${origin}.helper=' \\`,
-        `  -c 'credential.${origin}.helper=!f() { test "$1" = get && printf "username=agent\\npassword=%s\\n" "$(cat ~/.config/shinan/token)"; }; f' \\`,
-        `  ${origin}/git/${workspaceId}.git ~/shinan-catalog/main`,
-        "git config --global shinan.catalog ~/shinan-catalog/main",
-        "git config --global shinan.by 'guneet via opencode-daedalus'",
-      ].join("\n"),
+      setupCommand({
+        origin,
+        workspaceId,
+        by: "guneet via opencode-daedalus",
+      }),
     )
+    // The person copies the command first, then the token.
+    expect(
+      screen.getByText(/when it asks, go back to the token, copy it/),
+    ).toBeTruthy()
     const config = screen.getByText(/"\$schema"/, {
       selector: "code",
     }).textContent
@@ -74,6 +75,10 @@ describe("setting up an agent", () => {
         { action: "read", resource: "~/.config/shinan/*", effect: "deny" },
       ],
     })
+    // Nothing about MCP or headers, except removing an old MCP entry.
+    expect(document.body.textContent).not.toMatch(/Authorization|Bearer/)
+    // How each step works is there, folded.
+    expect(screen.getAllByText("What does this do?")).toHaveLength(3)
   })
 
   it("fills in the agent the token was made for", async () => {
@@ -81,15 +86,21 @@ describe("setting up an agent", () => {
       `/account/agents/setup?agent=${other.id}`,
       fakeApi({ yourAgents: () => Promise.resolve([agent, other]) }),
     )
-    const clone = await screen.findByText(/claude-code-laptop/, {
+    const command = await screen.findByText(/claude-code-laptop/, {
       selector: "pre code",
     })
-    expect(clone.textContent).toContain(`/git/${other.workspaceId}.git`)
+    expect(command.textContent).toContain(`/git/${workspaceId}.git`)
+    // One workspace: the picker names only the agents.
+    expect(
+      screen.getByRole("option", {
+        name: "Claude Code on Laptop (claude-code-laptop)",
+      }),
+    ).toBeTruthy()
     await userEvent.selectOptions(screen.getByLabelText("Agent"), agent.id)
     expect(
       (await screen.findByText(/git clone/, { selector: "pre code" }))
         .textContent,
-    ).toContain("'guneet via opencode-daedalus'")
+    ).toContain('"guneet via opencode-daedalus"')
   })
 
   it("copies the configuration", async () => {

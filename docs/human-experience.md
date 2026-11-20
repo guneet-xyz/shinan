@@ -1496,17 +1496,19 @@ as built until browser approval arrives (M4):**
   by name), the machine, an optional name ("OpenCode on Daedalus" is
   suggested) and the access (full or read-only), then asks the person to sign
   in again. The token is shown once, with a Copy button, a reminder that it
-  will not be shown again, and a link to set the agent up, which Git then
-  reads it for (GC-9).
+  will not be shown again and should stay open until the setup command asks
+  for it, and a link to set the agent up (GC-9).
 - **Decided (owner, 2026-11-19, M2-Q17; M2-9, [#90](https://github.com/guneet-xyz/shinan/issues/90)):**
   **Set up an agent** (`/account/agents/setup`, "Set up OpenCode" until
   GC-9), linked from the top of Your agents and from the token shown once
   (in a new tab, so the token stays on screen, filled in for that agent):
-  five numbered steps (make a token, store it on the machine, clone the
-  catalog with Git's credential helper, configure OpenCode, check it) with this installation's
-  addresses, the agent's workspace and its written form filled in, an agent
-  picker when the person has several, and Copy buttons, then how to keep
-  the token safe. Its content is owned by
+  four steps of one sentence each (create a token for this machine, run one
+  command on the machine and paste the token when it asks, add Shinan to
+  OpenCode, check it), each with a Copy button where there is something to
+  copy and how it works behind "What does this do?"; this installation's
+  addresses, the agent's workspace and its written form filled in; an agent
+  picker when the person has several; then three short rules to keep the
+  token safe. Its content is owned by
   [agent integrations](agent-integrations.md#setting-up-an-agent-with-a-hand-made-token).
   Reason: like the device setup guide, it is product help, the same for
   every workspace.

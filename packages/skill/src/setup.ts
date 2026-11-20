@@ -1,5 +1,5 @@
 /**
- * The commands that set a machine up for Shinan's catalog (agent
+ * The command that sets a machine up for Shinan's catalog (agent
  * integrations, "Setting up an agent with a hand-made token"; plan §2.12).
  * Pure text, without Node.js imports, so the web app's setup page shows
  * exactly what the tests run with a real `git`.
@@ -11,16 +11,9 @@ export const tokenFile = "~/.config/shinan/token"
 /** The default folder of the machine's clone; worktrees go beside it. */
 export const defaultCloneFolder = "~/shinan-catalog/main"
 
-/**
- * Stores the token, from any shell: the commands run in bash whatever the
- * shell they are pasted into, so they behave the same everywhere bash is
- * installed, and no other shell is left reading the pasted token as a
- * command. The token is read without echo, so it is not on screen, in
- * scrollback or in history; written by the `printf` builtin, so it is
- * never in the process list; folder 700 and file 600 even if they existed
- * before, the file emptied and locked down before the token goes in.
- */
-export const storeTokenCommand = `bash -c 'umask 077; mkdir -p ~/.config/shinan && chmod 700 ~/.config/shinan && IFS= read -rs t && : > ${tokenFile} && chmod 600 ${tokenFile} && printf "%s\\n" "$t" > ${tokenFile}'`
+/** What the command prints when it waits for the token. */
+export const tokenPrompt =
+  "Paste the agent token (it is not shown), then press Enter: "
 
 /**
  * The credential helper, as Git runs it (through `sh -c`, with the action
@@ -36,8 +29,9 @@ export function installationAddress(origin: string): string {
   return `${url.protocol}//${url.host}`
 }
 
-/** Quotes a word for a POSIX shell. */
+/** Quotes a word for a POSIX shell, when it needs quoting. */
 function shellQuote(word: string): string {
+  if (/^[\w@%+=:,./-]+$/.test(word)) return word
   return `'${word.replaceAll("'", "'\\''")}'`
 }
 
@@ -51,13 +45,17 @@ function shellQuote(word: string): string {
  * asked for, or told, the token. Worktrees share it.
  */
 export function credentialHelperOptions(origin: string): string[] {
-  const key = `credential.${installationAddress(origin)}.helper`
+  const key = helperKey(origin)
   return [`${key}=`, `${key}=${credentialHelper}`]
 }
 
+function helperKey(origin: string) {
+  return `credential.${installationAddress(origin)}.helper`
+}
+
 /**
- * The catalog repository's address (plan §2.2). **To be confirmed** with
- * GC-2's routes: `/git/<workspace ID>.git`.
+ * The catalog repository's address, the "address for agents" (plan §2.2).
+ * **To be confirmed** with GC-2's routes: `/git/<workspace ID>.git`.
  */
 export function catalogRepositoryUrl(
   origin: string,
@@ -72,27 +70,55 @@ export function writtenAgent(personHandle: string, agentHandle: string) {
 }
 
 /**
- * Makes the clone, with the credential helper in its configuration, and
- * records in Git's global configuration where it is (`shinan.catalog`) and
- * how this machine's agent writes `by` (`shinan.by`), which the skill
- * reads. None of it is a secret.
+ * The one command a person runs on the machine, in any shell (it runs in
+ * bash whatever the shell it is pasted into, and is one line, so shells
+ * without multi-line quotes take it too). It:
+ *
+ * 1. asks for the token and reads it without echo, so it is not on screen,
+ *    in scrollback or in history, and writes it with the `printf` builtin,
+ *    so it is never in the process list, into a file only its user can
+ *    read (folder 700, file 600 even if they existed before, the file
+ *    emptied and locked down before the token goes in);
+ * 2. clones the catalog, with the credential helper in the clone's own
+ *    configuration (`credentialHelperOptions`), unless the folder exists,
+ *    so running it again only replaces the token;
+ * 3. records in Git's global configuration where the clone is
+ *    (`shinan.catalog`) and how the agent writes `by` (`shinan.by`), which
+ *    the skill reads. Neither is a secret.
  */
-export function cloneCommands(options: {
+export function setupCommand(options: {
   origin: string
   workspaceId: string
   by: string
   folder?: string
 }): string {
   const folder = options.folder ?? defaultCloneFolder
-  return [
+  const script = [
+    "set -e",
+    "umask 077",
+    "mkdir -p ~/.config/shinan",
+    "chmod 700 ~/.config/shinan",
+    `printf %s "${tokenPrompt}" >&2`,
+    "IFS= read -rs t",
+    "echo >&2",
+    `[ -n "$t" ] || { echo "No token was pasted." >&2; exit 1; }`,
+    `: > ${tokenFile}`,
+    `chmod 600 ${tokenFile}`,
+    `printf "%s\\n" "$t" > ${tokenFile}`,
+    "unset t",
+    // The helper's leading `!` is made by printf (octal 041): a `!` in the
+    // pasted line would be history expansion in csh and tcsh, even inside
+    // single quotes.
+    `helper=$(printf "\\041%s" ${shellQuote(credentialHelper.slice(1))})`,
     [
-      "GIT_TERMINAL_PROMPT=0 git clone",
-      ...credentialHelperOptions(options.origin).map(
-        (option) => `-c ${shellQuote(option)}`,
-      ),
-      `${catalogRepositoryUrl(options.origin, options.workspaceId)} ${folder}`,
-    ].join(" \\\n  "),
+      `[ -e ${folder} ] || GIT_TERMINAL_PROMPT=0 git clone -q`,
+      `-c ${helperKey(options.origin)}=`,
+      `-c "${helperKey(options.origin)}=$helper"`,
+      `"${catalogRepositoryUrl(options.origin, options.workspaceId)}" ${folder}`,
+    ].join(" "),
     `git config --global shinan.catalog ${folder}`,
-    `git config --global shinan.by ${shellQuote(options.by)}`,
-  ].join("\n")
+    `git config --global shinan.by "${options.by}"`,
+    `echo "Done. The catalog is in ${folder}." >&2`,
+  ].join("; ")
+  return `bash -c ${shellQuote(script)}`
 }

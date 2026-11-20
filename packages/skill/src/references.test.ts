@@ -73,7 +73,7 @@ const pushCodes = [
   "path-not-allowed",
   "path-id-mismatch",
   "id-disappeared",
-  "by-not-pusher",
+  "by-not-first-pusher",
   "catalog-too-large",
 ]
 
@@ -95,7 +95,7 @@ describe("the skill's references", () => {
     )
   })
 
-  it("has an example change that validates, with a fact check by its pusher", () => {
+  it("has an example change that validates, with a fact check naming the agent that pushes it", () => {
     const [before, after] = exampleDocuments()
     const context = { now: new Date("2026-11-19T00:00:00Z") }
     const old = readCatalog([examplePerson, before])

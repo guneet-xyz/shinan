@@ -1490,11 +1490,13 @@ done, or records on the task exactly what update is pending and why.
 "documentation-impact check", the habit that keeps that catalog current. The
 obligation is scoped to the task, not a duty to refresh everything, and it
 never authorizes extra access (P6). The fact checks it writes are its own:
-`by` names the pushing agent and its person, and `checked` is the real time
-of the check, never rounded ([#158](https://github.com/guneet-xyz/shinan/issues/158));
-since a push may not add fact checks naming anyone else, an agent never
-lands another agent's fact checks by merging its branch (owner, GQ-3,
-[D-061](decisions/D-061-push-authentication-and-push-log.md)). How agents do
+`by` names the agent and its person, and `checked` is the real time of the
+check, never rounded ([#158](https://github.com/guneet-xyz/shinan/issues/158)).
+A fact check must name the agent that first pushed the commit introducing it
+(owner, GQ-3 as refined, [D-066](decisions/D-066-by-names-the-first-pusher.md)),
+so an agent may merge another agent's pushed branch, whose fact checks keep
+naming that agent, but never rebases, cherry-picks or squashes another
+agent's commits that add fact checks. How agents do
 this with Git is the skill's ([agent integrations](agent-integrations.md#the-skill),
 GC-9). During the trial, agents also push the matching change to Shinan when
 they update a trial entity in the `workspace` repository (owner, O-72,

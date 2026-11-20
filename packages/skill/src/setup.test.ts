@@ -1,10 +1,11 @@
-import { execFile } from "node:child_process"
+import { execFile, spawn } from "node:child_process"
 import {
   chmod,
   mkdir,
   mkdtemp,
   readFile,
   rm,
+  stat,
   writeFile,
 } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -17,8 +18,9 @@ import { startGitServer } from "../test/git-server.js"
 import type { TestGitServer } from "../test/git-server.js"
 import {
   catalogRepositoryUrl,
-  cloneCommands,
   installationAddress,
+  setupCommand,
+  tokenPrompt,
   writtenAgent,
 } from "./setup.js"
 
@@ -47,8 +49,16 @@ describe("the agent setup, with a real git", () => {
     LANG: "C",
     ...extra,
   })
-  const sh = (script: string) =>
-    run("sh", ["-ec", script], { env: env(), cwd: home })
+  /** Runs a command as pasted into a shell, typing `input` when it reads. */
+  const paste = (command: string, input: string) =>
+    new Promise<{ code: number | null; stderr: string }>((resolve, reject) => {
+      const child = spawn("sh", ["-c", command], { env: env(), cwd: home })
+      let stderr = ""
+      child.stderr.on("data", (chunk: Buffer) => (stderr += String(chunk)))
+      child.on("error", reject)
+      child.on("close", (code) => resolve({ code, stderr }))
+      child.stdin.end(input)
+    })
   const git = (args: string[], cwd = home, extra?: Record<string, string>) =>
     run("git", args, { env: env(extra), cwd })
   const failure = (promise: Promise<unknown>) =>
@@ -83,13 +93,6 @@ describe("the agent setup, with a real git", () => {
       password: token,
     })
 
-    // The token file as the setup page's command leaves it.
-    await mkdir(join(home, ".config", "shinan"), { recursive: true })
-    await chmod(join(home, ".config", "shinan"), 0o700)
-    await writeFile(join(home, ".config", "shinan", "token"), `${token}\n`, {
-      mode: 0o600,
-    })
-
     // Other credential helpers in the global configuration, for every
     // address and for Shinan's, at the start of the file and at its end:
     // one that logs whatever Git asks or tells it, and `store`, which saves
@@ -116,15 +119,24 @@ describe("the agent setup, with a real git", () => {
     if (root) await rm(root, { recursive: true, force: true })
   })
 
-  it("clones with the token from the file, and no other helper", async () => {
-    await sh(
-      cloneCommands({
-        origin: server.origin,
-        workspaceId,
-        by: writtenAgent("alex", "opencode-build-1"),
-        folder: "~/shinan-catalog/main",
-      }),
-    )
+  const command = () =>
+    setupCommand({
+      origin: server.origin,
+      workspaceId,
+      by: writtenAgent("alex", "opencode-build-1"),
+      folder: "~/shinan-catalog/main",
+    })
+
+  it("stores the pasted token and clones, with no other helper", async () => {
+    const result = await paste(command(), `${token}\n`)
+    expect(result.code, result.stderr).toBe(0)
+    // It asks for the token, and never shows it.
+    expect(result.stderr).toContain(tokenPrompt)
+    expect(result.stderr).not.toContain(token)
+    const folder = join(home, ".config", "shinan")
+    expect((await stat(folder)).mode & 0o777).toBe(0o700)
+    expect((await stat(join(folder, "token"))).mode & 0o777).toBe(0o600)
+    expect(await readFile(join(folder, "token"), "utf8")).toBe(`${token}\n`)
     expect(server.requests.right).toBeGreaterThan(0)
     await expectNoOtherHelper()
     // The remote holds no credential.
@@ -171,6 +183,18 @@ describe("the agent setup, with a real git", () => {
       (await git(["show", "origin/main:machine/build-1.md"], clone)).stdout,
     ).toBe(after)
     await expectNoOtherHelper()
+  })
+
+  it("only replaces the token when it runs again, and keeps it when none is pasted", async () => {
+    const file = join(home, ".config", "shinan", "token")
+    const again = await paste(command(), "a-new-token\n")
+    expect(again.code, again.stderr).toBe(0)
+    expect(await readFile(file, "utf8")).toBe("a-new-token\n")
+    const empty = await paste(command(), "\n")
+    expect(empty.code).not.toBe(0)
+    expect(empty.stderr).toContain("No token was pasted.")
+    expect(await readFile(file, "utf8")).toBe("a-new-token\n")
+    await writeFile(file, `${token}\n`)
   })
 
   it("never prints the token in Git's trace output", async () => {

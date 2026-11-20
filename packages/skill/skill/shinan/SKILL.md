@@ -53,11 +53,12 @@ catalog at once. Nobody approves it first.
 - **Copying is not checking.** A fact you only read somewhere (another
   document, the catalog itself, a colleague's note) is not a check. Record
   `unknown` rather than guess. See [references/facts.md](references/facts.md).
-- **Your own fact checks only.** Every fact check you add or change names
-  you, exactly as `<person handle> via <agent handle>`, with the real time
-  of the check, never rounded. Shinan refuses a push whose new or changed
-  fact check names anyone else, so never merge another agent's branch that
-  adds fact checks into `main`. See [references/facts.md](references/facts.md).
+- **Your own fact checks only.** Every fact check you write names you,
+  exactly as `<person handle> via <agent handle>`, with the real time of
+  the check, never rounded. A fact check must name the agent that first
+  pushed the commit introducing it, so you may merge another agent's
+  pushed branch, but never rebase, cherry-pick or squash its commits that
+  add fact checks. See [references/facts.md](references/facts.md).
 - **Secrets never go to Shinan.** No secret values, credentials, private
   keys, tokens or unredacted logs, in any file, commit message or branch
   name, on any branch. Record only where a secret lives (the secrets manager

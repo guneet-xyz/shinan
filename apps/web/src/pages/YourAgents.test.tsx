@@ -80,7 +80,7 @@ describe("your agents", () => {
     ).toBeTruthy()
     // The setup guide opens beside it, so the token stays on screen.
     const guide = screen.getByRole("link", {
-      name: "How to set up the agent (opens in a new tab)",
+      name: "Set up this agent (opens in a new tab)",
     })
     expect(guide.getAttribute("href")).toBe(
       `/account/agents/setup?agent=${issued.agent.id}`,

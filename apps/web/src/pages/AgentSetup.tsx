@@ -1,12 +1,12 @@
 import { CheckIcon, CopyIcon } from "lucide-react"
 import { useId, useState } from "react"
+import type { ReactNode } from "react"
 import { Link, useSearchParams } from "react-router"
 
 import {
   catalogRepositoryUrl,
-  cloneCommands,
   defaultCloneFolder,
-  storeTokenCommand,
+  setupCommand,
   tokenFile,
   writtenAgent,
 } from "@shinan/skill/setup"
@@ -46,10 +46,11 @@ function openCodeConfig(origin: string): string {
 
 /**
  * Setting up an agent with a token made by hand (agent integrations,
- * "Setting up an agent with a hand-made token"; plan §2.12), linked from
- * Your agents and from a token shown once (`?agent=<id>`). The addresses
- * are this installation's own; the agent chosen fills in its workspace and
- * how it writes `by`.
+ * "Setting up an agent with a hand-made token"; plan §2.12): four steps of
+ * one sentence each, with how each works behind "What does this do?".
+ * Linked from Your agents and from a token shown once (`?agent=<id>`). The
+ * addresses are this installation's own; the agent chosen fills in its
+ * workspace and how it writes `by`.
  */
 export function AgentSetup() {
   const origin = window.location.origin
@@ -68,14 +69,13 @@ export function AgentSetup() {
     agent?.personHandle ?? account.person.handle,
     agent?.handle ?? "<agent handle>",
   )
+  const oneWorkspace = account.workspaces.length <= 1
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-6">
       <PageHeader title="Set up an agent">
-        Connect a coding tool on one of your machines to your workspace's
-        catalog, with a token made by hand. The catalog is a Git repository: the
-        agent keeps a clone on the machine, reads it, and pushes its changes.
-        Git gets the token from a file, so the agent never sees it.
+        Let a coding tool on one of your machines read and update your catalog.
+        It takes about two minutes. Your agent never sees the token.
       </PageHeader>
       {list.length > 1 && (
         <div className="flex flex-col gap-2">
@@ -89,113 +89,108 @@ export function AgentSetup() {
           >
             {list.map((a) => (
               <NativeSelectOption key={a.id} value={a.id}>
-                {`${a.name} (${a.handle}), ${a.workspaceName}`}
+                {oneWorkspace
+                  ? `${a.name} (${a.handle})`
+                  : `${a.name} (${a.handle}), ${a.workspaceName}`}
               </NativeSelectOption>
             ))}
           </NativeSelect>
         </div>
       )}
       <div className="flex flex-col gap-6">
-        <Section title="1. Make a token">
+        <Section title="1. Create a token for this machine">
           <p className="text-sm">
             In{" "}
             <Link to="/account/agents" className={linkClassName}>
               Your agents
             </Link>
-            , create a token by hand for the coding tool on this machine. Choose{" "}
+            , pick the coding tool and the machine; choose{" "}
             <strong className="font-medium">Read-only</strong> if the agent
-            should only read the catalog. Keep the page open: the token is shown
-            once.
+            should only read.
           </p>
+          <WhatItDoes>
+            <p>
+              The token is shown once. Leave it open in its tab: the command in
+              step 2 asks for it. If you lose it, make a new one.
+            </p>
+          </WhatItDoes>
         </Section>
-        <Section
-          title="2. Store it on the machine"
-          description="In a terminal on that machine, not in the coding tool's chat."
-        >
+        <Section title="2. Run one command on the machine">
           <p className="text-sm">
-            Run this in any shell (it uses bash, which almost every Linux and
-            macOS machine has), then paste the token and press Enter. Nothing is
-            shown while you paste: the token stays off the screen, out of your
-            shell history and off every command line, and the file is readable
-            only by you, even if it was there before.
+            Copy this command and run it in a terminal on the machine; when it
+            asks, go back to the token, copy it and paste it (it isn&apos;t
+            shown).
           </p>
           <CodeBlock
-            label="Commands to store the token"
-            code={storeTokenCommand}
+            label="Setup command"
+            code={setupCommand({ origin, workspaceId, by })}
           />
+          <WhatItDoes>
+            <ul className="flex list-disc flex-col gap-1 pl-5">
+              <li>
+                It stores the token in <Code>{tokenFile}</Code>, readable only
+                by you. The token stays off the screen, out of your shell
+                history and off every command line.
+              </li>
+              <li>
+                It clones the catalog to <Code>{defaultCloneFolder}</Code>, from
+                the address for agents,{" "}
+                <Code>{catalogRepositoryUrl(origin, workspaceId)}</Code>. Git in
+                that clone asks only Shinan&apos;s helper for a password, and
+                the helper reads the token from its file; any other
+                saved-password helper is switched off there.
+              </li>
+              <li>
+                It records where the clone is, and how the agent signs its fact
+                checks: <Code>{by}</Code>. Shinan refuses fact checks that name
+                anyone else.
+              </li>
+              <li>
+                Run it again with a new token to replace the old one; the clone
+                stays as it is.
+              </li>
+            </ul>
+          </WhatItDoes>
         </Section>
-        <Section
-          title="3. Clone the catalog"
-          description="One clone per machine. Agents never edit it directly: each task works in a worktree beside it."
-        >
+        <Section title="3. Add Shinan to OpenCode">
           <p className="text-sm">
-            This clones the catalog to <Code>{defaultCloneFolder}</Code> with a
-            credential helper in the clone&apos;s own settings: Git asks it, and
-            only it, for Shinan&apos;s password, and it answers with the token
-            from <Code>{tokenFile}</Code>. Any other helper for this address,
-            such as one that saves passwords, is switched off for the clone. The
-            last two lines record where the clone is and how the agent names
-            itself when it records a fact check, <Code>{by}</Code>. Shinan
-            refuses fact checks that name anyone else.
-          </p>
-          <CodeBlock
-            label="Commands to clone the catalog"
-            code={cloneCommands({ origin, workspaceId, by })}
-          />
-          <p className="text-sm text-muted-foreground">
-            The repository is{" "}
-            <Code>{catalogRepositoryUrl(origin, workspaceId)}</Code>. Agents run
-            Git with <Code>GIT_TERMINAL_PROMPT=0</Code>, so a missing or revoked
-            token fails at once instead of asking for a password.
-          </p>
-        </Section>
-        <Section
-          title="4. Configure OpenCode"
-          description="Nothing here is secret."
-        >
-          <p className="text-sm">
-            Add this to <Code>opencode.jsonc</Code> in a folder above the
-            projects that should use Shinan, or to{" "}
-            <Code>~/.config/opencode/opencode.jsonc</Code> for every folder. If
-            an older setup added a <Code>shinan</Code> MCP server, remove it.
-            The rule stops OpenCode's own file reader from opening the token's
-            folder; the skill tells the agent never to touch it either.
+            Add this to <Code>~/.config/opencode/opencode.jsonc</Code>.
           </p>
           <CodeBlock
             label="OpenCode configuration"
             code={openCodeConfig(origin)}
           />
-          <p className="text-sm text-muted-foreground">
-            The skill is at <Code>{`${origin}/skills/`}</Code>. Another coding
-            tool uses the same clone and the same skill.
-          </p>
+          <WhatItDoes>
+            <p>
+              It loads Shinan&apos;s skill, which teaches the agent to read the
+              catalog and push its changes, from{" "}
+              <Code>{`${origin}/skills/`}</Code>. The rule stops OpenCode&apos;s
+              file reader from opening the token&apos;s folder. To use Shinan
+              only for some projects, put it in an <Code>opencode.jsonc</Code>{" "}
+              in a folder above them instead. If an older setup added a{" "}
+              <Code>shinan</Code> MCP server, remove it.
+            </p>
+          </WhatItDoes>
         </Section>
-        <Section title="5. Check it">
+        <Section title="4. Check it">
           <p className="text-sm">
-            In the clone, run <Code>GIT_TERMINAL_PROMPT=0 git fetch</Code>: it
-            finishes without asking for anything. Then ask the agent to load the{" "}
-            <Code>shinan</Code> skill and read the catalog&apos;s start-here
-            document.
+            If <Code>git fetch</Code> in <Code>{defaultCloneFolder}</Code>{" "}
+            finishes without asking for anything, you&apos;re set. Ask your
+            agent to read Start here.
           </p>
         </Section>
       </div>
       <Section title="Keep the token safe">
         <ul className="flex list-disc flex-col gap-1 pl-5 text-sm">
+          <li>Never paste it anywhere but the command in step 2.</li>
           <li>
-            The agent never needs to see the token. Never paste it into a chat,
-            an issue, a project file, a command line or a Git remote address.
-          </li>
-          <li>
-            If it leaks, or the machine is lost, revoke it in{" "}
+            If it leaks or the machine is lost, revoke it in{" "}
             <Link to="/account/agents" className={linkClassName}>
               Your agents
             </Link>
-            : it stops working at once.
+            .
           </li>
-          <li>
-            To replace it, make a new token for the same agent and store it the
-            same way. Git uses the new one on its next fetch or push.
-          </li>
+          <li>To replace it, make a new token and run step 2 again.</li>
         </ul>
       </Section>
       <p className="text-sm text-muted-foreground">
@@ -212,6 +207,18 @@ function Code(props: { children: string }) {
     <code className="font-mono text-[0.9em] wrap-anywhere text-foreground">
       {props.children}
     </code>
+  )
+}
+
+/** How a step works, for whoever wants to know. */
+function WhatItDoes(props: { children: ReactNode }) {
+  return (
+    <details className="text-sm text-muted-foreground [&[open]>summary]:mb-2">
+      <summary className="w-fit cursor-pointer rounded-sm outline-none focus-visible:ring-3 focus-visible:ring-ring">
+        What does this do?
+      </summary>
+      {props.children}
+    </details>
   )
 }
 
