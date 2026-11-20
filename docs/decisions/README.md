@@ -62,6 +62,7 @@ is public; it amends D-011. D-059 to D-065 record the owner's decisions of
 the [Git-based catalog plan](../build-plan-git-catalog.md#6-decision-records)
 ([recorded on issue #161](https://github.com/guneet-xyz/shinan/issues/161#issuecomment-7007337638));
 they supersede D-022, D-024 and D-043 and amend D-006 and D-014. D-066 records the owner's refinement of the answer GQ-3 on 2026-11-20 ([recorded on issue #161](https://github.com/guneet-xyz/shinan/issues/161#issuecomment-7028895313)) and amends D-061.
+D-067 records the owner's request of 2026-11-20 for a product owner role ([recorded on issue #183](https://github.com/guneet-xyz/shinan/issues/183#issuecomment-7029722159)).
 The numbers are in each record's `evidence` field and in the mappings for
 [issue #25](#owner-answers-on-issue-25) and [issue #26](#owner-answers-on-issue-26).
 
@@ -133,6 +134,7 @@ The numbers are in each record's `evidence` field and in the mappings for
 | [D-064](D-064-catalog-not-wiki.md)                        | "Wiki" becomes "catalog"; people browse `main` as a file tree with pages and search, without editing for now                                                                                  | Accepted   | 2026-11-19 | Amends D-006                                        | Human experience; Domain model and glossary                                                                       |
 | [D-065](D-065-git-container-and-service-token.md)         | Git runs in its own internal container; `web` forwards authenticated requests to it with a shared service token                                                                               | Accepted   | 2026-11-19 |                                                     | Architecture and operations; Security checklist; Operator guide                                                   |
 | [D-066](D-066-by-names-the-first-pusher.md)               | A fact check's `by` names the agent that first pushed the commit introducing it                                                                                                               | Accepted   | 2026-11-20 | Amends D-061                                        | Git-based catalog plan; Catalog; Identity, agents and permissions                                                 |
+| [D-067](D-067-product-owner-role.md)                      | A product owner role puts the experience of people using Shinan first                                                                                                                         | Accepted   | 2026-11-20 |                                                     | Product principles; Build plan; Human experience                                                                  |
 
 The full list of owning documents, with planned paths, is in each record.
 
@@ -508,3 +510,7 @@ None.
 - 2026-11-20: D-066 added for the owner's refinement of GQ-3 (a fact check's
   `by` names the agent that first pushed the commit introducing it); it
   amends D-061 ([recorded on issue #161](https://github.com/guneet-xyz/shinan/issues/161#issuecomment-7028895313)).
+- 2026-11-20: D-067 added for the owner's request for a product owner role
+  that puts the experience of people using Shinan first
+  ([recorded on issue #183](https://github.com/guneet-xyz/shinan/issues/183#issuecomment-7029722159)).
+  It amends no record.

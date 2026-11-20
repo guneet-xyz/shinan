@@ -113,6 +113,11 @@ It does not cover:
    defaults visible and say what a change affects. **Decided** principle
    (owner, O-86, [#25]); its use here is **proposed**.
 
+**Decided** (owner, 2026-11-20, [D-067](decisions/D-067-product-owner-role.md)):
+the experience of people using Shinan comes first. Every screen follows the
+[product principles](product-principles.md): few concepts, plain words, one
+job per screen, and calm, readable design.
+
 ### Phase 1 and nudges
 
 The plan puts nudges in phase 2 (plan, section 10). **Decided.** In this
