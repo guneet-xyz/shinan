@@ -854,7 +854,9 @@ later improvement cycle would otherwise have to remove
   search box, Start here, Recent changes and Needs attention, then the file
   tree of `main` (folders such as `machine/`
   and `service/`, then files, each shown by its `title` with the file name
-  beside it; folders collapsible; the current page highlighted), then
+  beside it; folders collapsible; the current page highlighted. As built in
+  GC-7, following the [product brief](https://github.com/guneet-xyz/shinan/issues/169#issuecomment-7029844112):
+  titles only, with the file name on the page itself), then
   Settings and Your account; the page on the right. On narrow screens the
   sidebar folds into a menu. shadcn/ui components and the existing light and dark themes
   ([D-055](decisions/D-055-tailwind-and-shadcn.md)).
@@ -1327,7 +1329,10 @@ provenance from `index/`; GC-5 does not touch `index/`.
   10.9 (secret check on push) and the new Git items (the Git container's
   isolation and service token among them) move to **Pass**; the limits of
   [2.10](#210-limits) confirmed; the Git container's and `web`'s memory
-  measured.
+  measured. Whether Musashi's proxy compresses JSON answers (Caddy
+  `encode`): `web` compresses the catalog's tree itself (GC-7, about 2 MB
+  for 20,000 pages, no secrets in it); compressing answers that hold a
+  secret beside text an attacker chooses is weighed against BREACH.
 - The release (v0.4.0, a release-please PR merged by the owner) and the
   `infra/musashi` request of [4.3](#43-deployment-changes-on-musashi): the
   `shinan-git` service, its folder, the `shinan-git` network and its subnet,

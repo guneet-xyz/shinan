@@ -15,6 +15,7 @@ import { NotFound } from "./pages/NotFound"
 import { Setup } from "./pages/Setup"
 import { SignIn } from "./pages/SignIn"
 import { SignInLink } from "./pages/SignInLink"
+import { WikiRedirect } from "./pages/WikiRedirect"
 import { Agents } from "./pages/workspace/Agents"
 import { Data } from "./pages/workspace/Data"
 import { General } from "./pages/workspace/General"
@@ -28,8 +29,8 @@ import {
 import { YourAgents } from "./pages/YourAgents"
 import { RequireSignIn } from "./session"
 
-// The wiki, with its Markdown renderer, loads only on wiki pages.
-const WikiRoutes = lazy(() => import("./pages/wiki/WikiRoutes"))
+// The catalog, with its Markdown renderer, loads only on catalog pages.
+const CatalogRoutes = lazy(() => import("./pages/catalog/CatalogRoutes"))
 
 /**
  * The app's pages. Only the sign-in pages (including the confirm page of an
@@ -56,16 +57,18 @@ export function App() {
             <Route path="account/agents/setup" element={<AgentSetup />} />
             <Route path="installation" element={<Installation />} />
             <Route path="w/:workspaceId" element={<WorkspaceLayout />}>
-              {/* The wiki opens a workspace until the Now screen exists (M3). */}
-              <Route index element={<Navigate to="wiki" replace />} />
+              {/* The catalog opens a workspace until the Now screen exists (M3). */}
+              <Route index element={<Navigate to="catalog" replace />} />
               <Route
-                path="wiki/*"
+                path="catalog/*"
                 element={
                   <Suspense fallback={<Loading />}>
-                    <WikiRoutes />
+                    <CatalogRoutes />
                   </Suspense>
                 }
               />
+              {/* The wiki's old addresses, for one release (D-064). */}
+              <Route path="wiki/*" element={<WikiRedirect />} />
               <Route path="settings" element={<SettingsLayout />}>
                 <Route index element={<Navigate to="general" replace />} />
                 <Route path="general" element={<General />} />

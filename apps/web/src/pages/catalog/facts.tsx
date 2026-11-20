@@ -15,6 +15,7 @@ import {
   entityPath,
   isWebAddress,
   stateLabels,
+  titleText,
   valueText,
 } from "./format"
 
@@ -41,7 +42,7 @@ export function EntityLink(props: {
       to={entityPath(props.workspaceId, props.id)}
       className={cn(linkClass, props.className)}
     >
-      {title ?? props.id}
+      {titleText(title ?? null, props.id)}
       {title && (
         <span className="ml-1 font-normal text-muted-foreground">
           ({props.id})

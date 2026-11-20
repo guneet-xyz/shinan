@@ -14,15 +14,17 @@ import { NotFound } from "../NotFound"
 import { EntityPageContext, useEntityPage } from "./context"
 import { EntityLink, FactRow, linkClass, MaybeLink } from "./facts"
 import {
+  catalogPath,
   entityPath,
   freshnessSummary,
   isWebAddress,
   summaryParts,
+  titleText,
   valueText,
-  wikiPath,
 } from "./format"
 import { Markdown } from "./markdown"
 import { IndexBehind, PageNotice } from "./notices"
+import { visible } from "./visible"
 
 /**
  * An entity page (human experience, an entity page), in order of
@@ -129,10 +131,12 @@ export function EntityHeader() {
       )}
       <div className="flex min-w-0 flex-col gap-1">
         <h1 className="text-2xl font-semibold tracking-tight wrap-anywhere">
-          {entity.title ?? entity.id}
+          {titleText(entity.title, entity.id)}
         </h1>
         {entity.summary && (
-          <p className="text-sm text-muted-foreground">{entity.summary}</p>
+          <p className="text-sm wrap-anywhere text-muted-foreground">
+            {visible(entity.summary, { oneLine: true })}
+          </p>
         )}
       </div>
       <dl className="flex flex-wrap gap-x-6 gap-y-2 text-sm [&_dt]:text-muted-foreground [&>div]:flex [&>div]:gap-2">
@@ -141,7 +145,7 @@ export function EntityHeader() {
           <dd>
             {entity.type ? (
               <Link
-                to={wikiPath(workspaceId, `/types/${entity.type}`)}
+                to={catalogPath(workspaceId, `/types/${entity.type}`)}
                 className={linkClass}
               >
                 {entity.type}

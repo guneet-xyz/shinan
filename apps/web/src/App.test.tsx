@@ -37,9 +37,11 @@ describe("the app shell", () => {
   it("opens the person's first workspace", async () => {
     renderApp("/")
 
-    // The wiki opens a workspace until the Now screen exists.
-    expect(await screen.findByRole("heading", { name: "Wiki" })).toBeTruthy()
-    await waitFor(() => expect(currentPath()).toBe(`/w/${workspaceId}/wiki`))
+    // The catalog opens a workspace until the Now screen exists.
+    expect(
+      await screen.findByRole("heading", { name: "Your catalog is empty." }),
+    ).toBeTruthy()
+    await waitFor(() => expect(currentPath()).toBe(`/w/${workspaceId}/catalog`))
   })
 
   it("welcomes someone with no workspace", async () => {
@@ -73,15 +75,9 @@ describe("the app shell", () => {
     })
     renderApp(`/w/${workspaceId}/settings/general`, api)
 
-    const banner = await screen.findByRole("banner")
-    expect(
-      within(banner)
-        .getAllByRole("link")
-        .map((l) => l.textContent),
-    ).toEqual(["Shinan", "Your account"])
-
+    const sidebar = await screen.findByRole("complementary")
     await userEvent.click(
-      within(banner).getByRole("button", {
+      await within(sidebar).findByRole("button", {
         name: /^Team\s*\(switch workspace\)$/,
       }),
     )
@@ -99,7 +95,7 @@ describe("the app shell", () => {
     await userEvent.click(items[1]!)
     await waitFor(() =>
       expect(currentPath()).toBe(
-        "/w/66666666-6666-4666-8666-666666666666/wiki",
+        "/w/66666666-6666-4666-8666-666666666666/catalog",
       ),
     )
     expect(screen.queryByRole("menu")).toBeNull()

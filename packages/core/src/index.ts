@@ -202,8 +202,15 @@ export type {
 // bypasses no check. Catalog operations with permissions are built on it.
 export * from "./catalog/document/index.js"
 export * from "./catalog/index/index.js"
-export { listCatalogTypeIndex, typeIndexLimit } from "./catalog/wiki.js"
+export {
+  getCatalogState,
+  listCatalogTree,
+  listCatalogTypeIndex,
+  typeIndexLimit,
+} from "./catalog/wiki.js"
 export type {
+  CatalogTreeAnswer,
+  CatalogTreeItemJson,
   FreshnessSummaryJson,
   TypeIndexAnswer,
   TypeIndexItemJson,

@@ -12,7 +12,7 @@ function renderMarkdown(text: string, anchors: (string | null)[] = []) {
       <Markdown
         text={text}
         anchors={anchors}
-        entityPath={(id) => `/w/1/wiki/e/${id}`}
+        entityPath={(id) => `/w/1/catalog/p/${id}`}
       />
     </MemoryRouter>,
   ).container
@@ -95,10 +95,12 @@ describe("the Markdown renderer", () => {
   })
 
   it("leads type schema and start-here references to their own pages", () => {
-    expect(entityPath("1", "schema/dns-zone")).toBe("/w/1/wiki/types/dns-zone")
-    expect(entityPath("1", "start-here")).toBe("/w/1/wiki/start-here")
+    expect(entityPath("1", "schema/dns-zone")).toBe(
+      "/w/1/catalog/types/dns-zone",
+    )
+    expect(entityPath("1", "start-here")).toBe("/w/1/catalog")
     expect(entityPath("1", "machine/musashi")).toBe(
-      "/w/1/wiki/e/machine/musashi",
+      "/w/1/catalog/p/machine/musashi",
     )
     const container = render(
       <MemoryRouter>
@@ -111,9 +113,9 @@ describe("the Markdown renderer", () => {
     expect(
       [...container.querySelectorAll("a")].map((a) => a.getAttribute("href")),
     ).toEqual([
-      "/w/1/wiki/types/domain",
-      "/w/1/wiki/start-here",
-      "/w/1/wiki/types/domain#section-cautions",
+      "/w/1/catalog/types/domain",
+      "/w/1/catalog",
+      "/w/1/catalog/types/domain#section-cautions",
     ])
   })
 
@@ -123,7 +125,7 @@ describe("the Markdown renderer", () => {
     )
     expect(
       [...container.querySelectorAll("a")].map((a) => a.getAttribute("href")),
-    ).toEqual(["/w/1/wiki/e/machine/musashi#section-cautions"])
+    ).toEqual(["/w/1/catalog/p/machine/musashi#section-cautions"])
     expect(container.textContent).toBe("account and settings, but Musashi")
   })
 

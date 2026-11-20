@@ -15,7 +15,13 @@ import { PageHeader, Section } from "../../components/page"
 import { ErrorMessage, Loading } from "../../components/status"
 import { useWorkspace } from "../workspace/context"
 import { EntityLink, linkClass } from "./facts"
-import { ageText, daysSince, entityPath, wikiPath } from "./format"
+import {
+  ageText,
+  catalogPath,
+  daysSince,
+  entityPath,
+  titleText,
+} from "./format"
 import { Markdown } from "./markdown"
 import { IndexBehind, PageNotice } from "./notices"
 
@@ -56,7 +62,7 @@ function sortValue(item: Item, key: SortKey): string | number {
 }
 
 /**
- * The index of one entity type (human experience, moving around the wiki):
+ * The index of one entity type (human experience, moving around the catalog):
  * its type schema document first, then its entities in a sortable table
  * with entity status, owner and freshness summary.
  */
@@ -80,8 +86,8 @@ export function TypePage() {
   if (isApiError(schema.error, "not-found"))
     return (
       <PageHeader title={`No type called ${type}`}>
-        <Link to={wikiPath(workspace.id)} className={linkClass}>
-          Back to the wiki
+        <Link to={catalogPath(workspace.id)} className={linkClass}>
+          Back to the catalog
         </Link>
       </PageHeader>
     )
@@ -96,7 +102,7 @@ export function TypePage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title={details?.title ?? type}>
+      <PageHeader title={titleText(details?.title ?? null, type)}>
         {details?.summary ??
           (details?.built_in
             ? `One of Shinan's eight built-in types.`

@@ -142,3 +142,104 @@ export async function listCatalogTypeIndex(
     snapshotRead,
   )
 }
+
+/**
+ * Where the catalog stands, alone (catalog §12.4): what the sidebar asks
+ * for, cheaply, while the catalog is being set up or catching up, before it
+ * reads the whole tree again.
+ */
+export async function getCatalogState(
+  ctx: Context,
+  workspaceId: string,
+): Promise<CatalogAnswer> {
+  return inWorkspace(
+    ctx,
+    workspaceId,
+    "catalog.read",
+    (scope) => answerFor(scope.tx, scope.workspaceId),
+    snapshotRead,
+  )
+}
+
+/** One file of `main` in the catalog's tree. */
+export interface CatalogTreeItemJson {
+  /** Its path on `main`, such as `machine/musashi.md`. */
+  path: string
+  /** Its catalog ID; null when the file could not be read. */
+  id: string | null
+  title: string | null
+  /** `entity` or `schema`; the start-here document is not in the tree. */
+  kind: string
+  status: string | null
+}
+
+export interface CatalogTreeAnswer extends CatalogAnswer {
+  /** Every page but the start-here document, by path. */
+  items: CatalogTreeItemJson[]
+  /**
+   * How many things need attention: facts that disagree (differences not
+   * accepted), facts due for a recheck, facts recorded as unknown, and
+   * files that could not be read. Retired pages are left out.
+   */
+  attention: number
+}
+
+/**
+ * The catalog's tree for the app's sidebar (Git-based catalog plan §3):
+ * every page of `main` but the start-here document, by path, with its
+ * title, and how many things need attention.
+ */
+export async function listCatalogTree(
+  ctx: Context,
+  workspaceId: string,
+): Promise<CatalogTreeAnswer> {
+  return inWorkspace(
+    ctx,
+    workspaceId,
+    "catalog.read",
+    async (scope) => {
+      const tx = scope.tx
+      const answer = await answerFor(tx, scope.workspaceId)
+      const rows = await tx
+        .select({
+          path: documents.path,
+          id: documents.catalogId,
+          title: documents.title,
+          kind: documents.kind,
+          status: documents.status,
+        })
+        .from(documents)
+        .where(
+          and(
+            eq(documents.workspaceId, scope.workspaceId),
+            sql`${documents.kind} <> 'start-here'`,
+          ),
+        )
+        .orderBy(asc(documents.path))
+      const current = sql`${documents.status} is distinct from 'retired'`
+      const [counts] = await tx
+        .execute<{ attention: number }>(
+          sql`
+        select
+          (select count(*) from ${schema.catalogIndexDiscrepancies} x
+             join ${documents} on ${documents.workspaceId} = x.workspace_id and ${documents.path} = x.path
+             where x.workspace_id = ${scope.workspaceId} and not x.accepted and ${current})
+        + (select count(*) from ${facts}
+             join ${documents} on ${documents.workspaceId} = ${facts.workspaceId} and ${documents.path} = ${facts.path}
+             where ${facts.workspaceId} = ${scope.workspaceId} and ${current}
+               and (${facts.state} = 'unknown' or ${facts.dueAt} <= now()))
+        + (select count(*) from ${documents}
+             where ${documents.workspaceId} = ${scope.workspaceId}
+               and ${documents.problems} @> '[{"code":"unreadable-path"}]'::jsonb)
+        as attention`,
+        )
+        .then((r) => r.rows as { attention: number }[])
+      return {
+        ...answer,
+        items: rows,
+        attention: Number(counts?.attention ?? 0),
+      }
+    },
+    snapshotRead,
+  )
+}

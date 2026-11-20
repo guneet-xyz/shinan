@@ -1,8 +1,10 @@
 import type {
+  CatalogAnswer,
   CatalogEntityAnswer,
   CatalogList,
   CatalogListAnswer,
   CatalogSearchAnswer,
+  CatalogTreeAnswer,
   CatalogTypeIndexAnswer,
   CatalogTypeSchemaAnswer,
   CatalogTypeSchemasAnswer,
@@ -653,6 +655,10 @@ export function createApiClient(options: ApiClientOptions = {}) {
         "GET",
         `${catalog(workspaceId)}/entity${search({ id })}`,
       ),
+    catalogState: (workspaceId: string) =>
+      request<CatalogAnswer>("GET", `${catalog(workspaceId)}/state`),
+    catalogTree: (workspaceId: string) =>
+      request<CatalogTreeAnswer>("GET", `${catalog(workspaceId)}/tree`),
     catalogTypes: (workspaceId: string) =>
       request<CatalogTypeSchemasAnswer>("GET", `${catalog(workspaceId)}/types`),
     catalogType: (workspaceId: string, type: string) =>

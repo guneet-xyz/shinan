@@ -1,4 +1,5 @@
 import type { Hono, Context as HonoContext } from "hono"
+import { compress } from "hono/compress"
 
 import type * as Api from "@shinan/api-client"
 import {
@@ -6,8 +7,10 @@ import {
   getCatalogEntity,
   getCatalogList,
   getCatalogStartHere,
+  getCatalogState,
   getCatalogTypeSchema,
   listCatalogPurges,
+  listCatalogTree,
   listCatalogTypeIndex,
   listCatalogTypeSchemas,
   previewCatalogPurge,
@@ -43,6 +46,24 @@ export function catalogRoutes(
       ctx(c),
       workspaceId(c),
       { id: requiredQuery(c, "id") },
+    )
+    return c.json(answer)
+  })
+
+  // The tree of a large catalog is megabytes of JSON with no secrets in
+  // it: compressed here, whatever the proxy in front does.
+  app.get(`${base}/tree`, compress(), async (c) => {
+    const answer: Api.CatalogTreeAnswer = await listCatalogTree(
+      ctx(c),
+      workspaceId(c),
+    )
+    return c.json(answer)
+  })
+
+  app.get(`${base}/state`, async (c) => {
+    const answer: Api.CatalogAnswer = await getCatalogState(
+      ctx(c),
+      workspaceId(c),
     )
     return c.json(answer)
   })

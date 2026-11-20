@@ -110,18 +110,6 @@ export function Account() {
       <SignInMethods />
       <SignInSessions />
       <SignOut />
-      {account.operator && (
-        <p className="text-sm text-muted-foreground">
-          You are an installation operator:{" "}
-          <Link
-            to="/installation"
-            className="text-foreground underline underline-offset-4"
-          >
-            installation settings
-          </Link>
-          .
-        </p>
-      )}
     </div>
   )
 }

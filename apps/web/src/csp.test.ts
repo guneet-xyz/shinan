@@ -50,11 +50,11 @@ describe("the web app under the Content Security Policy", () => {
 /**
  * Catalog Markdown is written by people and agents, and agents may have
  * read outside text, so it is hostile input (security checklist 10.3). The
- * wiki renders it into React elements: nothing in it can add a script, an
+ * catalog renders it into React elements: nothing in it can add a script, an
  * inline style or event handler, an image from elsewhere, or a link that
  * runs code.
  */
-describe("catalog Markdown in the wiki", () => {
+describe("catalog Markdown in the catalog", () => {
   const hostile = [
     "<script>alert(1)</script>",
     '<img src="https://evil.example/x.png" onerror="alert(1)">',
@@ -87,7 +87,7 @@ describe("catalog Markdown in the wiki", () => {
   async function render() {
     const { render: renderReact } = await import("@testing-library/react")
     const { MemoryRouter } = await import("react-router")
-    const { Markdown } = await import("./pages/wiki/markdown")
+    const { Markdown } = await import("./pages/catalog/markdown")
     const { createElement } = await import("react")
     return renderReact(
       createElement(

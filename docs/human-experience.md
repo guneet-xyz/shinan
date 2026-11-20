@@ -135,7 +135,45 @@ happen yet.
 
 ## Map of the app
 
-> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-7](build-plan-git-catalog.md#gc-7-the-catalog-ui)): the catalog's screens follow the plan's §3; catalog review goes. Until then, this section describes M2 as built (v0.3.0).
+> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-7](build-plan-git-catalog.md#gc-7-the-catalog-ui)): the catalog's screens follow the plan's §3; catalog review goes. The navigation below is built (GC-7's first PR); the table's catalog rows change with GC-7's later PRs.
+
+**Navigation: one left sidebar for the whole app. Decided (owner,
+2026-11-20, [answers on #183](https://github.com/guneet-xyz/shinan/issues/183#issuecomment-7029973618));
+as built in GC-7 ([#169](https://github.com/guneet-xyz/shinan/issues/169)).**
+
+- **What it holds, top to bottom:** "Shinan" and the workspace switcher, a
+  search box ("Search the catalog…"), Start here, Needs attention (with how
+  many things need it, when there are any), the catalog's folders, then
+  Settings, Your account, and Installation for installation operators.
+- **The folders** are those of `main`, by their names in the repository
+  (`machine`, `service`), sorted with `schema` last. Each holds its pages
+  by title only. Only the folder of the page open starts open; any folder
+  opens with a click. A large folder shows its first 100 pages, then "Show
+  more (N more)" adds 500 at a time; the page open always shows, with five
+  pages on each side, after a "…".
+- **Titles, folder names and other one-line texts** (a page's summary,
+  search snippets, Needs attention's fact lines) are written by agents, so
+  hidden, bidirectional and control characters in them show as markers
+  such as `⟨U+202E⟩` wherever they appear (sidebar, search, Needs
+  attention, a page's heading and summary): "Invoice ⟨U+202E⟩gnp.exe"
+  cannot pass for "Invoice exe.png". A page's rendered body is left as
+  written. Long unbroken words, such as an address, wrap.
+- **Left out of the folders:** the start-here page, which is Start here;
+  `README.md`; retired pages, which search finds; and files that cannot be
+  read as pages, which are under Needs attention.
+- **On narrow screens** the sidebar folds into a "Menu" button at the top,
+  which opens it as a sheet. Focus starts on its "Close menu" ×, not the
+  search box (which would bring up a phone's keyboard). Following a link
+  closes it and moves focus to the new page's heading; the × or Escape
+  closes it and returns focus to Menu.
+- **Outside a workspace** (Your account, Installation) it shows the
+  workspace last open, else the person's first, so it keeps its shape.
+  Someone with no workspace sees only Your account.
+- **The old navigation is gone:** the top bar and the workspace's "Wiki |
+  Settings" tabs. Workspace settings keep their own tabs inside the
+  settings page.
+- **Reason:** one navigation instead of a file tree beside two rows of tabs
+  ([product brief on #169](https://github.com/guneet-xyz/shinan/issues/169#issuecomment-7029844112)).
 
 The app is organised per workspace. A person who belongs to several workspaces
 switches between them; nothing from one workspace appears in another.
@@ -948,35 +986,54 @@ where a recheck interval is set for its key in the type's schema. **Decided**
 
 ### Moving around the catalog
 
-- An index per entity type, each a sortable list with entity status, entity
-  owner and the freshness summary, opening with a link to the type's schema
-  document. This includes workspace-defined types next to the eight built-in
-  ones. **Decided** that custom entity types are allowed in the first version
-  (owner, O-17, [#25]); the index is **proposed**.
-- **Custom types** are defined by type schema documents in the catalog
-  ([Catalog](catalog.md) section 3.9), not in workspace settings. The **New
-  type** and **Suggest a change** actions were removed in GC-5b: agents
-  change schema documents like any other
-  ([changing the catalog from the browser](#changing-the-catalog-from-the-browser)).
-- Workspace-wide lists the Catalog document asks for: discrepancies, facts due
-  for recheck, known unknowns and [recent changes](#reviewing-catalog-changes).
-  **Proposed.** The list of catalog proposals waiting for approval was
-  removed with catalog review (GC-5b).
-- Search, and links between pages.
-- A **Start here** link from the catalog's first page.
-- For workspace owners, a link to the [workspace export](#workspace-settings).
-  **Proposed.** Reason: the full workspace export (Architecture, section 5.5)
-  is the way to take the catalog off the machine; there is no separate
-  catalog-only export.
+**As built in GC-7 ([#169](https://github.com/guneet-xyz/shinan/issues/169)),
+from the [product brief](https://github.com/guneet-xyz/shinan/issues/169#issuecomment-7029844112):**
 
-**Proposed.** Reason: the `workspace` repository's catalog is navigated the
-same way (per-type indexes and links) and that works.
+- **Where things are.** The catalog is under `/w/<workspace>/catalog`. A
+  page is at `…/catalog/p/<ID>`, for example `…/catalog/p/machine/musashi`.
+  The sidebar's folders, search and Needs attention lead there
+  ([map of the app](#map-of-the-app)). Until the Now screen exists (M3),
+  opening a workspace opens Start here.
+- **The wiki's addresses lead to the same place for one release** (D-064):
+  - `/wiki/e/<ID>` goes to `/catalog/p/<ID>`;
+  - `/wiki/start-here` goes to Start here;
+  - the old workspace lists go to Needs attention;
+  - any other `/wiki/…` keeps its path under `/catalog/`.
+- **Search** sits at the top of the sidebar. A result shows the page's
+  title, its folder in muted text, and one line (the best matching
+  section's words, else the summary). Retired pages are left out; if any
+  matched, one button shows them ("Show 2 retired pages"). There are no
+  type filters. With nothing searched yet, the page is titled "Search the
+  catalog". In search results and Needs attention, page titles are links
+  with a quiet underline that shows without hovering (a phone cannot
+  hover), and a long title wraps rather than running off the screen.
+- **Needs attention** is one page with up to four short parts, only those
+  that have something in them:
+  - "These disagree": differences not accepted;
+  - "Not checked in a while": due for a recheck;
+  - "Unknown";
+  - "Files that can't be read": by file name, with hidden characters
+    shown as markers such as `⟨U+000A⟩`.
 
-**Decided (owner, 2026-11-19, M2-Q17; M2-7):** until the Now screen exists (M3), opening a workspace
-opens its catalog home: Start here, search, the types, the workspace-wide
-lists and recent changes. A type's index lists at most 1,000 entities, the
-first by ID, and says when there are more and that sorting then orders only
-those. Search leaves retired entities out unless asked.
+  Each item is the page's title, then the fact's label and one line, such
+  as "Disk data size: 128 GiB and 64 GB". With nothing in any part:
+  "Nothing needs attention." M2's "Not yet recorded" list is left out (the
+  schema's machinery).
+
+- **States:**
+  - While a new workspace's repository is made: "Your catalog is being set
+    up. This takes a few seconds." The sidebar asks where the catalog
+    stands after 3 seconds, then after twice as long each time up to once a
+    minute, and not while the browser tab is hidden. Once that changes it
+    reads the folders again, and the page updates by itself. Until then the
+    sidebar shows no folder area.
+  - While the index catches up: "Catching up with the latest changes…".
+  - With no pages at all: "Your catalog is empty. Agents write it. Set up an
+    agent, then ask it to add your first machine.", with a "Set up an
+    agent" button.
+- **Type indexes** are gone from the catalog's first page (D-064: not by
+  types). A type's own page stays until pages are shown as the brief
+  describes (GC-7's next PR).
 
 ### Changing the catalog from the browser
 
