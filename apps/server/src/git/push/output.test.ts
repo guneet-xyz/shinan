@@ -44,7 +44,7 @@ describe("a push's answer", () => {
         checkOnly: false,
       })
       expect(lines).toContain(
-        "These problems are in commits not yet in Shinan: rewrite them (git rebase -i origin/main), then push again. A new commit on top won't help.",
+        "These problems are in commits not yet in Shinan: rewrite them (git rebase -i origin/main), then push again. A new commit on top won't help. The shinan skill explains each code.",
       )
       expect(
         lines.includes(
@@ -53,6 +53,26 @@ describe("a push's answer", () => {
       ).toBe(code === "secret")
     },
   )
+
+  it("steers a by-not-first-pusher refusal away from claiming another agent's fact checks", () => {
+    expect(
+      verdictLines({
+        problems: [problem("by-not-first-pusher")],
+        warnings: [],
+        checkOnly: false,
+      }).slice(-2),
+    ).toEqual([
+      "Fix them in new commits and push again. The shinan skill explains each code.",
+      "by-not-first-pusher: name yourself only on fact checks you made. For another agent's, merge its pushed branch; don't rebase, cherry-pick or squash it.",
+    ])
+    expect(
+      verdictLines({
+        problems: [problem("ref-name-invalid")],
+        warnings: [],
+        checkOnly: false,
+      }).join("\n"),
+    ).not.toContain("name yourself")
+  })
 
   it("reads as a check, not a refusal, for a check-only push", () => {
     expect(

@@ -500,8 +500,7 @@ export function createPushService(options: {
           problems.push({
             code: "catalog-too-large",
             where: "",
-            message:
-              "checking main ran out of memory: the catalog is too large to check",
+            message: "the catalog is too large to check: tell your person",
           })
         } else {
           log(

@@ -398,7 +398,7 @@ function cut(message: string, secrets: readonly string[]): string {
 function tooLarge(documentId: string | null, where = ""): Problem {
   return blocking(
     "too-large",
-    `${where}This text is longer than ${maxDocumentBytes / 1024} KiB of UTF-8, the most a catalog document or proposal text may hold`,
+    `${where}This text is longer than ${maxDocumentBytes / 1024} KiB of UTF-8, the most a catalog document may hold`,
     documentId,
   )
 }

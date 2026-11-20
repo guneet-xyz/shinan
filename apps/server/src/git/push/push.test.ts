@@ -468,7 +468,7 @@ describe("pushing through web", () => {
       /^ {2}service\/email\.md:4 {2}secret {2}a value here looks like a GitHub token \(value not shown; fingerprint sha256:[0-9a-f]{64}\)$/,
     )
     expect(lines.slice(-2)).toEqual([
-      "These problems are in commits not yet in Shinan: rewrite them (git rebase -i origin/main), then push again. A new commit on top won't help.",
+      "These problems are in commits not yet in Shinan: rewrite them (git rebase -i origin/main), then push again. A new commit on top won't help. The shinan skill explains each code.",
       "If a value is not a secret, a workspace owner can allow its fingerprint in workspace settings (Catalog).",
     ])
     expect(pushed.stderr).not.toContain(githubToken.slice(4))
@@ -1204,7 +1204,7 @@ describe("the checks of main", () => {
     expect(text).toMatch(/notes\.txt +path-not-allowed/)
     expect(text).toMatch(/machine\/deep\/x\.md +path-not-allowed/)
     expect(text).toMatch(
-      /machine\/elsewhere\.md +path-id-mismatch +its id is "machine\/somewhere-else": a document's path is its id plus \.md/,
+      /machine\/elsewhere\.md +path-id-mismatch +its id is "machine\/somewhere-else": move the file to machine\/somewhere-else\.md, or fix its id/,
     )
     // A document on main, then deleted: its id no longer resolves.
     const kept = await change("alpha", {
@@ -1237,6 +1237,28 @@ describe("the checks of main", () => {
     )
   })
 
+  it("name the file of a document with no id: a start-here.md without one, a frontmatter that does not parse", async () => {
+    const { folder } = await change("alpha", {
+      "start-here.md": "---\ntitle: Start here\n---\n",
+      "machine/broken.md": "---\nid: [machine/broken\n---\n\n# Broken\n",
+    })
+    const pushed = await pushAs("alpha", folder, "HEAD:refs/heads/main")
+    const rows = remote(pushed.stderr).filter((l) => /^ {2}\S/.test(l))
+    expect(pushed.code).not.toBe(0)
+    expect(
+      rows.some((l) => /^ {2}start-here\.md(:\d+)? +field-missing /.test(l)),
+    ).toBe(true)
+    expect(
+      rows.some((l) =>
+        /^ {2}machine\/broken\.md(:\d+)? +frontmatter-invalid /.test(l),
+      ),
+    ).toBe(true)
+    // Every row has a place.
+    expect(
+      rows.filter((l) => /^ {2}[a-z-]+ {2}/.test(l) && !l.includes(".md")),
+    ).toEqual([])
+  })
+
   it("refuse an executable document", async () => {
     const folder = await cloneAs("alpha")
     writeFileSync(join(folder, "machine-exec.md"), "x")
@@ -1247,7 +1269,9 @@ describe("the checks of main", () => {
     await run("alpha", folder, "commit", "--quiet", "-m", "Exec")
     expect(
       refused(await pushAs("alpha", folder, "HEAD:refs/heads/main")),
-    ).toMatch(/machine\/exec\.md +path-not-allowed +an executable file/)
+    ).toMatch(
+      /machine\/exec\.md +path-not-allowed +an executable file: clear its executable bit \(git update-index --chmod=-x\)/,
+    )
   })
 
   it("validate the new catalog: blocking problems refuse, warnings pass", async () => {

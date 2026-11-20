@@ -5,12 +5,14 @@ import {
   readCatalog,
   slugPattern,
   typeNamePattern,
+  validateCatalog,
   validateChange,
 } from "@shinan/core"
 import type {
   CatalogDocument,
   EntityDocument,
   FactGroup,
+  Problem as ValidationProblem,
   WrittenFact,
 } from "@shinan/core"
 import { createGit, objectName, openCatFile } from "@shinan/git"
@@ -144,7 +146,7 @@ export async function checkMain(
       problems.push({
         code: "catalog-too-large",
         where: "",
-        message: `over the catalog's limits: ${documentsAfter.length.toLocaleString("en")} documents, ${(textBytes / 1024 / 1024).toFixed(1)} MiB (at most ${input.limits.documents.toLocaleString("en")}, ${input.limits.textBytes / 1024 / 1024} MiB)`,
+        message: `over the catalog's limits: ${documentsAfter.length.toLocaleString("en")} documents, ${(textBytes / 1024 / 1024).toFixed(1)} MiB (at most ${input.limits.documents.toLocaleString("en")}, ${input.limits.textBytes / 1024 / 1024} MiB): tell your person`,
       })
       return { problems, warnings, groups: [] }
     }
@@ -162,7 +164,7 @@ export async function checkMain(
         problems.push({
           code: "path-id-mismatch",
           where: shownPath(path),
-          message: `its id is ${quoted(document.id)}: a document's path is its id plus .md`,
+          message: `its id is ${quoted(document.id)}: move the file to ${shown(`${document.id}.md`)}, or fix its id`,
         })
       }
     }
@@ -197,23 +199,45 @@ export async function checkMain(
     for (const [path, document] of newDocs)
       if (document.id !== null && !pathById.has(document.id))
         pathById.set(document.id, path)
+    const context = {
+      now: input.now,
+      memberHandles: new Set(input.memberHandles),
+    }
     const result = validateChange(
       {
         before: readCatalog(oldDocs.values()),
         after: readCatalog(newDocs.values()),
         changed,
       },
-      { now: input.now, memberHandles: new Set(input.memberHandles) },
+      context,
     )
+    // A document with no readable id (a start-here.md without its id, a
+    // frontmatter that does not parse) is not named by its problems: they
+    // are found again by validating it alone, so they name its file.
+    const idless: { path: string; keys: Set<string> }[] = []
+    for (const [path, document] of newDocs) {
+      if (document.id !== null) continue
+      const alone = validateCatalog(readCatalog([document]), context)
+      idless.push({ path, keys: new Set(alone.problems.map(problemKey)) })
+    }
+    const changedIdless = idless.filter(({ path }) =>
+      changed.includes(newDocs.get(path)!),
+    )
+    const pathOf = (problem: ValidationProblem): string | null => {
+      if (problem.documentId !== null)
+        return pathById.get(problem.documentId) ?? null
+      const key = problemKey(problem)
+      return (
+        idless.find(({ keys }) => keys.has(key))?.path ??
+        (changedIdless.length === 1 ? changedIdless[0]!.path : null)
+      )
+    }
     for (const problem of result.problems) {
       // Secret-looking values are check 3's, which knows the owners'
       // allowed values and shows fingerprints.
       if (problem.code === "secret" || problem.code === "secret-suspected")
         continue
-      const path =
-        problem.documentId === null
-          ? null
-          : (pathById.get(problem.documentId) ?? null)
+      const path = pathOf(problem)
       const document = path === null ? undefined : newDocs.get(path)
       const where =
         path === null
@@ -222,7 +246,7 @@ export async function checkMain(
       ;(problem.severity === "blocking" ? problems : warnings).push({
         code: problem.code,
         where,
-        message: problem.message,
+        message: inPushVoice(problem.message),
       })
     }
 
@@ -273,7 +297,7 @@ export async function checkMain(
           where: `${shownPath(path)}:${lineAt(document.text, written.range.start)}`,
           message:
             pusher === null
-              ? `${shownBy} but commit ${finding.commit.slice(0, 7)} has no first pusher on record`
+              ? `${shownBy} but commit ${finding.commit.slice(0, 7)} has no first pusher on record: tell your person`
               : `${shownBy} but commit ${finding.commit.slice(0, 7)} was first pushed by "${pusher}"`,
         })
       }
@@ -380,6 +404,26 @@ async function introducing(
   return found
 }
 
+function problemKey(problem: ValidationProblem): string {
+  return JSON.stringify([
+    problem.code,
+    problem.message,
+    problem.range?.start ?? null,
+  ])
+}
+
+/**
+ * A validation message as push checks write theirs (product review of
+ * GC-3b): starting lower-case, unless with a word in capitals such as
+ * "ID", and without a final full stop, so one table reads as one voice.
+ */
+export function inPushVoice(message: string): string {
+  const start = /^[A-Z][a-z]/.test(message)
+    ? `${message[0]!.toLowerCase()}${message.slice(1)}`
+    : message
+  return start.endsWith(".") ? start.slice(0, -1) : start
+}
+
 /** A document's fact check groups, with what makes each the same group. */
 function groupsOf(document: EntityDocument): MainGroup[] {
   return document.groups
@@ -432,7 +476,7 @@ export function layoutProblem(
   if (file.type !== "blob" || file.mode === "120000" || file.mode === "160000")
     return "only files belong on main"
   if (file.mode !== "100644")
-    return "an executable file: main holds only plain files"
+    return "an executable file: clear its executable bit (git update-index --chmod=-x)"
   const { path } = file
   if (path === "README.md" || path === "start-here.md") return null
   const match = /^([^/]+)\/([^/]+)\.md$/.exec(path)
@@ -447,7 +491,7 @@ export function layoutProblem(
     )
       return null
   }
-  return "not a page path: main holds <type>/<slug>.md in a-z, 0-9 and -"
+  return "not a page path: use <type>/<slug>.md in a-z, 0-9 and -, or README.md, start-here.md"
 }
 
 function isDocumentFile(file: TreeFile): boolean {

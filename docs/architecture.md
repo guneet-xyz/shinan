@@ -948,8 +948,10 @@ only if measured growth requires it.
     are core's `pushCheckCodes` and `pushLimits`.
   - **The checks of `main` (as built, GC-3b)**, when a push fast-forwards
     `main`, run in a worker thread of the `git` role (heap limit 384 MiB,
-    stopped after 5 idle minutes), one push at a time, within 60 seconds
-    for the whole push: the layout (only `<type>/<slug>.md`,
+    stopped after 5 idle minutes), one push at a time across all
+    workspaces (a heavy push to one workspace's `main` makes the next
+    workspace's wait, within its own 60 seconds; enough for the trial),
+    within 60 seconds for the whole push: the layout (only `<type>/<slug>.md`,
     `schema/<type>.md`, `start-here.md` and `README.md`, lower-case
     letters, digits and dashes, plain files; a document's ID is its path),
     IDs and aliases never disappearing, at most 20,000 documents and
@@ -961,6 +963,10 @@ only if measured growth requires it.
     the first-pusher record, and the fact check groups ever on `main`
     from `records/<workspace ID>/main-groups.jsonl` (the revert rule),
     which gets the new `main`'s groups once its update is applied.
+    Every problem names its file, even in a document with no readable ID
+    (a `start-here.md` without one, a frontmatter that does not parse),
+    and validation's messages are shown in the push checks' style
+    (starting lower-case, without a final full stop).
   - **Output.** Every refusal and warning is one `remote:` line with its
     place (file and line, commit, or ref), Shinan's code and a message of
     about 70 characters, and never a suspected secret's value; a name is
@@ -972,7 +978,11 @@ only if measured growth requires it.
     `path-not-portable`, `tree-too-large`) need the commits rewritten
     (`git rebase -i origin/main`), since a new commit on top leaves them in
     the push; others are fixed in new commits; a `secret` adds that a
-    workspace owner can allow a value that is not a secret. A
+    workspace owner can allow a value that is not a secret; a
+    `by-not-first-pusher` adds "name yourself only on fact checks you
+    made. For another agent's, merge its pushed branch; don't rebase,
+    cherry-pick or squash it.", so a refused agent is never steered into
+    claiming another agent's checks (product review of GC-3b). A
     `-o check-only` push reads as a check ("Shinan checked this push
     (check only)…") and changes nothing; any other push option is refused.
     A hook that cannot reach the checks refuses with "Shinan: this push

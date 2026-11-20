@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { createGit } from "@shinan/git"
 import { commitFiles, createFixtureRepository } from "@shinan/git/testing"
 
+import { inPushVoice } from "./checks.js"
 import type { MainCheckInput } from "./checks.js"
 import { createMainChecker, MainCheckTimeoutError } from "./pool.js"
 
@@ -101,11 +102,22 @@ describe("the main checks' worker", () => {
           code: "path-id-mismatch",
           where: "machine/two.md",
           message:
-            'its id is "machine/other": a document\'s path is its id plus .md',
+            'its id is "machine/other": move the file to machine/other.md, or fix its id',
         },
       ])
     } finally {
       await checker.stop()
     }
   }, 60_000)
+})
+
+describe("validation messages in a push's answer", () => {
+  it("start lower-case without a final full stop, keeping words in capitals", () => {
+    expect(inPushVoice("The fact check needs checked, by.")).toBe(
+      "the fact check needs checked, by",
+    )
+    expect(inPushVoice("ID machine/x is used twice.")).toBe(
+      "ID machine/x is used twice",
+    )
+  })
 })
