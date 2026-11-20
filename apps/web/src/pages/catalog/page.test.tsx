@@ -42,7 +42,8 @@ function history(
     title: "Musashi",
     changes: changes.map((c, i) => ({
       commit: c.commit ?? `${String(i).repeat(7)}${"0".repeat(33)}`,
-      message: c.message,
+      subject: c.message.split("\n")[0]!,
+      body: c.message.split("\n").slice(1).join("\n").trim(),
       time: new Date(Date.now() - c.minutesAgo * 60_000).toISOString(),
       merge: false,
       pushed_by: null,
@@ -94,7 +95,28 @@ describe("a page", () => {
         "Two checks disagree about disk data size: 128 GiB and 64 GB (both seen 4 days ago).",
       ),
     ).toBeTruthy()
-    expect(factRow("Disk data size").textContent).toBe("disagree")
+    // The row doesn't repeat the values: each, with its check, is one tap
+    // away.
+    const row = factRow("Disk data size")
+    const show = within(row).getByRole("button", {
+      name: "disagree · show both checks",
+    })
+    expect(row.textContent).toBe("disagree · show both checks")
+    expect(show.getAttribute("aria-expanded")).toBe("false")
+    await userEvent.click(show)
+    expect(show.getAttribute("aria-expanded")).toBe("true")
+    const checks = within(
+      document.getElementById(show.getAttribute("aria-controls")!)!,
+    ).getAllByRole("listitem")
+    expect(checks.map((c) => c.querySelector("p")!.textContent)).toEqual([
+      "128 GiB · seen 4 days ago",
+      "64 GB · seen 4 days ago",
+    ])
+    expect(checks[1]!.textContent).toContain(
+      "Byguneet, through opencode-daedalus",
+    )
+    expect(checks[1]!.textContent).toContain("Seen throughinstance-metadata")
+    expect(checks[1]!.textContent).toContain("NoteMetadata lags after a resize")
   })
 
   it("gives each disagreeing value its own age when they differ", async () => {
@@ -198,6 +220,18 @@ describe("a page", () => {
             { ...incoming, identity: "runs-on|observed|to=machine/musashi" },
           ],
         },
+        // It applies too: it shows under the first heading only.
+        applies: {
+          ...musashi.applies,
+          runbooks: [
+            {
+              entity: incoming.from,
+              through: "type",
+              state: "intended",
+              identity: "applies-to|intended|to=schema/machine",
+            },
+          ],
+        },
       }),
     )
     const related = (
@@ -250,7 +284,8 @@ describe("a page", () => {
       .getByRole("heading", { name: "About this page" })
       .closest("div")!
     expect(about.textContent).toBe(
-      "About this pageFilemachine/musashi.mdIDmachine/musashiOld IDmachine/old-musashiOwnerperson/guneetStatusactive",
+      // The ID is the file's name without .md, so it isn't repeated.
+      "About this pageFilemachine/musashi.mdOld IDmachine/old-musashiOwnerperson/guneetStatusactive",
     )
   })
 
@@ -278,6 +313,16 @@ describe("a page", () => {
     expect(owner.getAttribute("href")).toBe(`${base}/p/person/guneet`)
   })
 
+  it("names its ID in About this page when it isn't the file's name", async () => {
+    renderApp(musashiPath, api({ ...musashi, path: "machine/Musashi.md" }))
+    const about = (
+      await screen.findByRole("heading", { name: "About this page" })
+    ).closest("div")!
+    expect(about.textContent).toContain(
+      "Filemachine/Musashi.mdIDmachine/musashi",
+    )
+  })
+
   it("leaves out when it last changed while the repository can't be read", async () => {
     renderApp(musashiPath, api(musashi, { catalogHistory: unavailable }))
     const footer = (
@@ -302,6 +347,36 @@ describe("a page", () => {
     expect(
       within(notice).getByRole("link", { name: "machine/musashi-2" }),
     ).toBeTruthy()
+  })
+
+  it("says when its summary has hidden characters too", async () => {
+    renderApp(musashiPath, api({ ...musashi, summary: "Runs \u202Egnp.exe" }))
+    expect(
+      await screen.findByText(
+        "This page's title or summary has hidden characters, shown as ⟨U+…⟩: they can make text read as something else.",
+      ),
+    ).toBeTruthy()
+  })
+
+  it("lets the keyboard scroll a code block", async () => {
+    renderApp(
+      musashiPath,
+      api({
+        ...musashi,
+        body: [
+          {
+            heading: null,
+            level: 0,
+            anchor: null,
+            text: "```\nsudo systemctl restart docker\n```\n",
+          },
+        ],
+      }),
+    )
+    const code = (
+      await screen.findByText("sudo systemctl restart docker")
+    ).closest("pre")!
+    expect(code.tabIndex).toBe(0)
   })
 
   it("explains hidden characters in its title once, under it", async () => {
@@ -504,7 +579,10 @@ describe("a type schema's page", () => {
     expect(
       screen.getByRole("heading", { name: "About this page" }).closest("div")!
         .textContent,
-    ).toBe("About this pageFileschema/domain.mdIDschema/domainStatusactive")
+    ).toBe("About this pageFileschema/domain.mdStatusactive")
+    expect(screen.getByText(/Describes the pages in the/).textContent).toBe(
+      "Describes the pages in the domain folder.",
+    )
   })
 })
 

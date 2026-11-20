@@ -195,8 +195,10 @@ export interface CatalogDocumentAnswer extends CatalogAnswer {
 /** One change of a page: a commit of `main` that changed its file. */
 export interface CatalogChange {
   commit: string
-  /** The commit message as written; its start if long. */
-  message: string
+  /** The commit message's first line (its start, if very long). */
+  subject: string
+  /** The start of the rest of the message, about 1,000 characters at most. */
+  body: string
   /** When it was committed (ISO 8601), as the commit says. */
   time: string | null
   merge: boolean
@@ -208,7 +210,10 @@ export interface CatalogHistoryAnswer extends CatalogAnswer {
   path: string
   title: string | null
   changes: CatalogChange[]
-  /** The cursor for older changes, or null at the first change. */
+  /**
+   * The cursor for older changes, or null at the first change: opaque,
+   * signed by Shinan for this page.
+   */
   next_after: string | null
 }
 

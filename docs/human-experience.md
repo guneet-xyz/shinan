@@ -894,7 +894,8 @@ order:
 2. **The title, then the summary as one line.** If the title has hidden
    characters, one line under it says so ("This title has hidden
    characters, shown as ⟨U+…⟩: they can make text read as something
-   else."). An old ID opens the current page, which says "You followed an
+   else."), or "This page's title or summary has…" when the summary has
+   them. An old ID opens the current page, which says "You followed an
    old address".
 3. **One sentence for each disagreement** not accepted, in a notice: "Two
    checks disagree about disk data size: 128 GiB and 64 GB (both seen 5
@@ -906,8 +907,10 @@ order:
    "74 GiB · checked 40 days ago · due for a recheck". The state shows only
    when it isn't "seen": "should be 128 GiB", "planned 128 GiB", "unknown:
    reachability not tested". A key with several values lists each with its
-   own age. A key whose values disagree says only "disagree": the sentence
-   at the top has the values. Relations are links to the other page by
+   own age. A key whose values disagree says "disagree · show both checks":
+   the sentence at the top has the values, and the button opens each value
+   with its age and its check ("128 GiB · seen 6 days ago", then when, by
+   whom, what was checked and the source). Relations are links to the other page by
    title; a `secrets-in` fact reads "kept in Vault as musashi/ssh", never a
    value. **The check is one tap away, on the age**: when, by whom (the
    check's `by`, with "via" in words: "guneet, through opencode-daedalus"),
@@ -919,26 +922,33 @@ order:
    ([security checklist 10.3](security-checklist.md#10-features-not-built-yet)).
 6. **Related pages:** pages that link to this one, by title, under plain
    headings (the relation's inverse name, such as "Services", else "Linked
-   from"), and "Policies and runbooks that apply". Each page shows once
-   under a heading. The page's own relations are among its facts.
+   from"), and "Policies and runbooks that apply". Each page shows once,
+   under the first heading it belongs to. The page's own relations are among its facts.
 7. **The footer:** "Last changed 2 hours ago · History · View source", then
-   a quiet "About this page" line: its file, ID, old IDs, owner and status
-   (and a decision's state). Who changed it comes from the push log
+   a quiet "About this page" line: its file, its ID only when it isn't the
+   file's name without `.md` (until push checks enforce that, GC-3), old
+   IDs, owner and status (and a decision's state). Who changed it comes from the push log
    (GC-3a): a commit's author isn't trusted
    ([D-061](decisions/D-061-push-authentication-and-push-log.md)), so until
    then no name is shown. When the repository can't be read, "Last changed"
    is left out.
 
 - **Type schema pages** (`schema/<type>`) are pages like any other: title,
-  summary, body and footer. M2's type pages and type indexes are gone
+  summary, body and footer, with a muted line under the summary:
+  "Describes the pages in the `domain` folder." M2's type pages and type indexes are gone
   (D-064: not by types); `…/catalog/types/<type>` leads to
   `…/catalog/p/schema/<type>`.
 - **History** (`…/catalog/history/<ID>`) lists the changes of the page's
   file on `main`, newest first, under "Today", "Yesterday" or the date.
-  Each is the change's message (hidden characters marked), when, and the
-  short commit ID in muted text, so a person can tell an agent "revert
-  abc1234". "Show older changes" reads the next 50 from the last one shown
-  (by commit, not by a count to skip).
+  Each is the change's message, its first line as the headline and the
+  start of the rest under it (about 1,000 characters at most; hidden
+  characters marked), when, and the short commit ID in muted text, so a
+  person can tell an agent "revert abc1234". "Show older changes" reads the
+  next 50 from the last one shown (by a cursor naming that commit, signed by
+  Shinan, not by a count to skip). A cursor Shinan didn't give out for the
+  page is refused, so History never shows a commit off the index's `main`.
+- **Code blocks** in a body scroll sideways when a line is long, by
+  keyboard too.
 - **View source** (`…/catalog/source/<ID>`) shows the file as it is, with
   hidden characters marked and long lines wrapped, and a Copy button that
   copies it exactly.

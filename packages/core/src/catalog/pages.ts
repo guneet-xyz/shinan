@@ -1,3 +1,5 @@
+import { createHmac, timingSafeEqual } from "node:crypto"
+
 import { and, asc, eq, schema } from "@shinan/db"
 
 import { inWorkspace, snapshotRead } from "../authorize.js"
@@ -109,6 +111,8 @@ async function locate(
   id: string | null,
 ): Promise<{
   answer: CatalogAnswer
+  /** The workspace's ID as stored (lower case), for the Git container. */
+  workspaceId: string
   path: string | null
   title: string | null
 }> {
@@ -118,7 +122,8 @@ async function locate(
     "catalog.read",
     async (scope) => {
       const answer = await answerFor(scope.tx, scope.workspaceId)
-      if (id === null) return { answer, path: null, title: null }
+      const found = { answer, workspaceId: scope.workspaceId }
+      if (id === null) return { ...found, path: null, title: null }
       const [row] = await scope.tx
         .select({ path: documents.path, title: documents.title })
         .from(documents)
@@ -131,7 +136,7 @@ async function locate(
         .orderBy(asc(documents.path))
         .limit(1)
       if (!row) throw new NotFoundError()
-      return { answer, path: row.path, title: row.title }
+      return { ...found, path: row.path, title: row.title }
     },
     snapshotRead,
   )
@@ -169,8 +174,10 @@ async function fromGit<T>(read: () => Promise<T>): Promise<T> {
 /** One change of a page's history: a commit of `main` that changed it. */
 export interface CatalogChangeJson {
   commit: string
-  /** The commit message, hidden characters as they are; its start if long. */
-  message: string
+  /** The commit message's first line, cut at `changeSubjectLimit`. */
+  subject: string
+  /** The start of the rest of the message, cut at `changeBodyLimit`. */
+  body: string
   /** When it was committed (ISO 8601), as the commit says. */
   time: string | null
   /** Whether it merged other changes (it has more than one parent). */
@@ -192,14 +199,30 @@ export interface CatalogHistoryAnswer extends CatalogAnswer {
 
 /** The most changes one page of history holds. */
 export const historyPageLimit = 50
+/** The most characters of a change's first line a history answer holds. */
+export const changeSubjectLimit = 500
+/** The most characters of the rest of a change's message it holds. */
+export const changeBodyLimit = 1000
 
-const objectId = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/
+/** Text cut to `limit` characters (not inside a pair), with "…" if cut. */
+function cut(text: string, limit: number): string {
+  if (text.length <= limit) return text
+  let end = limit
+  const code = text.charCodeAt(end - 1)
+  if (code >= 0xd800 && code <= 0xdbff) end--
+  return `${text.slice(0, end).trimEnd()}…`
+}
 
 function changeJson(commit: CommitInfo): CatalogChangeJson {
   const time = commit.committer?.time ?? commit.author?.time
+  const message = commit.message.replace(/\r\n?/g, "\n").trim()
+  const newline = message.indexOf("\n")
+  const subject = newline < 0 ? message : message.slice(0, newline)
+  const body = newline < 0 ? "" : message.slice(newline + 1).trim()
   return {
     commit: commit.oid,
-    message: commit.message,
+    subject: cut(subject, changeSubjectLimit),
+    body: cut(body, changeBodyLimit),
     time: time === undefined ? null : new Date(time * 1000).toISOString(),
     merge: commit.parents.length > 1,
     pushed_by: null,
@@ -207,19 +230,61 @@ function changeJson(commit: CommitInfo): CatalogChangeJson {
 }
 
 /**
+ * The cursors of a page's history: the last commit of a page, signed by
+ * `web` for that workspace and file, so a cursor can only be one Shinan
+ * gave out from the index's `main` (review of #192). A commit ID of the
+ * browser's choosing could otherwise start the history on another branch,
+ * whose content the browser never shows (plan §2.8).
+ */
+export interface HistoryCursors {
+  issue(input: { workspaceId: string; path: string; commit: string }): string
+  /** The commit a cursor names, or null if Shinan didn't issue it so. */
+  read(
+    cursor: string,
+    input: { workspaceId: string; path: string },
+  ): string | null
+}
+
+const objectId = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/
+
+/** History cursors signed with `key` (HMAC-SHA-256). */
+export function historyCursors(key: string | Uint8Array): HistoryCursors {
+  const sign = (workspaceId: string, path: string, commit: string) =>
+    createHmac("sha256", key)
+      .update(`shinan history cursor\n${workspaceId}\n${path}\n${commit}`)
+      .digest("base64url")
+  return {
+    issue: ({ workspaceId, path, commit }) =>
+      `${commit}.${sign(workspaceId, path, commit)}`,
+    read(cursor, { workspaceId, path }) {
+      const [commit, signature, ...rest] = cursor.split(".")
+      if (rest.length > 0 || !commit || !signature || !objectId.test(commit))
+        return null
+      const expected = Buffer.from(sign(workspaceId, path, commit))
+      const given = Buffer.from(signature)
+      return given.length === expected.length &&
+        timingSafeEqual(given, expected)
+        ? commit
+        : null
+    },
+  }
+}
+
+/**
  * A page's history (Git-based catalog plan §3): the commits of `main` that
  * changed its file, newest first, from the commit the index is at. Paged by
- * commit (`after`, the last commit of the page before), not by a count to
+ * a cursor naming the last commit of the page before, not by a count to
  * skip, which on a long history gets slower with every page (review of
- * GC-1b). Any commit of the workspace's repository may be a cursor: every
- * object in it is the members' to read, since a purge builds a fresh
- * repository (plan §2.9).
+ * GC-1b). Shinan signs its cursors (`historyCursors`), so a page of
+ * history only ever starts on a commit it listed from the index's `main`.
+ * Each change carries its message's first line and the start of the rest.
  */
 export async function getCatalogPageHistory(
   ctx: Context,
   git: GitClient | undefined,
   workspaceId: string,
   input: { id: string; after?: string; limit?: number },
+  cursors: HistoryCursors,
 ): Promise<CatalogHistoryAnswer> {
   const id = idText(input.id, "id")
   const limit = input.limit ?? historyPageLimit
@@ -228,33 +293,53 @@ export async function getCatalogPageHistory(
       "limit",
       `A page of history holds 1 to ${historyPageLimit} changes`,
     )
-  if (input.after !== undefined && !objectId.test(input.after))
-    throw new InvalidInputError("after", "after is a full commit ID")
-  const { answer, path, title } = await locate(ctx, workspaceId, id)
-  const empty = { ...answer, path: path!, title, changes: [], next_after: null }
+  if (input.after !== undefined && input.after.length > 200)
+    throw new InvalidInputError("after", staleCursor)
+  const located = await locate(ctx, workspaceId, id)
+  const { answer, title } = located
+  const path = located.path!
+  let after: string | undefined
+  if (input.after !== undefined) {
+    after =
+      cursors.read(input.after, { workspaceId: located.workspaceId, path }) ??
+      undefined
+    if (after === undefined) throw new InvalidInputError("after", staleCursor)
+  }
+  const empty = { ...answer, path, title, changes: [], next_after: null }
   if (answer.catalog_commit === null) return empty
   const client = requireGit(git)
   // One more than asked, to know whether there are older ones; and the
   // cursor itself, which the history from it starts with.
-  const extra = input.after === undefined ? 1 : 2
+  const extra = after === undefined ? 1 : 2
   const { commits } = await fromGit(() =>
-    client.history(workspaceId, {
-      commit: input.after ?? answer.catalog_commit!,
-      path: path!,
+    client.history(located.workspaceId, {
+      commit: after ?? answer.catalog_commit!,
+      path,
       limit: limit + extra,
     }),
   )
   const older =
-    input.after !== undefined && commits[0]?.oid === input.after
+    after !== undefined && commits[0]?.oid === after
       ? commits.slice(1)
       : commits.slice(0, limit + 1)
   const page = older.slice(0, limit)
   return {
     ...empty,
     changes: page.map(changeJson),
-    next_after: older.length > limit ? page[page.length - 1]!.oid : null,
+    next_after:
+      older.length > limit
+        ? cursors.issue({
+            workspaceId: located.workspaceId,
+            path,
+            commit: page[page.length - 1]!.oid,
+          })
+        : null,
   }
 }
+
+/** Why a cursor was refused: it isn't one Shinan gave out for this page. */
+const staleCursor =
+  "That list of changes is out of date: open History again to see older changes"
 
 /** A file's text, or why it can't be shown. */
 export interface CatalogSourceJson {
@@ -288,11 +373,12 @@ export async function getCatalogPageSource(
   CatalogAnswer & { source: CatalogSourceJson; title: string | null }
 > {
   const id = idText(input.id, "id")
-  const { answer, path, title } = await locate(ctx, workspaceId, id)
+  const located = await locate(ctx, workspaceId, id)
+  const { answer, path, title } = located
   if (answer.catalog_commit === null) throw new NotFoundError()
   const client = requireGit(git)
   const read = await fromGit(() =>
-    client.readDocuments(workspaceId, {
+    client.readDocuments(located.workspaceId, {
       commit: answer.catalog_commit!,
       paths: [path!],
     }),
@@ -311,11 +397,12 @@ export async function getCatalogReadme(
   git: GitClient | undefined,
   workspaceId: string,
 ): Promise<CatalogAnswer & { readme: CatalogSourceJson | null }> {
-  const { answer } = await locate(ctx, workspaceId, null)
+  const located = await locate(ctx, workspaceId, null)
+  const { answer } = located
   if (answer.catalog_commit === null) return { ...answer, readme: null }
   const client = requireGit(git)
   const read = await fromGit(() =>
-    client.readDocuments(workspaceId, {
+    client.readDocuments(located.workspaceId, {
       commit: answer.catalog_commit!,
       paths: ["README.md"],
     }),

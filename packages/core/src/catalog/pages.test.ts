@@ -17,6 +17,7 @@ import {
   getCatalogPageHistory,
   getCatalogPageSource,
   getCatalogReadme,
+  historyCursors,
 } from "./pages.js"
 
 const { db, pool } = testDatabase()
@@ -110,46 +111,51 @@ describe("documents as pages", () => {
 })
 
 describe("a page's history", () => {
-  it("lists the changes of its file, newest first, by commit cursor", async () => {
-    const first = await getCatalogPageHistory(
-      asPerson(db, owner),
+  const cursors = historyCursors("test key")
+  const history = (
+    input: { after?: string; limit?: number; id?: string },
+    who = owner,
+    workspace = workspaceId,
+  ) =>
+    getCatalogPageHistory(
+      asPerson(db, who),
       git,
-      workspaceId,
-      { id: "machine/musashi", limit: 2 },
+      workspace,
+      { id: "machine/musashi", ...input },
+      cursors,
     )
+
+  it("lists the changes of its file, newest first, by signed cursor", async () => {
+    const first = await history({ limit: 2 })
     expect(first).toMatchObject({
       catalog_commit: indexed,
       path: "machine/musashi.md",
       title: "Musashi",
     })
-    expect(first.changes.map((c) => c.message)).toEqual([
+    expect(first.changes.map((c) => c.subject)).toEqual([
       "Recheck Musashi, 4",
       "Recheck Musashi, 3",
     ])
     expect(first.changes[0]).toMatchObject({
       commit: musashiChanges[4],
+      body: "",
       merge: false,
       pushed_by: null,
     })
     expect(first.changes[0]!.time).toMatch(/^\d{4}-\d\d-\d\dT/)
-    expect(first.next_after).toBe(musashiChanges[3])
+    expect(
+      cursors.read(first.next_after!, {
+        workspaceId,
+        path: "machine/musashi.md",
+      }),
+    ).toBe(musashiChanges[3])
 
-    const second = await getCatalogPageHistory(
-      asPerson(db, owner),
-      git,
-      workspaceId,
-      { id: "machine/musashi", limit: 2, after: first.next_after! },
-    )
-    expect(second.changes.map((c) => c.message)).toEqual([
+    const second = await history({ limit: 2, after: first.next_after! })
+    expect(second.changes.map((c) => c.subject)).toEqual([
       "Recheck Musashi, 2",
       "Recheck Musashi, 1",
     ])
-    const last = await getCatalogPageHistory(
-      asPerson(db, owner),
-      git,
-      workspaceId,
-      { id: "machine/musashi", limit: 2, after: second.next_after! },
-    )
+    const last = await history({ limit: 2, after: second.next_after! })
     expect(last.changes.map((c) => c.commit)).toEqual([musashiChanges[0]])
     expect(last.next_after).toBeNull()
   })
@@ -160,49 +166,102 @@ describe("a page's history", () => {
       { "machine/musashi.md": `${fixtures.musashi}\nNot indexed yet.\n` },
       "Not indexed yet",
     )
-    const history = await getCatalogPageHistory(
-      asPerson(db, owner),
-      git,
-      workspaceId,
-      { id: "machine/musashi", limit: 1 },
+    expect((await history({ limit: 1 })).changes[0]!.subject).toBe(
+      "Recheck Musashi, 4",
     )
-    expect(history.changes[0]!.message).toBe("Recheck Musashi, 4")
     git.setMain(workspaceId, indexed)
   })
 
-  it("refuses a bad cursor or limit, and outsiders", async () => {
-    const read = (input: { after?: string; limit?: number }, who = owner) =>
-      getCatalogPageHistory(asPerson(db, who), git, workspaceId, {
-        id: "machine/musashi",
-        ...input,
-      })
-    await expect(read({ after: "main" })).rejects.toBeInstanceOf(
+  it("starts only from a cursor Shinan gave out for this page, never a branch's commit", async () => {
+    // A commit only on a branch: made, then `main` is back where it was.
+    const branchOnly = git.push(
+      workspaceId,
+      { "machine/musashi.md": `${fixtures.musashi}\nSecret plan.\n` },
+      "Branch only: secret plan to retire Musashi",
+    )
+    git.setMain(workspaceId, indexed)
+    const path = "machine/musashi.md"
+    const refused = [
+      branchOnly,
+      `${branchOnly}.forged`,
+      // Signed, but by another key, or for another page or workspace.
+      historyCursors("other key").issue({
+        workspaceId,
+        path,
+        commit: branchOnly,
+      }),
+      cursors.issue({
+        workspaceId,
+        path: "machine/daedalus.md",
+        commit: branchOnly,
+      }),
+      cursors.issue({
+        workspaceId: "22222222-2222-4222-8222-222222222222",
+        path,
+        commit: branchOnly,
+      }),
+      // A commit of `main` itself, not given out as a cursor.
+      musashiChanges[3]!,
+      "main",
+      "x".repeat(300),
+    ]
+    for (const after of refused)
+      await expect(history({ after }), after).rejects.toBeInstanceOf(
+        InvalidInputError,
+      )
+    const all = await history({})
+    expect(all.changes.map((c) => c.subject)).not.toContain(
+      "Branch only: secret plan to retire Musashi",
+    )
+  })
+
+  it("sends a change's first line and a short start of the rest", async () => {
+    const subject = "s".repeat(800)
+    const body = "b".repeat(5000)
+    git.push(
+      workspaceId,
+      { "machine/musashi.md": `${fixtures.musashi}\nLong message.\n` },
+      `${subject}\r\n\r\n${body}`,
+    )
+    await updateWorkspaceIndex(db, git, workspaceId)
+    const [change] = (await history({ limit: 1 })).changes
+    expect(change!.subject).toBe(`${"s".repeat(500)}…`)
+    expect(change!.body).toBe(`${"b".repeat(1000)}…`)
+    // Musashi's text as the tests below expect it.
+    git.push(workspaceId, {
+      "machine/musashi.md": `${fixtures.musashi}\nRevision 4.\n`,
+    })
+    await updateWorkspaceIndex(db, git, workspaceId)
+  })
+
+  it("takes the workspace ID in any case", async () => {
+    expect(
+      (await history({ limit: 1 }, owner, workspaceId.toUpperCase())).changes,
+    ).toHaveLength(1)
+  })
+
+  it("refuses a bad limit, outsiders and unknown pages", async () => {
+    await expect(history({ limit: 51 })).rejects.toBeInstanceOf(
       InvalidInputError,
     )
-    await expect(read({ limit: 51 })).rejects.toBeInstanceOf(InvalidInputError)
-    await expect(read({ after: "f".repeat(40) })).rejects.toBeInstanceOf(
+    await expect(history({}, stranger)).rejects.toBeInstanceOf(NotFoundError)
+    await expect(history({ id: "machine/nothing" })).rejects.toBeInstanceOf(
       NotFoundError,
     )
-    await expect(read({}, stranger)).rejects.toBeInstanceOf(NotFoundError)
-    await expect(
-      getCatalogPageHistory(asPerson(db, owner), git, workspaceId, {
-        id: "machine/nothing",
-      }),
-    ).rejects.toBeInstanceOf(NotFoundError)
   })
 
   it("is unavailable without the Git container", async () => {
     await expect(
-      getCatalogPageHistory(asPerson(db, owner), undefined, workspaceId, {
-        id: "machine/musashi",
-      }),
+      getCatalogPageHistory(
+        asPerson(db, owner),
+        undefined,
+        workspaceId,
+        { id: "machine/musashi" },
+        cursors,
+      ),
     ).rejects.toBeInstanceOf(UnavailableError)
     git.limits.busy = 1
-    await expect(
-      getCatalogPageHistory(asPerson(db, owner), git, workspaceId, {
-        id: "machine/musashi",
-      }),
-    ).rejects.toBeInstanceOf(UnavailableError)
+    await expect(history({})).rejects.toBeInstanceOf(UnavailableError)
   })
 })
 

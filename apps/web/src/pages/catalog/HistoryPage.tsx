@@ -129,8 +129,8 @@ export function HistoryPage() {
 /** One change: its message's first line, when, and the short commit ID. */
 function ChangeItem(props: { change: CatalogChange }) {
   const { change } = props
-  const [headline = "", ...rest] = change.message.trim().split("\n")
-  const body = rest.join("\n").trim()
+  const headline = change.subject
+  const body = change.body
   return (
     <li className="flex min-w-0 flex-col gap-0.5">
       <p className="font-medium wrap-anywhere">

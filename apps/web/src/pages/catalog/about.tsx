@@ -9,6 +9,14 @@ import type { AboutPart } from "./PageParts"
  * a page with its file, ID, old IDs, owner and status.
  */
 
+/**
+ * The ID, only when it isn't the file's name without `.md` (product review
+ * of #192): until push checks enforce that layout (GC-3), it can differ.
+ */
+function idPart(id: string, path: string): AboutPart[] {
+  return path === `${id}.md` ? [] : [{ label: "ID", value: <Code text={id} /> }]
+}
+
 /** About this page: its file, ID, old IDs, owner and status. */
 export function aboutEntity(
   workspaceId: string,
@@ -16,7 +24,7 @@ export function aboutEntity(
 ): AboutPart[] {
   const parts: AboutPart[] = [
     { label: "File", value: <Code text={entity.path} /> },
-    { label: "ID", value: <Code text={entity.id} /> },
+    ...idPart(entity.id, entity.path),
   ]
   if (entity.aliases.length > 0)
     parts.push({
@@ -44,7 +52,7 @@ export function aboutDocument(
 ): AboutPart[] {
   const parts: AboutPart[] = [
     { label: "File", value: <Code text={document.path} /> },
-    { label: "ID", value: <Code text={document.id} /> },
+    ...idPart(document.id, document.path),
   ]
   if (document.owner && document.owner !== "unknown")
     parts.push({

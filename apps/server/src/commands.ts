@@ -145,6 +145,9 @@ async function runWeb(env: Env): Promise<void> {
       webDistDir: config.webDistDir,
       skills: await loadSkillCatalog(),
       gitClient: gitConfig ? createGitClient(gitConfig) : undefined,
+      // History's cursors last across restarts: signed with the session
+      // secret (with their own label, so they never pass for anything else).
+      historyCursorKey: config.sessionSecret,
     })
     const internal = createInternalApp({
       checkDatabase: () => checkDatabase(pool),

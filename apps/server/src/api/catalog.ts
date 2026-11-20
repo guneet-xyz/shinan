@@ -20,6 +20,7 @@ import {
   previewCatalogPurge,
   purgeCatalogText,
   searchCatalog,
+  throttleAddress,
 } from "@shinan/core"
 import type {
   CatalogList,
@@ -27,9 +28,12 @@ import type {
   Context,
   EntityStatus,
   GitClient,
+  HistoryCursors,
+  RequestInfo,
 } from "@shinan/core"
 
-import { BadRequestError } from "./errors.js"
+import { limitInFlight } from "../in-flight.js"
+import { BadRequestError, errorResponse } from "./errors.js"
 import type { SignedInEnv } from "./sign-in.js"
 
 /**
@@ -41,11 +45,36 @@ import type { SignedInEnv } from "./sign-in.js"
 export function catalogRoutes(
   app: Hono<SignedInEnv>,
   ctx: (c: HonoContext<SignedInEnv>) => Context,
-  git?: GitClient,
+  options: {
+    git?: GitClient
+    /** Signs and checks History's cursors. */
+    cursors: HistoryCursors
+    requestInfo: (c: HonoContext) => RequestInfo
+  },
 ): void {
+  const { git, cursors } = options
   const base = "/workspaces/:workspaceId/catalog"
   const workspaceId = (c: HonoContext<SignedInEnv>) =>
     c.req.param("workspaceId")!
+
+  // What reads the repository shares the Git container with every
+  // workspace's index updates (and agents' pushes): one person, or one
+  // address, holds only a few of its reads at once (review of #192).
+  const byAddress = limitInFlight<SignedInEnv>({
+    max: catalogGitInFlight.perAddress,
+    // An IPv6 address by its /64, as the rate limits count it.
+    key: (c) => throttleAddress(options.requestInfo(c).networkAddress),
+    refuse: tooManyAtOnce,
+  })
+  const byPerson = limitInFlight<SignedInEnv>({
+    max: catalogGitInFlight.perPerson,
+    key: (c) => c.var.person.personId,
+    refuse: tooManyAtOnce,
+  })
+  for (const path of ["/history", "/source", "/readme"]) {
+    app.use(`${base}${path}`, byAddress)
+    app.use(`${base}${path}`, byPerson)
+  }
 
   app.get(`${base}/entity`, async (c) => {
     const answer: Api.CatalogEntityAnswer = await getCatalogEntity(
@@ -76,6 +105,7 @@ export function catalogRoutes(
         after: c.req.query("after"),
         limit: integerQuery(c, "limit"),
       },
+      cursors,
     )
     return c.json(answer)
   })
@@ -265,4 +295,21 @@ function statusQuery(c: HonoContext): {
     ...(status === undefined ? {} : { status: status as EntityStatus }),
     includeRetired: booleanQuery(c, "include_retired"),
   }
+}
+
+/**
+ * How many of the routes that read the repository (History, View source,
+ * the README) one person, and one network address, may have in flight at
+ * once. The Git container reads 4 at a time for the whole installation.
+ */
+export const catalogGitInFlight = { perPerson: 2, perAddress: 4 }
+
+function tooManyAtOnce(c: HonoContext): Response {
+  const response = errorResponse(c, 429, {
+    error: "too-many-requests",
+    message:
+      "Too many requests at once: try again when an earlier one is answered",
+  })
+  response.headers.set("retry-after", "1")
+  return response
 }

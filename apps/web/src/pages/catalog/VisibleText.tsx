@@ -31,15 +31,17 @@ export function TitleText(props: { title: string | null; id: string }) {
 }
 
 /**
- * One line under a title with hidden characters, saying what the markers
- * are (product review of #190).
+ * One line under a page's title when it or its summary has hidden
+ * characters, saying what the markers are (product reviews of #190, #192).
  */
-export function HiddenNote(props: { text: string; what?: string }) {
-  if (!hasHidden(props.text, { oneLine: true })) return null
+export function HiddenNote(props: { title: string; summary?: string | null }) {
+  const inSummary =
+    props.summary != null && hasHidden(props.summary, { oneLine: true })
+  if (!inSummary && !hasHidden(props.title, { oneLine: true })) return null
   return (
     <p className="text-sm text-muted-foreground">
-      This {props.what ?? "title"} has hidden characters, shown as ⟨U+…⟩: they
-      can make text read as something else.
+      {inSummary ? "This page's title or summary" : "This title"} has hidden
+      characters, shown as ⟨U+…⟩: they can make text read as something else.
     </p>
   )
 }

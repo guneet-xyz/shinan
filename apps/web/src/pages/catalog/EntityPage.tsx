@@ -112,11 +112,11 @@ export function EntityPage(props: { workspaceId: string; id: string }) {
 function RelatedPages(props: { workspaceId: string; entity: CatalogEntity }) {
   const { workspaceId, entity } = props
   const groups = new Map<string, ReactNode[]>()
-  // A page shows once under a heading, however many facts link it.
+  // A page shows once, under the first heading it belongs to.
   const seen = new Set<string>()
   const add = (name: string, id: string, node: ReactNode) => {
-    if (seen.has(`${name}\n${id}`)) return
-    seen.add(`${name}\n${id}`)
+    if (seen.has(id)) return
+    seen.add(id)
     const list = groups.get(name)
     if (list) list.push(node)
     else groups.set(name, [node])

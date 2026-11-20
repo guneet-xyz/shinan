@@ -111,7 +111,9 @@ function renderLeaf(token: Token, key: number, context: RenderContext) {
       return (
         <pre
           key={key}
-          className="overflow-x-auto rounded-md bg-muted p-3 font-mono text-xs/5"
+          // A long line scrolls sideways: by keyboard too, once focused.
+          tabIndex={0}
+          className="overflow-x-auto rounded-md bg-muted p-3 font-mono text-xs/5 outline-none focus-visible:ring-3 focus-visible:ring-ring"
         >
           <code>{token.content}</code>
         </pre>

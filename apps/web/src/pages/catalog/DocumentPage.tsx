@@ -8,6 +8,7 @@ import { aboutDocument } from "./about"
 import { EntityPage } from "./EntityPage"
 import { IndexBehind } from "./notices"
 import { PageBody, PageFooter, PageHeading, ProblemsNotice } from "./PageParts"
+import { VisibleText } from "./VisibleText"
 
 /**
  * `…/catalog/p/<ID>`: a type schema document (`schema/<type>`) is a page
@@ -42,6 +43,20 @@ export function DocumentPage(props: { workspaceId: string; id: string }) {
         title={document.title}
         id={document.id}
         summary={document.summary}
+        note={
+          document.kind === "schema" && (
+            <>
+              Describes the pages in the{" "}
+              <code className="font-mono">
+                <VisibleText
+                  text={document.id.slice("schema/".length)}
+                  oneLine
+                />
+              </code>{" "}
+              folder.
+            </>
+          )
+        }
       />
       <IndexBehind behind={answer.behind} />
       <ProblemsNotice problems={document.problems} />

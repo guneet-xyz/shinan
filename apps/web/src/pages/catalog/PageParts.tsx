@@ -30,18 +30,23 @@ export function PageHeading(props: {
   title: string | null
   id: string
   summary: string | null
+  /** A muted line after the summary, such as what a type schema describes. */
+  note?: ReactNode
 }) {
   return (
     <header className="flex min-w-0 flex-col gap-1">
       <h1 className="text-2xl font-semibold tracking-tight wrap-anywhere">
         <TitleText title={props.title} id={props.id} />
       </h1>
-      <HiddenNote text={props.title ?? props.id} />
       {props.summary && (
         <p className="wrap-anywhere text-muted-foreground">
           <VisibleText text={props.summary} oneLine />
         </p>
       )}
+      {props.note && (
+        <p className="text-sm text-muted-foreground">{props.note}</p>
+      )}
+      <HiddenNote title={props.title ?? props.id} summary={props.summary} />
     </header>
   )
 }

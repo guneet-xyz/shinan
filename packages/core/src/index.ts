@@ -221,6 +221,9 @@ export {
   getCatalogPageHistory,
   getCatalogPageSource,
   getCatalogReadme,
+  changeBodyLimit,
+  changeSubjectLimit,
+  historyCursors,
   historyPageLimit,
 } from "./catalog/pages.js"
 export type {
@@ -228,6 +231,7 @@ export type {
   CatalogDocumentJson,
   CatalogHistoryAnswer,
   CatalogSourceJson,
+  HistoryCursors,
 } from "./catalog/pages.js"
 export * from "./catalog/purge/index.js"
 export {

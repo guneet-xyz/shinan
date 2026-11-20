@@ -81,7 +81,11 @@ export function FactsList(props: {
             </dt>
             <dd className="flex min-w-0 flex-col gap-1">
               {disagree.has(key) ? (
-                <span className="text-muted-foreground">disagree</span>
+                <Disagreeing
+                  workspaceId={props.workspaceId}
+                  facts={byKey.get(key)!}
+                  entity={entity}
+                />
               ) : (
                 byKey
                   .get(key)!
@@ -199,6 +203,64 @@ function hasDetails(fact: CatalogFact): boolean {
     fact.task !== undefined ||
     fact.accepted !== undefined ||
     (fact.note !== undefined && fact.state !== "unknown")
+  )
+}
+
+/** "seen 6 days ago", or "checked …" for a fact that isn't observed. */
+function seenText(fact: CatalogFact): string {
+  const age = ageWords(fact)?.age ?? "not checked yet"
+  return fact.state === "observed" ? age.replace(/^checked /, "seen ") : age
+}
+
+/**
+ * A key whose values disagree: "disagree" (the sentence at the top has
+ * the values), and one tap away, each value with the check behind it
+ * (product review of #192).
+ */
+function Disagreeing(props: {
+  workspaceId: string
+  facts: CatalogFact[]
+  entity: CatalogEntity
+}) {
+  const [open, setOpen] = useState(false)
+  const panel = useId()
+  const count = props.facts.length
+  return (
+    <div className="flex flex-col gap-2">
+      <p>
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-controls={panel}
+          onClick={() => setOpen((o) => !o)}
+          className="rounded-sm text-left text-muted-foreground underline decoration-muted-foreground/40 decoration-dotted underline-offset-4 outline-none hover:decoration-current focus-visible:ring-3 focus-visible:ring-ring"
+        >
+          disagree · show {count === 2 ? "both" : `all ${count}`} checks
+        </button>
+      </p>
+      {open && (
+        <ul id={panel} className="flex flex-col gap-3">
+          {props.facts.map((fact) => (
+            <li key={fact.identity} className="flex flex-col gap-1">
+              <p className="min-w-0">
+                <FactValue
+                  workspaceId={props.workspaceId}
+                  fact={fact}
+                  target={props.entity.relations.outgoing.find(
+                    (r) => r.identity === fact.identity,
+                  )}
+                />
+                <span className="text-muted-foreground">
+                  {" · "}
+                  {seenText(fact)}
+                </span>
+              </p>
+              {hasDetails(fact) && <CheckDetails fact={fact} />}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   )
 }
 
