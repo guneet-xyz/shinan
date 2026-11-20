@@ -266,7 +266,7 @@ function PurgeText(props: { onPurged: () => void }) {
           {preview.structure.length > 0 && (
             <div className="flex flex-col gap-1">
               <p className="font-medium">
-                Purging changes how these pages read; repair them afterwards:
+                Purging changes how these pages read:
               </p>
               <ul className="list-disc pl-5">
                 {preview.structure.map((s) => (
@@ -334,9 +334,7 @@ function PurgeText(props: { onPurged: () => void }) {
           </Notice>
           {done.newProblems && done.newProblems.length > 0 && (
             <div className="flex flex-col gap-1 text-sm">
-              <p className="font-medium">
-                These pages now read with problems; repair them:
-              </p>
+              <p className="font-medium">These pages now read with problems:</p>
               <ul className="list-disc pl-5">
                 {done.newProblems.map((page) => (
                   <li key={page.id}>

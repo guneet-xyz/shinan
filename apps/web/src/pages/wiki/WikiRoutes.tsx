@@ -1,19 +1,12 @@
-import { NavLink, Route, Routes, useParams } from "react-router"
+import { NavLink, Route, Routes } from "react-router"
 
 import { cn } from "@/lib/utils"
 
 import { NotFound } from "../NotFound"
 import { useWorkspace } from "../workspace/context"
-import { NewEntity } from "./edit/NewEntity"
-import { RecordCheck } from "./edit/RecordCheck"
-import { StartHereEditor } from "./edit/StartHereEditor"
-import { SuggestChange } from "./edit/SuggestChange"
-import { EditType, NewType } from "./edit/TypeEditor"
 import { EntityPage } from "./EntityPage"
 import { wikiPath } from "./format"
 import { ChangesPage, ListPage, SearchPage, WikiHome } from "./pages"
-import { RepairPage } from "./RepairPage"
-import { ProposalPage, ReviewPage } from "./review/ReviewPage"
 import { StartHerePage } from "./StartHerePage"
 import { TypePage } from "./TypePage"
 
@@ -46,9 +39,6 @@ export default function WikiRoutes() {
         <NavLink to={wikiPath(workspace.id, "/search")} className={tab}>
           Search
         </NavLink>
-        <NavLink to={wikiPath(workspace.id, "/review")} className={tab}>
-          Review
-        </NavLink>
       </nav>
       <Routes>
         <Route index element={<WikiHome />} />
@@ -58,24 +48,8 @@ export default function WikiRoutes() {
         <Route path="types/:type" element={<TypePage />} />
         <Route path="lists/:list" element={<ListPage />} />
         <Route path="e/*" element={<EntityPage />} />
-        <Route path="repair/*" element={<RepairPage />} />
-        <Route path="edit/*" element={<EditPage />} />
-        <Route path="check/*" element={<RecordCheck />} />
-        <Route path="new" element={<NewEntity />} />
-        <Route path="new-type" element={<NewType />} />
-        <Route path="review" element={<ReviewPage />} />
-        <Route path="proposals/:proposalId" element={<ProposalPage />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </div>
   )
-}
-
-/** Suggest a change, for an entity, a type schema document or Start here. */
-function EditPage() {
-  const id = useParams()["*"] ?? ""
-  if (id === "start-here") return <StartHereEditor />
-  const type = /^schema\/([a-z][a-z0-9-]*)$/.exec(id)?.[1]
-  if (type) return <EditType type={type} />
-  return <SuggestChange />
 }

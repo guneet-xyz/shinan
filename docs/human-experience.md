@@ -846,7 +846,8 @@ An entity page shows, in order of importance:
    **Decided** (owner, O-15, [#25]). `deprecated` and `retired` entities say so
    before anything else, with the date and a link to the replacement.
    **Proposed**, following the glossary.
-2. **Pending catalog proposals** for this entity, if any. **Proposed.**
+2. **Pending catalog proposals:** removed with catalog approval
+   ([D-060](decisions/D-060-no-catalog-approval.md); GC-5b).
 3. **Discrepancies**, if any, with both sides' evidence. **Proposed**,
    following [Catalog](catalog.md) section 10, which asks to show them prominently.
 4. **Owning sources.** Links to where the authoritative information lives,
@@ -887,32 +888,25 @@ details of the page as built.
   and mail addresses, entity references and links to a section of the page
   are links ([security checklist 10.3](security-checklist.md#10-features-not-built-yet)).
 - **History** lists the catalog revisions that changed the page (when, who
-  they are credited to, who approved them when they needed approval, and
-  the catalog proposal that applied them). Opening one shows the document's stored text at
+  they are credited to, and who approved them when they needed approval).
+  Opening one shows the document's stored text at
   that revision compared line by line with the current text. Reason: the
   stored text is the source of truth (D-006), so the comparison shows
   exactly what changed, fields and facts included.
-- **Pending catalog proposals** are listed under the header as "Waiting for
-  approval": each proposal's number (linking to it in catalog review), its
-  author, when, the related task and the kind of change, from the entity's
-  `pending_proposals` ([catalog §12.4](catalog.md#124-the-index-format)).
-  The page itself shows the catalog as it is now. Recent changes also say
-  who approved each revision.
+- **Pending catalog proposals:** removed in GC-5b
+  ([D-060](decisions/D-060-no-catalog-approval.md)): the page no longer
+  lists them, and its history no longer links to the catalog proposal that
+  applied a revision, since catalog review is gone. Recent changes still
+  say who approved each M2 revision.
 - **Links** in the body to a type schema document (`schema/<type>`) open
-  the type's page, and links to `start-here` open Start here, which shows
-  the document's own text under its paths, so a link to one of its sections
-  lands on it; the
-  "Waiting for approval" step of a start-here path opens catalog review.
+  the type's page, and links to `start-here` open Start here. Since GC-5b,
+  Start here shows only its paths, not the document's own text (that came
+  from the removed editing route; GC-7 renders `start-here.md` as a page),
+  and a "Waiting for approval" step is shown as plain text, since catalog
+  review is gone.
 - **A page that could not be read in full** lists what could not be read.
-  For a workspace owner it links **Repair this page**; others are told a
-  workspace owner can repair it. **Decided
-  (owner, 2026-11-19, M2-Q17; [#133](https://github.com/guneet-xyz/shinan/issues/133)):** the repair
-  page shows the problems and the page's whole stored text to correct, with
-  an explanation. Saving replaces the whole text at once, as the owner's
-  approval ([catalog §8.3](catalog.md#83-validation)). If it adds a problem,
-  or the page changed meanwhile, nothing is saved and the screen says why.
-  Reason: a fact the parser no longer reads can't be named by any other
-  change.
+  The repair page that let a workspace owner correct its text was removed
+  in GC-5b ([changing the catalog from the browser](#changing-the-catalog-from-the-browser)).
 
 **Secrets.** Secrets never go in the catalog; the catalog records only where a
 secret lives, for example a path in a secrets manager such as Obscuro or
@@ -957,14 +951,14 @@ where a recheck interval is set for its key in the type's schema. **Decided**
   ones. **Decided** that custom entity types are allowed in the first version
   (owner, O-17, [#25]); the index is **proposed**.
 - **Custom types** are defined by type schema documents in the catalog
-  ([Catalog](catalog.md) section 3.9), so they are added and changed with
-  **Suggest a change** on a schema document and reviewed in
-  [catalog review](#reviewing-catalog-changes) like any gated catalog change,
-  not in workspace settings. A **New type** action on the type index starts
-  such a proposal. **Proposed.**
+  ([Catalog](catalog.md) section 3.9), not in workspace settings. The **New
+  type** and **Suggest a change** actions were removed in GC-5b: agents
+  change schema documents like any other
+  ([changing the catalog from the browser](#changing-the-catalog-from-the-browser)).
 - Workspace-wide lists the Catalog document asks for: discrepancies, facts due
-  for recheck, known unknowns, [recent changes](#reviewing-catalog-changes),
-  and catalog proposals waiting for approval. **Proposed.**
+  for recheck, known unknowns and [recent changes](#reviewing-catalog-changes).
+  **Proposed.** The list of catalog proposals waiting for approval was
+  removed with catalog review (GC-5b).
 - Search, and links between pages.
 - A **Start here** link from the catalog's first page.
 - For workspace owners, a link to the [workspace export](#workspace-settings).
@@ -987,14 +981,15 @@ those. Search leaves retired entities out unless asked.
 there is no editing in the browser for now. Agents change the catalog by
 pushing to its Git repository; people ask their agents
 ([Git-based catalog plan §3](build-plan-git-catalog.md#3-the-catalog-ui)).
-M2's "Suggest a change", the editing screens, "Check the change" and the
-repair page are gone; the screens leave the web app in GC-5b.
+M2's "Suggest a change", "Record a check", "New entity", "New type",
+editing Start here, "Check the change" and the repair page are gone: GC-5a
+removed their routes and GC-5b their screens.
 
 ### Reviewing catalog changes
 
 **Removed** (owner, GD-2, [D-060](decisions/D-060-no-catalog-approval.md);
 GC-5): there is no catalog approval, so no review list, comments, bulk
-approval or revert by proposal. `main`'s commit history in the catalog
+approval or revert by proposal (screens removed in GC-5b). `main`'s commit history in the catalog
 UI shows what changed (GC-7); undo is `git revert`.
 
 ## Start here and onboarding
@@ -1012,16 +1007,16 @@ owned by the [Catalog](catalog.md) document; this section is how it is shown.
   and how access to them is arranged (prerequisites, never credentials), the
   key policies (for example deployment approval), how tasks and nudges work
   here, who's who, and how to connect your own agent.
-- Shown as numbered steps, each opening its entity page. Each step shows
-  whether the person has opened it, and whether it changed since they did.
-  **Proposed.** Reason: the catalog keeps changing; a returning person should
-  see what is new without rereading everything.
-- **Decided (owner, 2026-11-19, M2-Q17; M2-7):** "opened" is recorded when a person opens a page, with
-  the catalog revision the page stood at; a step "changed since you opened
-  it" when the page has a later revision. These records are personal, kept
-  in a small table, never catalog content and never events.
-- Changing the path is done with **Suggest a change** on the start-here
-  document, which needs catalog approval. **Decided** (owner, O-18, [#25]).
+- Shown as numbered steps, each opening its entity page. **Proposed.**
+- **Removed (GC-5):** the "opened" and "changed since you opened it"
+  markers (M2-7). GC-5a removed the `opened` routes and the
+  `catalog.mark-opened` permission
+  ([Git-based catalog plan §2.14](build-plan-git-catalog.md#214-permissions-scopes-and-the-security-log));
+  GC-5b removed the markers from the page.
+- Changing the path: **Suggest a change** on the start-here document was
+  removed with catalog approval (GD-7,
+  [D-060](decisions/D-060-no-catalog-approval.md); GC-5b); agents change it
+  in Git like any catalog document.
 - A new member lands on the path after accepting an invitation (see
   [joining a workspace](#joining-a-workspace)).
 
@@ -1034,17 +1029,12 @@ owned by the [Catalog](catalog.md) document; this section is how it is shown.
   every workspace ship with the skill (Agent integrations).
 - Agents receive the path through the MCP server and skill. How is owned by
   [Agent integrations](agent-integrations.md).
-- **Preview as agent** shows exactly what an agent is given, in order, so the
-  owner can check it. **Proposed.** Reason: today the owner can read
-  `agent-entrypoint.md` directly; they must still be able to see what agents
-  are told.
-- The page shows the total size of the agents' path and warns when it grows
-  large. **Proposed.** Reason: every agent session reads all of it.
-  **Decided (owner, 2026-11-19, M2-Q17; M2-7):** the preview is the agents' path exactly as an agent
-  receives it in MCP's `workspace_context`: its steps, notes and the
-  entities they name, with their trust labels, as the compact JSON the same
-  code writes. Its size is that text's size in UTF-8, and the warning shows
-  above 8 KB, about 2,000 words of an agent's context.
+- **Removed (GC-5):** **Preview as agent** and the size of the agents' path
+  with its warning (M2-7). They showed the path as MCP's
+  `workspace_context` gave it, which no longer carries catalog content
+  ([Git-based catalog plan §2.13](build-plan-git-catalog.md#213-mcp-after-this-change));
+  GC-5a removed the preview route and GC-5b the button. The page still
+  lists the agents' path.
 
 ### First run for a new workspace
 
@@ -1182,7 +1172,7 @@ D-049); only workspace owners can purge, and installation operators cannot
 the "turn new issues into tasks" setting (owner, NO-2, [#26]); the
 deployment approval setting ([Tasks and work](tasks.md) section 8.4). Custom entity
 types are not a setting: they are type schema documents in the catalog, changed
-through catalog proposals ([moving around the catalog](#moving-around-the-catalog)).
+like any catalog document ([moving around the catalog](#moving-around-the-catalog)).
 Reason: one screen per thing the workspace owns.
 
 **As built (M2-10, [#91](https://github.com/guneet-xyz/shinan/issues/91)), decided (owner, 2026-11-19, M2-Q17):**
@@ -1199,7 +1189,7 @@ copies in other forms (URL- or percent-encoded, HTML entities, escapes),
 each with **Find this form**, and pages whose structure the purge changes
 (the text in an ID or alias, or across frontmatter lines). Purging takes a
 reason, which must not repeat the text, and typing "purge". Afterwards the
-screen lists pages that now read with problems, to repair, and asks the
+screen lists pages that now read with problems and asks the
 owner to press **Find it** again in a minute, since a change in progress
 can bring the text back. The text stays only in the page's memory and is
 cleared once purged. Below, every member sees the list of purges: who,

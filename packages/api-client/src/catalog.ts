@@ -281,17 +281,6 @@ export interface StartHereAnswer extends CatalogAnswer {
   } | null
 }
 
-/**
- * The agents' path exactly as an agent's \`workspace_context\` gives it,
- * with trust labels, and the compact JSON agents receive.
- */
-export interface AgentStartHerePreviewAnswer extends CatalogAnswer {
-  start_here: Record<string, unknown> | null
-  text: string | null
-  /** The size of \`text\` in bytes of UTF-8. */
-  bytes: number
-}
-
 export interface CatalogHistoryItem {
   revision: number
   at: string
@@ -321,11 +310,4 @@ export interface CatalogDocumentTextAnswer extends CatalogAnswer {
   changed_by: string
   changed_by_kind: ActorKind
   text: string
-}
-
-export interface CatalogPageOpened {
-  id: string
-  revision: number
-  opened_revision: number | null
-  opened_at: string | null
 }

@@ -10,10 +10,9 @@ import type {
   CatalogList,
   CatalogListItem,
   CatalogNotYetRecordedItem,
-  RecentCatalogChange,
 } from "@shinan/api-client"
 
-import { Button, buttonVariants } from "@/components/ui/button"
+import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
 
@@ -26,7 +25,6 @@ import { EntityLink, FactRow, linkClass } from "./facts"
 import { entityPath, wikiPath } from "./format"
 import { sectionElementId } from "./links"
 import { IndexBehind } from "./notices"
-import { RevertAction } from "./review/revert"
 
 /** What each workspace-wide list is, in words (catalog §10). */
 const listNames: Record<CatalogList, { title: string; about: string }> = {
@@ -62,26 +60,6 @@ export function WikiHome() {
         The catalog of {workspace.name}: what exists, how it is set up, and how
         sure we are.
       </PageHeader>
-      <div className="-mt-4 flex flex-wrap gap-2">
-        <Link
-          to={wikiPath(workspace.id, "/new")}
-          className={buttonVariants({ variant: "outline" })}
-        >
-          New entity
-        </Link>
-        <Link
-          to={wikiPath(workspace.id, "/new-type")}
-          className={buttonVariants({ variant: "outline" })}
-        >
-          New type
-        </Link>
-        <Link
-          to={wikiPath(workspace.id, "/review")}
-          className={buttonVariants({ variant: "outline" })}
-        >
-          Catalog review
-        </Link>
-      </div>
       <IndexBehind behind={types.data?.index_behind ?? false} />
       <Section
         title="Start here"
@@ -424,21 +402,14 @@ export function ChangesPage() {
         upTo ??
         (await api.catalogChanges(workspace.id, { limit: 1 })).catalog_revision
       const since = Math.max(0, latest - pageSize)
-      const [answer, applied] = await Promise.all([
-        api.catalogChanges(workspace.id, { since, limit: pageSize }),
-        // The same revisions, from the proposals that made them: whether
-        // each can be reverted, and whether it was.
-        api.recentCatalogChanges(workspace.id, {
-          approval: "any",
-          cursor: latest + 1,
-          limit: pageSize,
-        }),
-      ])
+      const answer = await api.catalogChanges(workspace.id, {
+        since,
+        limit: pageSize,
+      })
       return {
         ...answer,
         since,
         items: answer.items.filter((i) => i.revision <= latest).reverse(),
-        proposals: new Map(applied.items.map((c) => [c.revision, c] as const)),
       }
     },
   )
@@ -457,12 +428,7 @@ export function ChangesPage() {
         <Rows>
           {changes.data.items.map((change) => (
             <li key={change.revision}>
-              <ChangeItem
-                workspaceId={workspace.id}
-                change={change}
-                applied={changes.data!.proposals.get(change.revision)}
-                onReverted={changes.reload}
-              />
+              <ChangeItem workspaceId={workspace.id} change={change} />
             </li>
           ))}
         </Rows>
@@ -480,14 +446,8 @@ export function ChangesPage() {
   )
 }
 
-function ChangeItem(props: {
-  workspaceId: string
-  change: CatalogChange
-  applied: RecentCatalogChange | undefined
-  onReverted: () => void
-}) {
+function ChangeItem(props: { workspaceId: string; change: CatalogChange }) {
   const { change } = props
-  const proposal = props.applied?.proposal
   return (
     <>
       <p className="text-sm">
@@ -496,22 +456,7 @@ function ChangeItem(props: {
           · {formatTime(change.at)} · {change.changed_by}
           {change.approved_by && ` · approved by ${change.approved_by}`}
         </span>
-        {proposal && (
-          <>
-            {" "}
-            ·{" "}
-            <Link
-              to={wikiPath(props.workspaceId, `/proposals/${proposal.id}`)}
-              className={linkClass}
-            >
-              catalog proposal {proposal.number}
-            </Link>
-          </>
-        )}
       </p>
-      {props.applied && (
-        <RevertAction change={props.applied} onReverted={props.onReverted} />
-      )}
       <ul className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
         {change.documents.map((d, i) => (
           <li key={`${d.id ?? "?"}:${i}`}>

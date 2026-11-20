@@ -8,7 +8,6 @@ import type {
 } from "@shinan/api-client"
 
 import { Badge } from "@/components/ui/badge"
-import { buttonVariants } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
 import { isApiError, useApi, useResource } from "../../api"
@@ -18,7 +17,7 @@ import { useWorkspace } from "../workspace/context"
 import { EntityLink, linkClass } from "./facts"
 import { ageText, daysSince, entityPath, wikiPath } from "./format"
 import { Markdown } from "./markdown"
-import { IndexBehind, PageNotice, SavedNotice } from "./notices"
+import { IndexBehind, PageNotice } from "./notices"
 
 type Item = CatalogTypeIndexAnswer["items"][number]
 
@@ -103,31 +102,6 @@ export function TypePage() {
             ? `One of Shinan's eight built-in types.`
             : `Entities of the type ${type}.`)}
       </PageHeader>
-      <SavedNotice workspaceId={workspace.id} />
-      {details && (
-        <div className="-mt-4 flex flex-wrap gap-2">
-          {details.status !== "retired" && (
-            <Link
-              to={`${wikiPath(workspace.id, "/new")}?${new URLSearchParams({ type }).toString()}`}
-              className={buttonVariants({ variant: "outline" })}
-            >
-              New {type}
-            </Link>
-          )}
-          <Link
-            to={
-              details.document
-                ? wikiPath(workspace.id, `/edit/${details.document}`)
-                : `${wikiPath(workspace.id, "/new-type")}?${new URLSearchParams({ type }).toString()}`
-            }
-            className={buttonVariants({ variant: "outline" })}
-          >
-            {details.document
-              ? "Suggest a change to the type"
-              : "Extend this type"}
-          </Link>
-        </div>
-      )}
       {schema.error ? <ErrorMessage error={schema.error} /> : null}
       <IndexBehind behind={index.data?.index_behind ?? false} />
       {details && (

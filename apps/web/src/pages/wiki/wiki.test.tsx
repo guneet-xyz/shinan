@@ -8,14 +8,7 @@ import type {
   CatalogHistoryAnswer,
 } from "@shinan/api-client"
 
-import {
-  currentPath,
-  fakeApi,
-  reauthenticationRequired,
-  renderApp,
-  workspace,
-  workspaceId,
-} from "../../test/render"
+import { currentPath, fakeApi, renderApp, workspaceId } from "../../test/render"
 
 const answer = { catalog_revision: 7, index_behind: false }
 
@@ -239,8 +232,7 @@ function api(entity: CatalogEntity = musashi) {
 
 describe("an entity page", () => {
   it("shows the entity's parts in order of importance", async () => {
-    const fake = api()
-    renderApp(entityPath, fake)
+    renderApp(entityPath, api())
     expect(
       await screen.findByRole("heading", { level: 1, name: "Musashi" }),
     ).toBeTruthy()
@@ -255,13 +247,9 @@ describe("an entity page", () => {
       "Links",
       "History",
     ])
-    // It records that the person opened it, for the start-here markers.
-    await waitFor(() =>
-      expect(fake.markCatalogPageOpened).toHaveBeenCalledWith(
-        workspaceId,
-        "machine/musashi",
-      ),
-    )
+    // Nothing to change it with: agents change the catalog in Git.
+    expect(screen.queryByRole("link", { name: "Suggest a change" })).toBeNull()
+    expect(screen.queryByRole("link", { name: /Record a check/ })).toBeNull()
   })
 
   it("shows discrepancies with both sides, neither as right", async () => {
@@ -392,7 +380,26 @@ describe("an entity page", () => {
     }
   })
 
-  it("lists the proposals waiting on it, under its header", async () => {
+  it("lists what could not be read, with nothing to repair it in the browser", async () => {
+    renderApp(
+      entityPath,
+      api({
+        ...musashi,
+        problems: [
+          { code: "fact-invalid", message: "A fact could not be read." },
+        ],
+      }),
+    )
+    const notice = await screen.findByText(
+      "This page could not be read in full:",
+    )
+    expect(notice.closest("div")!.textContent).toContain(
+      "A fact could not be read.",
+    )
+    expect(screen.queryByRole("link", { name: /Repair/ })).toBeNull()
+  })
+
+  it("no longer shows catalog proposals that waited on it", async () => {
     renderApp(
       entityPath,
       api({
@@ -410,24 +417,10 @@ describe("an entity page", () => {
         ],
       }),
     )
-    const section = (
-      await screen.findByRole("heading", { name: "Waiting for approval" })
-    ).closest("section")!
+    await screen.findByRole("heading", { level: 1, name: "Musashi" })
     expect(
-      within(section)
-        .getByRole("link", { name: "Catalog proposal 9" })
-        .getAttribute("href"),
-    ).toBe(
-      `/w/${workspaceId}/wiki/proposals/66666666-6666-4666-8666-666666666666`,
-    )
-    expect(section.textContent).toContain(
-      "guneet via opencode-daedalus (an agent) · SHN-12",
-    )
-    expect(section.textContent).toContain("Kind of change: lifecycle")
-    // Right after the header, before the rest of the page.
-    expect(
-      screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent)[0],
-    ).toBe("Waiting for approval")
+      screen.queryByRole("heading", { name: "Waiting for approval" }),
+    ).toBeNull()
   })
 
   it("says first when an entity is retired, with its replacement", async () => {
@@ -470,16 +463,9 @@ describe("an entity page", () => {
     ).closest("section")!
     await within(historySection).findByText("Revision 3")
     expect(historySection.textContent).toContain("current")
-    // Who approved it, and the proposal that applied it.
+    // Who approved it, as M2 recorded it.
     expect(historySection.textContent).toContain(
       "guneet via opencode-daedalus · approved by ana",
-    )
-    expect(
-      within(historySection)
-        .getByRole("link", { name: "catalog proposal 4" })
-        .getAttribute("href"),
-    ).toBe(
-      `/w/${workspaceId}/wiki/proposals/55555555-5555-4555-8555-555555555555`,
     )
     await userEvent.click(
       within(historySection).getByRole("link", { name: "Compare with now" }),
@@ -511,19 +497,7 @@ describe("an entity page", () => {
 })
 
 describe("start here", () => {
-  it("numbers the people's steps with opened markers, and previews the agents' path", async () => {
-    // What MCP's workspace_context sends: compact JSON with trust labels.
-    const given = JSON.stringify({
-      path: "agents",
-      steps: [
-        {
-          url: "https://git.guneet.dev/guneet/workspace",
-          note: "Follow it before touching any machine.",
-          label: { author_kind: "member", author: "guneet", instruction: "no" },
-        },
-      ],
-      label: { author_kind: "member", author: "guneet", instruction: "no" },
-    })
+  it("numbers the people's steps and lists the agents' path", async () => {
     const summary = (id: string, title: string) => ({
       id,
       type: id.split("/")[0]!,
@@ -549,17 +523,8 @@ describe("start here", () => {
                       note: "The production host.",
                       entity: summary("machine/musashi", "Musashi"),
                     },
-                    {
-                      to: "project/dockyard",
-                      note: "The registry.",
-                      entity: summary("project/dockyard", "Dockyard"),
-                    },
-                    {
-                      to: "service/vault",
-                      note: "Where secrets live.",
-                      entity: summary("service/vault", "Vault"),
-                    },
                     { list: "discrepancies", note: "What disagrees." },
+                    { list: "recent-changes", note: "What changed." },
                     { list: "waiting-for-approval", note: "Look here." },
                   ]
                 : [
@@ -570,36 +535,6 @@ describe("start here", () => {
                   ],
           },
         }),
-      catalogAgentPreview: () =>
-        Promise.resolve({
-          ...answer,
-          start_here: {},
-          text: given,
-          bytes: 9000,
-        }),
-      catalogPagesOpened: () =>
-        Promise.resolve({
-          items: [
-            {
-              id: "machine/musashi",
-              revision: 7,
-              opened_revision: 7,
-              opened_at: "2026-11-17T10:00:00.000Z",
-            },
-            {
-              id: "project/dockyard",
-              revision: 9,
-              opened_revision: 4,
-              opened_at: "2026-11-10T10:00:00.000Z",
-            },
-            {
-              id: "service/vault",
-              revision: 2,
-              opened_revision: null,
-              opened_at: null,
-            },
-          ],
-        }),
     })
     renderApp(`/w/${workspaceId}/wiki/start-here`, fake)
     const people = (
@@ -607,99 +542,50 @@ describe("start here", () => {
     ).closest("section")!
     const steps = within(people).getAllByRole("listitem")
     expect(steps.map((s) => s.textContent)).toEqual([
-      expect.stringMatching(/^1Musashi.*opened.*The production host\.$/),
-      expect.stringMatching(/^2Dockyard.*changed since you opened it/),
-      expect.stringMatching(/^3Vault.*not opened yet/),
-      expect.stringMatching(/^4Discrepancies.*What disagrees\.$/),
-      expect.stringMatching(/^5Waiting for approval.*Look here\.$/),
+      "1Musashi(machine/musashi)The production host.",
+      "2DiscrepanciesWhat disagrees.",
+      "3Recent changesWhat changed.",
+      "4Waiting for approvalLook here.",
     ])
-    // The waiting-for-approval list is catalog review.
     expect(
       within(people)
-        .getByRole("link", { name: "Waiting for approval" })
+        .getByRole("link", { name: "Discrepancies" })
         .getAttribute("href"),
-    ).toBe(`/w/${workspaceId}/wiki/review`)
+    ).toBe(`/w/${workspaceId}/wiki/lists/discrepancies`)
+    expect(
+      within(people)
+        .getByRole("link", { name: "Recent changes" })
+        .getAttribute("href"),
+    ).toBe(`/w/${workspaceId}/wiki/changes`)
+    // Catalog review is gone, so the list of what waited for it is not a link.
+    expect(
+      within(people).queryByRole("link", { name: "Waiting for approval" }),
+    ).toBeNull()
     const agents = screen
       .getByRole("heading", { name: "For agents" })
       .closest("section")!
-    // The size is the server's measure of exactly that text.
-    expect(agents.textContent).toContain("Its size: 8.8 KB.")
-    expect(agents.textContent).toContain("The agents' path is large (8.8 KB)")
-    await userEvent.click(
-      within(agents).getByRole("button", { name: "Preview as agent" }),
+    expect(agents.textContent).toContain(
+      "Follow it before touching any machine.",
+    )
+    // No editing, and no preview of what MCP gave agents.
+    expect(screen.queryByRole("link", { name: "Suggest a change" })).toBeNull()
+    expect(
+      screen.queryByRole("button", { name: "Preview as agent" }),
+    ).toBeNull()
+  })
+
+  it("says when there is no start-here document", async () => {
+    renderApp(
+      `/w/${workspaceId}/wiki/start-here`,
+      fakeApi({
+        catalogStartHere: () =>
+          Promise.resolve({ ...answer, start_here: null }),
+      }),
     )
     expect(
-      within(agents).getByLabelText("What an agent is given").textContent,
-    ).toBe(given)
-  })
-})
-
-describe("Start here's own text", () => {
-  it("is shown with its sections, and a link to one lands on it", async () => {
-    const scrolled: string[] = []
-    const original = Object.getOwnPropertyDescriptor(
-      Element.prototype,
-      "scrollIntoView",
-    )
-    Element.prototype.scrollIntoView = function (this: Element) {
-      scrolled.push(this.id)
-    }
-    try {
-      renderApp(
-        `/w/${workspaceId}/wiki/start-here#section-access`,
-        fakeApi({
-          catalogStartHere: (_w, path) =>
-            Promise.resolve({
-              ...answer,
-              start_here: {
-                path,
-                title: "Start here",
-                summary: null,
-                revision: 2,
-                steps: [],
-              },
-            }),
-          catalogAgentPreview: () =>
-            Promise.resolve({
-              ...answer,
-              start_here: {},
-              text: "{}",
-              bytes: 2,
-            }),
-          catalogEditable: () =>
-            Promise.resolve({
-              ...answer,
-              id: "start-here",
-              revision: 2,
-              document: {
-                kind: "start-here",
-                fields: { title: "Start here", summary: null, owner: null },
-                body: {
-                  text: "# Access\n\nAsk the owner for SSH access.\n",
-                  sections: [
-                    {
-                      anchor: "access",
-                      heading: "Access",
-                      level: 1,
-                      text: "# Access\n\nAsk the owner for SSH access.\n",
-                    },
-                  ],
-                },
-                paths: { people: [], agents: [] },
-              },
-            }),
-        }),
-      )
-      const about = (
-        await screen.findByRole("heading", { name: "About these paths" })
-      ).closest("section")!
-      expect(about.querySelector("#section-access")?.textContent).toBe("Access")
-      await waitFor(() => expect(scrolled).toEqual(["section-access"]))
-    } finally {
-      if (original)
-        Object.defineProperty(Element.prototype, "scrollIntoView", original)
-      else delete (Element.prototype as Partial<Element>).scrollIntoView
-    }
+      await screen.findByText(/This workspace has no start-here document yet/),
+    ).toBeTruthy()
+    expect(screen.queryByRole("link", { name: "Write Start here" })).toBeNull()
   })
 })
 
@@ -961,160 +847,30 @@ describe("moving around the wiki", () => {
   })
 })
 
-describe("repairing a page", () => {
-  const broken: CatalogEntity = {
-    ...musashi,
-    problems: [
-      {
-        code: "fact-invalid",
-        message:
-          '"by" cannot name an attribute: it is a field of a fact check, which says who checked the facts in its group, and when',
-      },
-    ],
-  }
-  const stored = `---\nid: machine/musashi\ntype: machine\nfacts:\n  - observed:\n      contact: { to: person/guneet, by: someone }\n---\n`
-  const repairPath = `/w/${workspaceId}/wiki/repair/machine/musashi`
-  const repairApi = (extra: Parameters<typeof fakeApi>[0] = {}) =>
-    fakeApi({
-      catalogEntity: () => Promise.resolve({ ...answer, entity: broken }),
-      catalogHistory: () => Promise.resolve(history),
-      catalogText: () =>
-        Promise.resolve({
-          ...answer,
-          id: "machine/musashi",
-          kind: "entity",
-          revision: 7,
-          at: "2026-11-16T10:00:00.000Z",
-          changed_by: "guneet",
-          changed_by_kind: "person",
-          text: stored,
-        }),
-      ...extra,
-    })
-
-  it("is offered to workspace owners on a page that reads with problems", async () => {
-    renderApp(entityPath, repairApi())
-    const link = await screen.findByRole("link", { name: "Repair this page" })
-    expect(link.getAttribute("href")).toBe(repairPath)
-  })
-
-  it("is not offered to contributors", async () => {
-    renderApp(
-      entityPath,
-      repairApi({
-        workspace: () => Promise.resolve({ ...workspace, role: "contributor" }),
-      }),
-    )
+describe("the removed M2 screens", () => {
+  it.each([
+    "wiki/review",
+    "wiki/proposals/66666666-6666-4666-8666-666666666666",
+    "wiki/edit/machine/musashi",
+    "wiki/edit/start-here",
+    "wiki/check/machine/musashi",
+    "wiki/new",
+    "wiki/new-type",
+    "wiki/repair/machine/musashi",
+    "settings/catalog",
+  ])("/w/…/%s is not found", async (path) => {
+    renderApp(`/w/${workspaceId}/${path}`, fakeApi())
     expect(
-      await screen.findByText(/A workspace owner can repair it/),
-    ).toBeTruthy()
-    expect(screen.queryByRole("link", { name: "Repair this page" })).toBeNull()
-  })
-
-  it("saves the corrected whole text against the revision it read", async () => {
-    const fake = repairApi({
-      repairCatalogDocument: () =>
-        Promise.resolve({
-          outcome: "applied" as const,
-          proposal: {
-            id: "p1",
-            number: 4,
-            state: "applied" as const,
-            createdAt: "2026-11-18T10:00:00.000Z",
-            author: {
-              kind: "person" as const,
-              label: "guneet",
-              personId: null,
-              agentId: null,
-            },
-            explanation: "Drop the unreadable contact fact.",
-            relatedTask: null,
-            operations: [],
-            basedOnRevision: 7,
-            approvalClasses: ["body-and-bookkeeping"],
-            approvalReasons: [],
-            warnings: [],
-            touches: ["machine/musashi"],
-            appliedRevision: 8,
-            decidedAt: "2026-11-18T10:00:00.000Z",
-            decidedBy: "guneet",
-            rejectionReason: null,
-            revertsProposalId: null,
-          },
-        }),
-    })
-    renderApp(repairPath, fake)
-    const text = await screen.findByLabelText("The page's whole text")
-    expect(screen.getByText(/cannot name an attribute/)).toBeTruthy()
-    expect(
-      screen.getByText(/a fact check that names you says you checked/),
-    ).toBeTruthy()
-    const save = screen.getByRole("button", { name: "Save the repair" })
-    expect((save as HTMLButtonElement).disabled).toBe(true)
-    await userEvent.clear(text)
-    await userEvent.type(text, "---{enter}id: machine/musashi{enter}---{enter}")
-    await userEvent.type(
-      screen.getByLabelText("Why (explanation)"),
-      "Drop the unreadable contact fact.",
-    )
-    await userEvent.click(save)
-    expect(fake.repairCatalogDocument).toHaveBeenCalledWith(workspaceId, {
-      id: "machine/musashi",
-      revision: 7,
-      text: "---\nid: machine/musashi\n---\n",
-      explanation: "Drop the unreadable contact fact.",
-    })
-    expect(await screen.findByText(/Repaired as revision 8/)).toBeTruthy()
-  })
-
-  it("shows why a repair was refused, and asks to sign in again", async () => {
-    const fake = repairApi({
-      repairCatalogDocument: () =>
-        Promise.resolve({
-          outcome: "blocked" as const,
-          problems: [
-            {
-              code: "reference-unresolved",
-              severity: "blocking" as const,
-              message: '`owner` names "person/nobody", which is not an entity',
-              documentId: "machine/musashi",
-            },
-          ],
-        }),
-    })
-    renderApp(repairPath, fake)
-    await userEvent.type(
-      await screen.findByLabelText("The page's whole text"),
-      "x",
-    )
-    await userEvent.type(screen.getByLabelText("Why (explanation)"), "Fix.")
-    await userEvent.click(
-      screen.getByRole("button", { name: "Save the repair" }),
-    )
-    expect((await screen.findByRole("alert")).textContent).toContain(
-      "person/nobody",
-    )
-
-    fake.repairCatalogDocument.mockImplementation(() =>
-      Promise.reject(reauthenticationRequired()),
-    )
-    await userEvent.click(
-      screen.getByRole("button", { name: "Save the repair" }),
-    )
-    expect(
-      await screen.findByRole("heading", { name: "Sign in again to continue" }),
+      await screen.findByRole("heading", { level: 1, name: "Not found" }),
     ).toBeTruthy()
   })
 
-  it("is for workspace owners only", async () => {
-    renderApp(
-      repairPath,
-      repairApi({
-        workspace: () => Promise.resolve({ ...workspace, role: "contributor" }),
-      }),
-    )
+  it("leaves the wiki home with no editing or review", async () => {
+    renderApp(`/w/${workspaceId}/wiki`, fakeApi())
     expect(
-      await screen.findByText("Only workspace owners repair pages."),
+      await screen.findByRole("heading", { level: 1, name: "Wiki" }),
     ).toBeTruthy()
+    for (const name of ["New entity", "New type", "Catalog review", "Review"])
+      expect(screen.queryByRole("link", { name })).toBeNull()
   })
 })
