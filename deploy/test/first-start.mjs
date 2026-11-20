@@ -956,7 +956,7 @@ async function run() {
     readOnlyCloned.code === 0 &&
       readOnlyPush.code !== 0 &&
       readOnlyPush.stderr.includes(
-        "remote: This agent's token is read-only: it can fetch but not push.",
+        "remote: Shinan: this agent's token is read-only, so it can't push.",
       ),
     "a read-only token clones, and its push is refused with 403",
   )
@@ -970,7 +970,9 @@ async function run() {
     anonymous.code !== 0 &&
       anonymous.stderr.includes("could not read Username") &&
       unknown.code !== 0 &&
-      unknown.stderr.includes("not found"),
+      unknown.stderr.includes(
+        "remote: Shinan: no catalog here for this agent's token.",
+      ),
     "without a token Git is asked for credentials; an unknown workspace is not found",
   )
   check(

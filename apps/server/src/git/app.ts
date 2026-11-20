@@ -197,6 +197,8 @@ export function createGitApp(options: {
   gitProcesses?: GitProcessLimits
   /** How long one Git process may run, in seconds; default `gitProcessSeconds`. */
   gitProcessSeconds?: number
+  /** How long a client may take none of an answer, in seconds; default `answerStallSeconds`. */
+  answerStallSeconds?: number
 }) {
   const log = options.log ?? createLimitedLog()
   const authorized = serviceTokenCheck(options.serviceToken)
@@ -422,6 +424,7 @@ export function createGitApp(options: {
       log,
       processes: options.gitProcesses,
       processSeconds: options.gitProcessSeconds,
+      answerStallSeconds: options.answerStallSeconds,
     }),
   )
 

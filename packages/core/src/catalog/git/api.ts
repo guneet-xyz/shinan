@@ -78,6 +78,11 @@ export const maxFetchBodyBytes = 4 * 1024 * 1024
  * Musashi has two cores, and `pack-objects` uses one each.
  */
 export const maxGitProcesses = 4
+/**
+ * How many of them one agent may hold or wait for at once: a single token,
+ * even a read-only one, cannot take them all (review of GC-2).
+ */
+export const maxGitProcessesPerAgent = 2
 /** How many more requests wait for a Git process, at most `gitProcessWaitSeconds`. */
 export const maxQueuedGitProcesses = 16
 /**

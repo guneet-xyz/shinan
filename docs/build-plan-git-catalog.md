@@ -693,7 +693,11 @@ Git process cap has a queue of 16 requests, each waiting at most 10 seconds
 `Retry-After: 10`; `web`'s listener allows a push's 120 seconds and the app
 keeps every other request to 30; the push rate counts each
 `POST git-receive-pack` by its agent; and the in-flight places are held
-until the answer has been sent.
+until the answer has been sent. After the code review of GC-2: one agent
+holds or waits for at most 2 of the 4 Git processes; a request's whole body
+arrives before Git starts (a fetch's in memory, a push's in a file on the
+volume, counted after inflating gzip); and a client that takes none of an
+answer for 30 seconds has its Git ended.
 
 ### 2.11 Backups and recovery
 

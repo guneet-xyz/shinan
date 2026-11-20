@@ -1276,7 +1276,9 @@ whether the token may push, the workspace's member handles; the allowed
 `Content-Length`, `Content-Encoding` and `Git-Protocol` from the agent's
 request: never its `Authorization` header or cookies. The body streams as
 it arrives, counted against its limit; past it, the Git container's request
-is ended and the agent gets `413`. The Git container's answer is given once
+is ended and the agent gets `413`. A proxy in front must pass bodies on as
+they come, or a declared oversize push is answered only once sent (the
+operator guide's `proxy_request_buffering off`). The Git container's answer is given once
 the whole body has gone (Git answers only after reading it), then streams
 back as it arrives, with only `Content-Type`, `Cache-Control`, `Expires`,
 `Pragma` and `Retry-After`. Neither direction is held in memory whole. If the
@@ -1288,14 +1290,23 @@ Git container does not answer, `503` with `Retry-After`.
 service token like the rest of its API:
 
 - The same path checks again, the context's workspace equal to the path's,
-  `mayPush` for `git-receive-pack` (`403`), the body limits again (declared
-  and counted), `Content-Encoding` only `gzip` (which Git uses for long
-  fetch requests) or none (`415`), a `Git-Protocol` header of Git's form, and
-  a repository that exists (`404`).
+  `mayPush` for `git-receive-pack` (`403`), `Content-Encoding` only `gzip`
+  (which Git uses for long fetch requests) or none (`415`), a `Git-Protocol`
+  header of Git's form, and a repository that exists (`404`).
+- **The whole body arrives before Git starts** (code review of GC-2), so a
+  client that sends slowly holds no Git process: a fetch's in memory, a
+  push's in a file in `.tmp/` on the volume (at most 8 at once), both
+  counted against their limits **after inflating** a gzip body (a 4 MiB
+  gzip body can hold a gigabyte of negotiation lines; this also bounds the
+  `want`, `have` and `ref-prefix` lines of a v2 request), and handed to Git
+  uncompressed with their length.
 - **At most 4 Git processes at once** (`git http-backend` and what it
-  starts); up to 16 more requests wait their turn for at most 10 seconds
-  (inside the 30 seconds a fetch's body has to arrive at `web`), then
-  `429` with `Retry-After: 10`, which `web` passes on.
+  starts), and **at most 2 per agent**, running or waiting, so one token,
+  even a read-only one, cannot take them all; up to 16 more requests wait
+  their turn for at most 10 seconds, then `429` with `Retry-After: 10`,
+  which `web` passes on. Git shows the text of a `429` to `info/refs`; to a
+  `POST` it shows only "RPC failed; HTTP 429", which the skill explains
+  (GC-9).
 - **The CGI bridge.** `git` runs with Shinan's repository settings on its
   command line (`-c`, which overrides the repository's `config`):
   `core.hooksPath` first, then the rest of what Shinan sets when it creates
@@ -1306,18 +1317,31 @@ service token like the rest of its API:
   environment (`PATH`, an empty `HOME`, no system or global configuration)
   and the CGI variables `GIT_PROJECT_ROOT`, `PATH_INFO`, `REQUEST_METHOD`,
   `QUERY_STRING`, `CONTENT_TYPE`, `CONTENT_LENGTH`, `GIT_PROTOCOL` (from
-  `Git-Protocol`), `REMOTE_USER` (the agent's handle), `GIT_HTTP_EXPORT_ALL`
-  and `HTTP_CONTENT_ENCODING` for a gzip body. The service token, and
-  everything else of the container's own environment, is not in it. The
-  body is written to Git as it arrives; Git's CGI headers are read (at most
-  64 KiB) and its output streamed back.
+  `Git-Protocol`), `REMOTE_USER` (the agent's handle) and
+  `GIT_HTTP_EXPORT_ALL`. The service token, and everything else of the
+  container's own environment, is not in it. Git's CGI headers are read (at
+  most 64 KiB) and its output streamed back.
+- **An answer must keep moving:** if the client takes none of it for 30
+  seconds, Git is ended and the connection closed, so a reader that stopped
+  reading does not hold a Git process for its 10 minutes. A slow reader
+  that keeps reading keeps going.
 - **A Git process may run 10 minutes** (a full clone on a slow link); then
   it and everything it started are killed, and the answer is cut short.
 
 **Errors** are plain text (`text/plain; charset=utf-8`) in Shinan's own
 words, which Git shows as `remote: …` for the first request of a clone,
-fetch or push (for a read-only token: "This agent's token is read-only: it
-can fetch but not push.").
+fetch or push. They are in one voice (product review, D-067;
+`apps/server/src/git-text.ts`): each starts with `Shinan: ` so an agent
+tells them from Git's own, ends with a full stop, says what happened and
+what to do, and fits in 115 characters (a test checks every text). A token Shinan does not
+accept points the agent to its person ("this agent's token was not
+accepted (revoked or replaced). Tell your person; they can make a new
+one."); a token anywhere in the address is named as the leak it is,
+before anything else is checked ("never put the token in the address.
+Remove it from the remote URL and tell your person to replace it."); and
+an unknown workspace and another workspace's token read the same ("no
+catalog here for this agent's token. Check the clone address and the
+token's workspace in Shinan.").
 
 **Time to send.** A push's body may take 120 seconds to arrive: `web`'s and
 the Git container's listeners allow that, and `web` keeps every other

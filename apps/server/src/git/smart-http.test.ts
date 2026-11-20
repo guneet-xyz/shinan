@@ -1,4 +1,5 @@
-import { mkdtempSync, rmSync } from "node:fs"
+import { randomBytes } from "node:crypto"
+import { mkdtempSync, readdirSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { gzipSync } from "node:zlib"
@@ -7,7 +8,9 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { encodeGitContext, gitContextHeader } from "@shinan/core"
 import type { GitRequestContext } from "@shinan/core"
 import { createGit } from "@shinan/git"
+import { commitFiles } from "@shinan/git/testing"
 
+import { gitMessages } from "../git-text.js"
 import { createGitApp } from "./app.js"
 import { openJournal } from "./journal.js"
 import { createRepositoryStore } from "./store.js"
@@ -23,6 +26,8 @@ const git = createGit()
 let root: string
 let hooks: string
 let store: RepositoryStore
+/** main, with a file of 4 MiB of random bytes, so its pack fills every buffer. */
+let big: string
 
 const context: GitRequestContext = {
   requestId: "req-1",
@@ -43,10 +48,19 @@ beforeAll(async () => {
   root = mkdtempSync(join(tmpdir(), "shinan-smart-http-"))
   hooks = mkdtempSync(join(tmpdir(), "shinan-smart-http-hooks-"))
   store = createRepositoryStore({ root, git, hooksDirectory: hooks })
-  await store.create(workspaceId, {
+  const { main } = await store.create(workspaceId, {
     files: [{ path: "README.md", content: Buffer.from("# Catalog\n") }],
     message: "Start\n",
   })
+  big = await commitFiles(
+    git,
+    store.pathOf(workspaceId),
+    {
+      "README.md": "# Catalog\n",
+      "big.bin": { content: randomBytes(4 * 1024 * 1024) },
+    },
+    { parents: [main], ref: "refs/heads/main", message: "Big\n" },
+  )
 })
 afterAll(() => {
   rmSync(root, { recursive: true, force: true })
@@ -189,7 +203,7 @@ describe("the smart HTTP paths", () => {
       },
     })
     expect(other.status).toBe(400)
-    expect(await other.text()).toBe("The context is for another workspace\n")
+    expect(await other.text()).toBe(`${gitMessages.otherContext}\n`)
     const readOnly = await ask(app(), path, {
       context: { ...context, mayPush: false },
     })
@@ -267,31 +281,73 @@ describe("the smart HTTP paths", () => {
 })
 
 describe("the Git processes", () => {
-  it("are capped: past the running and waiting ones, 429 with Retry-After", async () => {
-    const app = appWith({
-      gitProcesses: { running: 1, queued: 1, waitMs: 500 },
+  /** A protocol v2 fetch of main: its answer is a pack of over 4 MiB. */
+  const fetchMain = () =>
+    [
+      line("command=fetch\n"),
+      "0001",
+      line(`want ${big}\n`),
+      line("done\n"),
+      "0000",
+    ].join("")
+
+  /** A fetch whose answer nobody reads. */
+  const stalledReader = (app: ReturnType<typeof createGitApp>, agent: string) =>
+    ask(app, `${repository}/git-upload-pack`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/x-git-upload-pack-request",
+        "git-protocol": "version=2",
+      },
+      body: fetchMain(),
+      context: { ...context, agent: { id: agent, handle: "opencode-x" } },
     })
-    const held = await ask(app, `${repository}/git-upload-pack`, {
+
+  const advertisement = `${repository}/info/refs?service=git-upload-pack`
+  const otherAgent = "4b9c1a2e-3d4f-4a5b-8c6d-7e8f9a0b1c2d"
+  const asOther = {
+    ...context,
+    agent: { id: otherAgent, handle: "opencode-y" },
+  }
+
+  it("start no Git process until the body has arrived, so a slow sender holds none", async () => {
+    const app = appWith({
+      gitProcesses: { running: 1, queued: 0, waitMs: 0, perAgent: 1 },
+    })
+    // Never finishes sending its body.
+    const slow = ask(app, `${repository}/git-upload-pack`, {
       method: "POST",
       headers: { "content-type": "application/x-git-upload-pack-request" },
       body: stalled(),
       duplex: "half",
     })
-    expect(held.status).toBe(200)
-    const advertisement = `${repository}/info/refs?service=git-upload-pack`
-    const started = Date.now()
-    // One waits its turn, for at most 500 ms; one more has no place to wait.
-    const [waited, refused] = await Promise.all([
-      ask(app, advertisement),
-      ask(app, advertisement),
-    ])
-    expect(refused.status).toBe(429)
-    expect(refused.headers.get("retry-after")).toBe("10")
-    expect(await refused.text()).toContain("try again in a few seconds")
-    expect(waited.status).toBe(429)
-    expect(Date.now() - started).toBeGreaterThanOrEqual(450)
-    // Ending the held one frees its process for the next.
-    await held.body!.cancel()
+    void Promise.resolve(slow).catch(() => {})
+    await new Promise((resolve) => setTimeout(resolve, 200))
+    for (const who of [context, asOther]) {
+      const served = await ask(app, advertisement, { context: who })
+      expect(served.status).toBe(200)
+      await served.arrayBuffer()
+    }
+  })
+
+  it("let one agent hold at most two: others are still served", async () => {
+    const app = appWith({
+      gitProcesses: { running: 4, queued: 4, waitMs: 500, perAgent: 2 },
+    })
+    const agent = context.agent.id
+    const held = [
+      await stalledReader(app, agent),
+      await stalledReader(app, agent),
+    ]
+    expect(held.map((r) => r.status)).toEqual([200, 200])
+    const third = await ask(app, advertisement)
+    expect(third.status).toBe(429)
+    expect(third.headers.get("retry-after")).toBe("10")
+    expect(await third.text()).toBe(`${gitMessages.agentBusy(2, 10)}\n`)
+    const other = await ask(app, advertisement, { context: asOther })
+    expect(other.status).toBe(200)
+    await other.arrayBuffer()
+    for (const response of held) await response.body!.cancel()
     let status = 0
     for (let i = 0; i < 40 && status !== 200; i++) {
       await new Promise((resolve) => setTimeout(resolve, 50))
@@ -302,18 +358,98 @@ describe("the Git processes", () => {
     expect(status).toBe(200)
   })
 
-  it("are stopped at their time limit, which cuts their answer short", async () => {
-    const app = appWith({ gitProcessSeconds: 1 })
-    const started = Date.now()
-    const response = await ask(app, `${repository}/git-upload-pack`, {
-      method: "POST",
-      headers: { "content-type": "application/x-git-upload-pack-request" },
-      body: stalled(),
-      duplex: "half",
+  it("are capped: past the running and waiting ones, 429 with Retry-After", async () => {
+    const app = appWith({
+      gitProcesses: { running: 1, queued: 1, waitMs: 500, perAgent: 4 },
     })
-    expect(response.status).toBe(200)
-    await expect(response.text()).rejects.toThrow()
+    const held = await stalledReader(app, context.agent.id)
+    expect(held.status).toBe(200)
+    const started = Date.now()
+    // One waits its turn, for at most 500 ms; one more has no place to wait.
+    const [waited, refused] = await Promise.all([
+      ask(app, advertisement, { context: asOther }),
+      ask(app, advertisement, { context: asOther }),
+    ])
+    expect(refused.status).toBe(429)
+    expect(refused.headers.get("retry-after")).toBe("10")
+    expect(await refused.text()).toBe(`${gitMessages.busy}\n`)
+    expect(waited.status).toBe(429)
+    expect(Date.now() - started).toBeGreaterThanOrEqual(450)
+    await held.body!.cancel()
+  })
+
+  it("end Git when its client takes none of the answer for a while, and serve the next", async () => {
+    const app = appWith({
+      gitProcesses: { running: 1, queued: 0, waitMs: 0, perAgent: 1 },
+      answerStallSeconds: 1,
+    })
+    const started = Date.now()
+    const held = await stalledReader(app, context.agent.id)
+    expect(held.status).toBe(200)
+    let status = 0
+    while (status !== 200 && Date.now() - started < 10_000) {
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      const next = await ask(app, advertisement, { context: asOther })
+      status = next.status
+      await next.arrayBuffer()
+    }
+    expect(status).toBe(200)
     expect(Date.now() - started).toBeGreaterThanOrEqual(900)
+    // The stalled answer was cut short, not ended as if whole.
+    await expect(held.arrayBuffer()).rejects.toThrow()
+  })
+
+  it("are stopped at their time limit, which cuts their answer short", async () => {
+    const app = appWith({ gitProcessSeconds: 1, answerStallSeconds: 60 })
+    const started = Date.now()
+    const response = await stalledReader(app, context.agent.id)
+    expect(response.status).toBe(200)
+    await new Promise((resolve) => setTimeout(resolve, 1500))
+    await expect(response.arrayBuffer()).rejects.toThrow()
     expect(Date.now() - started).toBeLessThan(10_000)
+  })
+})
+
+describe("request bodies", () => {
+  it("are counted after inflating gzip: 4 MiB of fetch lines in a small gzip body is too large", async () => {
+    const lines = `${line(`have ${"0".repeat(40)}\n`)}`.repeat(90_000)
+    const compressed = gzipSync(lines)
+    expect(compressed.length).toBeLessThan(1024 * 1024)
+    const response = await ask(appWith(), `${repository}/git-upload-pack`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/x-git-upload-pack-request",
+        "content-encoding": "gzip",
+      },
+      body: compressed,
+    })
+    expect(response.status).toBe(413)
+    expect(await response.text()).toBe(`${gitMessages.fetchTooLarge(4)}\n`)
+  })
+
+  it("refuse a body that is not gzip as it says", async () => {
+    const response = await ask(appWith(), `${repository}/git-upload-pack`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/x-git-upload-pack-request",
+        "content-encoding": "gzip",
+      },
+      body: "not gzip at all",
+    })
+    expect(response.status).toBe(400)
+    expect(await response.text()).toBe(`${gitMessages.badGzip}\n`)
+  })
+
+  it("leave no file behind for a push, whatever its end", async () => {
+    const response = await ask(appWith(), `${repository}/git-receive-pack`, {
+      method: "POST",
+      headers: { "content-type": "application/x-git-receive-pack-request" },
+      body: "0000",
+    })
+    await response.arrayBuffer()
+    await new Promise((resolve) => setTimeout(resolve, 200))
+    expect(
+      readdirSync(join(root, ".tmp")).filter((n) => n.startsWith("push-")),
+    ).toEqual([])
   })
 })

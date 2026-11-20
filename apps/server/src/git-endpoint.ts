@@ -29,8 +29,8 @@ import type {
 import type { Database } from "@shinan/db"
 import { createLimitedLog, errorSummary } from "@shinan/db"
 
-import { checkAgentRequest } from "./api/agent-auth.js"
-import { gitText } from "./git-text.js"
+import { checkAgentRequest, tokenInAddress } from "./api/agent-auth.js"
+import { gitMessages, gitText } from "./git-text.js"
 import type { InFlightCounter, NodeBindings } from "./in-flight.js"
 
 export interface GitEndpointOptions {
@@ -111,9 +111,14 @@ export function createGitEndpoint(options: GitEndpointOptions) {
   }
 
   endpoint.all("*", async (c) => {
+    // A token in the address has leaked already (shell history, the
+    // remote's configuration, logs): say so before anything else.
+    if (tokenInAddress(c.req.url)) {
+      return gitText(400, gitMessages.tokenInAddress)
+    }
     const url = new URL(c.req.url)
     const target = smartHttpRequest(c.req.method, url.pathname, url.search)
-    if (!target) return gitText(404, "Not found")
+    if (!target) return gitText(404, gitMessages.noSuchPath)
     const request = options.requestInfo(c)
 
     if (options.rateLimit !== false) {
@@ -146,7 +151,7 @@ export function createGitEndpoint(options: GitEndpointOptions) {
           : maxFetchBodyBytes
       const declared = c.req.header("content-length")
       if (declared !== undefined && !/^\d{1,15}$/.test(declared)) {
-        return gitText(400, "The Content-Length is not a number")
+        return gitText(400, gitMessages.badLength)
       }
       if (declared !== undefined && Number(declared) > limit) {
         return gitText(413, tooLargeMessage(push))
@@ -157,9 +162,18 @@ export function createGitEndpoint(options: GitEndpointOptions) {
         if (checked.reason === "rate-limited") {
           return tooManyRequests(checked.retryAfterSeconds)
         }
-        return gitText(401, `${checked.message}.`, {
-          "www-authenticate": 'Basic realm="Shinan", charset="UTF-8"',
-        })
+        if (checked.reason === "token-in-address") {
+          return gitText(400, gitMessages.tokenInAddress)
+        }
+        return gitText(
+          401,
+          checked.reason === "no-token"
+            ? gitMessages.noToken
+            : checked.reason === "cookie"
+              ? gitMessages.cookie
+              : gitMessages.invalidToken,
+          { "www-authenticate": 'Basic realm="Shinan", charset="UTF-8"' },
+        )
       }
       const agent = checked.agent
       const tokenPlace = options.inFlight.perToken.take(agent.tokenId)
@@ -185,31 +199,33 @@ export function createGitEndpoint(options: GitEndpointOptions) {
         if (!access.allowed) {
           return gitText(
             429,
-            `Too many pushes: an agent may push ${rateLimits["catalog-push"].max} times in ${rateLimits["catalog-push"].windowSeconds / 60} minutes. Try again in ${access.retryAfterSeconds} seconds.`,
+            gitMessages.pushRate(
+              rateLimits["catalog-push"].max,
+              rateLimits["catalog-push"].windowSeconds / 60,
+              access.retryAfterSeconds,
+            ),
             { "retry-after": String(access.retryAfterSeconds) },
           )
         }
         context = access.context
       } catch (error) {
-        if (error instanceof NotFoundError) return gitText(404, "Not found")
+        if (error instanceof NotFoundError)
+          return gitText(404, gitMessages.notFound)
         if (error instanceof ForbiddenError) {
           return gitText(
             403,
             error.reason === "scope"
               ? push
-                ? "This agent's token is read-only: it can fetch but not push."
-                : "This agent's token does not allow reading the catalog."
-              : "Not allowed.",
+                ? gitMessages.readOnly
+                : gitMessages.noReadScope
+              : gitMessages.forbidden,
           )
         }
         throw error
       }
 
       if (!options.git) {
-        return gitText(
-          503,
-          "The catalog's Git service is not set up on this installation.",
-        )
+        return gitText(503, gitMessages.notSetUp)
       }
       const response = await forward(c, target, context, options.git, limit)
       const outgoing = (c.env as NodeBindings | undefined)?.outgoing
@@ -226,31 +242,23 @@ export function createGitEndpoint(options: GitEndpointOptions) {
 }
 
 function tooManyRequests(retryAfterSeconds: number): Response {
-  return gitText(429, "Too many requests. Wait a minute and try again.", {
+  return gitText(429, gitMessages.rate(retryAfterSeconds), {
     "retry-after": String(retryAfterSeconds),
   })
 }
 
 function tooManyAtOnce(): Response {
-  return gitText(
-    429,
-    "Too many requests at once; try again when an earlier one is answered.",
-    { "retry-after": "1" },
-  )
+  return gitText(429, gitMessages.inFlight, { "retry-after": "1" })
 }
 
 function tooLargeMessage(push: boolean): string {
   return push
-    ? `The push is larger than Shinan accepts (${maxPushBodyBytes / 1024 / 1024} MiB). Push fewer changes at once.`
-    : `The fetch request is larger than Shinan accepts (${maxFetchBodyBytes / 1024 / 1024} MiB).`
+    ? gitMessages.pushTooLarge(maxPushBodyBytes / 1024 / 1024)
+    : gitMessages.fetchTooLarge(maxFetchBodyBytes / 1024 / 1024)
 }
 
 function unreachable(): Response {
-  return gitText(
-    503,
-    "The catalog's Git service did not answer; try again shortly.",
-    { "retry-after": "5" },
-  )
+  return gitText(503, gitMessages.unreachable, { "retry-after": "5" })
 }
 
 /**

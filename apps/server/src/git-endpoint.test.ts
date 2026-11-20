@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process"
-import { createHash } from "node:crypto"
+import { createHash, randomBytes } from "node:crypto"
 import {
   chmodSync,
   mkdirSync,
@@ -29,6 +29,7 @@ import { commitFiles } from "@shinan/git/testing"
 import { insertPerson } from "../test/people.js"
 import { noSignIn } from "./api/sign-in.js"
 import { createApp } from "./app.js"
+import { gitMessages } from "./git-text.js"
 import { createGitApp } from "./git/app.js"
 import { openJournal } from "./git/journal.js"
 import { createRepositoryStore } from "./git/store.js"
@@ -171,7 +172,7 @@ process.exitCode = 1
     journal: openJournal(join(work, "catalog")),
     log: () => {},
     // Two Git processes at once and none waiting, for the process cap.
-    gitProcesses: { running: 2, queued: 0, waitMs: 0 },
+    gitProcesses: { running: 2, queued: 0, waitMs: 0, perAgent: 2 },
   })
   gitServer = serve({
     fetch: (request, env) => {
@@ -450,6 +451,7 @@ describe("the Git endpoint", () => {
       expect(response.headers.get("content-type")).toBe(
         "text/plain; charset=utf-8",
       )
+      expect(await response.text()).toBe(`${gitMessages.noToken}\n`)
       const cloned = await client(
         ["clone", "--quiet", repository(), "no-token"],
         { token: null },
@@ -489,6 +491,11 @@ describe("the Git endpoint", () => {
       )
       expect(response.status, authorization).toBe(401)
       expect(response.headers.get("www-authenticate")).toContain("Basic")
+      expect(await response.text()).toBe(
+        authorization === basic("")
+          ? `${gitMessages.noToken}\n`
+          : `${gitMessages.invalidToken}\n`,
+      )
     }
   })
 
@@ -504,7 +511,12 @@ describe("the Git endpoint", () => {
         `${repository()}/info/refs?service=git-upload-pack&token=${full}`,
         { headers: { authorization: basic(full) } },
       )
-      expect(inAddress.status).toBe(404)
+      expect(inAddress.status).toBe(400)
+      expect(await inAddress.text()).toBe(`${gitMessages.tokenInAddress}\n`)
+      // Wherever in the address it is, the leak is named first.
+      const inPath = await fetch(`${web}/git/${full}/info/refs`)
+      expect(inPath.status).toBe(400)
+      expect(await inPath.text()).toBe(`${gitMessages.tokenInAddress}\n`)
     })
     expect(paths).toEqual([])
   })
@@ -521,9 +533,7 @@ describe("the Git endpoint", () => {
         { headers: { authorization: basic(readOnly) } },
       )
       expect(response.status).toBe(403)
-      expect(await response.text()).toBe(
-        "This agent's token is read-only: it can fetch but not push.\n",
-      )
+      expect(await response.text()).toBe(`${gitMessages.readOnly}\n`)
       const post = await fetch(`${repository()}/git-receive-pack`, {
         method: "POST",
         headers: {
@@ -538,9 +548,7 @@ describe("the Git endpoint", () => {
         token: readOnly,
       })
       expect(pushed.code).not.toBe(0)
-      expect(pushed.stderr).toContain(
-        "remote: This agent's token is read-only: it can fetch but not push.",
-      )
+      expect(pushed.stderr).toContain(`remote: ${gitMessages.readOnly}`)
     })
     expect(paths).toEqual([])
   })
@@ -560,9 +568,9 @@ describe("the Git endpoint", () => {
         answers.push([response.status, await response.text()])
       }
       expect(answers).toEqual([
-        [404, "Not found\n"],
-        [404, "Not found\n"],
-        [404, "Not found\n"],
+        [404, `${gitMessages.notFound}\n`],
+        [404, `${gitMessages.notFound}\n`],
+        [404, `${gitMessages.notFound}\n`],
       ])
     })
     expect(paths).toEqual([])
@@ -671,7 +679,9 @@ describe("the Git endpoint", () => {
         duplex: "half",
       })
       expect(response.status, service).toBe(413)
-      expect(await response.text()).toContain("larger than Shinan accepts")
+      expect(await response.text()).toMatch(
+        /^Shinan: this (push|fetch) is over the (64|4) MiB limit\./,
+      )
     }
   }, 60_000)
 
@@ -713,15 +723,13 @@ describe("the Git endpoint", () => {
     expect(pushClosed).toBeLessThan(pushSeconds + 8)
   }, 30_000)
 
-  it("passes on the Git container's 429 and Retry-After when its Git processes are all busy", async () => {
+  it("holds no Git process for a body that never ends: the next request is served", async () => {
     await gitProcessesEnded()
-    // Two fetches that hold a Git process each: their bodies never end.
-    const held: Socket[] = []
-    for (let i = 0; i < 2; i++) {
+    for (let i = 0; i < 3; i++) {
       const socket = connect(Number(new URL(web).port), "127.0.0.1")
       sockets.push(socket)
-      held.push(socket)
       socket.on("error", () => {})
+      socket.on("data", () => {})
       socket.write(
         [
           `POST /git/${workspaceId}.git/git-upload-pack HTTP/1.1`,
@@ -730,23 +738,78 @@ describe("the Git endpoint", () => {
           "Content-Type: application/x-git-upload-pack-request",
           "Transfer-Encoding: chunked",
           "",
+          "8",
+          "0098" + "0".repeat(4),
           "",
         ].join("\r\n"),
       )
     }
-    // Until both have reached the Git container.
+    await new Promise((resolve) => setTimeout(resolve, 500))
+    expect(running).toBe(0)
+    const response = await fetch(
+      `${repository()}/info/refs?service=git-upload-pack`,
+      { headers: { authorization: basic(full) } },
+    )
+    expect(response.status).toBe(200)
+    await response.arrayBuffer()
+  })
+
+  it("passes on the Git container's 429 and Retry-After when an agent's Git processes are all busy", async () => {
+    await gitProcessesEnded()
+    // A pack larger than every buffer between Git and the client (sockets
+    // on loopback hold several MiB each), and two fetches of it whose
+    // readers take only the start: each holds a Git process.
+    main = await commitFiles(
+      serverGit,
+      store.pathOf(workspaceId),
+      {
+        "README.md": "# Catalog\n",
+        "big.bin": { content: randomBytes(48 * 1024 * 1024) },
+      },
+      { parents: [main], ref: "refs/heads/main", message: "Big\n" },
+    )
+    const pkt = (text: string) =>
+      `${(text.length + 4).toString(16).padStart(4, "0")}${text}`
+    const body = [
+      pkt("command=fetch\n"),
+      "0001",
+      pkt(`want ${main}\n`),
+      pkt("done\n"),
+      "0000",
+    ].join("")
+    const held: Socket[] = []
+    for (let i = 0; i < 2; i++) {
+      const socket = connect(Number(new URL(web).port), "127.0.0.1")
+      sockets.push(socket)
+      held.push(socket)
+      socket.on("error", () => {})
+      // No "data" listener: the socket takes nothing past its buffer.
+      socket.write(
+        [
+          `POST /git/${workspaceId}.git/git-upload-pack HTTP/1.1`,
+          "Host: shinan.test",
+          `Authorization: ${basic(full)}`,
+          "Content-Type: application/x-git-upload-pack-request",
+          "Git-Protocol: version=2",
+          `Content-Length: ${body.length}`,
+          "",
+          body,
+        ].join("\r\n"),
+      )
+    }
     const deadline = Date.now() + 5000
     while (running < 2 && Date.now() < deadline) {
       await new Promise((resolve) => setTimeout(resolve, 50))
     }
-    await new Promise((resolve) => setTimeout(resolve, 200))
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    expect(running).toBe(2)
     const response = await fetch(
       `${repository()}/info/refs?service=git-upload-pack`,
       { headers: { authorization: basic(full) } },
     )
     expect(response.status).toBe(429)
     expect(response.headers.get("retry-after")).toBe("10")
-    expect(await response.text()).toContain("try again in a few seconds")
+    expect(await response.text()).toMatch(/^Shinan: /)
     for (const socket of held) socket.destroy()
     // Their Git processes end with them, and the next request is served.
     let status = 0

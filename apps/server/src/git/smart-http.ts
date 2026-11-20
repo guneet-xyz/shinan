@@ -1,7 +1,10 @@
+import { randomBytes } from "node:crypto"
+import { createReadStream, createWriteStream, mkdirSync, rmSync } from "node:fs"
 import type { ServerResponse } from "node:http"
+import { join } from "node:path"
 import { Readable, Transform } from "node:stream"
 import { pipeline } from "node:stream/promises"
-import type { ReadableStream as NodeReadableStream } from "node:stream/web"
+import { createGunzip } from "node:zlib"
 import type { Context } from "hono"
 
 import {
@@ -9,13 +12,14 @@ import {
   gitProcessWaitSeconds,
   maxFetchBodyBytes,
   maxGitProcesses,
+  maxGitProcessesPerAgent,
   maxPushBodyBytes,
   maxQueuedGitProcesses,
   smartHttpRequest,
 } from "@shinan/core"
 import type { LimitedLog } from "@shinan/db"
 
-import { gitText } from "../git-text.js"
+import { gitMessages, gitText } from "../git-text.js"
 import type { GitAppEnv } from "./app.js"
 import type { RepositoryStore } from "./store.js"
 import { repositoryConfiguration } from "./store.js"
@@ -27,12 +31,18 @@ export interface GitProcessLimits {
   queued: number
   /** How long a request waits, in milliseconds. */
   waitMs: number
+  /**
+   * Git processes one agent may hold or wait for at once, so no single
+   * token (even a read-only one) can take them all.
+   */
+  perAgent: number
 }
 
 export const defaultGitProcessLimits: GitProcessLimits = {
   running: maxGitProcesses,
   queued: maxQueuedGitProcesses,
   waitMs: gitProcessWaitSeconds * 1000,
+  perAgent: maxGitProcessesPerAgent,
 }
 
 /** The longest block of CGI headers `git http-backend` may write. */
@@ -41,33 +51,46 @@ const maxCgiHeaderBytes = 64 * 1024
 /**
  * Lets `running` Git processes run at once. Up to `queued` more requests
  * wait their turn, each at most `waitMs`, and leave the queue if their
- * client goes; past that, `acquire` answers null.
+ * client goes; past that, `acquire` answers `busy`. One agent may hold or
+ * wait for at most `perAgent` of them; past that, `agent`.
  */
 export function gitProcessGate(limits: GitProcessLimits) {
   let running = 0
   const waiting: ((granted: boolean) => void)[] = []
+  const agents = new Map<string, number>()
+  const leave = (agent: string) => {
+    const left = (agents.get(agent) ?? 1) - 1
+    if (left === 0) agents.delete(agent)
+    else agents.set(agent, left)
+  }
   const release = () => {
     const next = waiting.shift()
     if (next) next(true)
     else running--
   }
-  const place = () => {
+  const place = (agent: string) => {
     let held = true
     return () => {
       if (!held) return
       held = false
+      leave(agent)
       release()
     }
   }
   return {
     async acquire(
       outgoing: ServerResponse | undefined,
-    ): Promise<(() => void) | null> {
+      agent: string,
+    ): Promise<(() => void) | "busy" | "agent"> {
+      const mine = agents.get(agent) ?? 0
+      if (mine >= limits.perAgent) return "agent"
       if (running < limits.running) {
         running++
-        return place()
+        agents.set(agent, mine + 1)
+        return place(agent)
       }
-      if (waiting.length >= limits.queued) return null
+      if (waiting.length >= limits.queued) return "busy"
+      agents.set(agent, mine + 1)
       const granted = await new Promise<boolean>((resolve) => {
         const settle = (value: boolean) => {
           clearTimeout(timer)
@@ -81,7 +104,11 @@ export function gitProcessGate(limits: GitProcessLimits) {
         waiting.push(settle)
         outgoing?.once("close", gone)
       })
-      return granted ? place() : null
+      if (!granted) {
+        leave(agent)
+        return "busy"
+      }
+      return place(agent)
     },
   }
 }
@@ -102,24 +129,31 @@ class BodyTooLargeError extends Error {
  * The smart HTTP paths of the Git container (Git-based catalog plan §2.2,
  * step 6): the same path checks as `web` (defence in depth), the context
  * `web` sent (it must be for this workspace, and allow pushing for
- * `git-receive-pack`), the body limits, a cap on Git processes, then a CGI
- * bridge to `git http-backend`:
+ * `git-receive-pack`), the body limits, then a CGI bridge to
+ * `git http-backend`:
  *
+ * - **The whole body arrives before Git starts** (review of GC-2): a
+ *   fetch's in memory, at most 4 MiB, a push's in a file in `.tmp/` on the
+ *   volume, at most 64 MiB and 8 at once, both counted after inflating a
+ *   gzip body. A client that sends slowly holds no Git process.
+ * - **Git processes are capped:** 4 at once, 16 more waiting up to 10
+ *   seconds, and at most 2 running or waiting per agent, so no single
+ *   token, even a read-only one, can take them all.
  * - **Its environment is built here,** from nothing: Git's clean
  *   environment (`@shinan/git`) and the CGI variables (`GIT_PROJECT_ROOT`,
  *   `PATH_INFO`, `REQUEST_METHOD`, `QUERY_STRING`, `CONTENT_TYPE`,
- *   `CONTENT_LENGTH`, `GIT_PROTOCOL` from `Git-Protocol`, `REMOTE_USER` (the
- *   agent's handle), `GIT_HTTP_EXPORT_ALL`, and `HTTP_CONTENT_ENCODING` for
- *   a gzip body). Not the service token, nor anything else of this process.
+ *   `CONTENT_LENGTH` of the body as received, `GIT_PROTOCOL` from
+ *   `Git-Protocol`, `REMOTE_USER` (the agent's handle),
+ *   `GIT_HTTP_EXPORT_ALL`). Not the service token, nor anything else of
+ *   this process.
  * - **Shinan's repository settings are on its command line** (`-c`, which
  *   overrides the repository's `config`), with `core.hooksPath` first, so a
  *   repository whose `config` lost a setting still runs the hooks; dumb
  *   HTTP is off (`http.getanyfile`), and `http.receivepack` follows the
  *   context.
- * - **Streams both ways:** the body goes to Git as it arrives, counted
- *   against the limit; Git's answer goes back as Git writes it.
- * - **Ends Git** at its time limit, or when the client goes; an answer cut
- *   short closes the connection, so the client cannot take it for whole.
+ * - **Ends Git** at its time limit, when the client goes, or when the
+ *   client takes none of the answer for 30 seconds; an answer cut short
+ *   closes the connection, so the client cannot take it for whole.
  */
 export function createSmartHttp(options: {
   store: RepositoryStore
@@ -127,35 +161,38 @@ export function createSmartHttp(options: {
   processes?: GitProcessLimits
   /** How long one Git process may run; default `gitProcessSeconds`. */
   processSeconds?: number
+  /**
+   * How long a client may take none of an answer before Git is ended;
+   * default `answerStallSeconds`.
+   */
+  answerStallSeconds?: number
 }) {
   const { store, log } = options
-  const gate = gitProcessGate(options.processes ?? defaultGitProcessLimits)
+  const processLimits = options.processes ?? defaultGitProcessLimits
+  const gate = gitProcessGate(processLimits)
   const timeoutMs = (options.processSeconds ?? gitProcessSeconds) * 1000
+  const answerStallMs =
+    (options.answerStallSeconds ?? answerStallSeconds) * 1000
+  let spooling = 0
 
   return async (c: Context<GitAppEnv>): Promise<Response> => {
     const url = new URL(c.req.url)
     const target = smartHttpRequest(c.req.method, url.pathname, url.search)
-    if (!target) return gitText(404, "Not found")
+    if (!target) return gitText(404, gitMessages.noSuchPath)
     const context = c.var.gitContext
-    if (!context) return gitText(400, "The request has no context")
+    if (!context) return gitText(400, gitMessages.noContext)
     if (context.workspaceId.toLowerCase() !== target.workspaceId) {
-      return gitText(400, "The context is for another workspace")
+      return gitText(400, gitMessages.otherContext)
     }
     const push = target.service === "git-receive-pack"
     if (push && !context.mayPush) {
-      return gitText(
-        403,
-        "This agent's token is read-only: it can fetch but not push.",
-      )
+      return gitText(403, gitMessages.readOnly)
     }
 
     const encoding = c.req.header("content-encoding")?.toLowerCase()
     const gzip = encoding === "gzip" || encoding === "x-gzip"
     if (encoding !== undefined && encoding !== "identity" && !gzip) {
-      return gitText(
-        415,
-        "Shinan accepts Git requests uncompressed or with gzip.",
-      )
+      return gitText(415, gitMessages.badEncoding)
     }
     const limit = target.advertisement
       ? 0
@@ -164,26 +201,67 @@ export function createSmartHttp(options: {
         : maxFetchBodyBytes
     const declared = c.req.header("content-length")
     if (declared !== undefined && !/^\d{1,15}$/.test(declared)) {
-      return gitText(400, "The Content-Length is not a number")
+      return gitText(400, gitMessages.badLength)
     }
     if (declared !== undefined && Number(declared) > limit) {
       return gitText(413, tooLargeMessage(push))
     }
     const protocol = c.req.header("git-protocol")
     if (protocol !== undefined && !/^[A-Za-z0-9=:._-]{1,256}$/.test(protocol)) {
-      return gitText(400, "The Git-Protocol header is not one Git sends")
+      return gitText(400, gitMessages.badProtocol)
     }
-    if (!store.exists(target.workspaceId)) return gitText(404, "Not found")
+    // As web's answer for a workspace the token cannot reach.
+    if (!store.exists(target.workspaceId))
+      return gitText(404, gitMessages.notFound)
 
     const outgoing = c.env?.outgoing
-    const release = await gate.acquire(outgoing)
-    if (!release) {
+    // The whole body arrives before Git starts, so a client that sends
+    // slowly holds no Git process: a fetch's in memory (at most 4 MiB), a
+    // push's in a file on the volume (at most 64 MiB), counted after
+    // inflating a gzip body.
+    let body: ReceivedBody
+    if (target.advertisement || !c.req.raw.body) {
+      body = { size: 0 }
+    } else {
+      if (push && spooling >= maxSpooling) {
+        return gitText(429, gitMessages.busy, {
+          "retry-after": String(gitProcessWaitSeconds),
+        })
+      }
+      if (push) spooling++
+      try {
+        body = await receiveBody(c.req.raw.body, {
+          limit,
+          gzip,
+          spool: push ? join(store.root, ".tmp") : null,
+        })
+      } catch (error) {
+        if (error instanceof BodyTooLargeError)
+          return gitText(413, tooLargeMessage(push))
+        if (error instanceof BadGzipError)
+          return gitText(400, gitMessages.badGzip)
+        // The client went, or stopped sending: there is no one to answer.
+        return gitText(400, gitMessages.bodyCutShort)
+      } finally {
+        if (push) spooling--
+      }
+    }
+    const removeSpool = () => {
+      if (body.file) rmSync(body.file, { force: true })
+    }
+
+    const place = await gate.acquire(outgoing, context.agent.id)
+    if (typeof place === "string") {
+      removeSpool()
       return gitText(
         429,
-        "Shinan is serving as many fetches and pushes as it can; try again in a few seconds.",
+        place === "agent"
+          ? gitMessages.agentBusy(processLimits.perAgent, gitProcessWaitSeconds)
+          : gitMessages.busy,
         { "retry-after": String(gitProcessWaitSeconds) },
       )
     }
+    const release = place
 
     const settings: [string, string][] = [
       ...repositoryConfiguration(store.hooksDirectory),
@@ -201,8 +279,8 @@ export function createSmartHttp(options: {
     }
     const contentType = c.req.header("content-type")
     if (contentType !== undefined) env.CONTENT_TYPE = contentType
-    if (declared !== undefined) env.CONTENT_LENGTH = declared
-    if (gzip) env.HTTP_CONTENT_ENCODING = "gzip"
+    // Git gets the body as it was received, inflated: its length is known.
+    if (!target.advertisement) env.CONTENT_LENGTH = String(body.size)
     if (protocol !== undefined) env.GIT_PROTOCOL = protocol
 
     let spawned: ReturnType<RepositoryStore["git"]["spawn"]>
@@ -216,12 +294,13 @@ export function createSmartHttp(options: {
       )
     } catch (error) {
       release()
+      removeSpool()
       throw error
     }
     const { child, kill } = spawned
-    let tooLarge = false
     const ended = spawned.ended.then((end) => {
       release()
+      removeSpool()
       return end
     })
     // The client went before the answer was whole: Git stops too.
@@ -244,41 +323,17 @@ export function createSmartHttp(options: {
       )
     })
 
-    const body = c.req.raw.body
-    if (target.advertisement || !body) {
-      child.stdin.end()
-    } else {
-      let received = 0
-      const counted = new Transform({
-        transform(chunk: Buffer, _encoding, done) {
-          received += chunk.length
-          if (received > limit) done(new BodyTooLargeError())
-          else done(null, chunk)
-        },
-      })
-      pipeline(
-        Readable.fromWeb(body as unknown as NodeReadableStream<Uint8Array>),
-        counted,
-        child.stdin,
-      ).catch((error: unknown) => {
-        if (error instanceof BodyTooLargeError) {
-          tooLarge = true
-          kill()
-        }
-        // Otherwise Git stopped reading (it answered already), or the
-        // client went; Git's own end says which.
-      })
-    }
+    if (body.data) child.stdin.end(body.data)
+    else if (body.file) {
+      // Git stopping early (it answered already) only ends this copy.
+      pipeline(createReadStream(body.file), child.stdin).catch(() => {})
+    } else child.stdin.end()
 
     const head = await readCgiHeaders(child.stdout)
     if (!head) {
       kill()
       await ended
-      if (tooLarge) return gitText(413, tooLargeMessage(push))
-      return gitText(
-        500,
-        "Git could not answer this request; try again shortly.",
-      )
+      return gitText(500, gitMessages.gitFailed)
     }
     const headers = new Headers({ "cache-control": "no-store" })
     let status = 200
@@ -293,13 +348,29 @@ export function createSmartHttp(options: {
 
     const stdout = child.stdout
     let done = false
+    let stall: NodeJS.Timeout | undefined
+    void ended.then(() => {
+      if (stall) clearTimeout(stall)
+    })
     const answer = new ReadableStream<Uint8Array>(
       {
         start(controller) {
           stdout.on("data", (chunk: Buffer) => {
             if (done) return
             controller.enqueue(new Uint8Array(chunk))
-            if ((controller.desiredSize ?? 0) <= 0) stdout.pause()
+            if ((controller.desiredSize ?? 0) <= 0) {
+              stdout.pause()
+              // The client must keep taking the answer: one that takes
+              // nothing for `answerStallMs` holds a Git process for
+              // nothing, so Git is ended and the connection closed.
+              stall ??= setTimeout(() => {
+                if (done) return
+                done = true
+                kill()
+                outgoing?.destroy()
+                controller.error(new Error("The client stopped reading"))
+              }, answerStallMs)
+            }
           })
           // After "end", or without it when Git was stopped.
           stdout.once("close", () => {
@@ -307,7 +378,7 @@ export function createSmartHttp(options: {
             void ended.then(({ timedOut, signal }) => {
               if (done) return
               done = true
-              if (!whole || timedOut || tooLarge || signal === "SIGKILL") {
+              if (!whole || timedOut || signal === "SIGKILL") {
                 // Cut short: the connection is closed rather than the
                 // answer ended, so the client sees it is incomplete.
                 outgoing?.destroy()
@@ -324,10 +395,13 @@ export function createSmartHttp(options: {
           })
         },
         pull() {
+          if (stall) clearTimeout(stall)
+          stall = undefined
           stdout.resume()
         },
         cancel() {
           done = true
+          if (stall) clearTimeout(stall)
           kill()
         },
       },
@@ -337,10 +411,80 @@ export function createSmartHttp(options: {
   }
 }
 
+/**
+ * How long a client may take none of an answer before its Git process is
+ * ended: 30 seconds. A slow reader that keeps reading keeps going.
+ */
+export const answerStallSeconds = 30
+
+/** Push bodies being received into files at once, at most 64 MiB each. */
+const maxSpooling = 8
+
+class BadGzipError extends Error {
+  override name = "BadGzipError"
+}
+
+/** A request body received whole: in memory, in a file, or none. */
+interface ReceivedBody {
+  size: number
+  data?: Buffer
+  file?: string
+}
+
+/**
+ * Receives a request body whole before Git starts: inflated if it was sent
+ * with gzip, counted against `limit` after inflating (a small gzip body can
+ * hold far more), in memory, or in a new file in `spool`.
+ */
+async function receiveBody(
+  stream: ReadableStream<Uint8Array>,
+  options: { limit: number; gzip: boolean; spool: string | null },
+): Promise<ReceivedBody> {
+  let size = 0
+  const chunks: Buffer[] = []
+  const counted = new Transform({
+    transform(chunk: Buffer, _encoding, done) {
+      size += chunk.length
+      if (size > options.limit) done(new BodyTooLargeError())
+      else done(null, chunk)
+    },
+  })
+  const source = Readable.fromWeb(stream)
+  const inflate = createGunzip()
+  inflate.once("error", () => {})
+  const stages: NodeJS.ReadWriteStream[] = options.gzip
+    ? [inflate, counted]
+    : [counted]
+  if (options.spool) mkdirSync(options.spool, { recursive: true, mode: 0o700 })
+  const file = options.spool
+    ? join(options.spool, `push-${randomBytes(12).toString("hex")}`)
+    : null
+  try {
+    if (file) {
+      await pipeline(
+        source,
+        ...stages,
+        createWriteStream(file, { flags: "wx", mode: 0o600 }),
+      )
+      return { size, file }
+    }
+    await pipeline(source, ...stages, async (input: AsyncIterable<Buffer>) => {
+      for await (const chunk of input) chunks.push(chunk)
+    })
+    return { size, data: Buffer.concat(chunks) }
+  } catch (error) {
+    if (file) rmSync(file, { force: true })
+    if (error instanceof BodyTooLargeError) throw error
+    if ((error as { code?: string }).code?.startsWith("Z_"))
+      throw new BadGzipError()
+    throw error
+  }
+}
+
 function tooLargeMessage(push: boolean): string {
   return push
-    ? `The push is larger than Shinan accepts (${maxPushBodyBytes / 1024 / 1024} MiB). Push fewer changes at once.`
-    : `The fetch request is larger than Shinan accepts (${maxFetchBodyBytes / 1024 / 1024} MiB).`
+    ? gitMessages.pushTooLarge(maxPushBodyBytes / 1024 / 1024)
+    : gitMessages.fetchTooLarge(maxFetchBodyBytes / 1024 / 1024)
 }
 
 /**

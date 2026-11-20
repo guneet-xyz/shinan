@@ -167,7 +167,7 @@ function bearerToken(header: string | undefined): string | null {
  * Whether the address seems to carry a token: a parameter named like one,
  * or Shinan's token prefix anywhere in it.
  */
-function tokenInAddress(url: string): boolean {
+export function tokenInAddress(url: string): boolean {
   const { pathname, searchParams } = new URL(url)
   if (decodeSafely(pathname).includes(agentTokenPrefix)) return true
   for (const [name, value] of searchParams) {
