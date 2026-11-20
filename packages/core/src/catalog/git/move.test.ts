@@ -120,7 +120,7 @@ describe("moving M2's catalog into Git", { timeout: 60_000 }, () => {
         message:
           texts.size === 0
             ? repositoryFirstCommitMessage
-            : `Import the catalog from PostgreSQL (revision ${report.revision})\n`,
+            : `Bring the catalog over from Shinan 0.3 (revision ${report.revision})\n`,
       })
     }
     const shapes = git.files(m2.get("Shapes")!.id, "main")
@@ -206,13 +206,17 @@ describe("moving M2's catalog into Git", { timeout: 60_000 }, () => {
     )
     expect(error).toBeInstanceOf(CatalogMoveError)
     expect((error as Error).message).toBe(
-      `Workspace ${trial}: the new repository does not hold the catalog as stored: machine/musashi.md differs from its stored text. Nothing was dropped.`,
+      `Workspace "Trial" (${trial}): the new repository does not hold the catalog as stored: machine/musashi.md differs from its stored text. Nothing was dropped.`,
     )
     expect(await db.select().from(schema.catalogMoves)).toEqual([])
     expect(await db.select().from(schema.catalogRepositories)).toEqual([])
-    await expect(migrateDatabase(database.url)).rejects.toThrow(
-      /no verified move into Git/,
-    )
+    await expect(migrateDatabase(database.url)).rejects.toMatchObject({
+      cause: {
+        message: expect.stringMatching(
+          /^M2's catalog tables are kept/,
+        ) as unknown,
+      },
+    })
     // The repository the failed run made is checked again, and holds the
     // catalog as stored.
     const reports = await moveCatalogsIntoGit(ctx, git)
@@ -226,7 +230,44 @@ describe("moving M2's catalog into Git", { timeout: 60_000 }, () => {
     // As if something had made the workspace's repository on its own.
     git.create(trial)
     await expect(moveCatalogsIntoGit(ctx, git)).rejects.toThrow(
-      `Workspace ${trial}: the existing repository does not hold the catalog as stored: its first commit is not by Shinan. Nothing was dropped.`,
+      `Workspace "Trial" (${trial}): the existing repository does not hold the catalog as stored: its first commit is not by Shinan. Nothing was dropped.`,
+    )
+    expect(await db.select().from(schema.catalogMoves)).toEqual([])
+  })
+
+  it("stops when M2's catalog changed while it was moved, recording nothing", async () => {
+    const trial = (await m2Catalogs()).get("Trial")!.id
+    // 0.3's web, still running, applies a change while the Git container
+    // makes the repository.
+    const racing = new Proxy(git, {
+      get(target, property, receiver) {
+        if (property !== "createRepository")
+          return Reflect.get(target, property, receiver) as unknown
+        return async (...args: Parameters<GitClient["createRepository"]>) => {
+          const made = await target.createRepository(...args)
+          if (args[0] === trial)
+            await pool.query(
+              `insert into catalog_revisions
+               select (jsonb_populate_record(null::catalog_revisions, to_jsonb(r) || jsonb_build_object('number', r.number + 1))).*
+               from catalog_revisions r where r.workspace_id = $1 order by r.number desc limit 1`,
+              [trial],
+            )
+          return made
+        }
+      },
+    }) as GitClient
+    await expect(moveCatalogsIntoGit(ctx, racing)).rejects.toThrow(
+      `Workspace "Trial" (${trial}): its catalog changed while migrate moved it (revision 18, now 19), so 0.3's web or worker is still running. Nothing was dropped. Roll back to 0.3 with the dump taken before the upgrade, as the operator guide says, stop web and worker, and upgrade again.`,
+    )
+    expect(await db.select().from(schema.catalogMoves)).toEqual([])
+    expect(await db.select().from(schema.catalogRepositories)).toEqual([])
+  })
+
+  it("says plainly when a workspace with M2 documents had a repository before the move", async () => {
+    const trial = (await m2Catalogs()).get("Trial")!.id
+    await db.insert(schema.catalogRepositories).values({ workspaceId: trial })
+    await expect(moveCatalogsIntoGit(ctx, git)).rejects.toThrow(
+      `Workspace "Trial" (${trial}) has catalog documents in 0.3's tables but already had a repository before the move, so its catalog cannot be moved. Roll back to 0.3 with the dump taken before the upgrade, as the operator guide says, and upgrade again.`,
     )
     expect(await db.select().from(schema.catalogMoves)).toEqual([])
   })
@@ -242,16 +283,16 @@ describe("moving M2's catalog into Git", { timeout: 60_000 }, () => {
     const lines = reports.flatMap(catalogMoveLines)
     const [trial, shapes, empty] = reports
     expect(lines).toEqual([
-      `Workspace ${trial!.workspaceId}: moved 17 catalog documents at revision 18 into Git, verified file by file (first commit ${trial!.firstCommit})`,
-      `Workspace ${trial!.workspaceId}: catalog proposal #19 was waiting for approval and is not applied (it touched service/container-registry); redo it by pushing`,
-      `Workspace ${trial!.workspaceId}: catalog proposal #20 was waiting for approval and is not applied (it touched start-here); redo it by pushing`,
-      `Workspace ${shapes!.workspaceId}: moved 6 catalog documents at revision 7 into Git, verified file by file (first commit ${shapes!.firstCommit})`,
+      `Workspace "Trial" (${trial!.workspaceId}): moved 17 catalog documents at revision 18 into Git, verified file by file (first commit ${trial!.firstCommit})`,
+      `Workspace "Trial" (${trial!.workspaceId}): catalog proposal #19 was waiting for approval and is not applied (it touched service/container-registry); redo it by pushing`,
+      `Workspace "Trial" (${trial!.workspaceId}): catalog proposal #20 was waiting for approval and is not applied (it touched start-here); redo it by pushing`,
+      `Workspace "Shapes" (${shapes!.workspaceId}): moved 6 catalog documents at revision 7 into Git, verified file by file (first commit ${shapes!.firstCommit})`,
       expect.stringMatching(
         new RegExp(
-          `^Workspace ${shapes!.workspaceId}: the moved catalog reads with \\d+ problems?, kept as they were: .*start-here-invalid \\(blocking\\) in start-here`,
+          `^Workspace "Shapes" \\(${shapes!.workspaceId}\\): the moved catalog reads with \\d+ problems?, kept as they were: .*start-here-invalid \\(blocking\\) in start-here`,
         ),
       ),
-      `Workspace ${empty!.workspaceId}: no catalog documents; its repository starts with README.md (${empty!.firstCommit})`,
+      `Workspace "Empty" (${empty!.workspaceId}): no catalog documents; its repository starts with README.md (${empty!.firstCommit})`,
     ])
     for (const text of ["blue mat", "Renouvelé", "203.0.113", "Tiles"])
       expect(lines.join("\n")).not.toContain(text)

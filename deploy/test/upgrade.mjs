@@ -18,7 +18,7 @@
 // (HTTPS: the dataset's tokens were issued for https://localhost:18444),
 // TEST_MAILPIT_PORT (18026) and SHINAN_PORT (13001). Everything it creates
 // is removed at the end unless --keep is given.
-import { execFileSync, spawnSync } from "node:child_process"
+import { execFileSync, spawn, spawnSync } from "node:child_process"
 import { createHash, randomBytes } from "node:crypto"
 import {
   appendFileSync,
@@ -258,10 +258,9 @@ const m2Tables = [
   "catalog_page_visits",
 ]
 
-async function run() {
-  console.info(`Starting ${project} in ${dir}`)
+/** PostgreSQL alone, with the database as v0.3.0 left it, restored as from the pre-upgrade dump. */
+function restore() {
   compose("up", "--detach", "--quiet-pull", "--wait", "postgres")
-  // The database as v0.3.0 left it, restored as from the pre-upgrade dump.
   execFileSync(
     "docker",
     [
@@ -280,6 +279,91 @@ async function run() {
     ],
     { input: readFileSync(dataset), stdio: ["pipe", "ignore", "pipe"] },
   )
+}
+
+async function run() {
+  console.info(`Starting ${project} in ${dir}`)
+
+  // First, an upgrade during which 0.3's catalog is still written to, as
+  // by 0.3's web left running: a session holds a lock the drop needs
+  // (the first table 0020 locks), so the drop waits right after the
+  // moves are recorded; then a late revision is written to Trial's
+  // catalog and the lock is let go. The drop must refuse, and nothing may
+  // be lost.
+  restore()
+  const holder = spawn(
+    "docker",
+    [
+      ...composeArgs,
+      "exec",
+      "-T",
+      "postgres",
+      "psql",
+      "postgres://shinan@/shinan?application_name=upgrade_test_lock",
+    ],
+    { stdio: ["pipe", "ignore", "ignore"] },
+  )
+  holder.stdin.write(
+    "begin; lock table catalog_page_visits in access share mode; select pg_sleep(600);\n",
+  )
+  await waitFor("the test's lock", () =>
+    psql(
+      "select count(*) from pg_locks l join pg_stat_activity a on a.pid = l.pid where a.application_name = 'upgrade_test_lock' and l.relation = 'catalog_page_visits'::regclass and l.granted",
+    ) === "1"
+      ? true
+      : null,
+  )
+  const late = spawn(
+    "docker",
+    [...composeArgs, "up", "--detach", "--quiet-pull"],
+    {
+      stdio: "ignore",
+    },
+  )
+  const lateDone = new Promise((resolve) => late.on("close", resolve))
+  await waitFor("the moves to be recorded and the drop to wait", () =>
+    psql("select to_regclass('public.catalog_moves') is not null") === "t" &&
+    psql("select count(*) from catalog_moves") === "3" &&
+    psql(
+      "select count(*) from pg_stat_activity where wait_event_type = 'Lock' and query like '%LOCK TABLE%catalog_page_visits%'",
+    ) === "1"
+      ? true
+      : null,
+  )
+  psql(`insert into catalog_revisions
+    select (jsonb_populate_record(null::catalog_revisions, to_jsonb(r) || jsonb_build_object('number', r.number + 1))).*
+    from catalog_revisions r join workspaces w on w.id = r.workspace_id
+    where w.name = 'Trial' order by r.number desc limit 1`)
+  psql(
+    "select pg_terminate_backend(pid) from pg_stat_activity where application_name = 'upgrade_test_lock'",
+  )
+  holder.kill()
+  await lateDone
+  await waitFor("migrate to stop", () =>
+    inspect("migrate", "{{.State.Status}}") === "exited" ? true : null,
+  )
+  const refusal = compose("logs", "--no-color", "migrate")
+  check(
+    inspect("migrate", "{{.State.ExitCode}}") === "1" &&
+      refusal.includes(
+        "M2's catalog tables are kept: a workspace's catalog was not moved into Git, or changed after it was moved",
+      ) &&
+      inspect("web", "{{.State.Status}}") !== "running",
+    "with the catalog written to after its move, the drop refuses: migrate exits 1 and web does not start",
+  )
+  check(
+    m2Tables.every((t) => psql(`select to_regclass('public.${t}')`) !== "") &&
+      psql(
+        "select max(number) from catalog_revisions r join workspaces w on w.id = r.workspace_id where w.name = 'Trial'",
+      ) === "19",
+    "M2's tables are kept, with the late revision in them",
+  )
+  spawnSync("docker", [...composeArgs, "down", "--volumes"], {
+    stdio: "ignore",
+  })
+
+  // Now the upgrade as the operator guide describes it.
+  restore()
   const before = JSON.parse(
     psql(`select json_agg(json_build_object(
       'name', w.name, 'id', w.id,
@@ -308,22 +392,22 @@ async function run() {
   const [trial, shapes, empty] = before
   check(
     log.includes(
-      `Workspace ${trial.id}: moved 17 catalog documents at revision 18 into Git, verified file by file`,
+      `Workspace "Trial" (${trial.id}): moved 17 catalog documents at revision 18 into Git, verified file by file`,
     ) &&
       log.includes(
-        `Workspace ${shapes.id}: moved 6 catalog documents at revision 7 into Git, verified file by file`,
+        `Workspace "Shapes" (${shapes.id}): moved 6 catalog documents at revision 7 into Git, verified file by file`,
       ) &&
       log.includes(
-        `Workspace ${empty.id}: no catalog documents; its repository starts with README.md`,
+        `Workspace "Empty" (${empty.id}): no catalog documents; its repository starts with README.md`,
       ),
     "migrate reports each workspace's catalog moved and verified",
   )
   check(
     log.includes(
-      `Workspace ${trial.id}: catalog proposal #19 was waiting for approval and is not applied (it touched service/container-registry); redo it by pushing`,
+      `Workspace "Trial" (${trial.id}): catalog proposal #19 was waiting for approval and is not applied (it touched service/container-registry); redo it by pushing`,
     ) &&
       log.includes(
-        `Workspace ${trial.id}: catalog proposal #20 was waiting for approval and is not applied (it touched start-here); redo it by pushing`,
+        `Workspace "Trial" (${trial.id}): catalog proposal #20 was waiting for approval and is not applied (it touched start-here); redo it by pushing`,
       ) &&
       /the moved catalog reads with \d+ problems?, kept as they were: .*start-here-invalid \(blocking\) in start-here/.test(
         log,
@@ -358,7 +442,7 @@ async function run() {
         repo.commits[0].message ===
           (workspace.texts.length === 0
             ? "Start the catalog\n"
-            : `Import the catalog from PostgreSQL (revision ${workspace.revision})\n`),
+            : `Bring the catalog over from Shinan 0.3 (revision ${workspace.revision})\n`),
       `${workspace.name}: in one first commit by Shinan (${JSON.stringify(repo.commits[0].message)})`,
     )
     workspace.main = repo.main

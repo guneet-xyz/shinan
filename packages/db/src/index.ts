@@ -174,21 +174,29 @@ export async function migrateDatabase(
     ) as { entries: { tag: string; when: number }[] }
     const stop = journal.entries.find((e) => e.tag === options.before)
     if (!stop) throw new Error(`No migration ${options.before}`)
-    // What Drizzle's `migrate` does, with the list cut short: each
-    // migration is known by its folder time, as Drizzle records it.
+    // What Drizzle's `migrate` does (drizzle-orm 0.45:
+    // `db.dialect.migrate(readMigrationFiles(config), db.session, config)`),
+    // with the list cut short: each migration is known by its folder time,
+    // as Drizzle records it. `dialect` and `session` are Drizzle's
+    // internals: if an upgrade of Drizzle changes them this fails here, at
+    // once, rather than migrating differently (m2-drop.test.ts covers it).
     const migrations = readMigrationFiles({ migrationsFolder: folder }).filter(
       (m) => m.folderMillis < stop.when,
     )
     const internal = db as unknown as {
-      dialect: {
-        migrate(
+      dialect?: {
+        migrate?(
           migrations: unknown,
           session: unknown,
           config: unknown,
         ): Promise<void>
       }
-      session: unknown
+      session?: unknown
     }
+    if (typeof internal.dialect?.migrate !== "function" || !internal.session)
+      throw new Error(
+        "This version of Drizzle has no dialect.migrate: migrateDatabase's `before` needs updating",
+      )
     await internal.dialect.migrate(migrations, internal.session, {
       migrationsFolder: folder,
     })

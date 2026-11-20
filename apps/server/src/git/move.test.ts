@@ -130,7 +130,7 @@ describe(
             .toString()
             .trim(),
         ).toBe(
-          `Shinan <shinan@shinan.invalid>|Shinan||${mine.length === 0 ? "Start the catalog" : `Import the catalog from PostgreSQL (revision ${report.revision})`}`,
+          `Shinan <shinan@shinan.invalid>|Shinan||${mine.length === 0 ? "Start the catalog" : `Bring the catalog over from Shinan 0.3 (revision ${report.revision})`}`,
         )
       }
 

@@ -281,11 +281,26 @@ container ([what runs](#what-runs)), instead of in PostgreSQL (Git-based
 catalog plan, [§4](build-plan-git-catalog.md#4-migration)). Agents change it
 by pushing; catalog proposals and their approval are gone. **This upgrade
 cannot be rolled back by setting the previous digest**: read the rollback
-below before you start. The release notes list every change; for
-operators:
+below before you start.
 
-1. **Take a database dump** ([backups](#backups-your-responsibility)) and
-   keep it until 0.4 has run well: it is the only way back to 0.3.
+**Catalog proposals still waiting for approval are not carried over.**
+`migrate` lists each by number; after the upgrade, ask an agent to redo
+them by pushing.
+
+The release notes list every change; for operators:
+
+1. **Stop `web` and `worker`, then take a database dump**
+   ([backups](#backups-your-responsibility)):
+
+   ```sh
+   docker compose stop web worker
+   (umask 077 && docker compose exec -T postgres pg_dump -U shinan -Fc shinan > shinan-$(date -u +%Y%m%dT%H%M%SZ).dump)
+   ```
+
+   With them stopped, nothing changes the catalog from now on, so the dump
+   is exactly what `migrate` moves. Keep it until 0.4 has run well: it is
+   the only way back to 0.3.
+
 2. **Add what the `git` container needs,** as [setting up](#setting-up)
    describes: the `secrets/git_service_token` secret (a long random value,
    for example from `openssl rand -base64 32`), the `git` service with its
@@ -296,10 +311,10 @@ operators:
    `git` starts first; then `migrate` applies the migrations, and between
    them **moves the catalog into Git**:
    - every workspace gets its repository with one first commit by Shinan,
-     "Import the catalog from PostgreSQL (revision N)": every document's
-     current text, byte for byte, at its ID plus `.md` (retired ones too),
-     and a `README.md`. A workspace without catalog documents gets only
-     the `README.md`;
+     "Bring the catalog over from Shinan 0.3 (revision N)": every
+     document's current text, byte for byte, at its ID plus `.md` (retired
+     ones too), and a `README.md`. A workspace without catalog documents
+     gets only the `README.md`;
    - each commit is read back and every file compared with its stored text
      by SHA-256, before anything is dropped;
    - the catalog's existing problems are reported, not refused: for
@@ -310,34 +325,56 @@ operators:
      log names each by number with the IDs it touched (never its text);
      agents redo them by pushing;
    - then M2's catalog tables are dropped. The drop refuses to run unless
-     every workspace with catalog documents was moved and verified.
-4. **Check `docker compose logs migrate`:** a line per workspace, "moved N
-   catalog documents at revision R into Git, verified file by file", and
-   the waiting proposals and problems. Then check `docker compose ps` as
-   for any upgrade. The worker builds the agent index from each
-   repository when it starts.
+     every workspace's move holds exactly what those tables hold then: its
+     latest revision, its documents and its waiting proposals.
+4. **Check `docker compose logs migrate`:** a line per workspace, by name
+   and ID, "moved N catalog documents at revision R into Git, verified file
+   by file", and the waiting proposals and problems. Then check
+   `docker compose ps` as for any upgrade.
+5. **Open the catalog in the browser:** Recent changes shows "Bring the
+   catalog over from Shinan 0.3" by Shinan, pages read as before, and
+   "Catching up with the latest changes…" goes away once the worker has
+   built the index from the repository (it does when it starts).
 
-**If `migrate` fails** (the Git container did not answer, a document has
-no ID usable as a path, a file read back differs), it says why, keeps
-M2's tables and exits 1, and `web` and `worker` do not start. Fix the
-cause and run `docker compose up -d` again: a repository made by the
-failed run is checked again, and running `migrate` again after it
+**If `migrate` fails,** it says why, keeps M2's tables and exits 1, and
+`web` and `worker` do not start. Running `migrate` again after it
 succeeded changes nothing.
 
+- **The Git container did not answer, or a file read back differs:** fix
+  the cause and run `docker compose up -d` again. A repository made by the
+  failed run is checked again.
+- **"Repair it in 0.3 first"** (a document has no ID usable as a path, or
+  two documents share an ID): go back to 0.3 (the rollback below), repair
+  the document there, then upgrade again. If 0.3 reads the document
+  without problems and so has nothing to repair, keep 0.3 running and ask
+  on [Shinan's issues](https://github.com/guneet-xyz/shinan/issues), with
+  the message.
+- **"Its catalog changed while migrate moved it"**, or the drop's "a
+  workspace's catalog … changed after it was moved": something still wrote
+  to 0.3's catalog, so `web` or `worker` was running. Roll back with the
+  dump from step 1, then start again at step 1.
+
 **To roll back to 0.3:** 0.4's migrations are not backward compatible
-(M2's tables are dropped and the index tables change shape), so:
+(M2's tables are dropped and the index tables change shape). Restore the
+dump from step 1 with 0.4's Compose file still in place, so that no 0.4
+`migrate` runs on it, then switch to 0.3:
 
-1. `docker compose down` (the volumes stay);
-2. restore the dump you took in step 1 into an empty database, as in
-   [backups](#backups-your-responsibility);
-3. set `SHINAN_IMAGE` to 0.3's digest;
-4. use 0.3's Compose file (without the `git` service), and remove the
-   `catalog` volume (`docker volume rm <project>_catalog`), so a later
-   upgrade starts from an empty one;
-5. `docker compose up -d`.
+```sh
+docker compose down
+docker compose up -d postgres
+docker compose exec -T postgres dropdb -U shinan --force shinan
+docker compose exec -T postgres createdb -U shinan shinan
+docker compose exec -T postgres pg_restore -U shinan -d shinan --exit-on-error < shinan-….dump
+docker compose down
+# Now 0.3's Compose file (without the git service) and SHINAN_IMAGE set to
+# 0.3's digest; the catalog volume goes, so a later upgrade starts empty:
+docker volume rm <project>_catalog
+docker compose up -d
+```
 
-Everything pushed after the upgrade is then lost from Shinan; agents'
-clones still hold it, and once you upgrade again they push it back.
+Everything pushed after the upgrade is then lost from Shinan. Agents'
+clones still hold it, but after you upgrade again their history no longer
+matches: each agent makes a new clone and redoes those changes by pushing.
 
 ### Upgrading from 0.2 to 0.3 (the catalog)
 

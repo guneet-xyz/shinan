@@ -1000,7 +1000,9 @@ one that drops M2's ([4.2](#42-database-changes)):
    every document's text at its current revision, byte for byte, at the path
    of its current ID ([2.1](#21-the-repository-layout-and-rules)), retired
    documents included, plus Shinan's `README.md`. Author and committer
-   "Shinan", message "Import the catalog from PostgreSQL (revision N)".
+   "Shinan", message "Bring the catalog over from Shinan 0.3 (revision N)"
+   (as built: the product review of GC-6 replaced "Import the catalog from
+   PostgreSQL", since "PostgreSQL" is an internal word in Recent changes).
 2. **Verify** by reading the commit back: every file equals its stored text
    (by SHA-256), the document count matches, and the tree validates with the
    rules of [2.5](#25-checks-on-push) (the `by` rule aside: the commit is
@@ -1038,9 +1040,20 @@ core's `moveCatalogsIntoGit`, run by `migrate` as Shinan
   that stopped before recording) is verified the same way; one holding
   anything else stops the move.
 - **What stops it:** a document with no ID usable as a path, two documents
-  with one ID, the Git container refusing or not answering, or a mismatch.
-  The message names the workspace and document IDs, never text; `migrate`
+  with one ID, the Git container refusing or not answering, a mismatch, or
+  a write to M2's catalog while it was moved. The message names the
+  workspace (its name and ID) and document IDs, never text; `migrate`
   exits 1 with M2's tables kept.
+- **Nothing written meanwhile (code review of GC-6):** M2 is read in one
+  read-only repeatable-read snapshot and checked again (its latest
+  revision, its document count, the proposals waiting) in the transaction
+  that records the move; the drop compares each recorded move with what
+  M2's tables hold then, for every workspace with documents or proposals.
+  So 0.3's `web` or `worker` left running cannot lose a change silently:
+  the operator guide says to stop them before the dump.
+- **A workspace with M2 documents and a repository request** (only a
+  development build of 0.4 makes one) stops the move with a message saying
+  so: its repository is not the one the move would make.
 - **A workspace without M2 documents** gets the usual first commit
   ("Start the catalog", `README.md` only), recorded as a move of 0
   documents.
@@ -1090,7 +1103,11 @@ contract release:
 `0020_m2_dropped` drops the six tables by name (no `CASCADE`, so anything
 else that depended on them would stop it) with the proposal state type and
 `workspaces.catalog_strict`, after a check that raises an error, and so
-changes nothing, if any workspace with M2 documents has no recorded move.
+changes nothing, unless every workspace with M2 documents or proposals has
+a recorded move of exactly what M2 holds then (its latest revision, its
+document count and the numbers of the proposals waiting). It locks the six
+tables before that check, so nothing can write to them between the check
+and the drop; `migrate` shows the refusal's own message.
 `migrate` applies the migrations before `0020`, moves the catalog, then
 applies `0020`. The expand step's index tables and `catalog_index_provenance`
 came earlier, in GC-4's `0015`. The Drizzle definitions, `revisions.ts` and

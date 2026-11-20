@@ -541,12 +541,36 @@ async function runMigrate(env: Env): Promise<number> {
     } finally {
       await pool.end()
     }
-    await migrateDatabase(databaseUrl)
+    try {
+      await migrateDatabase(databaseUrl)
+    } catch (error) {
+      // The drop's own refusal (`RAISE EXCEPTION` in 0020_m2_dropped): its
+      // message is Shinan's, never a value, so it is shown.
+      const refusal = refusalOf(error)
+      if (refusal === null) throw error
+      console.error(refusal)
+      return false
+    }
     return true
   })
   if (!moved) return 1
   console.info("Database ready")
   return 0
+}
+
+/** The message of a migration's own `RAISE EXCEPTION` (SQLSTATE P0001), or null. */
+function refusalOf(error: unknown): string | null {
+  let current: unknown = error
+  for (let depth = 0; depth < 5 && current; depth++) {
+    const { code, message, cause } = current as {
+      code?: unknown
+      message?: unknown
+      cause?: unknown
+    }
+    if (code === "P0001" && typeof message === "string") return message
+    current = cause
+  }
+  return null
 }
 
 function waitForShutdown(): Promise<NodeJS.Signals> {

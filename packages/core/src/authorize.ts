@@ -108,6 +108,7 @@ export async function atInstallation<A extends InstallationAction, T>(
   ctx: Context,
   action: A,
   work: (scope: InstallationScope<A>) => Promise<T>,
+  transaction?: TransactionConfig,
 ): Promise<T> {
   return withRefusalsRecorded(ctx, () =>
     ctx.db.transaction(async (tx) => {
@@ -118,7 +119,7 @@ export async function atInstallation<A extends InstallationAction, T>(
         ...scopeFields(ctx, tx, actor),
         action,
       } as InstallationScope<A>)
-    }),
+    }, transaction),
   )
 }
 

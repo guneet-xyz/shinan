@@ -7,14 +7,12 @@ import type {
   Transaction,
 } from "@shinan/db"
 
-import { atInstallation } from "../../authorize.js"
+import { atInstallation, snapshotRead } from "../../authorize.js"
 import type { Context, InstallationScope } from "../../context.js"
 import {
-  isEntityId,
+  isDocumentPath,
   parseCatalogDocument,
   readCatalog,
-  slugPattern,
-  typeNamePattern,
   validateCatalog,
 } from "../document/index.js"
 import { readDocumentId } from "../document/parse.js"
@@ -37,7 +35,10 @@ import {
  * catalog, reporting its problems rather than refusing them (it is the
  * existing catalog); reports the proposals left waiting (GD-12: they are
  * not applied); and records the verified move (`catalog_moves`), which the
- * drop requires. Any mismatch stops `migrate` before anything is dropped.
+ * drop requires and compares with M2's current state. M2 is read in one
+ * read-only snapshot, and checked again when the move is recorded, so a
+ * write to M2's tables meanwhile (0.3's web or worker still running) stops
+ * the move. Any mismatch stops `migrate` before anything is dropped.
  *
  * The first commit is first pushed by `shinan` (the Git container records
  * it), so the moved fact checks, which name the agents that checked them
@@ -53,6 +54,7 @@ export class CatalogMoveError extends Error {
 /** What the move did for one workspace. */
 export interface CatalogMoveReport {
   workspaceId: string
+  workspaceName: string
   /** M2's latest revision; 0 for a workspace without M2 documents. */
   revision: number
   documents: number
@@ -63,9 +65,9 @@ export interface CatalogMoveReport {
   problems: CatalogMoveProblem[]
 }
 
-/** The first commit's message for a moved catalog (plan §4.1). */
+/** The first commit's message for a moved catalog (plan §4.1, product review of GC-6). */
 export function catalogMoveMessage(revision: number): string {
-  return `Import the catalog from PostgreSQL (revision ${revision})\n`
+  return `Bring the catalog over from Shinan 0.3 (revision ${revision})\n`
 }
 
 /** A document of M2, as the move carries it. */
@@ -73,6 +75,16 @@ interface MovedDocument {
   path: string
   /** Its current text, as stored. */
   content: Uint8Array
+}
+
+interface Workspace {
+  id: string
+  name: string
+}
+
+/** How a workspace is named in what the move says: its name, then its ID. */
+function named(workspace: Workspace): string {
+  return `Workspace ${JSON.stringify(workspace.name)} (${workspace.id})`
 }
 
 /**
@@ -84,9 +96,24 @@ export async function moveCatalogsIntoGit(
   git: GitClient | undefined,
   options: { now?: number } = {},
 ): Promise<CatalogMoveReport[]> {
-  const workspaces = await atInstallation(ctx, "catalog.move", (scope) =>
-    workspacesWithoutRepository(scope.tx),
+  const { workspaces, requested } = await atInstallation(
+    ctx,
+    "catalog.move",
+    async (scope) => ({
+      workspaces: await workspacesWithoutRepository(scope.tx),
+      requested: await requestedBeforeTheMove(scope.tx),
+    }),
   )
+  // A workspace with M2 documents whose repository was asked for before
+  // the move (a development build of 0.4 ran on this database): its
+  // repository is not the one the move would make, so the drop could never
+  // run. Said plainly, rather than left to the drop's refusal.
+  const [stray] = requested
+  if (stray) {
+    throw new CatalogMoveError(
+      `${named(stray)} has catalog documents in 0.3's tables but already had a repository before the move, so its catalog cannot be moved. Roll back to 0.3 with the dump taken before the upgrade, as the operator guide says, and upgrade again.`,
+    )
+  }
   if (workspaces.length === 0) return []
   if (!git) {
     throw new CatalogMoveError(
@@ -94,10 +121,8 @@ export async function moveCatalogsIntoGit(
     )
   }
   const reports: CatalogMoveReport[] = []
-  for (const workspaceId of workspaces) {
-    reports.push(
-      await moveOne(ctx, git, workspaceId, options.now ?? Date.now()),
-    )
+  for (const workspace of workspaces) {
+    reports.push(await moveOne(ctx, git, workspace, options.now ?? Date.now()))
   }
   return reports
 }
@@ -105,11 +130,16 @@ export async function moveCatalogsIntoGit(
 async function moveOne(
   ctx: Context,
   git: GitClient,
-  workspaceId: string,
+  workspace: Workspace,
   now: number,
 ): Promise<CatalogMoveReport> {
-  const m2 = await atInstallation(ctx, "catalog.move", (scope) =>
-    readM2(scope, workspaceId),
+  const workspaceId = workspace.id
+  // One consistent snapshot of M2's catalog, read only.
+  const m2 = await atInstallation(
+    ctx,
+    "catalog.move",
+    (scope) => readM2(scope, workspace),
+    snapshotRead,
   )
   const files: MovedDocument[] = [
     { path: "README.md", content: new TextEncoder().encode(repositoryReadme) },
@@ -122,13 +152,25 @@ async function moveOne(
 
   // Outside any transaction: the Git container may take a while.
   const made = await git.createRepository(workspaceId, { files, message })
-  await verify(git, workspaceId, made.main, files, message, made.created)
+  await verify(git, workspace, made.main, files, message, made.created)
   const problems = validationReport(
     m2.documents.map((d) => new TextDecoder().decode(d.content)),
     { now, memberHandles: new Set(m2.memberHandles) },
   )
 
   await atInstallation(ctx, "catalog.move", async (scope) => {
+    // Nothing may have been written to M2's catalog since the snapshot:
+    // the move records what it moved, and the drop compares that again.
+    const current = await m2State(scope.tx, workspaceId)
+    if (
+      current.revision !== m2.revision ||
+      current.documents !== m2.documents.length ||
+      current.waiting.join(",") !== m2.waiting.map((p) => p.number).join(",")
+    ) {
+      throw new CatalogMoveError(
+        `${named(workspace)}: its catalog changed while migrate moved it (revision ${m2.revision}, now ${current.revision}), so 0.3's web or worker is still running. Nothing was dropped. Roll back to 0.3 with the dump taken before the upgrade, as the operator guide says, stop web and worker, and upgrade again.`,
+      )
+    }
     const r = schema.catalogRepositories
     await scope.tx
       .insert(r)
@@ -159,6 +201,7 @@ async function moveOne(
   })
   return {
     workspaceId,
+    workspaceName: workspace.name,
     revision: m2.revision,
     documents: m2.documents.length,
     firstCommit: made.main,
@@ -168,16 +211,61 @@ async function moveOne(
   }
 }
 
-async function workspacesWithoutRepository(tx: Transaction): Promise<string[]> {
+async function workspacesWithoutRepository(
+  tx: Transaction,
+): Promise<Workspace[]> {
   const w = schema.workspaces
   const r = schema.catalogRepositories
-  const rows = await tx
-    .select({ id: w.id })
+  return tx
+    .select({ id: w.id, name: w.name })
     .from(w)
     .leftJoin(r, eq(r.workspaceId, w.id))
     .where(isNull(r.workspaceId))
     .orderBy(w.createdAt, w.id)
-  return rows.map((row) => row.id)
+}
+
+/** Whether M2's tables are still there: until the drop. */
+async function m2Present(tx: Transaction): Promise<boolean> {
+  const present = await tx.execute<{ present: boolean }>(
+    sql`select to_regclass('public.catalog_documents') is not null as present`,
+  )
+  return present.rows[0]?.present ?? false
+}
+
+/** Workspaces with M2 documents that had a repository request, but no move. */
+async function requestedBeforeTheMove(tx: Transaction): Promise<Workspace[]> {
+  if (!(await m2Present(tx))) return []
+  const rows = await tx.execute<{ id: string; name: string }>(sql`
+    select w.id, w.name from workspaces w
+    where exists (select 1 from catalog_documents d where d.workspace_id = w.id)
+      and exists (select 1 from catalog_repositories r where r.workspace_id = w.id)
+      and not exists (select 1 from catalog_moves m where m.workspace_id = w.id)
+    order by w.created_at, w.id`)
+  return rows.rows
+}
+
+/**
+ * What the drop compares with each move (`0020_m2_dropped`): M2's latest
+ * revision, its document count, and the proposals waiting, by number.
+ */
+async function m2State(
+  tx: Transaction,
+  workspaceId: string,
+): Promise<{ revision: number; documents: number; waiting: number[] }> {
+  if (!(await m2Present(tx))) return { revision: 0, documents: 0, waiting: [] }
+  const [state] = (
+    await tx.execute<{
+      revision: number
+      documents: number
+      waiting: number[]
+    }>(sql`
+      select
+        (select coalesce(max(number), 0)::int from catalog_revisions where workspace_id = ${workspaceId}) as revision,
+        (select count(*)::int from catalog_documents where workspace_id = ${workspaceId}) as documents,
+        (select coalesce(array_agg(number order by number), '{}') from catalog_proposals
+          where workspace_id = ${workspaceId} and state = 'pending') as waiting`)
+  ).rows
+  return state!
 }
 
 /**
@@ -188,7 +276,7 @@ async function workspacesWithoutRepository(tx: Transaction): Promise<string[]> {
  */
 async function readM2(
   scope: InstallationScope<"catalog.move">,
-  workspaceId: string,
+  workspace: Workspace,
 ): Promise<{
   documents: MovedDocument[]
   revision: number
@@ -196,6 +284,7 @@ async function readM2(
   memberHandles: string[]
 }> {
   const { tx } = scope
+  const workspaceId = workspace.id
   const handles = await tx
     .select({ handle: schema.people.handle })
     .from(schema.members)
@@ -207,10 +296,7 @@ async function readM2(
       ),
     )
   const memberHandles = handles.map((h) => h.handle)
-  const present = await tx.execute<{ present: boolean }>(
-    sql`select to_regclass('public.catalog_documents') is not null as present`,
-  )
-  if (!present.rows[0]?.present)
+  if (!(await m2Present(tx)))
     return { documents: [], revision: 0, waiting: [], memberHandles }
 
   const texts = await tx.execute<{ id: string; text: string }>(sql`
@@ -222,9 +308,7 @@ async function readM2(
       and rd.revision = d.current_revision
     where d.workspace_id = ${workspaceId}
     order by d.created_at, d.id`)
-  const revision = await tx.execute<{ revision: number }>(sql`
-    select coalesce(max(number), 0)::int as revision
-    from catalog_revisions where workspace_id = ${workspaceId}`)
+  const { revision } = await m2State(tx, workspaceId)
   const waiting = await tx.execute<{ number: number; touches: string[] }>(sql`
     select number, touches from catalog_proposals
     where workspace_id = ${workspaceId} and state = 'pending'
@@ -235,15 +319,15 @@ async function readM2(
     const id = readDocumentId(row.text)
     // Never the text itself, nor an ID that would not be a path: M2 kept
     // them valid, so this is a damaged catalog to look at first.
-    if (id === null || !isPath(`${id}.md`)) {
+    if (id === null || !isDocumentPath(`${id}.md`)) {
       throw new CatalogMoveError(
-        `Workspace ${workspaceId}: catalog document ${row.id} has no ID usable as a path, so it cannot be moved; repair it in v0.3.0 first`,
+        `${named(workspace)}: catalog document ${row.id} has no ID usable as a path, so it cannot be moved. Roll back to 0.3, repair the document there, then upgrade again.`,
       )
     }
     const path = `${id}.md`
     if (byPath.has(path)) {
       throw new CatalogMoveError(
-        `Workspace ${workspaceId}: two catalog documents have the ID ${id}, so they cannot both be moved; repair them in v0.3.0 first`,
+        `${named(workspace)}: two catalog documents have the ID ${id}, so they cannot both be moved. Roll back to 0.3, repair them there, then upgrade again.`,
       )
     }
     byPath.set(path, { path, content: new TextEncoder().encode(row.text) })
@@ -252,26 +336,13 @@ async function readM2(
     documents: [...byPath.values()].sort((a, b) =>
       a.path < b.path ? -1 : a.path > b.path ? 1 : 0,
     ),
-    revision: revision.rows[0]?.revision ?? 0,
+    revision,
     waiting: waiting.rows.map((p) => ({
       number: p.number,
       touches: [...p.touches].sort(),
     })),
     memberHandles,
   }
-}
-
-/** A document's path on `main`: `<type>/<slug>.md`, `schema/<type>.md` or `start-here.md`. */
-function isPath(path: string): boolean {
-  if (path === "start-here.md") return true
-  const match = /^([^/]+)\/([^/]+)\.md$/.exec(path)
-  if (!match) return false
-  const [, folder, name] = match
-  return folder === "schema"
-    ? typeNamePattern.test(name!)
-    : typeNamePattern.test(folder!) &&
-        slugPattern.test(name!) &&
-        isEntityId(`${folder}/${name}`)
 }
 
 const sha256 = (content: Uint8Array) =>
@@ -284,15 +355,16 @@ const sha256 = (content: Uint8Array) =>
  */
 async function verify(
   git: GitClient,
-  workspaceId: string,
+  workspace: Workspace,
   commit: string,
   files: MovedDocument[],
   message: string,
   created: boolean,
 ): Promise<void> {
+  const workspaceId = workspace.id
   const fail = (why: string): never => {
     throw new CatalogMoveError(
-      `Workspace ${workspaceId}: the ${created ? "new" : "existing"} repository does not hold the catalog as stored: ${why}. Nothing was dropped.`,
+      `${named(workspace)}: the ${created ? "new" : "existing"} repository does not hold the catalog as stored: ${why}. Nothing was dropped.`,
     )
   }
   const { commits } = await git.history(workspaceId, { commit, limit: 2 })
@@ -370,12 +442,12 @@ function validationReport(
 export function catalogMoveLines(report: CatalogMoveReport): string[] {
   const lines = [
     report.documents === 0
-      ? `Workspace ${report.workspaceId}: no catalog documents; its repository starts with README.md (${report.firstCommit})`
-      : `Workspace ${report.workspaceId}: moved ${report.documents} catalog ${report.documents === 1 ? "document" : "documents"} at revision ${report.revision} into Git, verified file by file (first commit ${report.firstCommit})`,
+      ? `${named({ id: report.workspaceId, name: report.workspaceName })}: no catalog documents; its repository starts with README.md (${report.firstCommit})`
+      : `${named({ id: report.workspaceId, name: report.workspaceName })}: moved ${report.documents} catalog ${report.documents === 1 ? "document" : "documents"} at revision ${report.revision} into Git, verified file by file (first commit ${report.firstCommit})`,
   ]
   for (const proposal of report.waitingProposals) {
     lines.push(
-      `Workspace ${report.workspaceId}: catalog proposal #${proposal.number} was waiting for approval and is not applied (it touched ${proposal.touches.join(", ") || "nothing"}); redo it by pushing`,
+      `${named({ id: report.workspaceId, name: report.workspaceName })}: catalog proposal #${proposal.number} was waiting for approval and is not applied (it touched ${proposal.touches.join(", ") || "nothing"}); redo it by pushing`,
     )
   }
   if (report.problems.length > 0) {
@@ -387,7 +459,7 @@ export function catalogMoveLines(report: CatalogMoveReport): string[] {
       byCode.set(key, list)
     }
     lines.push(
-      `Workspace ${report.workspaceId}: the moved catalog reads with ${report.problems.length} ${report.problems.length === 1 ? "problem" : "problems"}, kept as they were: ${[...byCode].map(([code, documents]) => `${code} in ${[...documents].join(", ")}`).join("; ")}`,
+      `${named({ id: report.workspaceId, name: report.workspaceName })}: the moved catalog reads with ${report.problems.length} ${report.problems.length === 1 ? "problem" : "problems"}, kept as they were: ${[...byCode].map(([code, documents]) => `${code} in ${[...documents].join(", ")}`).join("; ")}`,
     )
   }
   return lines

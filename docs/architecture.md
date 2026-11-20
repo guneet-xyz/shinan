@@ -1893,14 +1893,18 @@ From the `workspace` repository's catalog and `infra/musashi` (read 2026-11-16):
   joins the `git` network and starts after `git` is healthy), verifies
   every file by SHA-256, records the verified move (`catalog_moves`), and
   only then applies the drop, which itself refuses to run unless every
-  workspace with M2 documents has a verified move. A failed move stops
+  workspace with M2 documents or proposals has a verified move of exactly
+  what M2 holds then (revision, documents, waiting proposals); `web` and
+  `worker` are stopped before the dump, so nothing writes meanwhile. A failed move stops
   `migrate` with M2's tables kept, so `web` and `worker` never start; a
   second run changes nothing. Rolling back to v0.3.0 is by the
-  pre-deployment dump: stop the stack, restore the dump, pin v0.3.0, remove
-  the Git container and empty its volume, start v0.3.0
+  pre-deployment dump: stop the stack, restore the dump with only
+  PostgreSQL running, pin v0.3.0 and its Compose file, remove the Git
+  container's volume, start v0.3.0
   ([operator guide](operator-guide.md#upgrading-from-03-to-04-the-catalog-in-git)).
   Pushes made after the upgrade are lost from Shinan by a rollback; agents'
-  clones still hold them.
+  clones still hold them, and after a later upgrade (a new first commit)
+  agents clone again and redo them.
 
 ### 11.6 What needs deployment approval
 
