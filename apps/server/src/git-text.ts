@@ -19,6 +19,11 @@ export function gitText(
   })
 }
 
+/** "1 second", "2 seconds". */
+export function count(n: number, unit: string): string {
+  return `${n} ${unit}${n === 1 ? "" : "s"}`
+}
+
 /**
  * Every text the Git endpoint and the Git container show through a `git`
  * client, in one voice (product review of GC-2, D-067): each starts with
@@ -47,9 +52,9 @@ export const gitMessages = {
   forbidden:
     "Shinan: this agent can't use this catalog. Ask your person to check the agent in Shinan.",
   pushRate: (max: number, minutes: number, seconds: number) =>
-    `Shinan: too many pushes (at most ${max} in ${minutes} minutes). Nothing was changed; try again in ${seconds} seconds.`,
+    `Shinan: too many pushes (at most ${max} in ${count(minutes, "minute")}). Nothing was changed; try again in ${count(seconds, "second")}.`,
   rate: (seconds: number) =>
-    `Shinan: too many requests. Try again in ${seconds} seconds.`,
+    `Shinan: too many requests. Try again in ${count(seconds, "second")}.`,
   inFlight:
     "Shinan: too many requests at once. Try again in a moment, one at a time.",
   pushTooLarge: (mib: number) =>
@@ -64,7 +69,7 @@ export const gitMessages = {
     "Shinan: the Git service could not answer. Try again in a few seconds.",
   busy: "Shinan: the Git service is busy with other fetches and pushes. Try again in 10 seconds.",
   agentBusy: (processes: number, seconds: number) =>
-    `Shinan: this agent already has ${processes} fetches or pushes running. Try again in ${seconds} seconds, one at a time.`,
+    `Shinan: this agent already has ${processes} ${processes === 1 ? "fetch or push" : "fetches or pushes"} running. Try again in ${count(seconds, "second")}, one at a time.`,
   // Only a broken or unusual client, or a bug between web and the Git
   // container, reaches these.
   badLength: "Shinan: the Content-Length is not a number.",

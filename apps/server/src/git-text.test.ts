@@ -35,6 +35,18 @@ describe("the texts a git client shows", () => {
     )
   })
 
+  it("say 1 second and 1 minute, never 1 seconds", () => {
+    expect(gitMessages.rate(1)).toBe(
+      "Shinan: too many requests. Try again in 1 second.",
+    )
+    expect(gitMessages.pushRate(60, 1, 1)).toContain(
+      "(at most 60 in 1 minute). Nothing was changed; try again in 1 second.",
+    )
+    expect(gitMessages.agentBusy(1, 1)).toBe(
+      "Shinan: this agent already has 1 fetch or push running. Try again in 1 second, one at a time.",
+    )
+  })
+
   it("name the Git service one way", () => {
     for (const [, text] of texts)
       expect(text).not.toMatch(/catalog's Git service|Git could not/)
