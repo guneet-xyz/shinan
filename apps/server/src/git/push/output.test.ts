@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 
+import { sizeOver } from "./checks.js"
 import { verdictLines } from "./output.js"
 
 // What a push's answer says next depends on where its problems are
@@ -86,5 +87,14 @@ describe("a push's answer", () => {
       "1 warning (does not block):",
       "  x.md:1  secret-suspected  a message",
     ])
+  })
+})
+
+describe("a size over a limit", () => {
+  it("reads as more than the limit", () => {
+    const mib = 1024 * 1024
+    expect(sizeOver(1.5 * mib, mib)).toBe("1.5 MiB")
+    expect(sizeOver(1_100_000, mib)).toBe("1.05 MiB")
+    expect(sizeOver(mib + 1, mib)).toBe("1,048,577 bytes")
   })
 })

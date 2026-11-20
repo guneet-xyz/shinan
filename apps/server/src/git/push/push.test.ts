@@ -164,7 +164,7 @@ beforeAll(async () => {
       jobs,
       installationUrl,
       rateLimit: false,
-      git: { url: gitUrl, serviceToken },
+      gitClient: client,
     }).fetch,
   )
 })
@@ -569,7 +569,7 @@ describe("pushing through web", () => {
     })
     const file = await pushAs("alpha", folder, "HEAD:refs/heads/big")
     expect(remote(file.stderr).join("\n")).toMatch(
-      /big\.md +file-too-large +a new file is at most 1 MiB; this one is 1\.0 MiB/,
+      /big\.md +file-too-large +a new file is at most 1 MiB; this one is 1,048,577 bytes/,
     )
     await run("alpha", folder, "reset", "--quiet", "--hard", "HEAD~1")
     await commit("alpha", folder, {}, `Long\n\n${"x".repeat(65 * 1024)}\n`)

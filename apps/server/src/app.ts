@@ -2,12 +2,7 @@ import { extname } from "node:path"
 import { serveStatic } from "@hono/node-server/serve-static"
 import { Hono } from "hono"
 
-import {
-  createGitClient,
-  setAsideMessage,
-  shinan,
-  storeCatalogJournal,
-} from "@shinan/core"
+import { setAsideMessage, shinan, storeCatalogJournal } from "@shinan/core"
 import type { GitClient, JobQueue } from "@shinan/core"
 import { createLimitedLog, errorSummary } from "@shinan/db"
 import type { Database, DatabaseReadiness } from "@shinan/db"
@@ -90,11 +85,11 @@ export function createApp(options: AppOptions) {
       // One client of the Git container for the catalog's reads and this.
       git: options.gitClient,
       inFlight,
-      afterPush: options.git
+      afterPush: options.gitClient
         ? journalStorer({
             db: options.db,
             jobs: options.jobs,
-            git: createGitClient(options.git),
+            git: options.gitClient,
           })
         : undefined,
     }),

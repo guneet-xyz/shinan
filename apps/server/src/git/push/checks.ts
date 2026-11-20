@@ -94,6 +94,18 @@ export function shown(name: string): string {
     : `"${escaped}"`
 }
 
+/**
+ * A size over `limit`, with as much precision as it takes to read as more
+ * than the limit: "1.5 MiB", "1.05 MiB", or "1,048,577 bytes".
+ */
+export function sizeOver(bytes: number, limit: number): string {
+  for (const digits of [1, 2]) {
+    const shown = (bytes / 1024 ** 2).toFixed(digits)
+    if (Number(shown) * 1024 ** 2 > limit) return `${shown} MiB`
+  }
+  return `${bytes.toLocaleString("en")} bytes`
+}
+
 /** A size in GiB or MiB, as limits are given. */
 function size(bytes: number): string {
   return bytes >= 1024 ** 3
@@ -311,7 +323,7 @@ export async function checkPush(input: CheckInput): Promise<CheckResult> {
           problems.push({
             code: "file-too-large",
             where: place(object.path),
-            message: `a new file is at most ${size(limits.fileBytes)}; this one is ${(object.size / 1024 / 1024).toFixed(1)} MiB: leave it out of the catalog`,
+            message: `a new file is at most ${size(limits.fileBytes)}; this one is ${sizeOver(object.size, limits.fileBytes)}: leave it out of the catalog`,
           })
           continue
         }
