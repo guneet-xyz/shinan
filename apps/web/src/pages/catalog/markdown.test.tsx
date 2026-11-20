@@ -2,7 +2,14 @@ import { render } from "@testing-library/react"
 import { MemoryRouter } from "react-router"
 import { describe, expect, it } from "vitest"
 
-import { ageText, entityPath, freshnessSummary, summaryParts } from "./format"
+import {
+  ageText,
+  andList,
+  byText,
+  countWord,
+  entityPath,
+  relativeTime,
+} from "./format"
 import { linkTarget } from "./links"
 import { Markdown } from "./markdown"
 
@@ -94,9 +101,9 @@ describe("the Markdown renderer", () => {
     ])
   })
 
-  it("leads type schema and start-here references to their own pages", () => {
+  it("leads type schema and start-here references to their pages", () => {
     expect(entityPath("1", "schema/dns-zone")).toBe(
-      "/w/1/catalog/types/dns-zone",
+      "/w/1/catalog/p/schema/dns-zone",
     )
     expect(entityPath("1", "start-here")).toBe("/w/1/catalog")
     expect(entityPath("1", "machine/musashi")).toBe(
@@ -113,9 +120,9 @@ describe("the Markdown renderer", () => {
     expect(
       [...container.querySelectorAll("a")].map((a) => a.getAttribute("href")),
     ).toEqual([
-      "/w/1/catalog/types/domain",
+      "/w/1/catalog/p/schema/domain",
       "/w/1/catalog",
-      "/w/1/catalog/types/domain#section-cautions",
+      "/w/1/catalog/p/schema/domain#section-cautions",
     ])
   })
 
@@ -166,49 +173,26 @@ describe("freshness in words", () => {
     expect(ageText(800)).toBe("checked 2 years ago")
   })
 
-  it("sums up an entity's facts in one line", () => {
-    const now = Date.parse("2026-11-18T00:00:00Z")
-    const fact = (
-      status: "fresh" | "due" | "not-checked" | "none",
-      age: number | null,
-      state: "observed" | "unknown" | "planned" = "observed",
-    ) => ({
-      identity: `k${Math.random()}`,
-      key: "k",
-      state,
-      many: false,
-      relation: false,
-      in_schema: true,
-      check: null,
-      freshness: {
-        status,
-        age_days: age,
-        recheck_days: 30,
-        due_at: null,
-      },
-    })
-    const summary = freshnessSummary(
-      [
-        fact("fresh", 3),
-        fact("due", 40),
-        fact("not-checked", null, "unknown"),
-        fact("none", null, "planned"),
-      ],
-      now,
+  it("says when something happened in words", () => {
+    const now = Date.parse("2026-11-18T12:00:00Z")
+    const at = (minutes: number) =>
+      new Date(now - minutes * 60_000).toISOString()
+    expect(relativeTime(at(0), now)).toBe("just now")
+    expect(relativeTime(at(1), now)).toBe("a minute ago")
+    expect(relativeTime(at(12), now)).toBe("12 minutes ago")
+    expect(relativeTime(at(60), now)).toBe("an hour ago")
+    expect(relativeTime(at(150), now)).toBe("2 hours ago")
+    expect(relativeTime(at(26 * 60), now)).toBe("yesterday")
+    expect(relativeTime(at(5 * 24 * 60), now)).toBe("5 days ago")
+  })
+
+  it("puts check authors, counts and lists in words", () => {
+    expect(byText("guneet via opencode-daedalus")).toBe(
+      "guneet, through opencode-daedalus",
     )
-    expect(summary).toEqual({
-      facts: 4,
-      oldest_checked_at: new Date(now - 40 * 86_400_000).toISOString(),
-      due: 1,
-      not_checked: 1,
-      unknown: 1,
-    })
-    expect(summaryParts(summary, now)).toEqual([
-      "4 facts",
-      "oldest checked 40 days ago",
-      "1 due for recheck",
-      "1 never checked",
-      "1 unknown",
-    ])
+    expect(byText("guneet")).toBe("guneet")
+    expect(countWord(2)).toBe("Two")
+    expect(countWord(12)).toBe("12")
+    expect(andList(["a", "b", "c"])).toBe("a, b and c")
   })
 })

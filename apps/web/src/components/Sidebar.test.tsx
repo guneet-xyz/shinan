@@ -234,9 +234,12 @@ describe("the sidebar", () => {
       }),
     )
     const sidebar = within(await screen.findByRole("complementary"))
-    expect(
-      await sidebar.findByRole("link", { name: "Invoice ⟨U+202E⟩gnp.exe" }),
-    ).toBeTruthy()
+    // Seen as a marker, its name on hover; heard as its name.
+    const link = await sidebar.findByRole("link", {
+      name: "Invoice (hidden character: right-to-left override)gnp.exe",
+    })
+    expect(link.textContent).toContain("Invoice ⟨U+202E⟩")
+    expect(within(link).getByTitle("right-to-left override")).toBeTruthy()
   })
 
   it("shows a folder of 20,000 pages a slice at a time, with the current page and its neighbours", async () => {
@@ -268,11 +271,41 @@ describe("the sidebar", () => {
     ).toEqual(["Machine 10000"])
 
     await userEvent.click(
-      pages.getByRole("button", { name: "Show more (19,889 more)" }),
+      pages.getByRole("button", { name: "Show 500 more (19,889 left)" }),
     )
     expect(pages.getAllByRole("link")).toHaveLength(600 + 11)
     expect(
-      pages.getByRole("button", { name: "Show more (19,389 more)" }),
+      pages.getByRole("button", { name: "Show 500 more (19,389 left)" }),
     ).toBeTruthy()
+  })
+
+  it("offers the last pages of a folder by how many are left", async () => {
+    renderApp(
+      `/w/${workspaceId}/catalog`,
+      fakeApi({
+        catalogTree: () =>
+          Promise.resolve({
+            ...tree,
+            items: Array.from({ length: 650 }, (_, i) =>
+              item(`machine/m${i}.md`, `Machine ${i}`),
+            ),
+          }),
+      }),
+    )
+    const sidebar = within(await screen.findByRole("complementary"))
+    await userEvent.click(
+      await sidebar.findByRole("button", { name: "machine" }),
+    )
+    await userEvent.click(
+      sidebar.getByRole("button", { name: "Show 500 more (550 left)" }),
+    )
+    await userEvent.click(
+      sidebar.getByRole("button", { name: "Show the last 50" }),
+    )
+    expect(
+      within(sidebar.getByRole("navigation", { name: "Pages" })).getAllByRole(
+        "link",
+      ),
+    ).toHaveLength(650)
   })
 })

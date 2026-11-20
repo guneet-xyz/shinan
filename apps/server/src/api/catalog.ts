@@ -4,8 +4,12 @@ import { compress } from "hono/compress"
 import type * as Api from "@shinan/api-client"
 import {
   catalogLists,
+  getCatalogDocument,
   getCatalogEntity,
   getCatalogList,
+  getCatalogPageHistory,
+  getCatalogPageSource,
+  getCatalogReadme,
   getCatalogStartHere,
   getCatalogState,
   getCatalogTypeSchema,
@@ -22,6 +26,7 @@ import type {
   CatalogPurge,
   Context,
   EntityStatus,
+  GitClient,
 } from "@shinan/core"
 
 import { BadRequestError } from "./errors.js"
@@ -36,6 +41,7 @@ import type { SignedInEnv } from "./sign-in.js"
 export function catalogRoutes(
   app: Hono<SignedInEnv>,
   ctx: (c: HonoContext<SignedInEnv>) => Context,
+  git?: GitClient,
 ): void {
   const base = "/workspaces/:workspaceId/catalog"
   const workspaceId = (c: HonoContext<SignedInEnv>) =>
@@ -46,6 +52,49 @@ export function catalogRoutes(
       ctx(c),
       workspaceId(c),
       { id: requiredQuery(c, "id") },
+    )
+    return c.json(answer)
+  })
+
+  app.get(`${base}/document`, async (c) => {
+    const answer: Api.CatalogDocumentAnswer = await getCatalogDocument(
+      ctx(c),
+      workspaceId(c),
+      { id: requiredQuery(c, "id") },
+    )
+    return c.json(answer)
+  })
+
+  // From the repository, through the Git container (GC-7).
+  app.get(`${base}/history`, async (c) => {
+    const answer: Api.CatalogHistoryAnswer = await getCatalogPageHistory(
+      ctx(c),
+      git,
+      workspaceId(c),
+      {
+        id: requiredQuery(c, "id"),
+        after: c.req.query("after"),
+        limit: integerQuery(c, "limit"),
+      },
+    )
+    return c.json(answer)
+  })
+
+  app.get(`${base}/source`, async (c) => {
+    const answer: Api.CatalogSourceAnswer = await getCatalogPageSource(
+      ctx(c),
+      git,
+      workspaceId(c),
+      { id: requiredQuery(c, "id") },
+    )
+    return c.json(answer)
+  })
+
+  app.get(`${base}/readme`, async (c) => {
+    const answer: Api.CatalogReadmeAnswer = await getCatalogReadme(
+      ctx(c),
+      git,
+      workspaceId(c),
     )
     return c.json(answer)
   })

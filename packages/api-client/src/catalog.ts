@@ -174,6 +174,60 @@ export interface CatalogTreeItem {
   status: string | null
 }
 
+/** The start-here document or a type schema document, as a page. */
+export interface CatalogDocument {
+  id: string
+  kind: string
+  path: string
+  blob: string
+  title: string | null
+  summary: string | null
+  status: string | null
+  owner: string | null
+  body: CatalogSection[]
+  problems: { code: string; message: string }[]
+}
+
+export interface CatalogDocumentAnswer extends CatalogAnswer {
+  document: CatalogDocument
+}
+
+/** One change of a page: a commit of `main` that changed its file. */
+export interface CatalogChange {
+  commit: string
+  /** The commit message as written; its start if long. */
+  message: string
+  /** When it was committed (ISO 8601), as the commit says. */
+  time: string | null
+  merge: boolean
+  /** Who pushed it, from the push log (GC-3a); null until then. */
+  pushed_by: null
+}
+
+export interface CatalogHistoryAnswer extends CatalogAnswer {
+  path: string
+  title: string | null
+  changes: CatalogChange[]
+  /** The cursor for older changes, or null at the first change. */
+  next_after: string | null
+}
+
+/** A file's text as it is on `main`; `text` null when too large to show. */
+export interface CatalogSource {
+  path: string
+  text: string | null
+  size: number
+}
+
+export interface CatalogSourceAnswer extends CatalogAnswer {
+  title: string | null
+  source: CatalogSource
+}
+
+export interface CatalogReadmeAnswer extends CatalogAnswer {
+  readme: CatalogSource | null
+}
+
 /** The catalog's tree for the sidebar, and how many things need attention. */
 export interface CatalogTreeAnswer extends CatalogAnswer {
   items: CatalogTreeItem[]

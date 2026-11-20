@@ -22,6 +22,77 @@ export function useCatalogTree(): CatalogTreeState | null {
   return useContext(CatalogTreeContext)
 }
 
+/**
+ * Loads an answer of the agent index for a catalog page, kept in step with
+ * the sidebar's tree: whether it says "Catching up" follows where the tree
+ * says the catalog stands now, not where it stood when the page loaded; and
+ * once the tree has moved to a newer commit, the page is read again (review
+ * of #190: the notice stayed after the catalog was ready).
+ */
+export function useCatalogAnswer<T extends CatalogStateAnswer>(
+  workspaceId: string,
+  key: string,
+  load: () => Promise<T>,
+): Resource<T> & { behind: boolean } {
+  const answer = useResource(key, load)
+  const tree = useWorkspaceTree(workspaceId)
+  const treeCommit = tree?.catalog_commit ?? null
+  const treeBehind = tree?.index_behind ?? true
+  const answerCommit = answer.data?.catalog_commit
+  const reload = useEffectEvent(answer.reload)
+  useEffect(() => {
+    if (answerCommit === undefined || treeBehind || treeCommit === null) return
+    if (treeCommit !== answerCommit) reload()
+  }, [answerCommit, treeCommit, treeBehind])
+  return {
+    ...answer,
+    behind: useIndexBehind(workspaceId, answer.data?.index_behind ?? false),
+  }
+}
+
+/** The sidebar's tree, when it shows this workspace and has loaded. */
+function useWorkspaceTree(workspaceId: string): CatalogTreeAnswer | undefined {
+  const state = useCatalogTree()
+  return state?.workspaceId === workspaceId ? state.tree.data : undefined
+}
+
+/**
+ * Whether the index is behind `main`: as the sidebar's tree says now, which
+ * it keeps asking while it is; else as the page's own answer said.
+ */
+export function useIndexBehind(
+  workspaceId: string,
+  answerBehind: boolean,
+): boolean {
+  const tree = useWorkspaceTree(workspaceId)
+  return tree ? tree.index_behind : answerBehind
+}
+
+const titleMaps = new WeakMap<
+  readonly CatalogTreeItem[],
+  Map<string, string | null>
+>()
+
+/**
+ * A page's title as the sidebar's tree has it, for links that name a page
+ * by ID only (a page's owner, a step of Start here): worked out once per
+ * tree, however many links ask. Undefined when the tree hasn't it.
+ */
+export function usePageTitle(id: string): string | null | undefined {
+  const items = useCatalogTree()?.tree.data?.items
+  if (!items) return undefined
+  let titles = titleMaps.get(items)
+  if (!titles) {
+    titles = new Map(
+      items.flatMap((item) =>
+        item.id === null ? [] : [[item.id, item.title]],
+      ),
+    )
+    titleMaps.set(items, titles)
+  }
+  return titles.get(id)
+}
+
 /** Where the catalog stands, from an index answer (catalog §12.4). */
 export type CatalogState = "setting-up" | "catching-up" | "ready"
 

@@ -19,7 +19,8 @@ import { answerFor } from "./index/queries.js"
 const documents = schema.catalogIndexDocuments
 const facts = schema.catalogIndexFacts
 
-function idText(value: unknown, name: string): string {
+/** A catalog ID from a request, refused when it can't be one. */
+export function idText(value: unknown, name: string): string {
   if (
     typeof value !== "string" ||
     value.trim() === "" ||

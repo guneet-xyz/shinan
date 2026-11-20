@@ -356,7 +356,7 @@ a second PR, so M2-2 and M2-3 can start earlier.
 ### 3.7 M2-7: Wiki: reading
 
 - **REST routes and `api-client` methods** for the M2-3 queries and history.
-- **Entity page** in the order of [human experience](human-experience.md#an-entity-page),
+- **Entity page** in the order of [human experience](human-experience.md#a-page),
   without the Tasks section (M3): pending proposals, discrepancies, owning
   sources, freshness summary, facts with state labels and age, body, links in
   both directions, history with any earlier revision opened and compared.

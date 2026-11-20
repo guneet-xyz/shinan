@@ -55,6 +55,7 @@ import type {
   Agent,
   Context,
   Event,
+  GitClient,
   Invitation,
   InvitationForYou,
   IssuedToken,
@@ -96,6 +97,11 @@ export interface ApiOptions {
   trustedProxies?: TrustedProxies
   /** Per-address rate limits (architecture §10.1); on unless turned off. */
   rateLimit?: boolean
+  /**
+   * The Git container, for what the catalog pages read from the repository
+   * (a page's history and source, the README). Without it those answer 503.
+   */
+  gitClient?: GitClient
 }
 
 /**
@@ -135,6 +141,7 @@ export function createApi({
   installationUrl,
   trustedProxies = noTrustedProxies,
   rateLimit = true,
+  gitClient,
 }: ApiOptions) {
   const api = new Hono()
   const onError = errorHandler()
@@ -642,7 +649,7 @@ export function createApi({
     },
   )
 
-  catalogRoutes(signedIn, ctx)
+  catalogRoutes(signedIn, ctx, gitClient)
 
   api.route("/", signedIn)
   api.all("*", (c) =>

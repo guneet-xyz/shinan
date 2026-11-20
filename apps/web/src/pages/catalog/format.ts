@@ -1,12 +1,8 @@
 import type {
-  CatalogFact,
-  CatalogFreshnessSummary,
   CatalogSearchResult,
   FactState,
   ScalarValue,
 } from "@shinan/api-client"
-
-import { visible } from "./visible"
 
 /**
  * A page's title in a list (search results, Needs attention): a link that
@@ -16,34 +12,34 @@ import { visible } from "./visible"
 export const listLinkClass =
   "rounded-sm font-medium text-primary underline decoration-muted-foreground/40 underline-offset-4 outline-none hover:decoration-current focus-visible:ring-3 focus-visible:ring-ring"
 
+/** An ID in an address, each part encoded, its slashes kept. */
+function idPath(id: string): string {
+  return id.split("/").map(encodeURIComponent).join("/")
+}
+
 /**
- * The catalog page a catalog ID names (an ID may hold `/`): an entity's
- * page; for a type schema document (`schema/<type>`) its type's page; for
- * `start-here`, Start here.
+ * The catalog page a catalog ID names (an ID may hold `/`), such as
+ * `…/catalog/p/machine/musashi`; type schema documents are pages too
+ * (`…/p/schema/machine`); `start-here` is Start here.
  */
 export function entityPath(workspaceId: string, id: string): string {
   if (id === "start-here") return catalogPath(workspaceId)
-  const type = /^schema\/([a-z][a-z0-9]*(?:-[a-z0-9]+)*)$/.exec(id)?.[1]
-  if (type) return catalogPath(workspaceId, `/types/${type}`)
-  return catalogPath(
-    workspaceId,
-    `/p/${id.split("/").map(encodeURIComponent).join("/")}`,
-  )
+  return catalogPath(workspaceId, `/p/${idPath(id)}`)
+}
+
+/** A page's History: the changes of its file. */
+export function historyPath(workspaceId: string, id: string): string {
+  return catalogPath(workspaceId, `/history/${idPath(id)}`)
+}
+
+/** A page's View source: its file as it is. */
+export function sourcePath(workspaceId: string, id: string): string {
+  return catalogPath(workspaceId, `/source/${idPath(id)}`)
 }
 
 /** An address in a workspace's catalog, such as `/search`. */
 export function catalogPath(workspaceId: string, path = ""): string {
   return `/w/${workspaceId}/catalog${path}`
-}
-
-/**
- * A page's title as the catalog shows it: titles are written by agents, so
- * hidden, bidirectional and control characters show as markers
- * (`visible`), and "Invoice ⟨U+202E⟩gnp.exe" cannot read as "Invoice
- * exe.png". Without a title, the ID (marked the same way).
- */
-export function titleText(title: string | null, id: string): string {
-  return visible(title ?? id, { oneLine: true })
 }
 
 /**
@@ -67,64 +63,70 @@ export const stateLabels: Record<FactState, string> = {
   unknown: "unknown",
 }
 
+/** How long ago, in days, in words: "today", "5 days ago", "3 months ago". */
+export function agoText(days: number): string {
+  if (days <= 0) return "today"
+  if (days === 1) return "yesterday"
+  if (days < 60) return `${days} days ago`
+  if (days < 730) return `${Math.round(days / 30.44)} months ago`
+  return `${Math.round(days / 365.25)} years ago`
+}
+
 /** An age in words, such as "checked 3 days ago". */
 export function ageText(days: number): string {
-  if (days <= 0) return "checked today"
-  if (days === 1) return "checked yesterday"
-  if (days < 60) return `checked ${days} days ago`
-  if (days < 730) return `checked ${Math.round(days / 30.44)} months ago`
-  return `checked ${Math.round(days / 365.25)} years ago`
+  return `checked ${agoText(days)}`
+}
+
+/**
+ * When something happened, in words, from an ISO time: "just now",
+ * "12 minutes ago", "2 hours ago", then as `agoText`.
+ */
+export function relativeTime(iso: string, now = Date.now()): string {
+  const minutes = Math.floor((now - Date.parse(iso)) / 60_000)
+  if (minutes < 1) return "just now"
+  if (minutes < 60)
+    return minutes === 1 ? "a minute ago" : `${minutes} minutes ago`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return hours === 1 ? "an hour ago" : `${hours} hours ago`
+  return agoText(daysSince(iso, now))
+}
+
+/**
+ * Who checked a fact, as its check's `by` says (agent-written text such as
+ * `guneet via opencode-daedalus`), with "via" in words: "guneet, through
+ * opencode-daedalus". Real names come with the push log (GC-3a).
+ */
+export function byText(by: string): string {
+  return by.replace(/^(\S+) via (\S+)$/, "$1, through $2")
+}
+
+/** Values in a sentence: "a", "a and b", "a, b and c". */
+export function andList(values: readonly string[]): string {
+  if (values.length <= 1) return values.join("")
+  return `${values.slice(0, -1).join(", ")} and ${values[values.length - 1]}`
+}
+
+/** A count as a word at the start of a sentence: "Two", "Three", … "12". */
+export function countWord(count: number): string {
+  const words = [
+    "No",
+    "One",
+    "Two",
+    "Three",
+    "Four",
+    "Five",
+    "Six",
+    "Seven",
+    "Eight",
+    "Nine",
+    "Ten",
+  ]
+  return words[count] ?? String(count)
 }
 
 /** Days from an ISO time to now, in whole days. */
 export function daysSince(iso: string, now = Date.now()): number {
   return Math.max(0, Math.floor((now - Date.parse(iso)) / 86_400_000))
-}
-
-/**
- * An entity's freshness summary from its facts, as the server computes it
- * for type indexes: how many facts, the oldest last checked, how many due,
- * how many never checked, how many unknown.
- */
-export function freshnessSummary(
-  facts: readonly CatalogFact[],
-  now = Date.now(),
-): CatalogFreshnessSummary {
-  let oldest: number | null = null
-  let due = 0
-  let notChecked = 0
-  let unknown = 0
-  for (const fact of facts) {
-    if (fact.state === "unknown") unknown++
-    if (fact.freshness.status === "due") due++
-    if (fact.freshness.status === "not-checked") notChecked++
-    if (fact.freshness.age_days !== null) {
-      const at = now - fact.freshness.age_days * 86_400_000
-      oldest = oldest === null ? at : Math.min(oldest, at)
-    }
-  }
-  return {
-    facts: facts.length,
-    oldest_checked_at: oldest === null ? null : new Date(oldest).toISOString(),
-    due,
-    not_checked: notChecked,
-    unknown,
-  }
-}
-
-/** The summary as one line. */
-export function summaryParts(
-  summary: CatalogFreshnessSummary,
-  now = Date.now(),
-): string[] {
-  const parts = [plural(summary.facts, "fact")]
-  if (summary.oldest_checked_at)
-    parts.push(`oldest ${ageText(daysSince(summary.oldest_checked_at, now))}`)
-  if (summary.due > 0) parts.push(`${summary.due} due for recheck`)
-  if (summary.not_checked > 0)
-    parts.push(`${summary.not_checked} never checked`)
-  if (summary.unknown > 0) parts.push(`${summary.unknown} unknown`)
-  return parts
 }
 
 export function plural(count: number, word: string, many = `${word}s`): string {

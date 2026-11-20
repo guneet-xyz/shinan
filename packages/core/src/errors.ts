@@ -14,6 +14,14 @@ export class NotFoundError extends CoreError {
   }
 }
 
+/**
+ * Something the operation needs can't be reached right now, such as the
+ * Git container: nothing was done, and the same request may work later.
+ */
+export class UnavailableError extends CoreError {
+  override name = "UnavailableError"
+}
+
 /** The actor may see the workspace but not take this action. */
 export class ForbiddenError extends CoreError {
   override name = "ForbiddenError"

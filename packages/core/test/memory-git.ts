@@ -3,6 +3,7 @@ import { createHash } from "node:crypto"
 import { refuseDuringTransactions } from "@shinan/db"
 
 import type {
+  CommitInfo,
   CommitRef,
   DocumentRead,
   TreeChange,
@@ -28,7 +29,11 @@ export interface MemoryGit extends GitClient {
    * Commits on `main`: each path set to new content, or deleted with
    * `null`. Returns the new commit, which `main` then points at.
    */
-  push(workspaceId: string, changes: Record<string, FileContent | null>): string
+  push(
+    workspaceId: string,
+    changes: Record<string, FileContent | null>,
+    message?: string,
+  ): string
   /** Points `main` at another commit, as a forced update or a purge would. */
   setMain(workspaceId: string, commit: string): void
   /** Forgets a commit, as a purge's history rewrite does. */
@@ -64,6 +69,11 @@ interface File {
 interface Repository {
   main: string
   commits: Map<string, Map<string, File>>
+  /** Each commit's parent (one: the memory client makes no merges). */
+  parents: Map<string, string | null>
+  messages: Map<string, string>
+  /** When each was made, in seconds since 1970: a minute apart. */
+  times: Map<string, number>
 }
 
 const notFound = () => new GitServiceError(404, "not-found", "Not found")
@@ -129,12 +139,19 @@ export function createMemoryGit(): MemoryGit {
     blobs.set(oid, bytes)
     return { mode, oid }
   }
-  const commit = (r: Repository, files: Map<string, File>) => {
+  const commit = (
+    r: Repository,
+    files: Map<string, File>,
+    message = `Change ${made + 1}`,
+  ) => {
     made++
     const id = createHash("sha1")
       .update(`commit ${made} ${JSON.stringify([...files])}`)
       .digest("hex")
     r.commits.set(id, files)
+    r.parents.set(id, r.main === "" ? null : r.main)
+    r.messages.set(id, message)
+    r.times.set(id, 1_790_000_000 + made * 60)
     r.main = id
     return id
   }
@@ -143,21 +160,27 @@ export function createMemoryGit(): MemoryGit {
     calls,
     limits,
     create(workspaceId, files = { "README.md": "# Catalog\n" }) {
-      const r: Repository = { main: "", commits: new Map() }
+      const r: Repository = {
+        main: "",
+        commits: new Map(),
+        parents: new Map(),
+        messages: new Map(),
+        times: new Map(),
+      }
       repositories.set(workspaceId, r)
       return commit(
         r,
         new Map(Object.entries(files).map(([p, f]) => [p, store(f)])),
       )
     },
-    push(workspaceId, changes) {
+    push(workspaceId, changes, message) {
       const r = repository(workspaceId)
       const files = new Map(r.commits.get(r.main))
       for (const [path, file] of Object.entries(changes)) {
         if (file === null) files.delete(path)
         else files.set(path, store(file))
       }
-      return commit(r, files)
+      return commit(r, files, message)
     },
     setMain(workspaceId, id) {
       const r = repository(workspaceId)
@@ -293,7 +316,60 @@ export function createMemoryGit(): MemoryGit {
           truncated: changes.length > limits.diffChanges,
         }
       }),
-    history: notHere,
+    // As `git log <commit> [-- <path>]` on a history without merges: the
+    // commits that changed the path, newest first.
+    history: (workspaceId, input) =>
+      later(() => {
+        notBusy()
+        const r = repository(workspaceId)
+        const { id } = tree(workspaceId, input.commit)
+        const commits: CommitInfo[] = []
+        let skip = input.skip ?? 0
+        for (
+          let at: string | null = id;
+          at !== null && commits.length < input.limit;
+          at = r.parents.get(at) ?? null
+        ) {
+          const parent = r.parents.get(at) ?? null
+          const before = parent === null ? undefined : r.commits.get(parent)
+          const now = r.commits.get(at)!
+          const changed = [
+            ...new Set([...(before?.keys() ?? []), ...now.keys()]),
+          ].filter((p) => before?.get(p)?.oid !== now.get(p)?.oid)
+          if (input.path !== undefined && !changed.includes(input.path))
+            continue
+          if (skip > 0) {
+            skip--
+            continue
+          }
+          const who = {
+            name: "Someone",
+            email: "someone@example.com",
+            time: r.times.get(at)!,
+            timezone: "+0000",
+          }
+          commits.push({
+            oid: at,
+            parents: parent === null ? [] : [parent],
+            author: who,
+            committer: who,
+            message: r.messages.get(at)!,
+            truncated: false,
+            changes: changed.map((path) => ({
+              status: !before?.has(path)
+                ? "added"
+                : now.has(path)
+                  ? "modified"
+                  : "deleted",
+              path,
+            })),
+            changeCount: changed.length,
+            changesTruncated: false,
+            changeCountAtLeast: false,
+          })
+        }
+        return { commit: id, commits }
+      }),
     readJournal: notHere,
     acknowledgeJournal: notHere,
   }
