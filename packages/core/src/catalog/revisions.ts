@@ -1,11 +1,8 @@
-import { and, eq, inArray, schema, sql } from "@shinan/db"
+import { and, asc, eq, inArray, schema, sql } from "@shinan/db"
 import type { Transaction } from "@shinan/db"
 
 import type { ResolvedActor } from "../actor.js"
-import { parserVersion } from "./document/index.js"
-import type { CatalogDocument } from "./document/index.js"
-import { indexRulesVersion } from "./index/derive.js"
-import { indexRevision, lockIndexState } from "./index/indexer.js"
+import { readDocumentId } from "./document/parse.js"
 
 /** Who a revision is credited to: the columns events use (architecture §5.3). */
 export type RevisionActor = Pick<
@@ -18,8 +15,6 @@ export interface RevisionDocument {
   documentId?: string
   /** The document's full new text (architecture §5.2, rule 1). */
   text: string
-  /** The text already parsed, if the caller has it, so it is not read again. */
-  parsed?: CatalogDocument
 }
 
 /** What a revision came from, recorded with it (architecture §5.3). */
@@ -51,13 +46,59 @@ export interface AppliedRevision {
 }
 
 /**
- * Stores a new catalog revision, the full text of each document it
- * changes, and indexes them, all in the caller's transaction (architecture
- * §5.2, rule 4). Its callers are purge (until GC-8 rewrites it for Git) and
- * the tests' seam; M2's catalog proposals, which were its other caller, are
- * gone (GC-5), and this store goes when GC-6 moves the catalog into Git.
- * Revisions of one workspace are numbered one at a time under the index
- * lock.
+ * Takes the lock of a workspace's revision store until the transaction
+ * ends: revisions are numbered one at a time, and a purge rewrites the
+ * stored text with no revision appended meanwhile.
+ */
+export async function lockCatalogRevisions(
+  tx: Transaction,
+  workspaceId: string,
+): Promise<void> {
+  await tx.execute(
+    sql`select pg_advisory_xact_lock(hashtext(${`catalog-revisions:${workspaceId}`}))`,
+  )
+}
+
+/** A document's latest text in M2's revision store. */
+export interface StoredText {
+  documentId: string
+  revision: number
+  text: string
+}
+
+/** Each document's latest stored text, ordered by document ID. */
+export async function latestTexts(
+  tx: Transaction,
+  workspaceId: string,
+  documentIds?: readonly string[],
+): Promise<StoredText[]> {
+  if (documentIds?.length === 0) return []
+  const d = schema.catalogDocuments
+  const r = schema.catalogRevisionDocuments
+  return tx
+    .select({ documentId: d.id, revision: r.revision, text: r.text })
+    .from(d)
+    .innerJoin(
+      r,
+      and(eq(r.documentId, d.id), eq(r.revision, d.currentRevision)),
+    )
+    .where(
+      and(
+        eq(d.workspaceId, workspaceId),
+        documentIds ? inArray(d.id, [...documentIds]) : undefined,
+      ),
+    )
+    .orderBy(asc(d.id))
+}
+
+/**
+ * Stores a new catalog revision and the full text of each document it
+ * changes in M2's revision store, in the caller's transaction. Its callers
+ * are purge (until GC-8 rewrites it for Git) and the tests' seam; M2's
+ * catalog proposals, which were its other caller, are gone (GC-5), and this
+ * store goes when GC-6 moves the catalog into Git. The agent index no
+ * longer reads it: the index is built from `main` (GC-4). Revisions of one
+ * workspace are numbered one at a time under a lock of their own.
  */
 export async function appendCatalogRevision(
   tx: Transaction,
@@ -65,36 +106,14 @@ export async function appendCatalogRevision(
   actor: RevisionActor,
   documents: readonly RevisionDocument[],
   source?: RevisionSource,
-  options: {
-    /**
-     * False when the caller derives the documents' index rows itself in
-     * the same transaction, as a purge does (`reindexDocuments`).
-     */
-    index?: boolean
-  } = {},
 ): Promise<AppliedRevision> {
   if (documents.length === 0)
     throw new Error("A catalog revision changes at least one document")
   const given = documents.flatMap((d) => (d.documentId ? [d.documentId] : []))
   if (new Set(given).size !== given.length)
     throw new Error("A catalog revision changes each document once")
-  // A parse handed in is used as it is, so it must be of this very text.
-  if (documents.some((d) => d.parsed && d.parsed.text !== d.text))
-    throw new Error("A parsed document must be the parse of its text")
 
-  const state = await lockIndexState(tx, workspaceId)
-  // A process still running an older parser than the one that last built
-  // the index (during a rolling deployment) would add rows of its older
-  // version: answers say the index is behind until the next rebuild.
-  if (
-    (state.parserVersion > parserVersion ||
-      state.rulesVersion > indexRulesVersion) &&
-    state.rebuildRequestedAt === null
-  )
-    await tx
-      .update(schema.catalogIndexState)
-      .set({ rebuildRequestedAt: sql`now()` })
-      .where(eq(schema.catalogIndexState.workspaceId, workspaceId))
+  await lockCatalogRevisions(tx, workspaceId)
   const [next] = await tx
     .select({
       number: sql<number>`coalesce(max(${schema.catalogRevisions.number}), 0)::int + 1`,
@@ -157,41 +176,22 @@ export async function appendCatalogRevision(
       text: d.text,
     })),
   )
-
-  if (options.index === false) return { revision, documentIds }
-  await indexRevision(
-    tx,
-    workspaceId,
-    { revision, authorKind: actor.kind, author: actor.label },
-    documents.map((d, i) => ({
-      documentId: documentIds[i]!,
-      text: d.text,
-      ...(d.parsed ? { parsed: d.parsed } : {}),
-    })),
-  )
   return { revision, documentIds }
 }
 
 /**
- * The stable ID of the document with this catalog ID or alias, from the
- * index, for operations that change an existing document (M2-4).
+ * The stable ID of the document whose latest text in M2's revision store
+ * has this catalog ID, for tests of what still reads that store (purge,
+ * until GC-8).
  */
 export async function findCatalogDocument(
   tx: Transaction,
   workspaceId: string,
   catalogId: string,
 ): Promise<string | null> {
-  const t = schema.catalogIndexDocuments
-  const [row] = await tx
-    .select({ documentId: t.documentId })
-    .from(t)
-    .where(
-      and(
-        eq(t.workspaceId, workspaceId),
-        sql`(${t.catalogId} = ${catalogId} or ${t.aliases} @> array[${catalogId}]::text[])`,
-      ),
-    )
-    .orderBy(sql`${t.catalogId} = ${catalogId} desc`, t.documentId)
-    .limit(1)
-  return row?.documentId ?? null
+  const rows = await latestTexts(tx, workspaceId)
+  return (
+    rows.find((row) => readDocumentId(row.text) === catalogId)?.documentId ??
+    null
+  )
 }

@@ -183,9 +183,7 @@ function PurgeText(props: { onPurged: () => void }) {
       {find.error !== undefined && <ErrorMessage error={find.error} />}
       {preview && !anywhere && (
         <Notice>
-          {preview.writtenDifferently.length > 0
-            ? `The agent index holds this text for ${preview.writtenDifferently.join(", ")}, but the stored text writes it differently, for example with YAML escapes. Purge it as the stored text writes it.`
-            : "This text is not in the catalog, its proposals or the timeline."}
+          This text is not in the catalog, its proposals or the timeline.
         </Notice>
       )}
       {preview && preview.alsoWrittenAs.length > 0 && (

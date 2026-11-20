@@ -892,23 +892,21 @@ details of the page as built.
   headings carry the sections' anchors. Raw HTML is shown as text; only web
   and mail addresses, entity references and links to a section of the page
   are links ([security checklist 10.3](security-checklist.md#10-features-not-built-yet)).
-- **History** lists the catalog revisions that changed the page (when, who
-  they are credited to, and who approved them when they needed approval).
-  Opening one shows the document's stored text at
-  that revision compared line by line with the current text. Reason: the
-  stored text is the source of truth (D-006), so the comparison shows
-  exactly what changed, fields and facts included.
+- **History** listed the catalog revisions that changed the page, each
+  comparable with the current text, and **Recent changes** every revision
+  of the catalog. Both read M2's revision store, which the agent index no
+  longer refers to; GC-4 removed them, with their routes, and GC-7 brings
+  them back from `main`'s commits and the push log (GQ-6). Until then a
+  start-here step to "Recent changes" is shown as plain text.
 - **Pending catalog proposals:** removed in GC-5b
   ([D-060](decisions/D-060-no-catalog-approval.md)): the page no longer
-  lists them, and its history no longer links to the catalog proposal that
-  applied a revision, since catalog review is gone. Recent changes still
-  say who approved each M2 revision.
+  lists them, since catalog review is gone.
 - **Links** in the body to a type schema document (`schema/<type>`) open
   the type's page, and links to `start-here` open Start here. Since GC-5b,
   Start here shows only its paths, not the document's own text (that came
-  from the removed editing route; GC-7 renders `start-here.md` as a page),
-  and a "Waiting for approval" step is shown as plain text, since catalog
-  review is gone.
+  from the removed editing route; GC-7 renders `start-here.md` as a page).
+  A "Waiting for approval" step no longer reads (GC-4): there is no catalog
+  approval to wait for.
 - **A page that could not be read in full** lists what could not be read.
   The repair page that let a workspace owner correct its text was removed
   in GC-5b ([changing the catalog from the browser](#changing-the-catalog-from-the-browser)).

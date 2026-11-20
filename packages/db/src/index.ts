@@ -28,7 +28,7 @@ export {
   or,
   sql,
 } from "drizzle-orm"
-export type { SQL } from "drizzle-orm"
+export type { Column, SQL } from "drizzle-orm"
 export { alias } from "drizzle-orm/pg-core"
 export type {
   ActorKind,
@@ -60,6 +60,7 @@ export const migrationsFolder = fileURLToPath(
 
 export {
   NestedConnectionError,
+  refuseDuringTransactions,
   takeNestedConnectionRefusals,
 } from "./nesting.js"
 

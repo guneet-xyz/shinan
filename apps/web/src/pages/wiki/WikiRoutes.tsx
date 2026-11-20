@@ -6,7 +6,7 @@ import { NotFound } from "../NotFound"
 import { useWorkspace } from "../workspace/context"
 import { EntityPage } from "./EntityPage"
 import { wikiPath } from "./format"
-import { ChangesPage, ListPage, SearchPage, WikiHome } from "./pages"
+import { ListPage, SearchPage, WikiHome } from "./pages"
 import { StartHerePage } from "./StartHerePage"
 import { TypePage } from "./TypePage"
 
@@ -33,9 +33,6 @@ export default function WikiRoutes() {
         <NavLink to={wikiPath(workspace.id, "/start-here")} className={tab}>
           Start here
         </NavLink>
-        <NavLink to={wikiPath(workspace.id, "/changes")} className={tab}>
-          Recent changes
-        </NavLink>
         <NavLink to={wikiPath(workspace.id, "/search")} className={tab}>
           Search
         </NavLink>
@@ -44,7 +41,6 @@ export default function WikiRoutes() {
         <Route index element={<WikiHome />} />
         <Route path="start-here" element={<StartHerePage />} />
         <Route path="search" element={<SearchPage />} />
-        <Route path="changes" element={<ChangesPage />} />
         <Route path="types/:type" element={<TypePage />} />
         <Route path="lists/:list" element={<ListPage />} />
         <Route path="e/*" element={<EntityPage />} />

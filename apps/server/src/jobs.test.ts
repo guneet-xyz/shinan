@@ -9,11 +9,8 @@ import {
   vi,
 } from "vitest"
 
-import {
-  catalogIndexRebuildQueue,
-  emailQueue,
-  getInstallation,
-} from "@shinan/core"
+import { catalogIndexQueue, emailQueue, getInstallation } from "@shinan/core"
+import { createMemoryGit } from "@shinan/core/testing"
 import { createDatabase, eq, schema, sql } from "@shinan/db"
 import { connectTestDatabase, createTestDatabase } from "@shinan/db/testing"
 import type { EmailSender, SendResult } from "@shinan/email"
@@ -124,7 +121,12 @@ describe("worker", () => {
   })
 
   it("schedules the heartbeat and pruning email records", async () => {
-    worker = await startWorker({ databaseUrl, db, emailSender })
+    worker = await startWorker({
+      databaseUrl,
+      db,
+      emailSender,
+      git: createMemoryGit(),
+    })
     const heartbeat = await worker.boss.getSchedule(queues.heartbeat)
     expect(heartbeat?.cron).toBe("0 * * * *")
     const prune = await worker.boss.getSchedule(queues.emailPrune)
@@ -148,6 +150,7 @@ describe("worker", () => {
       db,
       emailSender,
       pollingIntervalSeconds: 0.5,
+      git: createMemoryGit(),
     })
     const id = await worker.boss.send(queues.catalogIndexCheck)
 
@@ -167,32 +170,41 @@ describe("worker", () => {
     )
   })
 
-  it("rebuilds a workspace's agent index", async () => {
+  it("brings a workspace's agent index up to main", async () => {
     vi.spyOn(console, "info").mockImplementation(() => {})
     const [workspace] = await db
       .insert(schema.workspaces)
       .values({ name: "Indexed" })
       .returning()
+    const git = createMemoryGit()
+    const main = git.create(workspace!.id, {
+      "README.md": "# Catalog\n",
+      "machine/musashi.md": "---\nid: machine/musashi\ntype: machine\n---\n",
+    })
     worker = await startWorker({
       databaseUrl,
       db,
       emailSender,
       pollingIntervalSeconds: 0.5,
+      git,
     })
     const id = await worker.boss.send(
-      catalogIndexRebuildQueue.name,
+      catalogIndexQueue.name,
       { workspaceId: workspace!.id },
       { singletonKey: workspace!.id },
     )
 
     await vi.waitFor(
       async () => {
-        const [job] = await worker!.boss.findJobs(
-          catalogIndexRebuildQueue.name,
-          { id: id! },
-        )
+        const [job] = await worker!.boss.findJobs(catalogIndexQueue.name, {
+          id: id!,
+        })
         expect(job?.state).toBe("completed")
-        expect(job?.output).toEqual({ revision: 0, documents: 0 })
+        expect(job?.output).toEqual({
+          outcome: "rebuilt",
+          commit: main,
+          documents: 1,
+        })
       },
       { timeout: 10_000, interval: 200 },
     )

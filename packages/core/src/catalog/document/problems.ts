@@ -11,6 +11,11 @@ export type Severity = "blocking" | "warning"
 export type ProblemCode =
   /** A document or proposal text is longer than Shinan reads (catalog §2.1). */
   | "too-large"
+  /**
+   * A file on `main` whose name Shinan cannot read (a control character,
+   * bytes that are not UTF-8): the index records it without its text.
+   */
+  | "unreadable-path"
   /** The frontmatter is missing, is not YAML, or uses YAML outside the allowed subset (catalog §2.1). */
   | "frontmatter-invalid"
   /** The body is past the limits on what Shinan reads (catalog §2.1). */

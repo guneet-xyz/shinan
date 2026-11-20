@@ -1,8 +1,5 @@
 import type {
-  CatalogChangesAnswer,
-  CatalogDocumentTextAnswer,
   CatalogEntityAnswer,
-  CatalogHistoryAnswer,
   CatalogList,
   CatalogListAnswer,
   CatalogSearchAnswer,
@@ -99,23 +96,26 @@ export interface Redirect {
 }
 
 /**
- * The agent index's health, for installation operators (architecture §5.2,
- * rule 5): per workspace, its index revision, whether it is behind, and the
- * last round-trip check. IDs and counts only, never catalog content.
+ * The agent index's health, for installation operators (architecture §5.3):
+ * per workspace, the commit of `main` its index stands at, whether it is
+ * behind, and the last round-trip check. IDs and counts only, never
+ * catalog content.
  */
 export interface CatalogIndexHealth {
   /** The parser version of this release. */
   parserVersion: number
   workspaces: {
     workspaceId: string
-    revision: number
-    latestRevision: number
+    /** The commit of `main` the index stands at; null before its first build. */
+    commit: string | null
+    /** The latest commit of `main` Shinan knows of. */
+    mainCommit: string | null
     parserVersion: number
     behind: boolean
     rebuildRequestedAt: string | null
     rebuiltAt: string | null
     checkedAt: string | null
-    checkedRevision: number | null
+    checkedCommit: string | null
     /** Documents whose stored index differed from their text at the last check. */
     checkDifferences: number | null
   }[]
@@ -312,8 +312,6 @@ export interface CatalogPurgePreview {
   events: number
   /** Comments on catalog proposals that hold it. */
   comments: number
-  /** Catalog IDs of documents whose index holds it while their text writes it differently. */
-  writtenDifferently: string[]
   /** Stored texts (and current pages) where a match crosses a line break. */
   acrossLines: { revisionTexts: number; latestDocuments: string[] }
   /** Copies in encoded forms the purge does not reach; `text` is the form to purge. */
@@ -705,42 +703,10 @@ export function createApiClient(options: ApiClientOptions = {}) {
           include_retired: options.includeRetired ? "true" : undefined,
         })}`,
       ),
-    catalogChanges: (
-      workspaceId: string,
-      options: { since?: number; limit?: number } = {},
-    ) =>
-      request<CatalogChangesAnswer>(
-        "GET",
-        `${catalog(workspaceId)}/changes${search({
-          since: options.since?.toString(),
-          limit: options.limit?.toString(),
-        })}`,
-      ),
     catalogStartHere: (workspaceId: string, path: "people" | "agents") =>
       request<StartHereAnswer>(
         "GET",
         `${catalog(workspaceId)}/start-here${search({ path })}`,
-      ),
-    catalogHistory: (
-      workspaceId: string,
-      id: string,
-      options: { before?: number; limit?: number } = {},
-    ) =>
-      request<CatalogHistoryAnswer>(
-        "GET",
-        `${catalog(workspaceId)}/history${search({
-          id,
-          before: options.before?.toString(),
-          limit: options.limit?.toString(),
-        })}`,
-      ),
-    catalogText: (workspaceId: string, id: string, revision?: number) =>
-      request<CatalogDocumentTextAnswer>(
-        "GET",
-        `${catalog(workspaceId)}/text${search({
-          id,
-          revision: revision?.toString(),
-        })}`,
       ),
 
     // Catalog purge (M2-10): the text goes in request bodies only, never

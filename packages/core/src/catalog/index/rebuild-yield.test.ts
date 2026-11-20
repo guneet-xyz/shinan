@@ -2,19 +2,19 @@ import { monitorEventLoopDelay } from "node:perf_hooks"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 
 import {
-  asAgent,
   asPerson,
   asShinan,
   newPerson,
   testDatabase,
 } from "../../../test/helpers.js"
+import { createMemoryGit } from "../../../test/memory-git.js"
 import type { Person } from "../../identity/people.js"
 import { createWorkspace } from "../../identity/workspaces.js"
-import { appendCatalogRevision } from "../revisions.js"
-import type { RevisionActor } from "../revisions.js"
-import { compareWorkspaceIndex, deriveWorkspace } from "./indexer.js"
+import { compareWorkspaceIndex, deriveTexts } from "./indexer.js"
 import { rebuildCatalogIndex } from "./maintain.js"
 import { pauser } from "./pause.js"
+import { listDocuments, readTexts } from "./source.js"
+import type { DocumentText } from "./source.js"
 
 /**
  * A rebuild of the agent index runs in the worker's process, beside every
@@ -82,30 +82,28 @@ Read-only SSH from the build hosts; the key lives in the secrets manager.
 
 let owner: Person
 let workspaceId: string
+const git = createMemoryGit()
+let texts: DocumentText[]
 
 beforeAll(async () => {
   owner = await newPerson(db, "owner")
   workspaceId = (await createWorkspace(asPerson(db, owner), { name: "Fleet" }))
     .workspace.id
-  const agent = await asAgent(db, owner, workspaceId)
-  if (agent.actor.kind !== "agent") throw new Error("Expected an agent")
-  const actor: RevisionActor = {
-    kind: "agent",
-    personId: owner.id,
-    agentId: agent.actor.agentId,
-    agentSessionId: null,
-    label: `${owner.handle} via ${agent.actor.agentHandle}`,
-    confidence: "recorded",
-  }
-  for (let start = 0; start < documents; start += 1000) {
-    const batch = Array.from(
-      { length: Math.min(1000, documents - start) },
-      (_, i) => ({ text: machine(start + i) }),
-    )
-    await db.transaction((tx) =>
-      appendCatalogRevision(tx, workspaceId, actor, batch),
-    )
-  }
+  const main = git.create(
+    workspaceId,
+    Object.fromEntries(
+      Array.from({ length: documents }, (_, i) => [
+        `machine/r${i}.md`,
+        machine(i),
+      ]),
+    ),
+  )
+  texts = await readTexts(
+    git,
+    workspaceId,
+    main,
+    await listDocuments(git, workspaceId, main),
+  )
 }, 3_600_000)
 
 describe("pauser", () => {
@@ -129,20 +127,20 @@ describe("deriving a workspace's index", () => {
   it("pauses before every document, whatever the batch", async () => {
     let pauses = 0
     let derived = 0
-    await db.transaction((tx) =>
-      deriveWorkspace(
-        tx,
-        workspaceId,
-        (rows) => {
-          derived += rows.length
-          return Promise.resolve()
-        },
-        7,
-        () => {
+    await deriveTexts(
+      workspaceId,
+      texts,
+      (rows) => {
+        derived += rows.length
+        return Promise.resolve()
+      },
+      {
+        batchSize: 7,
+        pause: () => {
           pauses++
           return Promise.resolve()
         },
-      ),
+      },
     )
     expect(derived).toBe(documents)
     // Once before reading each document's frontmatter for its kind, and
@@ -171,7 +169,11 @@ describe("rebuilding the agent index", () => {
     }, 100)
     delay.enable()
     const started = performance.now()
-    const rebuilt = await rebuildCatalogIndex(asShinan(db), { workspaceId })
+    const rebuilt = await rebuildCatalogIndex(
+      asShinan(db),
+      { workspaceId },
+      git,
+    )
     const took = performance.now() - started
     delay.disable()
     clearInterval(ticker)
@@ -187,7 +189,7 @@ describe("rebuilding the agent index", () => {
 
     // And the index is exactly what the text gives (D-006).
     const compared = await db.transaction((tx) =>
-      compareWorkspaceIndex(tx, workspaceId),
+      compareWorkspaceIndex(tx, workspaceId, texts),
     )
     expect(compared.differences).toEqual([])
   }, 3_600_000)

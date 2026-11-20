@@ -6,8 +6,6 @@ import {
   databaseErrorCode,
   desc,
   eq,
-  getTableColumns,
-  inArray,
   schema,
   sql,
 } from "@shinan/db"
@@ -20,15 +18,14 @@ import { InvalidInputError, RuleViolationError } from "../../errors.js"
 import { appendEvent } from "../../events.js"
 import { recordSecurityEntry } from "../../security-log.js"
 import { parseCatalogDocument } from "../document/index.js"
-import { splitFrontmatter } from "../document/parse.js"
+import { readDocumentId, splitFrontmatter } from "../document/parse.js"
 import { excerpt } from "../document/secrets.js"
+import { clearTypeSchemaCache } from "../index/indexer.js"
 import {
-  clearTypeSchemaCache,
-  lockIndexState,
-  reindexDocuments,
-} from "../index/indexer.js"
-import { latestTexts } from "../index/store.js"
-import { appendCatalogRevision } from "../revisions.js"
+  appendCatalogRevision,
+  latestTexts,
+  lockCatalogRevisions,
+} from "../revisions.js"
 import { PurgeMatcher, spaces } from "./matcher.js"
 
 /**
@@ -68,10 +65,11 @@ export const purgeLimits = {
  * - `events`: the summary and data.
  * - `catalog_proposal_comments`: the text, and the idempotency key, cleared
  *   when either holds the text.
- * - The agent index: rebuilt from the purged text, then checked, except
- *   the columns naming who wrote what (an actor's written form is not
- *   catalog content), those derived from other columns, and the word
- *   provenance, which holds only hashes of words and the authors.
+ *
+ * The agent index is no longer here: it is built from `main` of the
+ * workspace's Git repository (GC-4), which this purge does not reach. GC-8
+ * replaces this purge with a rewrite of the repository's history, after
+ * which the index is rebuilt from the new `main`.
  */
 export const purgeTargets = {
   revisionText: ["text"],
@@ -87,16 +85,6 @@ export const purgeTargets = {
   },
   events: { text: ["summary"], json: ["data"] },
   comments: { text: ["text"], cleared: ["idempotencyKey"] },
-  index: {
-    tables: [
-      schema.catalogIndexDocuments,
-      schema.catalogIndexFacts,
-      schema.catalogIndexRelations,
-      schema.catalogIndexDiscrepancies,
-      schema.catalogIndexSections,
-    ],
-    skipped: ["author", "least_trusted"],
-  },
 } as const
 
 /** Where a text is in a workspace's catalog. */
@@ -119,12 +107,6 @@ export interface CatalogPurgePreview {
   events: number
   /** Comments on catalog proposals that hold it. */
   comments: number
-  /**
-   * Documents whose agent index rows hold it while their stored text does
-   * not, because the text writes it differently (YAML escapes, for
-   * example): purge it as the stored text writes it.
-   */
-  writtenDifferently: string[]
   /**
    * Where it is found only across a line break (wrapped text, or a long
    * word split by an editor), to look at before purging: the stored texts,
@@ -211,10 +193,11 @@ export async function previewCatalogPurge(
       const workspace = scope.workspaceId
       const found = await find(tx, workspace, match)
       const latest = await latestHolding(tx, workspace, match)
-      const names = await catalogIds(tx, [
-        ...latest.map((l) => l.documentId),
-        ...found.index,
-      ])
+      const names = await catalogIds(
+        tx,
+        workspace,
+        latest.map((l) => l.documentId),
+      )
       const name = (id: string) =>
         match.replace(names.get(id) ?? id, purgeMarker)
       const documents = new Set(found.revisionTexts.map((r) => r.documentId))
@@ -227,10 +210,6 @@ export async function previewCatalogPurge(
           .length,
         events: found.events.length,
         comments: found.comments.length,
-        writtenDifferently: found.index
-          .filter((id) => !documents.has(id))
-          .map(name)
-          .sort(),
         acrossLines: {
           revisionTexts: found.acrossLines.length,
           latestDocuments: (
@@ -257,8 +236,8 @@ export async function previewCatalogPurge(
 }
 
 /**
- * Purges a text from the workspace's catalog (catalog §9; architecture
- * §4.4), in one transaction holding the index lock:
+ * Purges a text from M2's stored catalog (catalog §9; architecture §4.4),
+ * in one transaction holding the revision store's lock:
  *
  * 1. records the purge: who, when and why, never the text;
  * 2. replaces every occurrence (`PurgeMatcher`) with `purgeMarker` in every
@@ -269,11 +248,7 @@ export async function previewCatalogPurge(
  *    held it as a new catalog revision, credited to the workspace owner,
  *    so agents asking what changed since a revision, and the catalog
  *    workers, see that the text changed;
- * 4. derives the agent index rows of every document with purged text
- *    again from its purged history, as a rebuild does (section credits and
- *    word provenance are replayed), or rebuilds the whole index when a type
- *    schema document or a large share of the catalog is among them, and
- *    checks that the text is nowhere left;
+ * 4. checks that the text is nowhere left in what it purges;
  * 5. appends a `catalog.purged` event and a security-log entry. The
  *    security log itself is never purged (D-049).
  *
@@ -298,7 +273,7 @@ export async function purgeCatalogText(
       const reason = purgeReason(input.reason, match)
       const { tx } = scope
       const workspace = scope.workspaceId
-      await lockIndexState(tx, workspace)
+      await lockCatalogRevisions(tx, workspace)
 
       const p = schema.catalogPurges
       const [{ next }] = (await tx
@@ -327,12 +302,10 @@ export async function purgeCatalogText(
       const before = await latestHolding(tx, workspace, match)
       // How they read before, to tell which the purge breaks.
       const problemsBefore = new Map(
-        [
-          ...(await indexProblems(
-            tx,
-            before.map((b) => b.documentId),
-          )),
-        ].map(([id, row]) => [id, row.problems]),
+        await mapped(match, before, (b) => [
+          b.documentId,
+          parseCatalogDocument(b.text).problems,
+        ]),
       )
       const texts = await purgeRevisionTexts(tx, workspace, match)
       const proposals = await purgeProposals(tx, workspace, match, {
@@ -345,32 +318,24 @@ export async function purgeCatalogText(
         texts.length + proposals.length + events.length + comments.length ===
         0
       ) {
-        const found = await find(tx, workspace, match)
-        throw found.index.length > 0
-          ? await writtenDifferently(tx, found.index, match)
-          : nothingToPurge()
+        throw nothingToPurge()
       }
 
       const latest = before.map((b) => b.documentId)
       let revision: number | null = null
       if (latest.length > 0) {
         const cleaned = await latestTexts(tx, workspace, latest)
-        // Not indexed here: every one is derived again below.
         ;({ revision } = await appendCatalogRevision(
           tx,
           workspace,
           scope.actor,
           cleaned.map((t) => ({ documentId: t.documentId, text: t.text })),
           { purgeId: purge.id },
-          { index: false },
         ))
       }
       const documents = [...new Set(texts.map((t) => t.documentId))].sort()
-      await reindexDocuments(tx, workspace, documents)
 
       const left = await find(tx, workspace, match)
-      if (left.index.length > 0)
-        throw await writtenDifferently(tx, left.index, match)
       if (
         left.revisionTexts.length +
           left.proposals.length +
@@ -426,7 +391,7 @@ export async function purgeCatalogText(
       })
       return {
         ...purgeOf(stored!, revision),
-        newProblems: await newProblems(tx, latest, problemsBefore),
+        newProblems: await newProblems(tx, workspace, latest, problemsBefore),
       }
     },
   )
@@ -554,38 +519,15 @@ function nothingToPurge(): RuleViolationError {
   )
 }
 
-/** Names the documents whose index holds the text while their stored text writes it differently. */
-async function writtenDifferently(
-  tx: Transaction,
-  documentIds: readonly string[],
-  match: PurgeMatcher,
-): Promise<RuleViolationError> {
-  const names = await catalogIds(tx, documentIds)
-  const shown = documentIds
-    .map((id) => match.replace(names.get(id) ?? id, purgeMarker))
-    .sort()
-  const listed =
-    shown.length > 20
-      ? `${shown.slice(0, 20).join(", ")} and ${shown.length - 20} more`
-      : shown.join(", ")
-  return new RuleViolationError(
-    "written-differently",
-    `The agent index holds this text for ${listed}, but their stored text writes it differently, for example with YAML escapes. Nothing was purged: purge it as the stored text writes it.`,
-  )
-}
-
-/** Each document's current catalog ID, by stable ID. */
+/** Each document's current catalog ID, by stable ID, from its latest stored text. */
 async function catalogIds(
   tx: Transaction,
+  workspaceId: string,
   documentIds: readonly string[],
 ): Promise<Map<string, string | null>> {
   if (documentIds.length === 0) return new Map()
-  const t = schema.catalogIndexDocuments
-  const rows = await tx
-    .select({ documentId: t.documentId, catalogId: t.catalogId })
-    .from(t)
-    .where(inArray(t.documentId, [...new Set(documentIds)]))
-  return new Map(rows.map((r) => [r.documentId, r.catalogId]))
+  const texts = await latestTexts(tx, workspaceId, [...new Set(documentIds)])
+  return new Map(texts.map((t) => [t.documentId, readDocumentId(t.text)]))
 }
 
 /**
@@ -677,8 +619,6 @@ async function find(
   proposals: { id: string; state: ProposalRow["state"] }[]
   events: number[]
   comments: string[]
-  /** Documents whose index rows hold it. */
-  index: string[]
 }> {
   const holding = (
     await mapped(
@@ -720,34 +660,6 @@ async function find(
     )
   ).map((row) => row.id)
 
-  const index = new Set<string>()
-  for (const table of purgeTargets.index.tables) {
-    // The columns that can hold catalog text, as one JSON array per row.
-    const columns = Object.values(
-      getTableColumns(table) as Record<
-        string,
-        { name: string; generated: unknown; columnType: string }
-      >,
-    ).filter(
-      (c) =>
-        !c.generated &&
-        !(purgeTargets.index.skipped as readonly string[]).includes(c.name) &&
-        !["PgUUID", "PgInteger", "PgBoolean", "PgTimestamp"].includes(
-          c.columnType,
-        ),
-    )
-    const row = sql`json_build_array(${sql.join(
-      columns.map((c) => sql.identifier(c.name)),
-      sql`, `,
-    )})`
-    const rows = await tx.execute<{ document_id: string; row: unknown }>(
-      sql`select document_id, ${row} as row from ${table} where workspace_id = ${workspaceId} and ${mayHold(match, sql`${row}::text`, true)}`,
-    )
-    for (const found of await kept(match, rows.rows, (r) =>
-      holdsJson(r.row, match),
-    ))
-      index.add(found.document_id)
-  }
   const comments = (
     await kept(match, await commentCandidates(tx, workspaceId, match), (row) =>
       commentHolds(row, match),
@@ -760,7 +672,6 @@ async function find(
     proposals,
     events,
     comments,
-    index: [...index],
   }
 }
 
@@ -898,12 +809,18 @@ function structureAt(
 /** The latest texts the purge left reading with problems they did not have. */
 async function newProblems(
   tx: Transaction,
+  workspaceId: string,
   documentIds: readonly string[],
   before: ReadonlyMap<string, { code: string }[]>,
 ): Promise<{ id: string; problems: string[] }[]> {
   if (documentIds.length === 0) return []
   const result: { id: string; problems: string[] }[] = []
-  for (const [documentId, now] of await indexProblems(tx, documentIds)) {
+  for (const { documentId, text } of await latestTexts(
+    tx,
+    workspaceId,
+    documentIds,
+  )) {
+    const now = parseCatalogDocument(text)
     const was = (before.get(documentId) ?? []).map((p) => p.code)
     const added = now.problems.filter((p) => {
       const i = was.indexOf(p.code)
@@ -913,34 +830,11 @@ async function newProblems(
     })
     if (added.length > 0)
       result.push({
-        id: now.catalogId ?? documentId,
+        id: now.id ?? documentId,
         problems: added.map((p) => p.message),
       })
   }
   return result.sort((a, b) => (a.id < b.id ? -1 : 1))
-}
-
-/** The problems the index found reading each document's latest text. */
-async function indexProblems(
-  tx: Transaction,
-  documentIds: readonly string[],
-): Promise<
-  Map<
-    string,
-    { catalogId: string | null; problems: { code: string; message: string }[] }
-  >
-> {
-  if (documentIds.length === 0) return new Map()
-  const t = schema.catalogIndexDocuments
-  const rows = await tx
-    .select({
-      documentId: t.documentId,
-      catalogId: t.catalogId,
-      problems: t.problems,
-    })
-    .from(t)
-    .where(inArray(t.documentId, [...documentIds]))
-  return new Map(rows.map((r) => [r.documentId, r]))
 }
 
 /**
@@ -1186,7 +1080,7 @@ const vacuumLog = createLimitedLog()
 async function vacuumPurged(ctx: Context): Promise<void> {
   try {
     await ctx.db.execute(
-      sql`vacuum (skip_locked) catalog_revision_documents, catalog_proposals, catalog_proposal_comments, events, catalog_index_documents, catalog_index_facts, catalog_index_relations, catalog_index_discrepancies, catalog_index_sections, catalog_index_provenance`,
+      sql`vacuum (skip_locked) catalog_revision_documents, catalog_proposals, catalog_proposal_comments, events`,
     )
   } catch (error) {
     vacuumLog(

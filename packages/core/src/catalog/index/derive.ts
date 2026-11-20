@@ -16,17 +16,16 @@ import type {
   TypeRegistry,
   TypeSchema,
 } from "../document/index.js"
-import type { AttributedSection } from "./attribution.js"
 import { stepJson, typeSchemaJson } from "./format.js"
-import type { Provenance } from "./provenance.js"
 
 /**
- * The version of the index's own rules, beside the parser's: how sections
- * are credited (`attribution.ts`, `provenance.ts`) and anything else derived
- * beyond reading the text. Raise it when they change: indexes built by
- * another version are then behind and rebuilt, as for a parser change.
+ * The version of the index's own rules, beside the parser's: anything
+ * derived beyond reading the text, such as the search words. Raise it when
+ * they change: indexes built by another version are then behind and
+ * rebuilt, as for a parser change. 2: built from `main`, without section
+ * credits (Git-based catalog plan, GC-4).
  */
-export const indexRulesVersion = 1
+export const indexRulesVersion = 2
 
 export type DocumentRow = typeof schema.catalogIndexDocuments.$inferInsert
 export type FactRow = typeof schema.catalogIndexFacts.$inferInsert
@@ -34,7 +33,6 @@ export type RelationRow = typeof schema.catalogIndexRelations.$inferInsert
 export type DiscrepancyRow =
   typeof schema.catalogIndexDiscrepancies.$inferInsert
 export type SectionRow = typeof schema.catalogIndexSections.$inferInsert
-export type ProvenanceRow = typeof schema.catalogIndexProvenance.$inferInsert
 
 /** Every index row one catalog document gives. */
 export interface DocumentRows {
@@ -43,37 +41,34 @@ export interface DocumentRows {
   relations: RelationRow[]
   discrepancies: DiscrepancyRow[]
   sections: SectionRow[]
-  provenance: ProvenanceRow
 }
 
 export interface DeriveInput {
   workspaceId: string
-  documentId: string
-  /** The catalog revision whose text `document` was read from. */
-  revision: number
+  /** The document's path on `main`, such as `machine/musashi.md`. */
+  path: string
+  /** The Git blob ID of the text `document` was read from. */
+  blob: string
   document: CatalogDocument
-  /** The type schemas of the same revision (architecture §5.2). */
+  /** The type schemas of the same commit (architecture §5.2). */
   registry: TypeRegistry
-  /** Credits for `document.body.sections`, in the same order. */
-  attribution: readonly AttributedSection[]
-  /** Where the document's words came from, after this revision. */
-  provenance: Provenance
 }
 
 /**
  * The index rows of one document, from its parsed text and the type schemas
- * of the same revision alone (architecture §5.2, rule 3). Pure: the same
+ * of the same commit alone (architecture §5.2, rule 3). Pure: the same
  * input always gives the same rows, which is what the round-trip check
- * compares the stored rows with.
+ * compares the stored rows with. Nothing else in the catalog changes a
+ * document's rows: references to other documents are resolved when the
+ * index is read, so an update of `main` re-derives only the documents it
+ * changed and, when a type schema changed, the entities of its types.
  */
 export function deriveDocumentRows(input: DeriveInput): DocumentRows {
   const { document } = input
   const sections = document.body.sections
-  if (sections.length !== input.attribution.length)
-    throw new Error("Every section needs its credit")
   const base = {
     workspaceId: input.workspaceId,
-    documentId: input.documentId,
+    path: input.path,
     parserVersion,
   }
   const entity =
@@ -83,7 +78,7 @@ export function deriveDocumentRows(input: DeriveInput): DocumentRows {
 
   const row: DocumentRow = {
     ...base,
-    revision: input.revision,
+    blob: input.blob,
     rulesVersion: indexRulesVersion,
     kind: document.kind,
     catalogId: document.id,
@@ -160,30 +155,21 @@ export function deriveDocumentRows(input: DeriveInput): DocumentRows {
     facts,
     relations,
     discrepancies: found,
-    sections: sections.map((section, position) => {
-      const credit = input.attribution[position]!
-      return {
-        ...base,
-        position,
-        catalogId: document.id,
-        heading: section.heading,
-        level: section.level,
-        anchor: section.anchor,
-        text: section.text,
-        start: section.range.start,
-        end: section.range.end,
-        changedRevision: credit.changedRevision,
-        authorKind: credit.authorKind,
-        author: credit.author,
-        leastTrustedKind: credit.leastTrustedKind,
-        leastTrusted: credit.leastTrusted,
-      }
-    }),
-    provenance: { ...base, ...input.provenance.encode() },
+    sections: sections.map((section, position) => ({
+      ...base,
+      position,
+      catalogId: document.id,
+      heading: section.heading,
+      level: section.level,
+      anchor: section.anchor,
+      text: section.text,
+      start: section.range.start,
+      end: section.range.end,
+    })),
   }
 }
 
-type Base = Pick<FactRow, "workspaceId" | "documentId" | "parserVersion">
+type Base = Pick<FactRow, "workspaceId" | "path" | "parserVersion">
 
 function factRow(
   base: Base,

@@ -7,30 +7,19 @@ import {
   readCatalog,
 } from "../document/index.js"
 import { readDocumentId } from "../document/parse.js"
-import { attributeSections } from "./attribution.js"
 import { deriveDocumentRows } from "./derive.js"
 import type { FactRow } from "./derive.js"
-import { factJson, freshnessJson } from "./format.js"
-import { Provenance } from "./provenance.js"
+import { factJson, freshnessJson, sectionJson } from "./format.js"
 
 const catalog = readCatalog(fixtures.allDocuments)
 
 function rowsOf(text: string) {
-  const document = parseCatalogDocument(text)
-  const provenance = new Provenance()
   return deriveDocumentRows({
     workspaceId: "00000000-0000-4000-8000-000000000001",
-    documentId: "00000000-0000-4000-8000-000000000002",
-    revision: 3,
-    document,
+    path: `${readDocumentId(text)}.md`,
+    blob: "0123456789abcdef0123456789abcdef01234567",
+    document: parseCatalogDocument(text),
     registry: catalog.registry,
-    attribution: attributeSections(
-      [],
-      document.body.sections,
-      { revision: 3, authorKind: "person", author: "guneet" },
-      provenance,
-    ),
-    provenance,
   })
 }
 
@@ -125,19 +114,26 @@ describe("deriveDocumentRows", () => {
     })
   })
 
-  it("refuses credits that do not match the sections", () => {
-    const document = parseCatalogDocument(fixtures.musashi)
-    expect(() =>
-      deriveDocumentRows({
-        workspaceId: "w",
-        documentId: "d",
-        revision: 1,
-        document,
-        registry: catalog.registry,
-        attribution: [],
-        provenance: new Provenance(),
-      }),
-    ).toThrow(/credit/)
+  it("keeps each body section's text and place, and nothing about who wrote it", () => {
+    const rows = rowsOf(fixtures.musashi)
+    expect(rows.sections.map((s) => [s.position, s.anchor])).toEqual([
+      [0, null],
+      [1, "musashi"],
+      [2, "cautions"],
+    ])
+    expect(
+      Object.keys(
+        sectionJson({
+          ...rows.sections[0]!,
+          search: "",
+          searchSimple: "",
+        } as Parameters<typeof sectionJson>[0]),
+      ).sort(),
+    ).toEqual(["anchor", "heading", "level", "text"])
+    expect(rows.document).toMatchObject({
+      path: "machine/musashi.md",
+      blob: "0123456789abcdef0123456789abcdef01234567",
+    })
   })
 })
 

@@ -490,6 +490,11 @@ describe("the start-here document (catalog §11)", () => {
     ],
     ["a target that is not an ID", "  - { to: x, note: n }\n"],
     ["an unknown list", "  - { list: todo, note: n }\n"],
+    // There is no catalog approval to wait for (D-060).
+    [
+      "the former approval list",
+      "  - { list: waiting-for-approval, note: n }\n",
+    ],
     ["a URL that is not http", "  - { url: ftp://x, note: n }\n"],
     ["an unknown step field", "  - { to: project/x, note: n, why: w }\n"],
   ])("blocks %s", (_, people) => {

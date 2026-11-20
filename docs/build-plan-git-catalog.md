@@ -590,6 +590,15 @@ each push, with the commits, the ref and the commits before and after.
 - **Catch-up on start:** the worker indexes any workspace whose `main` moved
   while it was down. Reason: a missed job must not leave the index silently
   behind.
+- **As built (GC-4, [#166](https://github.com/guneet-xyz/shinan/issues/166)):**
+  [architecture §5.3](architecture.md#53-how-sync-works). Two refinements:
+  documents referring to a changed ID need no update, since a document's
+  index rows depend only on its own text and the type schemas, and
+  references are resolved when the index is read (a property test checks
+  that an update always equals a rebuild); and the index job is also queued
+  when a new repository is made. GC-3a records each accepted update of
+  `main` with core's `recordCatalogMain`, which queues the job, in the
+  transaction that stores it.
 
 ### 2.8 Branches
 

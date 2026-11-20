@@ -1,7 +1,5 @@
-import { createHash } from "node:crypto"
-
 import { and, asc, eq, getTableColumns, inArray, schema, sql } from "@shinan/db"
-import type { IndexCheckDifference, Transaction } from "@shinan/db"
+import type { Database, IndexCheckDifference, Transaction } from "@shinan/db"
 
 import { schemaIdPrefix } from "../document/ids.js"
 import {
@@ -9,44 +7,43 @@ import {
   maxDocumentBytes,
   parseCatalogDocument,
   parserVersion,
-  utf8Length,
 } from "../document/index.js"
 import type {
   CatalogDocument,
   SchemaDocument,
-  Section,
   TypeRegistry,
 } from "../document/index.js"
-import { readDocumentId, splitFrontmatter } from "../document/parse.js"
-import { attributeSections } from "./attribution.js"
-import type { AttributedSection, RevisionAuthor } from "./attribution.js"
+import { readDocumentId, unread } from "../document/parse.js"
+import { GitServiceError } from "../git/client.js"
+import type { GitClient } from "../git/client.js"
 import { deriveDocumentRows, indexRulesVersion } from "./derive.js"
 import type { DocumentRows } from "./derive.js"
 import { pauser } from "./pause.js"
-import { Provenance } from "./provenance.js"
 import {
-  latestRevision,
-  latestTexts,
-  revisionAuthors,
-  textHistory,
-} from "./store.js"
-import type { StoredText } from "./store.js"
+  compare,
+  isDocumentPath,
+  isReadablePath,
+  listDocuments,
+  readTexts,
+  whenNotBusy,
+} from "./source.js"
+import type { DocumentText, TreeDocument } from "./source.js"
 
 /**
  * The indexer: the only code that writes the agent index (architecture
- * §5.2, rule 6). It builds rows only from stored text (rule 3), either for
- * the documents one revision changed, inside the transaction that applies
- * it (rule 4), or for a whole workspace from its history (a rebuild, and the
- * daily round-trip check, rule 5).
+ * §5.3). It builds rows only from the documents on `main` of the
+ * workspace's catalog repository, read through the Git container's API
+ * (D-006; Git-based catalog plan §2.7): after an update of `main`, for the
+ * documents the update changed and what depends on them, or for the whole
+ * tree (a rebuild, and the daily round-trip check). The Git container is
+ * never asked anything inside a database transaction.
  */
 
 export type IndexState = typeof schema.catalogIndexState.$inferSelect
 
 /**
  * Takes the workspace's index lock: the state row, created if missing.
- * Applying a revision and rebuilding the index both hold it, so a rebuild
- * never overwrites a revision applied while it ran, and revision numbers
- * are handed out one at a time.
+ * Every write of the index holds it, so two builds never interleave.
  */
 export async function lockIndexState(
   tx: Transaction,
@@ -64,630 +61,499 @@ export async function lockIndexState(
   return state!
 }
 
-/** A document a revision changed, with its new text and, if the caller has it, the text already parsed. */
-export interface ChangedDocument {
-  documentId: string
-  text: string
-  /** `parseCatalogDocument(text)`, so a text already read is not read again. */
-  parsed?: CatalogDocument
-}
-
 /**
- * Indexes the documents a revision changed, inside the transaction that
- * applies it, with the index lock held (`lockIndexState`) and the
- * revision's text already stored. Re-reads only what the change affects:
- * the changed documents, the type schema documents, and, when a type schema
- * document changed, the entities of the types it describes or described
- * (catalog §3.9: changing a schema re-indexes that type's entities).
+ * A document's text, read: a file larger than the Git container reads, or
+ * one whose name it cannot read, is a document with one problem.
  */
-export async function indexRevision(
-  tx: Transaction,
-  workspaceId: string,
-  change: RevisionAuthor,
-  documents: readonly ChangedDocument[],
-): Promise<void> {
-  const changed = new Map(
-    documents.map((d) => [
-      d.documentId,
-      {
-        revision: change.revision,
-        document: d.parsed ?? parseCatalogDocument(d.text),
-      },
-    ]),
-  )
-  const t = schema.catalogIndexDocuments
-  const columns = {
-    documentId: t.documentId,
-    kind: t.kind,
-    type: t.type,
-    parserVersion: t.parserVersion,
-    rulesVersion: t.rulesVersion,
-  }
-  const indexed = await tx
-    .select(columns)
-    .from(t)
-    .where(
-      and(
-        eq(t.workspaceId, workspaceId),
-        sql`(${t.kind} = 'schema' or ${inArray(t.documentId, [...changed.keys()])})`,
-      ),
+function parse(text: DocumentText): CatalogDocument {
+  if ("text" in text) return parseCatalogDocument(text.text)
+  if ("unreadablePath" in text)
+    return unread(
+      "",
+      "unreadable-path",
+      "Shinan cannot read a file by this name: it holds a control character or bytes that are not UTF-8. Rename the file to the document's ID plus .md",
     )
-    .then((rows) => new Map(rows.map((r) => [r.documentId, r])))
-
-  const { registry, stored: storedSchemas } = await registryFor(
-    tx,
-    workspaceId,
-    indexed,
-    changed,
+  return unread(
+    "",
+    "too-large",
+    `The document is ${text.tooLarge} bytes long; a catalog document holds at most ${maxDocumentBytes} bytes (64 KiB)`,
   )
-
-  // When a type schema document changes, the entities of the types it
-  // describes or described are read again, and so is every other type
-  // schema document: which document defines a type can move from one to
-  // another (a type with two schema documents).
-  const types = new Set<string>()
-  let schemasChanged = false
-  for (const [documentId, { document }] of changed) {
-    const before = indexed.get(documentId)
-    if (before?.kind === "schema") {
-      schemasChanged = true
-      if (before.type !== null) types.add(before.type)
-    }
-    if (document.kind === "schema") {
-      schemasChanged = true
-      if (document.describes !== null) types.add(document.describes)
-    }
-  }
-  const affectedRows =
-    types.size === 0
-      ? []
-      : await tx
-          .select(columns)
-          .from(t)
-          .where(
-            and(
-              eq(t.workspaceId, workspaceId),
-              eq(t.kind, "entity"),
-              inArray(t.type, [...types]),
-            ),
-          )
-  for (const row of affectedRows) indexed.set(row.documentId, row)
-  const affected = affectedRows
-    .map((row) => row.documentId)
-    .filter((id) => !changed.has(id))
-  const unchanged = new Map(
-    (await latestTexts(tx, workspaceId, affected)).map((s) => [
-      s.documentId,
-      { revision: s.revision, document: parseCatalogDocument(s.text) },
-    ]),
-  )
-  if (schemasChanged)
-    for (const [documentId, schemaDocument] of storedSchemas)
-      unchanged.set(documentId, schemaDocument)
-
-  const all = [...changed.keys(), ...unchanged.keys()]
-  const stored = await storedCredits(
-    tx,
-    all.filter((id) => {
-      const row = indexed.get(id)
-      return (
-        row?.parserVersion === parserVersion &&
-        row.rulesVersion === indexRulesVersion
-      )
-    }),
-  )
-  // A document with no earlier revision starts with no credits.
-  const earlier = await documentsWithEarlierText(
-    tx,
-    workspaceId,
-    [...changed.keys()].filter((id) => !stored.has(id)),
-    change.revision,
-  )
-  for (const id of changed.keys())
-    if (!stored.has(id) && !earlier.has(id))
-      stored.set(id, { credits: [], provenance: new Provenance() })
-  const rows: DocumentRows[] = []
-  for (const [documentId, { revision, document }] of [
-    ...changed,
-    ...unchanged,
-  ]) {
-    const sections = document.body.sections
-    const previous = stored.get(documentId)
-    let attribution: AttributedSection[]
-    let provenance: Provenance
-    if (changed.has(documentId) && previous) {
-      provenance = previous.provenance
-      attribution = attributeSections(
-        previous.credits,
-        sections,
-        change,
-        provenance,
-      )
-    } else if (
-      !changed.has(documentId) &&
-      previous &&
-      same(previous.credits, sections)
-    ) {
-      attribution = previous.credits
-      provenance = previous.provenance
-    } else {
-      ;({ attribution, provenance } = await replayDocument(
-        tx,
-        workspaceId,
-        documentId,
-        revision,
-      ))
-    }
-    rows.push(
-      deriveDocumentRows({
-        workspaceId,
-        documentId,
-        revision,
-        document,
-        registry,
-        attribution,
-        provenance,
-      }),
-    )
-  }
-  await replaceRows(tx, workspaceId, rows)
-  await tx
-    .update(schema.catalogIndexState)
-    .set({ revision: change.revision })
-    .where(eq(schema.catalogIndexState.workspaceId, workspaceId))
 }
 
-function same(
-  credits: readonly AttributedSection[],
-  sections: readonly Section[],
-): boolean {
+/** Whether a text is a type schema document's, from its frontmatter alone. */
+function maybeSchema(text: DocumentText): boolean {
   return (
-    credits.length === sections.length &&
-    credits.every(
-      (c, i) =>
-        c.anchor === sections[i]!.anchor && c.text === sections[i]!.text,
-    )
+    "text" in text && !!readDocumentId(text.text)?.startsWith(schemaIdPrefix)
   )
 }
 
-/** Which of the documents have text from a revision before `revision`. */
-async function documentsWithEarlierText(
-  tx: Transaction,
-  workspaceId: string,
-  documentIds: readonly string[],
-  revision: number,
-): Promise<Set<string>> {
-  if (documentIds.length === 0) return new Set()
-  const r = schema.catalogRevisionDocuments
-  const rows = await tx
-    .selectDistinct({ documentId: r.documentId })
-    .from(r)
-    .where(
-      and(
-        eq(r.workspaceId, workspaceId),
-        inArray(r.documentId, [...documentIds]),
-        sql`${r.revision} < ${revision}`,
-      ),
-    )
-  return new Set(rows.map((row) => row.documentId))
-}
-
 /**
- * The stored section credits and word provenance of documents, by
- * document. A document whose provenance is not stored (an index built
- * before provenance existed) is left out, so it is replayed.
- */
-async function storedCredits(
-  tx: Transaction,
-  documentIds: readonly string[],
-): Promise<
-  Map<string, { credits: AttributedSection[]; provenance: Provenance }>
-> {
-  const found = new Map<
-    string,
-    { credits: AttributedSection[]; provenance: Provenance }
-  >()
-  if (documentIds.length === 0) return found
-  const p = schema.catalogIndexProvenance
-  for (const row of await tx
-    .select({ documentId: p.documentId, authors: p.authors, units: p.units })
-    .from(p)
-    .where(inArray(p.documentId, [...documentIds])))
-    found.set(row.documentId, {
-      credits: [],
-      provenance: Provenance.decode(row),
-    })
-  if (found.size === 0) return found
-  const s = schema.catalogIndexSections
-  const rows = await tx
-    .select({
-      documentId: s.documentId,
-      anchor: s.anchor,
-      text: s.text,
-      changedRevision: s.changedRevision,
-      authorKind: s.authorKind,
-      author: s.author,
-      leastTrustedKind: s.leastTrustedKind,
-      leastTrusted: s.leastTrusted,
-    })
-    .from(s)
-    .where(inArray(s.documentId, [...found.keys()]))
-    .orderBy(asc(s.documentId), asc(s.position))
-  for (const { documentId, ...credit } of rows)
-    found.get(documentId)!.credits.push(credit)
-  return found
-}
-
-/** A document's section credits and word provenance from its whole history, up to `revision`. */
-async function replayDocument(
-  tx: Transaction,
-  workspaceId: string,
-  documentId: string,
-  revision: number,
-): Promise<{ attribution: AttributedSection[]; provenance: Provenance }> {
-  const history = await textHistory(tx, workspaceId, [documentId], revision)
-  const authors = await revisionAuthors(
-    tx,
-    workspaceId,
-    history.map((h) => h.revision),
-  )
-  const { attribution, provenance } = await replay(history, authors, pauser())
-  return { attribution, provenance }
-}
-
-/**
- * Replays one document's history: its section credits after its last
- * revision, and that revision's text, read. A revision whose body is
- * exactly the previous one's has the same sections, so it is not read
- * again; the size limit is the one thing outside the body that changes
- * what the body gives, so both texts must be within it.
+ * The type schemas the documents of one commit are read with, from that
+ * commit's type schema documents (architecture §5.2: one parser reads
+ * schemas and entities from the same text), and those documents, read.
  *
- * This relies on the body being read on its own, before the frontmatter,
- * with its own failures caught (`parseCatalogDocument`). Only a bug that
- * throws while reading frontmatter (`read-failed`) would empty the sections
- * of a revision this skips; the daily round-trip check would then report
- * the document. `pause` is called between revisions read, so a long
- * history never holds the event loop for long.
+ * Kept between builds by each document's path and Git blob ID: the same
+ * blob ID is always the same text, so nothing stale can come back.
  */
-async function replay(
-  history: readonly StoredText[],
-  authors: ReadonlyMap<number, RevisionAuthor>,
-  pause: () => Promise<void>,
-): Promise<{
-  attribution: AttributedSection[]
-  provenance: Provenance
-  document: CatalogDocument | null
-}> {
-  let attribution: AttributedSection[] = []
-  const provenance = new Provenance()
-  let document: CatalogDocument | null = null
-  let previousBody: string | null = null
-  let previousFits = false
-  for (const [i, { revision, text }] of history.entries()) {
-    const last = i === history.length - 1
-    const fits = utf8Length(text) <= maxDocumentBytes
-    const body = text.slice(splitFrontmatter(text).bodyStart)
-    const unchanged = fits && previousFits && body === previousBody
-    previousBody = body
-    previousFits = fits
-    if (unchanged && !last) continue
-    // A long history gives the event loop back between revisions.
-    await pause()
-    const read = parseCatalogDocument(text)
-    if (last) document = read
-    const author = authors.get(revision)
-    if (!author) throw new Error(`Catalog revision ${revision} has no record`)
-    attribution = attributeSections(
-      attribution,
-      read.body.sections,
-      author,
-      provenance,
-    )
-  }
-  return { attribution, provenance, document }
-}
-
-/**
- * The type schemas the documents of a revision are read with: the stored
- * type schema documents, with any the revision changed in their new form
- * (architecture §5.2: one parser reads schemas and entities from the same
- * revision). Also returns the stored ones, read.
- *
- * The parsed schemas are kept between revisions, keyed by each document's
- * ID and a hash of its exact text, never by revision number: a revision
- * rolled back leaves its number free for the next one, and purge rewrites a
- * revision's text in place, so neither can bring back a stale schema.
- */
-async function registryFor(
-  tx: Transaction,
-  workspaceId: string,
-  indexed: ReadonlyMap<string, { kind: string }>,
-  changed: ReadonlyMap<string, { revision: number; document: CatalogDocument }>,
-): Promise<{
+interface SchemaSet {
   registry: TypeRegistry
-  stored: Map<string, { revision: number; document: CatalogDocument }>
-}> {
-  const storedIds = [...indexed]
-    .filter(([id, row]) => row.kind === "schema" && !changed.has(id))
-    .map(([id]) => id)
-  const texts = await latestTexts(tx, workspaceId, storedIds)
-  const versions = [
-    ...texts.map((t) => ({
-      documentId: t.documentId,
-      text: t.text,
-      revision: t.revision,
-      parsed: undefined as CatalogDocument | undefined,
-    })),
-    ...[...changed]
-      .filter(([, c]) => c.document.kind === "schema")
-      .map(([documentId, c]) => ({
-        documentId,
-        text: c.document.text,
-        revision: c.revision,
-        parsed: c.document,
-      })),
-  ].sort((a, b) => (a.documentId < b.documentId ? -1 : 1))
+  documents: Map<string, CatalogDocument>
+}
 
-  const key = versions
-    .map(
-      (v) =>
-        `${v.documentId}:${createHash("sha256").update(v.text).digest("base64")}`,
-    )
+const registryCache = new Map<string, SchemaSet>()
+const registryCacheSize = 32
+
+function schemaKey(schemas: readonly { path: string; blob: string }[]): string {
+  return [...schemas]
+    .sort((a, b) => compare(a.path, b.path))
+    .map((s) => `${s.path}:${s.blob}`)
     .join(",")
-  let entry = registryCache.get(key)
+}
+
+function cachedSchemas(key: string): SchemaSet | undefined {
+  const entry = registryCache.get(key)
   if (entry) {
     registryCache.delete(key)
-  } else {
-    const documents = versions.map(
-      (v) => v.parsed ?? parseCatalogDocument(v.text),
-    )
-    entry = {
-      registry: buildTypeRegistry(
-        documents.filter((d): d is SchemaDocument => d.kind === "schema"),
-      ),
-      documents: new Map(versions.map((v, i) => [v.documentId, documents[i]!])),
-    }
+    registryCache.set(key, entry)
+  }
+  return entry
+}
+
+function schemaSet(
+  key: string,
+  documents: readonly { path: string; document: CatalogDocument }[],
+): SchemaSet {
+  const sorted = [...documents].sort((a, b) => compare(a.path, b.path))
+  const entry: SchemaSet = {
+    registry: buildTypeRegistry(
+      sorted
+        .map((d) => d.document)
+        .filter((d): d is SchemaDocument => d.kind === "schema"),
+    ),
+    documents: new Map(sorted.map((d) => [d.path, d.document])),
   }
   registryCache.set(key, entry)
   if (registryCache.size > registryCacheSize)
     registryCache.delete(registryCache.keys().next().value!)
-
-  const stored = new Map<
-    string,
-    { revision: number; document: CatalogDocument }
-  >()
-  for (const t of texts)
-    stored.set(t.documentId, {
-      revision: t.revision,
-      document: entry.documents.get(t.documentId)!,
-    })
-  return { registry: entry.registry, stored }
+  return entry
 }
-
-/** Recently used type schemas, by schema documents' IDs and text hashes. */
-const registryCache = new Map<
-  string,
-  { registry: TypeRegistry; documents: Map<string, CatalogDocument> }
->()
-const registryCacheSize = 32
 
 /**
  * Empties the cache of parsed type schemas, so that no text parsed before a
- * purge stays in this process's memory (catalog §9). The cache is keyed by
- * the text, so it never serves purged text; this only frees it.
+ * purge stays in this process's memory (catalog §9).
  */
 export function clearTypeSchemaCache(): void {
   registryCache.clear()
 }
 
 /**
- * Derives a whole workspace's index from its stored text alone: the latest
- * text of every document, read with the type schemas of the same revision,
- * and each document's history for its section credits. Calls `sink` with
- * the rows of each batch of documents, so a large catalog is never held in
- * memory at once. Gives the event loop back between documents, every
- * `eventLoopBudgetMs` at most, so a rebuild or the daily check never holds
- * up the other jobs of the worker's process for long (#135); what it derives
- * does not depend on when it yields.
+ * Derives the index rows of every document of a tree from its texts alone:
+ * the type schema documents first (found by their frontmatter), then every
+ * document read with them. Calls `sink` with the rows of each batch of
+ * documents, so the rows of a large catalog are never held at once, and
+ * gives the event loop back between documents (#135); what it derives does
+ * not depend on when it yields.
  */
-export async function deriveWorkspace(
-  tx: Transaction,
+export async function deriveTexts(
   workspaceId: string,
+  texts: readonly DocumentText[],
   sink: (rows: DocumentRows[]) => Promise<void>,
-  batchSize = 200,
-  pause: () => Promise<void> = pauser(),
+  options: { batchSize?: number; pause?: () => Promise<void> } = {},
 ): Promise<number> {
-  const latest = await latestTexts(tx, workspaceId)
-  // Only type schema documents are needed before the rest, so only their
-  // frontmatter is read to find them.
-  const schemas: SchemaDocument[] = []
-  const schemaIds = new Set<string>()
-  for (const { documentId, text } of latest) {
+  const batchSize = options.batchSize ?? 200
+  const pause = options.pause ?? pauser()
+  const schemas: { path: string; blob: string; document: CatalogDocument }[] =
+    []
+  for (const text of texts) {
     await pause()
-    if (!readDocumentId(text)?.startsWith(schemaIdPrefix)) continue
-    const document = parseCatalogDocument(text)
-    if (document.kind === "schema") schemas.push(document)
-    schemaIds.add(documentId)
+    if (maybeSchema(text))
+      schemas.push({ path: text.path, blob: text.blob, document: parse(text) })
   }
-  const registry = buildTypeRegistry(schemas)
-  const authors = await revisionAuthors(tx, workspaceId)
-  const ids = latest.map((l) => l.documentId)
-  latest.length = 0
-
-  for (let i = 0; i < ids.length; i += batchSize) {
-    const history = await textHistory(
-      tx,
-      workspaceId,
-      ids.slice(i, i + batchSize),
-    )
+  const key = schemaKey(schemas)
+  const { registry, documents } = cachedSchemas(key) ?? schemaSet(key, schemas)
+  for (let i = 0; i < texts.length; i += batchSize) {
     const rows: DocumentRows[] = []
-    let start = 0
-    while (start < history.length) {
-      const documentId = history[start]!.documentId
-      let end = start
-      while (end < history.length && history[end]!.documentId === documentId)
-        end++
-      const own = history.slice(start, end)
+    for (const text of texts.slice(i, i + batchSize)) {
       await pause()
-      const { attribution, provenance, document } = await replay(
-        own,
-        authors,
-        pause,
-      )
-      if (document?.kind === "schema" && !schemaIds.has(documentId))
+      const document = documents.get(text.path) ?? parse(text)
+      if (document.kind === "schema" && !documents.has(text.path))
         throw new Error(
-          `Document ${documentId} is a type schema document that reading its frontmatter missed`,
+          `${text.path} is a type schema document that reading its frontmatter missed`,
         )
       rows.push(
         deriveDocumentRows({
           workspaceId,
-          documentId,
-          revision: own[own.length - 1]!.revision,
-          document: document!,
+          path: text.path,
+          blob: text.blob,
+          document,
           registry,
-          attribution,
-          provenance,
         }),
       )
-      start = end
     }
     await sink(rows)
   }
-  return ids.length
+  return texts.length
+}
+
+/** What bringing a workspace's index up to `main` did. */
+export interface IndexUpdate {
+  /**
+   * `unchanged`: the index already stood at `main`; `updated`: the
+   * documents an update of `main` changed were indexed again; `rebuilt`:
+   * every row was derived again from `main`; `no-repository`: the
+   * workspace has no repository yet.
+   */
+  outcome: "unchanged" | "updated" | "rebuilt" | "no-repository"
+  /** The commit the index now stands at. */
+  commit: string | null
+  /** How many documents' rows were derived. */
+  documents: number
 }
 
 /**
- * Rebuilds a workspace's index from its stored text: deletes every index
- * row and derives them again (catalog §2.1, rule 3; architecture §5.3).
- * Holds the index lock, so revisions applied meanwhile wait and are then
- * indexed on top.
+ * Above this many changed documents (and a quarter of the catalog), an
+ * update rebuilds instead: reading the whole tree is then about as quick.
  */
-export async function rebuildWorkspaceIndex(
-  tx: Transaction,
-  workspaceId: string,
-): Promise<{ revision: number; documents: number }> {
-  await lockIndexState(tx, workspaceId)
-  // Each table by workspace, children first: much faster than cascading
-  // from every document row.
-  for (const table of [
-    tables.facts,
-    tables.relations,
-    tables.discrepancies,
-    tables.sections,
-    tables.provenance,
-    tables.documents,
-  ])
-    await tx.delete(table).where(eq(table.workspaceId, workspaceId))
-  const documents = await deriveWorkspace(tx, workspaceId, (rows) =>
-    insertRows(tx, rows),
-  )
-  const revision = await latestRevision(tx, workspaceId)
-  await tx
-    .update(schema.catalogIndexState)
-    .set({
-      revision,
-      parserVersion,
-      rulesVersion: indexRulesVersion,
-      rebuildRequestedAt: null,
-      rebuiltAt: sql`now()`,
-    })
-    .where(eq(schema.catalogIndexState.workspaceId, workspaceId))
-  return { revision, documents }
-}
+const updateLimit = 50
+
+/** How often a build that finds the index moved under it starts again. */
+const attempts = 3
 
 /**
- * Derives again, from their stored history, the index rows of documents
- * whose stored text was rewritten in place by a purge (catalog §9): the
- * replay a rebuild does, for those documents only, and the index's
- * revision brought up to the latest. A document's rows depend only on its
- * own history and the type schemas, so when a type schema document is
- * among them the whole workspace is rebuilt instead; so it is when they
- * are more than a quarter of the catalog (and over 50), where a rebuild is
- * quicker.
- * Holds the index lock.
+ * Brings a workspace's index up to its `main` (plan §2.7): a full rebuild
+ * when the index was never built, was built by another parser or rules
+ * version, or a rebuild is asked for (or `rebuild` is set), and otherwise
+ * the documents changed between the commit the index stands at and `main`,
+ * with what depends on them: when a type schema document changes, every
+ * type schema document and the entities of the types it describes or
+ * described (catalog §3.9). Either way the outcome is what a rebuild from
+ * `main` gives (D-006).
+ *
+ * Reads `main` through the Git container first, then writes in one
+ * transaction holding the index lock; if another build moved the index
+ * meanwhile, it starts again. Readers see the old rows until it commits.
  */
-export async function reindexDocuments(
-  tx: Transaction,
+export async function updateWorkspaceIndex(
+  db: Database,
+  git: GitClient,
   workspaceId: string,
-  documentIds: readonly string[],
-  batchSize = 200,
-): Promise<void> {
-  await lockIndexState(tx, workspaceId)
-  if (documentIds.length === 0) return
-  const t = schema.catalogIndexDocuments
-  const schemas = await tx
-    .select({ documentId: t.documentId })
-    .from(t)
-    .where(and(eq(t.workspaceId, workspaceId), eq(t.kind, "schema")))
-  const ids = new Set(documentIds)
-  const [{ total }] = (await tx
-    .select({ total: sql<number>`count(*)::int` })
-    .from(schema.catalogDocuments)
-    .where(eq(schema.catalogDocuments.workspaceId, workspaceId))) as [
-    { total: number },
-  ]
-  if (
-    schemas.some((s) => ids.has(s.documentId)) ||
-    ids.size > Math.max(total / 4, 50)
-  ) {
-    await rebuildWorkspaceIndex(tx, workspaceId)
-    return
+  options: { rebuild?: boolean } = {},
+): Promise<IndexUpdate> {
+  for (let attempt = 1; ; attempt++) {
+    const done = await updateOnce(db, git, workspaceId, options)
+    if (done) return done
+    if (attempt >= attempts)
+      throw new Error(
+        `The index of workspace ${workspaceId} kept moving while it was built`,
+      )
   }
-  const { registry } = await registryFor(
-    tx,
-    workspaceId,
-    new Map(schemas.map((s) => [s.documentId, { kind: "schema" }])),
-    new Map(),
-  )
-  const sorted = [...ids].sort()
-  const pause = pauser()
-  for (let i = 0; i < sorted.length; i += batchSize) {
-    const history = await textHistory(
-      tx,
-      workspaceId,
-      sorted.slice(i, i + batchSize),
-    )
-    const authors = await revisionAuthors(tx, workspaceId, [
-      ...new Set(history.map((h) => h.revision)),
-    ])
-    const rows: DocumentRows[] = []
-    let start = 0
-    while (start < history.length) {
-      const documentId = history[start]!.documentId
-      let end = start
-      while (end < history.length && history[end]!.documentId === documentId)
-        end++
-      const own = history.slice(start, end)
-      const { attribution, provenance, document } = await replay(
-        own,
-        authors,
-        pause,
-      )
-      // A document that has become a type schema document changes how
-      // others are read: rebuild everything.
-      if (document?.kind === "schema") {
-        await rebuildWorkspaceIndex(tx, workspaceId)
-        return
-      }
-      rows.push(
-        deriveDocumentRows({
-          workspaceId,
-          documentId,
-          revision: own[own.length - 1]!.revision,
-          document: document!,
-          registry,
-          attribution,
-          provenance,
-        }),
-      )
-      start = end
+}
+
+async function updateOnce(
+  db: Database,
+  git: GitClient,
+  workspaceId: string,
+  options: { rebuild?: boolean },
+): Promise<IndexUpdate | null> {
+  // The state first, then `main`: an update of `main` recorded in between
+  // is then newer than the `main` read, and is kept (`nextMain`).
+  const before = await db.transaction(async (tx) => {
+    const [state] = await tx
+      .select()
+      .from(schema.catalogIndexState)
+      .where(eq(schema.catalogIndexState.workspaceId, workspaceId))
+    return {
+      state,
+      stale: state ? await hasStaleRows(tx, workspaceId) : false,
     }
-    await replaceRows(tx, workspaceId, rows)
+  })
+  const state = before.state
+  const repository = await whenNotBusy(() => git.getRepository(workspaceId))
+  if (!repository)
+    return { outcome: "no-repository", commit: null, documents: 0 }
+  const main = repository.main
+  const full =
+    options.rebuild === true ||
+    !state ||
+    state.commit === null ||
+    stateBehind(state) ||
+    before.stale
+
+  if (!full && state.commit === main) {
+    if (state.mainCommit !== main)
+      await db
+        .update(schema.catalogIndexState)
+        .set({ mainCommit: main })
+        .where(
+          and(
+            eq(schema.catalogIndexState.workspaceId, workspaceId),
+            eq(schema.catalogIndexState.commit, main),
+            mainCommitIs(state.mainCommit),
+          ),
+        )
+    return { outcome: "unchanged", commit: main, documents: 0 }
   }
-  await tx
-    .update(schema.catalogIndexState)
-    .set({ revision: await latestRevision(tx, workspaceId) })
-    .where(eq(schema.catalogIndexState.workspaceId, workspaceId))
+
+  if (!full) {
+    const update = await planUpdate(db, git, workspaceId, state.commit!, main)
+    if (update !== "rebuild") {
+      const written = await db.transaction(async (tx) => {
+        if (!(await stillAt(tx, workspaceId, state))) return false
+        await deletePaths(tx, workspaceId, update.removed)
+        await replaceRows(tx, workspaceId, update.rows)
+        await tx
+          .update(schema.catalogIndexState)
+          .set({ commit: main, mainCommit: nextMain(state, main) })
+          .where(eq(schema.catalogIndexState.workspaceId, workspaceId))
+        return true
+      })
+      return written
+        ? { outcome: "updated", commit: main, documents: update.rows.length }
+        : null
+    }
+  }
+
+  const texts = await readTexts(
+    git,
+    workspaceId,
+    main,
+    await listDocuments(git, workspaceId, main),
+  )
+  const written = await db.transaction(async (tx) => {
+    if (!(await stillAt(tx, workspaceId, state))) return false
+    // Each table by workspace, children first: much faster than cascading
+    // from every document row.
+    for (const table of [
+      tables.facts,
+      tables.relations,
+      tables.discrepancies,
+      tables.sections,
+      tables.documents,
+    ])
+      await tx.delete(table).where(eq(table.workspaceId, workspaceId))
+    await deriveTexts(workspaceId, texts, (rows) => insertRows(tx, rows))
+    await tx
+      .update(schema.catalogIndexState)
+      .set({
+        commit: main,
+        mainCommit: nextMain(state, main),
+        parserVersion,
+        rulesVersion: indexRulesVersion,
+        rebuildRequestedAt: null,
+        rebuiltAt: sql`now()`,
+      })
+      .where(eq(schema.catalogIndexState.workspaceId, workspaceId))
+    return true
+  })
+  return written
+    ? { outcome: "rebuilt", commit: main, documents: texts.length }
+    : null
+}
+
+/**
+ * Inside the write transaction: takes the index lock, and says whether the
+ * index still stands where it did when the build read it.
+ */
+async function stillAt(
+  tx: Transaction,
+  workspaceId: string,
+  read: IndexState | undefined,
+): Promise<boolean> {
+  const now = await lockIndexState(tx, workspaceId)
+  return (read?.commit ?? null) === now.commit
+}
+
+/**
+ * The `main` to record once the index stands at `main`: the one read, unless
+ * a newer update of `main` was recorded meanwhile, whose own job follows.
+ */
+function nextMain(read: IndexState | undefined, main: string) {
+  return sql`case when ${mainCommitIs(read?.mainCommit ?? null)} then ${main} else ${schema.catalogIndexState.mainCommit} end`
+}
+
+function mainCommitIs(value: string | null) {
+  return value === null
+    ? sql`${schema.catalogIndexState.mainCommit} is null`
+    : sql`${schema.catalogIndexState.mainCommit} = ${value}`
+}
+
+/** The rows an update of `main` writes. */
+interface UpdatePlan {
+  /** Paths that no longer hold a document. */
+  removed: string[]
+  /** The rows of the documents derived again. */
+  rows: DocumentRows[]
+}
+
+/**
+ * Works out an update from `from` to `main` and derives its rows, or says
+ * to rebuild: when the Git container no longer has `from` (a purge
+ * rewrote history), or the update changes more than `updateLimit`
+ * documents and a quarter of the catalog.
+ */
+async function planUpdate(
+  db: Database,
+  git: GitClient,
+  workspaceId: string,
+  from: string,
+  main: string,
+): Promise<UpdatePlan | "rebuild"> {
+  let changes
+  try {
+    const diff = await whenNotBusy(() =>
+      git.diff(workspaceId, { from, to: main }),
+    )
+    // More changes than one answer holds: reading the whole tree is then
+    // the quicker way anyway.
+    if (diff.truncated) return "rebuild"
+    changes = diff.changes
+  } catch (error) {
+    if (
+      error instanceof GitServiceError &&
+      error.status >= 400 &&
+      error.status < 500
+    )
+      return "rebuild"
+    throw error
+  }
+  const removed = new Set<string>()
+  const changed = new Map<string, TreeDocument>()
+  for (const c of changes) {
+    // A name the Git container cannot read may stand for several files
+    // (`listDocuments`): only a rebuild lists them as one.
+    if (
+      !isReadablePath(c.path) &&
+      [c.oldMode, c.newMode].some(
+        (mode) => mode !== null && isDocumentPath({ path: c.path, mode }),
+      )
+    )
+      return "rebuild"
+    if (c.oldMode !== null && isDocumentPath({ path: c.path, mode: c.oldMode }))
+      removed.add(c.path)
+    if (
+      c.newMode !== null &&
+      c.newOid !== null &&
+      isDocumentPath({ path: c.path, mode: c.newMode })
+    ) {
+      removed.delete(c.path)
+      changed.set(c.path, { path: c.path, blob: c.newOid })
+    }
+  }
+
+  // What the index holds of the type schema documents and the changed paths.
+  const t = schema.catalogIndexDocuments
+  const columns = { path: t.path, blob: t.blob, kind: t.kind, type: t.type }
+  const touched = [...removed, ...changed.keys()]
+  const { indexed, total } = await db.transaction(async (tx) => {
+    const rows = await tx
+      .select(columns)
+      .from(t)
+      .where(
+        and(
+          eq(t.workspaceId, workspaceId),
+          touched.length === 0
+            ? eq(t.kind, "schema")
+            : sql`(${t.kind} = 'schema' or ${inArray(t.path, touched)})`,
+        ),
+      )
+    const [count] = await tx
+      .select({ total: sql<number>`count(*)::int` })
+      .from(t)
+      .where(eq(t.workspaceId, workspaceId))
+    return {
+      indexed: new Map(rows.map((r) => [r.path, r])),
+      total: count?.total ?? 0,
+    }
+  })
+  if (touched.length > Math.max(total / 4, updateLimit)) return "rebuild"
+
+  // The documents to derive again, by path: first the changed ones.
+  const derive = new Map<string, { blob: string; document: CatalogDocument }>()
+  for (const text of await readTexts(git, workspaceId, main, [
+    ...changed.values(),
+  ]))
+    derive.set(text.path, { blob: text.blob, document: parse(text) })
+
+  // A type schema document changed: its types' entities, and every other
+  // type schema document (which document defines a type can move from one
+  // to another), are derived again.
+  const types = new Set<string>()
+  let schemasChanged = false
+  for (const path of touched) {
+    const before = indexed.get(path)
+    if (before?.kind === "schema") {
+      schemasChanged = true
+      if (before.type !== null) types.add(before.type)
+    }
+    const after = derive.get(path)?.document
+    if (after?.kind === "schema") {
+      schemasChanged = true
+      if (after.describes !== null) types.add(after.describes)
+    }
+  }
+
+  // The type schemas of `main`: the unchanged schema documents, from the
+  // cache or read again, and the changed ones.
+  const kept = [...indexed.values()].filter(
+    (r) => r.kind === "schema" && !removed.has(r.path) && !changed.has(r.path),
+  )
+  const changedSchemas = [...derive]
+    .filter(([, d]) => d.document.kind === "schema")
+    .map(([path, d]) => ({ path, blob: d.blob, document: d.document }))
+  const key = schemaKey([...kept, ...changedSchemas])
+  let set = cachedSchemas(key)
+  const keptDocuments = set
+    ? kept.map((r) => ({ ...r, document: set!.documents.get(r.path)! }))
+    : (await readTexts(git, workspaceId, main, kept)).map((text) => ({
+        path: text.path,
+        blob: text.blob,
+        document: parse(text),
+      }))
+  set ??= schemaSet(key, [...keptDocuments, ...changedSchemas])
+  if (schemasChanged)
+    for (const k of keptDocuments)
+      derive.set(k.path, { blob: k.blob, document: k.document })
+
+  if (types.size > 0) {
+    const affected = await db
+      .select({ path: t.path, blob: t.blob })
+      .from(t)
+      .where(
+        and(
+          eq(t.workspaceId, workspaceId),
+          eq(t.kind, "entity"),
+          inArray(t.type, [...types]),
+        ),
+      )
+    const toRead = affected.filter(
+      (a) => !derive.has(a.path) && !removed.has(a.path),
+    )
+    if (
+      removed.size + derive.size + toRead.length >
+      Math.max(total / 4, updateLimit)
+    )
+      return "rebuild"
+    for (const text of await readTexts(git, workspaceId, main, toRead))
+      derive.set(text.path, { blob: text.blob, document: parse(text) })
+  }
+
+  const pause = pauser()
+  const rows: DocumentRows[] = []
+  for (const [path, { blob, document }] of [...derive].sort(([a], [b]) =>
+    compare(a, b),
+  )) {
+    await pause()
+    rows.push(
+      deriveDocumentRows({
+        workspaceId,
+        path,
+        blob,
+        document,
+        registry: set.registry,
+      }),
+    )
+  }
+  return { removed: [...removed].sort(compare), rows }
 }
 
 /**
@@ -716,7 +582,7 @@ export async function hasStaleRows(
 ): Promise<boolean> {
   const t = schema.catalogIndexDocuments
   const [row] = await tx
-    .select({ documentId: t.documentId })
+    .select({ path: t.path })
     .from(t)
     .where(
       and(
@@ -735,7 +601,6 @@ const tables = {
   relations: schema.catalogIndexRelations,
   discrepancies: schema.catalogIndexDiscrepancies,
   sections: schema.catalogIndexSections,
-  provenance: schema.catalogIndexProvenance,
 } as const
 type TableName = keyof typeof tables
 
@@ -746,40 +611,43 @@ export interface IndexComparison {
 }
 
 /**
- * The round-trip check (architecture §5.2, rule 5): text → parse → index,
- * compared with the stored index, row by row. Run it in a transaction that
- * sees one snapshot (repeatable read), so revisions applied meanwhile
- * cannot show up as differences.
+ * The round-trip check (architecture §5.3): the texts of one commit →
+ * parse → index, compared with the stored index row by row. Run it in a
+ * transaction that sees one snapshot (repeatable read), with `texts` read
+ * at the commit the index stands at in that snapshot.
  */
 export async function compareWorkspaceIndex(
   tx: Transaction,
   workspaceId: string,
+  texts: readonly DocumentText[],
 ): Promise<IndexComparison> {
   const differences: IndexCheckDifference[] = []
   const pause = pauser()
-  const documents = await deriveWorkspace(tx, workspaceId, async (batch) => {
+  const documents = await deriveTexts(workspaceId, texts, async (batch) => {
     const stored = await storedRows(
       tx,
-      batch.map((b) => b.document.documentId),
+      workspaceId,
+      batch.map((b) => b.document.path),
     )
     for (const derived of batch) {
       await pause()
-      const id = derived.document.documentId
+      const path = derived.document.path
       const differing = (Object.keys(tables) as TableName[]).filter(
         (name) =>
           canonical(rowsOf(derived, name)) !==
-          canonical(stored.get(id)?.[name] ?? []),
+          canonical(stored.get(path)?.[name] ?? []),
       )
-      if (differing.length > 0)
-        differences.push({ documentId: id, tables: differing })
+      if (differing.length > 0) differences.push({ path, tables: differing })
     }
   })
-  const [extra] = await tx
-    .select({ count: sql<number>`count(*)::int` })
-    .from(schema.catalogIndexDocuments)
-    .where(eq(schema.catalogIndexDocuments.workspaceId, workspaceId))
-  if ((extra?.count ?? 0) !== documents)
-    differences.push({ documentId: "*", tables: ["documents"] })
+  const paths = new Set(texts.map((t) => t.path))
+  const extra = await tx
+    .select({ path: tables.documents.path })
+    .from(tables.documents)
+    .where(eq(tables.documents.workspaceId, workspaceId))
+    .orderBy(asc(tables.documents.path))
+  for (const { path } of extra)
+    if (!paths.has(path)) differences.push({ path, tables: ["documents"] })
   return { documents, differences }
 }
 
@@ -789,8 +657,6 @@ function rowsOf(rows: DocumentRows, name: TableName): object[] {
       return [rows.document]
     case "discrepancies":
       return [...rows.discrepancies].sort((a, b) => (a.key < b.key ? -1 : 1))
-    case "provenance":
-      return [rows.provenance]
     default:
       return rows[name]
   }
@@ -798,47 +664,47 @@ function rowsOf(rows: DocumentRows, name: TableName): object[] {
 
 async function storedRows(
   tx: Transaction,
-  documentIds: readonly string[],
+  workspaceId: string,
+  paths: readonly string[],
 ): Promise<Map<string, Record<TableName, object[]>>> {
-  const ids = [...documentIds]
+  const of = (table: (typeof tables)[TableName]) =>
+    and(eq(table.workspaceId, workspaceId), inArray(table.path, [...paths]))
   const d = tables.documents
   const f = tables.facts
   const r = tables.relations
   const x = tables.discrepancies
   const s = tables.sections
-  const p = tables.provenance
-  const found: Record<TableName, { documentId: string; search?: unknown }[]> = {
-    documents: await tx.select().from(d).where(inArray(d.documentId, ids)),
+  const found: Record<TableName, { path: string }[]> = {
+    documents: await tx.select().from(d).where(of(d)),
     facts: await tx
       .select()
       .from(f)
-      .where(inArray(f.documentId, ids))
-      .orderBy(asc(f.documentId), asc(f.position)),
+      .where(of(f))
+      .orderBy(asc(f.path), asc(f.position)),
     relations: await tx
       .select()
       .from(r)
-      .where(inArray(r.documentId, ids))
-      .orderBy(asc(r.documentId), asc(r.position)),
+      .where(of(r))
+      .orderBy(asc(r.path), asc(r.position)),
     discrepancies: await tx
       .select()
       .from(x)
-      .where(inArray(x.documentId, ids))
-      .orderBy(asc(x.documentId), asc(x.key)),
+      .where(of(x))
+      .orderBy(asc(x.path), asc(x.key)),
     sections: await tx
       .select()
       .from(s)
-      .where(inArray(s.documentId, ids))
-      .orderBy(asc(s.documentId), asc(s.position)),
-    provenance: await tx.select().from(p).where(inArray(p.documentId, ids)),
+      .where(of(s))
+      .orderBy(asc(s.path), asc(s.position)),
   }
-  const byDocument = new Map<string, Record<TableName, object[]>>()
+  const byPath = new Map<string, Record<TableName, object[]>>()
   for (const name of Object.keys(found) as TableName[]) {
     for (const row of found[name]) {
       // The search columns are generated by PostgreSQL from the others.
       const stored: Record<string, unknown> = { ...row }
       delete stored.search
       delete stored.searchSimple
-      let entry = byDocument.get(row.documentId)
+      let entry = byPath.get(row.path)
       if (!entry) {
         entry = {
           documents: [],
@@ -846,21 +712,18 @@ async function storedRows(
           relations: [],
           discrepancies: [],
           sections: [],
-          provenance: [],
         }
-        byDocument.set(row.documentId, entry)
+        byPath.set(row.path, entry)
       }
       entry[name].push(stored)
     }
   }
-  return byDocument
+  return byPath
 }
 
-/** A stable text form of rows: keys sorted, times as ISO text, bytes as hex, absent values left out. */
+/** A stable text form of rows: keys sorted, times as ISO text, absent values left out. */
 function canonical(value: unknown): string {
   return JSON.stringify(value, function (this: unknown, key, v: unknown) {
-    const raw = (this as Record<string, unknown>)[key]
-    if (Buffer.isBuffer(raw)) return raw.toString("hex")
     if (v instanceof Date) return v.toISOString()
     if (v && typeof v === "object" && !Array.isArray(v)) {
       const sorted: Record<string, unknown> = {}
@@ -872,6 +735,23 @@ function canonical(value: unknown): string {
   })
 }
 
+/** Deletes the index rows of the given paths. */
+async function deletePaths(
+  tx: Transaction,
+  workspaceId: string,
+  paths: readonly string[],
+): Promise<void> {
+  if (paths.length === 0) return
+  await tx
+    .delete(tables.documents)
+    .where(
+      and(
+        eq(tables.documents.workspaceId, workspaceId),
+        inArray(tables.documents.path, [...paths]),
+      ),
+    )
+}
+
 /** Replaces the index rows of the given documents. */
 async function replaceRows(
   tx: Transaction,
@@ -879,14 +759,10 @@ async function replaceRows(
   rows: readonly DocumentRows[],
 ): Promise<void> {
   if (rows.length === 0) return
-  await tx.delete(schema.catalogIndexDocuments).where(
-    and(
-      eq(schema.catalogIndexDocuments.workspaceId, workspaceId),
-      inArray(
-        schema.catalogIndexDocuments.documentId,
-        rows.map((r) => r.document.documentId),
-      ),
-    ),
+  await deletePaths(
+    tx,
+    workspaceId,
+    rows.map((r) => r.document.path),
   )
   await insertRows(tx, rows)
 }
@@ -923,13 +799,6 @@ async function insertRows(
     tables.sections,
     rows.flatMap((r) => r.sections),
   )
-  // Provenance rows can hold tens of kilobytes each.
-  await insertJson(
-    tx,
-    tables.provenance,
-    rows.map((r) => r.provenance),
-    100,
-  )
 }
 
 /**
@@ -941,7 +810,6 @@ async function insertJson(
   tx: Transaction,
   table: (typeof tables)[TableName],
   rows: readonly object[],
-  perStatement = chunkSize,
 ): Promise<void> {
   if (rows.length === 0) return
   const columns = Object.entries(
@@ -952,20 +820,16 @@ async function insertJson(
   ).filter(([, column]) => !column.generated)
   const records = rows.map((row) => {
     const record: Record<string, unknown> = {}
-    for (const [key, column] of columns) {
-      const value = (row as Record<string, unknown>)[key] ?? null
-      record[column.name] = Buffer.isBuffer(value)
-        ? `\\x${value.toString("hex")}`
-        : value
-    }
+    for (const [key, column] of columns)
+      record[column.name] = (row as Record<string, unknown>)[key] ?? null
     return record
   })
   const names = sql.join(
     columns.map(([, column]) => sql.identifier(column.name)),
     sql`, `,
   )
-  for (let i = 0; i < records.length; i += perStatement)
+  for (let i = 0; i < records.length; i += chunkSize)
     await tx.execute(
-      sql`insert into ${table} (${names}) select ${names} from jsonb_populate_recordset(null::${table}, ${JSON.stringify(records.slice(i, i + perStatement))}::jsonb)`,
+      sql`insert into ${table} (${names}) select ${names} from jsonb_populate_recordset(null::${table}, ${JSON.stringify(records.slice(i, i + chunkSize))}::jsonb)`,
     )
 }

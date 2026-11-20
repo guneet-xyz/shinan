@@ -1,24 +1,16 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 
-import { sql } from "@shinan/db"
-
-import {
-  asAgent,
-  asPerson,
-  newPerson,
-  testDatabase,
-} from "../../../test/helpers.js"
+import { asPerson, newPerson, testDatabase } from "../../../test/helpers.js"
+import { createMemoryGit } from "../../../test/memory-git.js"
 import type { Person } from "../../identity/people.js"
 import { createWorkspace } from "../../identity/workspaces.js"
-import { purgeCatalogText } from "../purge/purge.js"
-import { appendCatalogRevision } from "../revisions.js"
-import type { RevisionActor } from "../revisions.js"
-import { compareWorkspaceIndex, rebuildWorkspaceIndex } from "./indexer.js"
+import { compareWorkspaceIndex, updateWorkspaceIndex } from "./indexer.js"
 import { getCatalogEntity, searchCatalog } from "./queries.js"
+import { listDocuments, readTexts } from "./source.js"
 
 /**
  * The index at the size it is built for: a catalog of a few thousand
- * entities (M2 build plan, M2-3). Applying a revision reads only what it
+ * entities (M2 build plan, M2-3). An update of `main` reads only what it
  * changes, so it stays fast however large the catalog is; a rebuild reads
  * everything once.
  */
@@ -94,53 +86,40 @@ function prose(i: number, part: number): string {
 
 let owner: Person
 let workspaceId: string
-let agentId: string
-let agentLabel: string
-/** An agent writes the catalog, as during the trial, so every word has a provenance to keep. */
-const actor = (): RevisionActor => ({
-  kind: "agent",
-  personId: owner.id,
-  agentId,
-  agentSessionId: null,
-  label: agentLabel,
-  confidence: "recorded",
-})
+const git = createMemoryGit()
 
 beforeAll(async () => {
   owner = await newPerson(db, "owner")
   workspaceId = (await createWorkspace(asPerson(db, owner), { name: "Fleet" }))
     .workspace.id
-  const agent = await asAgent(db, owner, workspaceId)
-  if (agent.actor.kind !== "agent") throw new Error("Expected an agent")
-  agentId = agent.actor.agentId
-  agentLabel = `${owner.handle} via ${agent.actor.agentHandle}`
-  const documents = Array.from({ length: entities }, (_, i) => ({
-    text: machine(i),
-  }))
-  await db.transaction((tx) =>
-    appendCatalogRevision(tx, workspaceId, actor(), documents),
+  git.create(
+    workspaceId,
+    Object.fromEntries(
+      Array.from({ length: entities }, (_, i) => [
+        `machine/m${i}.md`,
+        machine(i),
+      ]),
+    ),
   )
+  await updateWorkspaceIndex(db, git, workspaceId)
 }, 300_000)
 
 describe("a catalog of a few thousand entities", () => {
-  it("applies a one-document revision without reading the rest", async () => {
-    const [{ id }] = await db
-      .execute<{ id: string }>(
-        // Only this workspace's: other tests use the same catalog IDs.
-        sql`select document_id as id from catalog_index_documents where workspace_id = ${workspaceId} and catalog_id = 'machine/m7'`,
-      )
-      .then((r) => r.rows as [{ id: string }])
+  it("indexes a one-document push without reading the rest", async () => {
     const started = performance.now()
-    for (let n = 1; n <= 5; n++)
-      await db.transaction((tx) =>
-        appendCatalogRevision(tx, workspaceId, actor(), [
-          { documentId: id, text: machine(7, ` Change ${n}.`) },
-        ]),
-      )
-    const perRevision = (performance.now() - started) / 5
-    console.info(`One-document revision: ${perRevision.toFixed(0)} ms`)
-    // Independent of the catalog's size: a few documents are read, not all.
-    expect(perRevision).toBeLessThan(500)
+    for (let n = 1; n <= 5; n++) {
+      git.push(workspaceId, { "machine/m7.md": machine(7, ` Change ${n}.`) })
+      git.calls.pathsRead.length = 0
+      expect(await updateWorkspaceIndex(db, git, workspaceId)).toMatchObject({
+        outcome: "updated",
+        documents: 1,
+      })
+      expect(git.calls.pathsRead).toEqual(["machine/m7.md"])
+    }
+    const perPush = (performance.now() - started) / 5
+    console.info(`One-document push: ${perPush.toFixed(0)} ms`)
+    // Independent of the catalog's size: one document is read, not all.
+    expect(perPush).toBeLessThan(500)
   })
 
   it("answers reads quickly", async () => {
@@ -163,65 +142,28 @@ describe("a catalog of a few thousand entities", () => {
     expect(search).toBeLessThan(1000)
   })
 
-  it("rebuilds and checks the whole catalog from its text", async () => {
+  it("rebuilds and checks the whole catalog from main", async () => {
     let started = performance.now()
-    const rebuilt = await db.transaction((tx) =>
-      rebuildWorkspaceIndex(tx, workspaceId),
-    )
+    const rebuilt = await updateWorkspaceIndex(db, git, workspaceId, {
+      rebuild: true,
+    })
     const rebuild = performance.now() - started
     started = performance.now()
+    const main = rebuilt.commit!
+    const texts = await readTexts(
+      git,
+      workspaceId,
+      main,
+      await listDocuments(git, workspaceId, main),
+    )
     const compared = await db.transaction((tx) =>
-      compareWorkspaceIndex(tx, workspaceId),
+      compareWorkspaceIndex(tx, workspaceId, texts),
     )
     const check = performance.now() - started
     console.info(
       `Rebuild: ${rebuild.toFixed(0)} ms, check: ${check.toFixed(0)} ms for ${entities} entities`,
     )
-    const [size] = await db
-      .execute<{ provenance: string; index: string }>(
-        `select pg_size_pretty(pg_total_relation_size('catalog_index_provenance')) as provenance, pg_size_pretty(pg_total_relation_size('catalog_index_documents') + pg_total_relation_size('catalog_index_facts') + pg_total_relation_size('catalog_index_relations') + pg_total_relation_size('catalog_index_sections') + pg_total_relation_size('catalog_index_provenance')) as index`,
-      )
-      .then((r) => r.rows as [{ provenance: string; index: string }])
-    console.info(
-      `Storage: word provenance ${size.provenance}, whole index ${size.index} (the test database, all workspaces)`,
-    )
     expect(rebuilt.documents).toBe(entities)
     expect(compared.differences).toEqual([])
   }, 300_000)
-
-  it("purges a text from one page or from every page", async () => {
-    const ctx = asPerson(db, owner)
-    const [{ id }] = await db
-      .execute<{ id: string }>(
-        // Only this workspace's: other tests use the same catalog IDs.
-        sql`select document_id as id from catalog_index_documents where workspace_id = ${workspaceId} and catalog_id = 'machine/m11'`,
-      )
-      .then((r) => r.rows as [{ id: string }])
-    await db.transaction((tx) =>
-      appendCatalogRevision(tx, workspaceId, actor(), [
-        { documentId: id, text: machine(11, " The key is plum-otter-11.") },
-      ]),
-    )
-    let started = performance.now()
-    const one = await purgeCatalogText(ctx, workspaceId, {
-      text: "plum-otter-11",
-      reason: "A test of one page.",
-    })
-    const page = performance.now() - started
-    started = performance.now()
-    const all = await purgeCatalogText(ctx, workspaceId, {
-      text: "Drain it before a restart.",
-      reason: "A test of every page.",
-    })
-    const every = performance.now() - started
-    console.info(
-      `Purge: ${page.toFixed(0)} ms from one page, ${every.toFixed(0)} ms from every page, for ${entities} entities`,
-    )
-    expect(one.counts).toMatchObject({ documents: 1, latestDocuments: 1 })
-    expect(all.counts).toMatchObject({ latestDocuments: entities })
-    const compared = await db.transaction((tx) =>
-      compareWorkspaceIndex(tx, workspaceId),
-    )
-    expect(compared.differences).toEqual([])
-  }, 600_000)
 })

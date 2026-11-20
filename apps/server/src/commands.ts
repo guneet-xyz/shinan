@@ -67,7 +67,8 @@ Recovery, for installation operators (recorded in the security log):
 
 The agent index, for installation operators:
   catalog-index rebuild <workspace-id>...  Rebuild workspaces' agent indexes
-                                         from their catalog text now
+                                         from main of their catalog
+                                         repositories now
   catalog-index check [<workspace-id>...]  Run the round-trip check now (all
                                          workspaces if none are named)`
 
@@ -244,8 +245,9 @@ async function runAccountCommand(args: string[], env: Env): Promise<number> {
 }
 
 /**
- * The agent index's upkeep, run at once (architecture §5.2, §5.3): the
- * worker does the same on its own after releases and daily.
+ * The agent index's upkeep, run at once (architecture §5.3): the worker
+ * does the same on its own after each update of `main`, after releases and
+ * daily. Reads `main` through the Git container.
  */
 async function runCatalogIndexCommand(
   args: string[],
@@ -261,27 +263,38 @@ async function runCatalogIndexCommand(
     )
     return 1
   }
+  const gitConfig = readGitClientConfig(env)
+  if (!gitConfig) {
+    console.error(
+      "Set SHINAN_GIT_URL and SHINAN_GIT_SERVICE_TOKEN: the agent index is built from the Git container's repositories",
+    )
+    return 1
+  }
+  const git = createGitClient(gitConfig)
   const { db, pool } = createDatabase(readDatabaseUrl(env))
   const ctx = { db, actor: shinan }
   try {
     if (action === "rebuild") {
       for (const workspaceId of workspaceIds) {
-        const rebuilt = await rebuildCatalogIndex(ctx, { workspaceId })
+        const rebuilt = await rebuildCatalogIndex(ctx, { workspaceId }, git)
         console.info(
-          `Rebuilt the agent index of workspace ${workspaceId} at revision ${rebuilt.revision} (${rebuilt.documents} documents)`,
+          rebuilt.outcome === "no-repository"
+            ? `Workspace ${workspaceId} has no catalog repository yet: nothing to index`
+            : `Rebuilt the agent index of workspace ${workspaceId} at ${rebuilt.commit} (${rebuilt.documents} documents)`,
         )
       }
       return 0
     }
     const results = await checkCatalogIndexes(
       ctx,
+      git,
       workspaceIds.length > 0 ? { workspaceIds } : {},
     )
     for (const r of results) {
       const detail =
         r.outcome === "differs"
           ? `: ${r.differenceCount} documents differ (${r.differences
-              .map((d) => `${d.documentId}: ${d.tables.join(", ")}`)
+              .map((d) => `${d.path}: ${d.tables.join(", ")}`)
               .join("; ")})`
           : ""
       console.info(`Workspace ${r.workspaceId}: ${r.outcome}${detail}`)

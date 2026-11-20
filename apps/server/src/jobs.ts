@@ -2,8 +2,9 @@ import { PgBoss } from "pg-boss"
 import type { ConstructorOptions } from "pg-boss"
 
 import {
-  catalogIndexRebuildQueue,
+  catalogIndexQueue,
   catalogRepositoryQueue,
+  catchUpCatalogIndexes,
   checkCatalogIndexes,
   createCatalogRepository,
   deliverEmail,
@@ -15,14 +16,14 @@ import {
   pruneEmailDeliveries,
   pruneRateLimits,
   pruneSignInRecords,
-  rebuildCatalogIndex,
   requestCatalogIndexRebuilds,
   requestPendingCatalogRepositories,
   shinan,
   summarizeAgentTokenUse,
+  updateCatalogIndex,
 } from "@shinan/core"
 import type {
-  CatalogIndexRebuildJob,
+  CatalogIndexJob,
   CatalogRepositoryJob,
   EmailJob,
   GitClient,
@@ -65,9 +66,9 @@ export const queues = {
    */
   invitationExpiry: "invitation-expiry",
   /**
-   * Daily: the agent index's round-trip check, text → parse → index
-   * compared with the stored index (architecture §5.2, rule 5), and rebuilds
-   * for workspaces whose index is behind.
+   * Daily: the agent index's round-trip check, the text on `main` → parse →
+   * index compared with the stored index (architecture §5.3), and updates
+   * or rebuilds for workspaces whose index is behind.
    */
   catalogIndexCheck: "catalog-index-check",
 } as const
@@ -130,8 +131,9 @@ export interface WorkerOptions {
   /** Seconds between checks for new jobs; pg-boss's default is 2. */
   pollingIntervalSeconds?: number
   /**
-   * The Git container, for making workspaces' repositories. Without it
-   * (development only), their jobs wait.
+   * The Git container, for making workspaces' repositories and building
+   * the agent index from `main`. Without it (development only), their jobs
+   * wait.
    */
   git?: GitClient
 }
@@ -211,38 +213,13 @@ export async function startWorker(options: WorkerOptions): Promise<Worker> {
     ),
   )
 
-  await boss.createQueue(queues.catalogIndexCheck)
-  await boss.schedule(queues.catalogIndexCheck, "40 3 * * *")
-  await boss.work(queues.catalogIndexCheck, polling, () =>
-    safely(queues.catalogIndexCheck, () => checkIndexes(options.db, boss)),
-  )
-
-  await boss.work(catalogIndexRebuildQueue.name, polling, async ([job]) => {
-    const { workspaceId } = job!.data as CatalogIndexRebuildJob
-    const rebuilt = await safely(catalogIndexRebuildQueue.name, () =>
-      rebuildCatalogIndex({ db: options.db, actor: shinan }, { workspaceId }),
-    )
-    console.info(
-      `Catalog index of workspace ${workspaceId} rebuilt at revision ${rebuilt.revision} (${rebuilt.documents} documents)`,
-    )
-    return rebuilt
-  })
-
-  // After a release that changed the parser, every index built by the
-  // previous one is rebuilt; answers say it is behind until then. Rebuilds
-  // asked for before a restart and never finished are asked for again.
-  // A failure is logged; the daily check asks again.
-  await safely("catalog-index-rebuilds", () =>
-    requestCatalogIndexRebuilds({ db: options.db, actor: shinan, jobs: boss }),
-  ).catch(() => {})
-
   const git = options.git
   if (git) {
     await boss.work(catalogRepositoryQueue.name, polling, async ([job]) => {
       const { workspaceId } = job!.data as CatalogRepositoryJob
       const made = await safely(catalogRepositoryQueue.name, () =>
         createCatalogRepository(
-          { db: options.db, actor: shinan },
+          { db: options.db, actor: shinan, jobs: boss },
           { workspaceId },
           git,
         ),
@@ -260,9 +237,51 @@ export async function startWorker(options: WorkerOptions): Promise<Worker> {
         jobs: boss,
       }),
     ).catch(() => {})
+
+    // The agent index, brought up to `main` after each accepted update of
+    // `main` and when its repository is made (Git-based catalog plan
+    // §2.7).
+    await boss.work(catalogIndexQueue.name, polling, async ([job]) => {
+      const { workspaceId } = job!.data as CatalogIndexJob
+      const update = await safely(catalogIndexQueue.name, () =>
+        updateCatalogIndex(
+          { db: options.db, actor: shinan },
+          { workspaceId },
+          git,
+        ),
+      )
+      if (update.outcome !== "unchanged")
+        console.info(
+          `Catalog index of workspace ${workspaceId}: ${update.outcome} at ${update.commit ?? "no commit"} (${update.documents} documents)`,
+        )
+      return update
+    })
+    await boss.createQueue(queues.catalogIndexCheck)
+    await boss.schedule(queues.catalogIndexCheck, "40 3 * * *")
+    await boss.work(queues.catalogIndexCheck, polling, () =>
+      safely(queues.catalogIndexCheck, () =>
+        checkIndexes(options.db, boss, git),
+      ),
+    )
+    // Catch-up: `main` may have moved while no worker ran, and after a
+    // release that changed the parser every index built by the previous one
+    // is rebuilt (answers say it is behind until then). A failure is
+    // logged; the daily check asks again.
+    await safely("catalog-index-catch-up", () =>
+      catchUpCatalogIndexes({ db: options.db, actor: shinan, jobs: boss }),
+    ).catch(() => {})
   } else {
+    // Without the Git container, answers still say which indexes a
+    // release's parser change left behind.
+    await safely("catalog-index-rebuilds", () =>
+      requestCatalogIndexRebuilds({
+        db: options.db,
+        actor: shinan,
+        jobs: boss,
+      }),
+    ).catch(() => {})
     console.warn(
-      "SHINAN_GIT_URL is not set: workspaces' catalog repositories wait until a worker has it",
+      "SHINAN_GIT_URL is not set: workspaces' catalog repositories and agent indexes wait until a worker has it",
     )
   }
 
@@ -288,18 +307,21 @@ export async function startWorker(options: WorkerOptions): Promise<Worker> {
  * IDs only, never catalog text (architecture §13). Installation operators
  * see the same outcome as installation health.
  */
-async function checkIndexes(db: Database, boss: PgBoss) {
-  const results = await checkCatalogIndexes({ db, actor: shinan, jobs: boss })
+async function checkIndexes(db: Database, boss: PgBoss, git: GitClient) {
+  const results = await checkCatalogIndexes(
+    { db, actor: shinan, jobs: boss },
+    git,
+  )
   for (const result of results) {
     if (result.outcome !== "differs") continue
     console.error(
-      `Catalog index check: workspace ${result.workspaceId} at revision ${result.revision}: ${result.differenceCount} documents differ from their text (${describeDifferences(result)}); rebuild it with \`shinan catalog-index rebuild ${result.workspaceId}\``,
+      `Catalog index check: workspace ${result.workspaceId} at ${result.commit}: ${result.differenceCount} documents differ from their text (${describeDifferences(result)}); rebuild it with \`shinan catalog-index rebuild ${result.workspaceId}\``,
     )
   }
   const count = (outcome: WorkspaceIndexCheck["outcome"]) =>
     results.filter((r) => r.outcome === outcome).length
   console.info(
-    `Catalog index check: ${results.length} workspaces, ${count("matched")} matched, ${count("differs")} differ, ${count("behind")} behind (rebuild asked for)`,
+    `Catalog index check: ${results.length} workspaces, ${count("matched")} matched, ${count("differs")} differ, ${count("behind")} behind (update asked for)`,
   )
   return {
     matched: count("matched"),
@@ -311,7 +333,7 @@ async function checkIndexes(db: Database, boss: PgBoss) {
 function describeDifferences(result: WorkspaceIndexCheck): string {
   return result.differences
     .slice(0, 5)
-    .map((d) => `${d.documentId}: ${d.tables.join(", ")}`)
+    .map((d) => `${d.path}: ${d.tables.join(", ")}`)
     .join("; ")
 }
 

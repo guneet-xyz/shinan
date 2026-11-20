@@ -452,7 +452,7 @@ needs uploads; catalog pages are text and work items are links. **Open** until
 | Data                                                                                                                                                                                                                                                                                                             | Rebuildable if lost?                                                                                                | Retention                          | Status                                                                                                        |
 | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------- |
 | Catalog revisions (the Markdown text) and catalog proposals                                                                                                                                                                                                                                                      | No ([14](#14-backups-accepted-risk))                                                                                | Forever, except [purge](#44-purge) | Proposed                                                                                                      |
-| Agent index and all other catalog-derived data                                                                                                                                                                                                                                                                   | Yes, from the stored Markdown ([5.2](#52-the-invariant))                                                            | Replaced on each revision          | Proposed                                                                                                      |
+| Agent index and all other catalog-derived data                                                                                                                                                                                                                                                                   | Yes, from `main` of the workspace's repository ([5.3](#53-how-sync-works))                                          | Replaced on each revision          | Proposed                                                                                                      |
 | Catalog repositories (GC-1b): one bare Git repository per workspace, on the Git container's volume; `catalog_repositories` in PostgreSQL records each one's first commit                                                                                                                                         | No; clones hold partial copies ([Git-based catalog plan §2.11](build-plan-git-catalog.md#211-backups-and-recovery)) | Forever, except purge              | Decided (owner, GD-1)                                                                                         |
 | The Git container's journal (GC-1b): entries for PostgreSQL, one file each, beside the repositories ; numbers never reused; a damaged entry ends a read page after the good entries before it, and the next read and any acknowledgement stop at its number (an error, never a skip); it is kept for an operator | Not needed once `web` has stored and acknowledged them                                                              | Deleted when acknowledged          | Decided with the plan ([§2.6](build-plan-git-catalog.md#26-the-push-log-and-events))                          |
 | Tasks, subtasks, comments, progress updates, manual states, task flag definitions                                                                                                                                                                                                                                | No                                                                                                                  | Forever                            | Proposed                                                                                                      |
@@ -520,9 +520,10 @@ keeps both. A secret that reached Shinan must also be rotated at its source.
 What a purge removes and records is in [catalog §9](catalog.md#9-history-and-purge).
 How:
 
-- **One transaction, under the workspace's index lock** (the lock catalog
-  proposals take to store a revision), so no revision is stored halfway
-  through a purge.
+- **One transaction, under the lock of the workspace's revision store**
+  (the lock taken to store a revision; it was the index lock until the
+  index moved to `main` in GC-4), so no revision is stored halfway through a
+  purge.
 - **Where the text is rewritten:** `catalog_revision_documents.text` (every
   revision, in place); `catalog_proposals` (the request and what Shinan
   stored about it; the request hash is computed again and the idempotency
@@ -555,16 +556,13 @@ How:
   values hold the server's other requests for about one value at a time. As a
   backstop, matching for one preview or purge stops after 15 seconds in
   all (`purge-too-slow`).
-- **Derived data:** each document with purged text has its index rows
-  derived again from its purged history, as a rebuild does (section credits
-  and word provenance replayed); the purge revision is not indexed first.
-  When a type schema document held the text, or the documents are more than
-  a quarter of the catalog (and over 50), the whole index is rebuilt
-  instead, which is then quicker. The purge then checks that the text is
-  nowhere left, in stored records or the index, and otherwise rolls back.
-  D-006 holds afterwards (`purge.test.ts` compares with a rebuild). Measured
-  on Daedalus with 5,000 entities: a few seconds for a text on one page; a
-  text on every page takes about as long as a rebuild.
+- **Derived data:** in M2 the purge derived the index rows of every document
+  with purged text again and checked the index too. Since GC-4 the index is
+  built from `main` of the workspace's Git repository, which this purge does
+  not reach, so it no longer touches the index; GC-8 replaces it with a
+  rewrite of the repository's history followed by an index rebuild. The
+  purge checks that the text is nowhere left in the records it rewrites,
+  and otherwise rolls back.
 - **Text kept in memory:** catalog workers and the type schema cache keep
   parsed text. The purging process forgets the workspace's at once; every
   `web` and `worker` process checks for new purges each minute and stops
@@ -584,7 +582,7 @@ How:
 
 ## 5. Catalog Markdown and agent index
 
-> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-3](build-plan-git-catalog.md#gc-3-push-checks-and-the-push-log), [GC-4](build-plan-git-catalog.md#gc-4-the-index-from-main)): the invariant holds for `main`'s files; the index is rebuilt from `main` after a push, and checks run on push instead of in a proposal. Until then, this section describes M2 as built (v0.3.0).
+> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-3](build-plan-git-catalog.md#gc-3-push-checks-and-the-push-log)): the invariant holds for `main`'s files, and checks run on push instead of in a proposal. The agent index is built from `main` already ([5.3](#53-how-sync-works), "As built (GC-4)"); the rest of this section describes M2 as built (v0.3.0) until GC-3.
 
 The [catalog document](catalog.md) owns the schema, fact format, catalog
 proposals and their operations, conflict rules, approval classes (owner, O-3)
@@ -646,104 +644,139 @@ indexing (**Proposed**).
   rechecking different facts of one entity conflict all the time.
 - **Parser versions and rebuilds.** Each index row records the parser version
   that produced it. When a release changes the parser, the worker rebuilds the
-  index from the latest revisions, and the agent index reports that it is
-  behind until done. **Proposed.**
-- **Serving the agent index.** Every answer names the catalog revision it came
-  from (catalog document), so agents and plugins can cache and ask "what changed
-  since revision N". **Proposed.**
-- **As built (M2-3, [#85](https://github.com/guneet-xyz/shinan/issues/85)),
-  decided (owner, 2026-11-19, M2-Q17):**
-  - **Storage.** Each document has a stable ID of its own, because its
-    catalog ID lives in its text and can change (catalog §2.4). A catalog
-    revision is numbered from 1 in each workspace and credited like an event;
-    the full text of each document it changed is stored with it, and a
-    document's latest text is the one at its current revision. The database
-    refuses updates and deletes of revisions and their text, as for events,
-    except a purge's rewrite of the text ([4.4](#44-purge)). M2-3 adds these tables because the index is
-    built from them; catalog proposals and approval (M2-4) add their own
-    records and call one function, inside the apply transaction, that stores
-    a revision and indexes it.
-  - **The index lock.** Applying a revision and rebuilding take the
-    workspace's index-state row lock, so revisions are numbered one at a
-    time and a rebuild never overwrites a revision applied while it runs; that
-    revision waits and is indexed on top.
-  - **Applying a revision re-reads only what it touches:** the changed
-    documents (already parsed, if the caller has them), the type schema
-    documents (kept between revisions while their text is unchanged, by a
-    hash of the text, so a rolled-back revision or a purge cannot bring back
-    a stale schema), and, when a type schema document changes, the entities
-    of the types it describes or described and every other type schema
-    document. Measured on Daedalus: about 20 to 30 ms per one-document
-    revision for catalogs of 500 to 5,000 entities.
-  - **Section credits.** Each body section records the revision that last
-    changed it and that revision's author, and the least-trusted author
-    whose words may remain in it, for trust labels (catalog §12.4). The
-    second comes from each document's **word provenance**: hashed word
-    3-grams, each with the least-trusted author who ever brought it into the
-    document (people's are not kept, since they never lower a credit),
-    stored as one row per document, 10 bytes per unit, and compared by the
-    round-trip check. Applying a revision updates the stored credits and
-    provenance; a rebuild replays each document's history, reading only
-    revisions whose body changed. Tests replay random histories (edits,
-    moves, renames, reverts by people, agents and Shinan) both ways and find
-    no difference.
-  - **Index rules version.** These rules have a version of their own
-    (`indexRulesVersion`), recorded like the parser version on the index
-    state and on each document's rows. An index built by another version is
-    behind and is rebuilt, as after a parser change; so are rows an older
-    release wrote after a rollback, which the round-trip check then reports
-    as behind rather than as differing, and answers say the index is behind
-    while any such rows remain. Changing the rules needs no migration of
-    data.
+  index from `main`, and the agent index reports that it is behind until done.
+  **Proposed.**
+- **Serving the agent index.** Every answer names the commit of `main` it came
+  from ([catalog §12.4](catalog.md#124-the-index-format)). **Proposed.**
+- **As built (GC-4, [#166](https://github.com/guneet-xyz/shinan/issues/166)):
+  the index from `main`** ([plan §2.7](build-plan-git-catalog.md#27-the-index-after-a-push)).
+  It replaces M2-3's index of stored revisions (decided by the owner,
+  2026-11-19, M2-Q17), keeping what still applies: the rules version, one
+  snapshot per answer, rebuilds in one transaction and sharing the worker's
+  event loop.
+  - **Source.** The index is built only from `main` of the workspace's
+    catalog repository (D-006, D-059), read through the Git container's API
+    (the tree, documents by path, the diff between two commits; plan
+    [§2.2](build-plan-git-catalog.md#22-how-shinan-serves-git)). Neither
+    `worker` nor `web` runs `git`, and the Git container is never asked
+    anything while a database transaction is open: the indexer reads first
+    and writes after (tests run the client through a wrapper that refuses
+    it). Every read names a full commit ID, so one build reads one tree
+    however `main` moves meanwhile. It takes the API's limits as they come:
+    documents an answer `deferred` (past its 32 MiB) are asked for again; a
+    tree listing past one answer is listed folder by folder; a diff past one
+    answer means a rebuild; `503 busy` is asked again after 0.5 to 8
+    seconds, about 15 in all, then the job is retried later. A tree the Git
+    container refuses (`tree-too-large`, `tree-too-deep`), or one folder too
+    large to list even one level down, leaves the index behind, saying so,
+    rather than leaving files out; pushes to `main` cannot bring such a tree
+    once they are checked (GC-3).
+  - **Documents and rows.** A document is a regular file on `main` whose
+    name ends in `.md`, except the root `README.md` (free Markdown for
+    people, plan [§2.1](build-plan-git-catalog.md#21-the-repository-layout-and-rules));
+    anything else is left out, since pushes to `main` cannot bring it once
+    they are checked (GC-3). Index rows are keyed by the workspace and the
+    document's path (its ID plus `.md`) and record the Git blob ID of the
+    text they came from; the index no longer references M2's revision
+    store. A file larger than the Git container reads (1 MiB, far above a
+    document's 64 KiB) is indexed as a document with one `too-large`
+    problem; bytes that are not UTF-8, and NUL characters, which PostgreSQL
+    cannot store, read as U+FFFD, so such a file reads with problems rather
+    than stopping the index. A file whose name the Git container cannot
+    read (a control character such as a newline, or bytes that are not
+    UTF-8, which reach Shinan as U+FFFD) is not read at all: it is indexed
+    under its name with one `unreadable-path` problem, an update whose diff
+    touches such a name rebuilds, and two names that reach Shinan as the
+    same text are one row. GC-3b refuses such names on `main`. (**Proposed** in GC-4; reason: one bad file
+    must not leave a workspace's index behind for good.)
+  - **Where the index stands.** Each workspace's index state records the
+    commit the index was built from (`commit`) and the latest commit of
+    `main` Shinan knows of (`main_commit`), recorded in the transaction
+    that stores an accepted update of `main` from the Git container's
+    journal (GC-3; core's `recordCatalogMain`, which queues the index job
+    in that transaction), when a new repository is made, and whenever the
+    indexer reads `main`. Answers carry `catalog_commit` and say
+    `index_behind` while the two differ, while the index was never built
+    from a repository the workspace has, while another parser or rules
+    version built it (or any of its rows), and while a rebuild is asked for.
+  - **The index job** (`catalog-index-update`, at most one waiting and one
+    running per workspace, retried with backoff) brings the index up to
+    `main` as it is when the job runs, so several pushes in a row cost one
+    update. It reads the index state, then `main`; if the index already
+    stands there, it only records `main`. Otherwise it reads the diff
+    between the two commits and derives again the documents the diff adds
+    or changes, and drops the rows of those it deletes; when a type schema
+    document changed (or a document became or stopped being one), it also
+    derives again the entities of the types it describes or described, and
+    every other type schema document, as M2 did (catalog §3.9). Nothing
+    else in a document's rows depends on other documents: references to
+    other IDs (relations, links, start-here steps, `applies-to`) are
+    resolved when the index is read, so a document referring to a changed
+    ID needs no update. A property test checks it: over random pushes
+    (entities, custom and extended types, two schema documents for one
+    type, a document that becomes a type schema document, unreadable files,
+    deletions), with updates sometimes several pushes apart, the updated
+    index always equals a rebuild from `main`. When the update changes more
+    than 50 documents and a quarter of the catalog, or the Git container no
+    longer has the commit the index stood at (a purge rewrote history,
+    GC-8), it rebuilds instead. It writes in one transaction holding the
+    workspace's index lock (the state row), after checking that the index
+    still stands where it read it, and otherwise starts again (up to three
+    times). Type schemas are kept parsed between jobs, keyed by each schema
+    document's path and blob ID, which never names other text, so an update
+    of an entity reads only that entity. Measured on Daedalus (load 3 to 5)
+    with an in-memory stand-in for the Git container: about 20 ms per
+    one-document update for catalogs of 500 to 5,000 entities.
+  - **Index rules version.** The index's own rules have a version
+    (`indexRulesVersion`, 2 since GC-4), recorded like the parser version on
+    the index state and on each document's rows. An index built by another
+    version is behind and is rebuilt; so are rows an older release wrote
+    after a rollback, which the round-trip check then reports as behind
+    rather than as differing. A worker of an older release that updates the
+    index during a rolling deployment leaves rows of its version, so the
+    next job of the newer one rebuilds.
   - **Answers are read from one snapshot** (repeatable read, read only), so
-    an answer's catalog revision and its rows agree.
-  - **Rolling deployments.** A process still running an older parser after
-    a newer worker has rebuilt the index would add rows of the older
-    version. Applying a revision with an older parser than the index's
-    therefore marks the index behind, so answers say so until the next
-    rebuild. The reference Compose setup replaces `web` and `worker`
-    together, so this only matters for setups that run several versions at
-    once.
-  - **Rebuilds** delete a workspace's index rows and derive them again from
-    the stored text in one transaction, so readers see the old rows, marked
-    behind, until it commits. Measured on Daedalus (2 cores shared with
-    other work, load 3 to 4) with agent-written entities of about 300 words
-    of body each: 6.4 s to rebuild and 3.4 s to check 2,000 entities, 23 s
-    and 16 s for 5,000. The word provenance takes about 8.5 KB per such
-    entity (17 MB for 2,000 and 42 MB for 5,000, of 98 MB and 220 MB for
-    the whole index). A rebuild reads only the frontmatter of each document
-    to find the type schema documents before reading every document in full
-    once. The worker asks for one on start for every
-    workspace whose index (or any of its rows) another parser or rules
-    version built, or whose rebuild never finished, and an installation
-    operator can run one with `shinan catalog-index rebuild`.
-  - **The daily round-trip check** (rule 5) derives each workspace's index
-    from its text in one snapshot and compares it, row by row, with the
-    stored index. The result (documents that differ and in which tables, by
-    ID only) is logged and kept as installation health, which operators read
-    at `/api/installation/catalog-index`; workspaces whose index is behind
-    get a rebuild instead. The text → parse → apply no operations → text half
-    of rule 5 joins the job when operations as text edits (M2-2) land.
-  - **Sharing the worker's event loop** (**decided**, owner, 2026-11-19, M2-Q17;
-    [#135](https://github.com/guneet-xyz/shinan/issues/135)). Rebuilds and
-    the daily check run in the `worker` process beside every other job
-    (email, invitations, clean-ups), so they give the event loop back
-    between documents (and between the revisions of a long history) once
-    50 ms of work have passed since the last time. The result does not
-    depend on when they yield (rule 5 still holds), and the index lock is
-    held as before. Measured on Daedalus (load 11 to 15) in a container
-    limited to 384 MiB (V8 heap limit 268 MiB), on the production base
-    image, with the longest the event loop was held before → after:
-    5,000 entities 2.3 s → 80 ms; 20,000 entities 7.1 s → 104 to 176 ms;
-    1,000 entities with 48 KB of body each (48 MB) 6.7 s → 137 ms; a 50 ms
-    timer ran at most 126 ms late. The time to rebuild stayed within the
-    machine's noise (20,000 entities: 69 to 103 s against 81 s before). Memory
-    stayed well inside the limit: RSS peak 127 MiB at 20,000 entities, as
-    before; with the large bodies 219 to 243 MiB against 191 MiB before, heap
-    82 to 91 MiB of 268.
-    Reason: a job waiting seconds delays sign-in links and invitations;
-    yields are cheaper and simpler than moving the rebuild to a worker
-    thread, which would need the database reads moved there too.
+    an answer's `catalog_commit` and its rows agree.
+  - **Rebuilds** read `main`'s whole tree through the Git container, then
+    delete a workspace's index rows and derive them again in one
+    transaction, so readers see the old rows, marked behind, until it
+    commits. The type schema documents are found by reading only their
+    frontmatter, then every document is derived once. Measured on Daedalus
+    (load 3 to 5) with agent-written entities of about 300 words of body:
+    4.8 s to rebuild and 2.4 s to check 2,000 entities, 12 s and 6 s for
+    5,000, reading from memory; through the Git container's API over HTTP,
+    5,000 smaller entities took 23 s, most of it reading 25 batches of 200
+    documents. Rebuilds run when a release changed the parser or the rules,
+    when the index was never built, after a purge, and when an operator runs
+    `shinan catalog-index rebuild`.
+  - **Catch-up on start.** When the worker starts, it asks for the rebuilds
+    above and queues an index job for every workspace with a repository, so
+    `main` moving while no worker ran (a job lost, an update stored while
+    the worker was down) never leaves an index silently behind. A job whose
+    index already stands at `main` costs one request to the Git container.
+  - **The daily round-trip check** (rule 5, 03:40 UTC) reads, for each
+    workspace with a repository, the text on `main`, parses it and derives
+    the index, and compares it row by row with the stored index in one
+    snapshot. Differences are reported by path and table only, never by
+    value; they are logged and kept as installation health, which
+    operators read at `/api/installation/catalog-index` (each workspace's
+    `commit`, `mainCommit`, whether it is behind, the last check). A
+    workspace whose index is not at `main` is not compared but gets an
+    index job; one built by another version gets a rebuild. The text →
+    parse → apply no operations → text half of rule 5 went with the
+    operations (GC-5).
+  - **Sharing the worker's event loop** (**decided**, owner, 2026-11-19,
+    M2-Q17; [#135](https://github.com/guneet-xyz/shinan/issues/135)). Index
+    jobs, rebuilds and the daily check run in the `worker` process beside
+    every other job, so they give the event loop back between documents
+    once 50 ms of work have passed since the last time. The result does not
+    depend on when they yield. Measured on Daedalus (load 3 to 4), a rebuild
+    of 5,000 entities held the event loop at most 102 ms, and a 50 ms timer
+    ran at most 89 ms late; heap 89 to 98 MiB. (M2's measurements at 20,000
+    entities, in a container limited to 384 MiB, showed 104 to 176 ms with
+    word provenance replayed, which the index no longer does.) Reason: a job
+    waiting seconds delays sign-in links and invitations; yields are cheaper
+    and simpler than moving the work to a worker thread.
 - **As built (M2-4, [#86](https://github.com/guneet-xyz/shinan/issues/86)),
   decided (owner, 2026-11-19, M2-Q17):**
   - **Proposals and revisions.** A catalog proposal is stored with its
@@ -972,7 +1005,7 @@ slow, and a click or an MCP call should not fail because of them.
 
 ## 7. Background jobs
 
-> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-4](build-plan-git-catalog.md#gc-4-the-index-from-main)): index jobs after each push to `main`, and reading the Git container's journal. Until then, this section describes M2 as built (v0.3.0).
+> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-3](build-plan-git-catalog.md#gc-3-push-checks-and-the-push-log)): reading the Git container's journal. The agent index's jobs are built (GC-4).
 
 **Proposed:** a PostgreSQL-backed job queue with these properties:
 
@@ -982,22 +1015,23 @@ slow, and a click or an MCP call should not fail because of them.
   operator, with a manual "retry".
 - Scheduled jobs run once across all worker copies.
 
-| Job                                                                                     | Trigger                                                                  | Owner of the rules                                                                                        |
-| --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------- |
-| Process webhook delivery                                                                | Webhook stored                                                           | [Git hosts](git-hosts.md)                                                                                 |
-| Reconciliation layers                                                                   | Schedule, startup gap, on demand                                         | [Git hosts](git-hosts.md)                                                                                 |
-| Recalculate task status, including subtasks at any depth (owner, O-21, N-1)             | New event on linked work, a subtask or an agent session                  | [Tasks](tasks.md)                                                                                         |
-| Create a task from an outside issue                                                     | Normalized issue event                                                   | [Tasks](tasks.md)                                                                                         |
-| Write back to GitHub (never Forgejo, N-4)                                               | Task or work link change                                                 | [Git hosts](git-hosts.md)                                                                                 |
-| Presence timeouts (`unresponsive`, `offline`, release after silence; owner, O-32)       | Every minute                                                             | [Agent integrations](agent-integrations.md)                                                               |
-| Offer and withdraw nudge deliveries, including git host actions a person asks for (N-3) | A nudge is created or withdrawn                                          | [Tasks](tasks.md), [agent integrations](agent-integrations.md)                                            |
-| Build a workspace export; run an import                                                 | A workspace owner asks                                                   | This document ([5.5](#55-export-and-import))                                                              |
-| Rebuild or verify the agent index (round-trip test)                                     | Release (worker start, by parser version), on demand, daily at 03:40 UTC | This document ([5.2](#52-the-invariant), [5.3](#53-how-sync-works))                                       |
-| Send email (magic links, invitations, security alerts)                                  | Sign-in, invitation, or a security event identity names                  | This document ([section 9](#9-email-and-notifications)); content by [identity](identity.md)               |
-| Build notifications (phase 2)                                                           | A new event that human experience's rules turn into a notification       | This document ([9.3](#93-notifications-phase-2)); what is sent by [human experience](human-experience.md) |
-| Send daily notification summaries (phase 2)                                             | Daily, per person, at their chosen hour                                  | This document ([9.3](#93-notifications-phase-2))                                                          |
-| Automatic fact checks by Shinan, if adopted                                             | Schedule                                                                 | [Catalog](catalog.md), [git hosts](git-hosts.md)                                                          |
-| Prune raw webhooks, old job records and old notification records                        | Daily                                                                    | This document ([4.2](#42-kinds-of-data))                                                                  |
+| Job                                                                                     | Trigger                                                                                                                                                 | Owner of the rules                                                                                        |
+| --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| Process webhook delivery                                                                | Webhook stored                                                                                                                                          | [Git hosts](git-hosts.md)                                                                                 |
+| Reconciliation layers                                                                   | Schedule, startup gap, on demand                                                                                                                        | [Git hosts](git-hosts.md)                                                                                 |
+| Recalculate task status, including subtasks at any depth (owner, O-21, N-1)             | New event on linked work, a subtask or an agent session                                                                                                 | [Tasks](tasks.md)                                                                                         |
+| Create a task from an outside issue                                                     | Normalized issue event                                                                                                                                  | [Tasks](tasks.md)                                                                                         |
+| Write back to GitHub (never Forgejo, N-4)                                               | Task or work link change                                                                                                                                | [Git hosts](git-hosts.md)                                                                                 |
+| Presence timeouts (`unresponsive`, `offline`, release after silence; owner, O-32)       | Every minute                                                                                                                                            | [Agent integrations](agent-integrations.md)                                                               |
+| Offer and withdraw nudge deliveries, including git host actions a person asks for (N-3) | A nudge is created or withdrawn                                                                                                                         | [Tasks](tasks.md), [agent integrations](agent-integrations.md)                                            |
+| Build a workspace export; run an import                                                 | A workspace owner asks                                                                                                                                  | This document ([5.5](#55-export-and-import))                                                              |
+| Bring the agent index up to `main` (an update from the diff, or a rebuild)              | An accepted update of `main` (queued in the same transaction), a new repository, worker start (catch-up, and rebuilds after a parser change), on demand | This document ([5.3](#53-how-sync-works))                                                                 |
+| Verify the agent index (round-trip check)                                               | Daily at 03:40 UTC                                                                                                                                      | This document ([5.2](#52-the-invariant), [5.3](#53-how-sync-works))                                       |
+| Send email (magic links, invitations, security alerts)                                  | Sign-in, invitation, or a security event identity names                                                                                                 | This document ([section 9](#9-email-and-notifications)); content by [identity](identity.md)               |
+| Build notifications (phase 2)                                                           | A new event that human experience's rules turn into a notification                                                                                      | This document ([9.3](#93-notifications-phase-2)); what is sent by [human experience](human-experience.md) |
+| Send daily notification summaries (phase 2)                                             | Daily, per person, at their chosen hour                                                                                                                 | This document ([9.3](#93-notifications-phase-2))                                                          |
+| Automatic fact checks by Shinan, if adopted                                             | Schedule                                                                                                                                                | [Catalog](catalog.md), [git hosts](git-hosts.md)                                                          |
+| Prune raw webhooks, old job records and old notification records                        | Daily                                                                                                                                                   | This document ([4.2](#42-kinds-of-data))                                                                  |
 
 ## 8. How agents, the MCP server and plugins reach Shinan
 
@@ -1681,8 +1715,9 @@ licensing (D-013); this section makes sure nothing blocks it. All **proposed**:
 - **In-app status:** connection health and the time of the last export for
   workspace owners;
   email failures and dead-lettered jobs for the installation operator. As
-  built (M2-3): the agent index's health for operators, per workspace by ID
-  (revision, whether behind, last round-trip check), at
+  built (M2-3, GC-4): the agent index's health for operators, per workspace
+  by ID (the commit of `main` it stands at, whether behind, last round-trip
+  check), at
   `/api/installation/catalog-index`; no screen yet.
 - **External uptime:** a website tile for `shinan.guneet.dev` on the private mon
   board.

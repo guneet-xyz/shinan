@@ -1,7 +1,6 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest"
 
-import { asc, eq, schema, sql } from "@shinan/db"
-import type { Transaction } from "@shinan/db"
+import { and, asc, eq, schema, sql } from "@shinan/db"
 
 import * as fixtures from "../../../test/catalog-index-fixtures.js"
 import {
@@ -11,7 +10,8 @@ import {
   newPerson,
   testDatabase,
 } from "../../../test/helpers.js"
-import type { ResolvedActor } from "../../actor.js"
+import { createMemoryGit } from "../../../test/memory-git.js"
+import type { FileContent, MemoryGit } from "../../../test/memory-git.js"
 import {
   ForbiddenError,
   InvalidInputError,
@@ -21,19 +21,21 @@ import { addMember } from "../../identity/members.js"
 import type { Person } from "../../identity/people.js"
 import { createWorkspace } from "../../identity/workspaces.js"
 import type { JobQueue } from "../../jobs.js"
-import { parseCatalogDocument, parserVersion } from "../document/index.js"
-import { appendCatalogRevision, findCatalogDocument } from "../revisions.js"
-import type { RevisionActor, RevisionDocument } from "../revisions.js"
+import { parserVersion } from "../document/index.js"
+import { readDocumentId } from "../document/parse.js"
+import { createCatalogRepository } from "../git/repositories.js"
 import { indexRulesVersion } from "./derive.js"
-import { compareWorkspaceIndex, rebuildWorkspaceIndex } from "./indexer.js"
+import { compareWorkspaceIndex, updateWorkspaceIndex } from "./indexer.js"
 import {
+  catchUpCatalogIndexes,
   checkCatalogIndexes,
   getCatalogIndexHealth,
   rebuildCatalogIndex,
+  recordCatalogMain,
   requestCatalogIndexRebuilds,
+  updateCatalogIndex,
 } from "./maintain.js"
 import {
-  getCatalogChanges,
   getCatalogEntity,
   getCatalogList,
   getCatalogNeighbours,
@@ -44,6 +46,7 @@ import {
   listCatalogTypeSchemas,
   searchCatalog,
 } from "./queries.js"
+import { listDocuments, readTexts, whenNotBusy } from "./source.js"
 
 const { db, pool } = testDatabase()
 
@@ -53,39 +56,23 @@ afterAll(async () => {
 
 let owner: Person
 let workspaceId: string
+let git: MemoryGit
 
-function personActor(person: Person): RevisionActor {
-  return {
-    kind: "person",
-    personId: person.id,
-    agentId: null,
-    agentSessionId: null,
-    label: person.handle,
-    confidence: "recorded",
-  }
+/** A document's path on `main`: its ID plus `.md`. */
+export function pathOf(text: string): string {
+  return `${readDocumentId(text)}.md`
 }
 
-const shinanActor: RevisionActor = {
-  kind: "shinan",
-  personId: null,
-  agentId: null,
-  agentSessionId: null,
-  label: "shinan",
-  confidence: "recorded",
+function filesOf(texts: readonly string[]): Record<string, string> {
+  return Object.fromEntries(texts.map((t) => [pathOf(t), t]))
 }
 
-async function apply(actor: RevisionActor, documents: RevisionDocument[]) {
-  return db.transaction((tx) =>
-    appendCatalogRevision(tx, workspaceId, actor, documents),
-  )
-}
-
-async function documentId(catalogId: string): Promise<string> {
-  const id = await db.transaction((tx) =>
-    findCatalogDocument(tx, workspaceId, catalogId),
-  )
-  if (!id) throw new Error(`No document ${catalogId}`)
-  return id
+/** Pushes to `main` and brings the index up to it, as the index job does. */
+async function push(changes: Record<string, FileContent | null>) {
+  const commit = git.push(workspaceId, changes)
+  const update = await updateWorkspaceIndex(db, git, workspaceId)
+  expect(update.commit).toBe(commit)
+  return update
 }
 
 /** Every index row of the workspace, in a stable form, without the generated search columns. */
@@ -96,7 +83,6 @@ async function snapshot(): Promise<string> {
     schema.catalogIndexRelations,
     schema.catalogIndexDiscrepancies,
     schema.catalogIndexSections,
-    schema.catalogIndexProvenance,
   ] as const
   const all: unknown[] = []
   for (const table of tables) {
@@ -104,159 +90,248 @@ async function snapshot(): Promise<string> {
       .select()
       .from(table)
       .where(eq(table.workspaceId, workspaceId))
-    const stable = rows
-      .map((row) => {
-        const stored = { ...row }
-        delete stored.search
-        return JSON.stringify(sortKeys(stored))
-      })
-      .sort()
-    all.push(stable)
+    all.push(
+      rows
+        .map((row) => {
+          const stored = { ...row }
+          delete stored.search
+          delete stored.searchSimple
+          return JSON.stringify(
+            Object.fromEntries(
+              Object.keys(stored)
+                .sort()
+                .map((k) => [k, stored[k]]),
+            ),
+          )
+        })
+        .sort(),
+    )
   }
   return JSON.stringify(all)
 }
 
-function sortKeys(value: Record<string, unknown>): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.keys(value)
-      .sort()
-      .map((k) => [k, value[k]]),
+async function stateOf() {
+  const [state] = await db
+    .select()
+    .from(schema.catalogIndexState)
+    .where(eq(schema.catalogIndexState.workspaceId, workspaceId))
+  return state!
+}
+
+async function compareWithMain() {
+  const main = (await git.getRepository(workspaceId))!.main
+  const texts = await readTexts(
+    git,
+    workspaceId,
+    main,
+    await listDocuments(git, workspaceId, main),
   )
+  return db.transaction((tx) => compareWorkspaceIndex(tx, workspaceId, texts))
+}
+
+/** Marks the workspace's repository as made, as the repository job does. */
+async function repositoryMade() {
+  await db
+    .update(schema.catalogRepositories)
+    .set({
+      createdAt: sql`now()`,
+      firstCommit: (await git.getRepository(workspaceId))!.main,
+    })
+    .where(eq(schema.catalogRepositories.workspaceId, workspaceId))
+}
+
+function recordingJobs(): JobQueue & { sent: unknown[] } {
+  const sent: unknown[] = []
+  return {
+    sent,
+    send: (_name: string, data: object) => {
+      sent.push(data)
+      return Promise.resolve(null)
+    },
+  } as JobQueue & { sent: unknown[] }
 }
 
 beforeEach(async () => {
   owner = await newPerson(db, "owner")
   const created = await createWorkspace(asPerson(db, owner), { name: "Team" })
   workspaceId = created.workspace.id
+  git = createMemoryGit()
+  git.create(workspaceId)
 })
 
-describe("appending revisions", () => {
-  it("numbers revisions from 1 and indexes their documents", async () => {
-    const first = await apply(personActor(owner), [
-      { text: fixtures.guneet },
-      { text: fixtures.musashi },
-    ])
-    const second = await apply(personActor(owner), [
-      { text: fixtures.daedalus },
-    ])
-    expect(first.revision).toBe(1)
-    expect(second.revision).toBe(2)
-    expect(first.documentIds).toHaveLength(2)
+describe("indexing main", () => {
+  it("builds the index from main's documents, and every answer names main's commit", async () => {
+    const before = await getCatalogEntity(asPerson(db, owner), workspaceId, {
+      id: "machine/musashi",
+    }).catch((e: unknown) => e)
+    expect(before).toBeInstanceOf(NotFoundError)
 
+    const { outcome, commit } = await push(
+      filesOf([fixtures.guneet, fixtures.musashi]),
+    )
+    expect(outcome).toBe("rebuilt")
     const answer = await getCatalogEntity(asPerson(db, owner), workspaceId, {
       id: "machine/musashi",
     })
-    expect(answer.catalog_revision).toBe(2)
+    expect(answer.catalog_commit).toBe(commit)
     expect(answer.index_behind).toBe(false)
     expect(answer.entity).toMatchObject({
       id: "machine/musashi",
       type: "machine",
       title: "Musashi",
-      status: "active",
-      revision: 1,
+      path: "machine/musashi.md",
       aliases: ["machine/takezo-old"],
     })
-  })
-
-  it("refuses to change a document of another workspace", async () => {
-    const other = await createWorkspace(asPerson(db, owner), { name: "Other" })
-    const [id] = (
-      await db.transaction((tx) =>
-        appendCatalogRevision(tx, other.workspace.id, personActor(owner), [
-          { text: fixtures.guneet },
-        ]),
-      )
-    ).documentIds
-    await expect(
-      apply(personActor(owner), [{ documentId: id!, text: fixtures.guneet }]),
-    ).rejects.toThrow(/documents of its workspace/)
-  })
-
-  it("refuses a parse that is not of the text it comes with", async () => {
-    await expect(
-      apply(personActor(owner), [
-        {
-          text: fixtures.guneet,
-          parsed: parseCatalogDocument(fixtures.musashi),
-        },
-      ]),
-    ).rejects.toThrow(/parse of its text/)
-  })
-
-  it("never edits a stored revision", async () => {
-    await apply(personActor(owner), [{ text: fixtures.guneet }])
-    await expect(
-      db
-        .update(schema.catalogRevisionDocuments)
-        .set({ text: "changed" })
-        .where(eq(schema.catalogRevisionDocuments.workspaceId, workspaceId)),
-    ).rejects.toThrow()
-    await expect(
-      db
-        .delete(schema.catalogRevisions)
-        .where(eq(schema.catalogRevisions.workspaceId, workspaceId)),
-    ).rejects.toThrow()
-  })
-})
-
-/** Builds the fixture catalog over several revisions by different authors. */
-async function buildCatalog(agentActor: RevisionActor) {
-  await apply(
-    personActor(owner),
-    fixtures.allDocuments.map((text) => ({ text })),
-  )
-  // An agent changes only Musashi's Cautions section.
-  await apply(agentActor, [
-    {
-      documentId: await documentId("machine/musashi"),
-      text: fixtures.musashi.replace(
-        "Every deployment change needs the owner's approval.",
-        "Every deployment change needs the owner's approval. Ask first.",
-      ),
-    },
-  ])
-  // Shinan changes only frontmatter: the body's credits stay.
-  await apply(shinanActor, [
-    {
-      documentId: await documentId("machine/musashi"),
-      text: fixtures.musashi
-        .replace("disk.data.free: 74 GiB", "disk.data.free: 70 GiB")
-        .replace(
-          "Every deployment change needs the owner's approval.",
-          "Every deployment change needs the owner's approval. Ask first.",
-        ),
-    },
-  ])
-  // A built-in type is extended: machines are indexed again.
-  await apply(personActor(owner), [{ text: fixtures.machineExtension }])
-}
-
-async function agentRevisionActor(): Promise<RevisionActor> {
-  const ctx = await asAgent(db, owner, workspaceId)
-  if (ctx.actor.kind !== "agent") throw new Error("Expected an agent")
-  return {
-    kind: "agent",
-    personId: owner.id,
-    agentId: ctx.actor.agentId,
-    agentSessionId: null,
-    label: `${owner.handle} via ${ctx.actor.agentHandle}`,
-    confidence: "recorded",
-  } satisfies Partial<ResolvedActor>
-}
-
-describe("the D-006 invariant", () => {
-  it("indexes text the same way, applied revision by revision or rebuilt from the text", async () => {
-    await buildCatalog(await agentRevisionActor())
-    const compared = await db.transaction((tx) =>
-      compareWorkspaceIndex(tx, workspaceId),
+    expect(answer.entity.blob).toMatch(/^[0-9a-f]{40}$/)
+    expect(answer.entity.body.map((s) => Object.keys(s).sort())).toEqual(
+      answer.entity.body.map(() => ["anchor", "heading", "level", "text"]),
     )
-    expect(compared.differences).toEqual([])
-    expect(compared.documents).toBe(fixtures.allDocuments.length + 1)
+    expect(answer.entity).not.toHaveProperty("pending_proposals")
+    expect(answer.entity).not.toHaveProperty("revision")
+
+    const next = await push({ "machine/daedalus.md": fixtures.daedalus })
+    expect(next.outcome).toBe("updated")
+    const after = await getCatalogEntity(asPerson(db, owner), workspaceId, {
+      id: "machine/musashi",
+    })
+    expect(after.catalog_commit).toBe(next.commit)
+    // Musashi's text did not change: neither did its blob.
+    expect(after.entity.blob).toBe(answer.entity.blob)
   })
 
-  it("gives the same rows after deleting every index row and rebuilding", async () => {
-    await buildCatalog(await agentRevisionActor())
+  it("reads only the documents an update changed", async () => {
+    await push(filesOf(fixtures.allDocuments))
+    git.calls.pathsRead.length = 0
+    await push({
+      "machine/daedalus.md": fixtures.daedalus.replace(
+        "Agents work here.",
+        "Agents work.",
+      ),
+    })
+    expect(git.calls.pathsRead).toEqual(["machine/daedalus.md"])
+    expect((await compareWithMain()).differences).toEqual([])
+
+    // Unchanged: nothing is read, only main is asked for.
+    git.calls.pathsRead.length = 0
+    expect(await updateWorkspaceIndex(db, git, workspaceId)).toMatchObject({
+      outcome: "unchanged",
+    })
+    expect(git.calls.pathsRead).toEqual([])
+  })
+
+  it("drops a deleted document's rows, and indexes only catalog documents", async () => {
+    await push({
+      ...filesOf([fixtures.guneet, fixtures.musashi]),
+      "notes.txt": "Not a document.",
+      "machine/link.md": { content: "machine/musashi.md", mode: "120000" },
+    })
+    const paths = async () =>
+      (
+        await db
+          .select({ path: schema.catalogIndexDocuments.path })
+          .from(schema.catalogIndexDocuments)
+          .where(eq(schema.catalogIndexDocuments.workspaceId, workspaceId))
+          .orderBy(asc(schema.catalogIndexDocuments.path))
+      ).map((r) => r.path)
+    // The root README.md is free Markdown for people, not a document.
+    expect(await paths()).toEqual(["machine/musashi.md", "person/guneet.md"])
+
+    await push({ "machine/musashi.md": null })
+    expect(await paths()).toEqual(["person/guneet.md"])
+    expect(
+      await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(schema.catalogIndexFacts)
+        .where(eq(schema.catalogIndexFacts.workspaceId, workspaceId)),
+    ).toEqual([{ count: 0 }])
+  })
+
+  it("reads a file it cannot read as a document with problems, never stopping", async () => {
+    const huge = `---\nid: machine/huge\n---\n${"x".repeat(1024 * 1024)}`
+    await push({
+      "machine/huge.md": huge,
+      "machine/binary.md": new Uint8Array([0x2d, 0x2d, 0x2d, 0x0a, 0, 0xff]),
+      ...filesOf([fixtures.guneet]),
+    })
+    const rows = await db
+      .select({
+        path: schema.catalogIndexDocuments.path,
+        problems: schema.catalogIndexDocuments.problems,
+      })
+      .from(schema.catalogIndexDocuments)
+      .where(eq(schema.catalogIndexDocuments.workspaceId, workspaceId))
+      .orderBy(asc(schema.catalogIndexDocuments.path))
+    expect(rows.map((r) => [r.path, r.problems.map((p) => p.code)])).toEqual([
+      ["machine/binary.md", ["frontmatter-invalid"]],
+      ["machine/huge.md", ["too-large"]],
+      ["person/guneet.md", []],
+    ])
+    expect((await compareWithMain()).differences).toEqual([])
+  })
+
+  it.each([
+    ["a newline", "machine/new\nline.md"],
+    ["bytes that are not UTF-8", "machine/caf\uFFFD.md"],
+  ])(
+    "records a file whose name holds %s as unreadable, never stopping",
+    async (_, name) => {
+      const indexed = async () =>
+        (
+          await db
+            .select({
+              path: schema.catalogIndexDocuments.path,
+              problems: schema.catalogIndexDocuments.problems,
+            })
+            .from(schema.catalogIndexDocuments)
+            .where(eq(schema.catalogIndexDocuments.workspaceId, workspaceId))
+            .orderBy(asc(schema.catalogIndexDocuments.path))
+        ).map((r) => [r.path, r.problems.map((p) => p.code)])
+      // Added by an update of `main`: a rebuild lists it once.
+      await push(filesOf([fixtures.guneet]))
+      git.calls.pathsRead.length = 0
+      expect(await push({ [name]: fixtures.daedalus })).toMatchObject({
+        outcome: "rebuilt",
+      })
+      expect(await indexed()).toEqual([
+        [name, ["unreadable-path"]],
+        ["person/guneet.md", []],
+      ])
+      expect(git.calls.pathsRead).not.toContain(name)
+      // Other documents still update from the diff.
+      expect(await push(filesOf([fixtures.musashi]))).toMatchObject({
+        outcome: "updated",
+        documents: 1,
+      })
+      // The daily check and a rebuild agree.
+      await repositoryMade()
+      const [checked] = await checkCatalogIndexes(asShinan(db), git, {
+        workspaceIds: [workspaceId],
+      })
+      expect(checked).toMatchObject({ outcome: "matched", differenceCount: 0 })
+      await rebuildCatalogIndex(asShinan(db), { workspaceId }, git)
+      expect((await compareWithMain()).differences).toEqual([])
+      // Renamed to its ID plus `.md`, it reads.
+      await push({ [name]: null, "machine/daedalus.md": fixtures.daedalus })
+      expect(await indexed()).toEqual([
+        ["machine/daedalus.md", []],
+        ["machine/musashi.md", []],
+        ["person/guneet.md", []],
+      ])
+    },
+  )
+
+  it("gives the same rows after deleting every index row and rebuilding (D-006)", async () => {
+    await push(filesOf(fixtures.allDocuments))
+    await push({
+      "machine/musashi.md": fixtures.musashi.replace(
+        "disk.data.free: 74 GiB",
+        "disk.data.free: 70 GiB",
+      ),
+    })
+    await push(filesOf([fixtures.machineExtension]))
     const before = await snapshot()
+    expect((await compareWithMain()).differences).toEqual([])
+
     await db
       .delete(schema.catalogIndexDocuments)
       .where(eq(schema.catalogIndexDocuments.workspaceId, workspaceId))
@@ -267,18 +342,20 @@ describe("the D-006 invariant", () => {
         .where(eq(schema.catalogIndexFacts.workspaceId, workspaceId)),
     ).toEqual([{ count: 0 }])
 
-    const rebuilt = await db.transaction((tx) =>
-      rebuildWorkspaceIndex(tx, workspaceId),
+    const rebuilt = await rebuildCatalogIndex(
+      asShinan(db),
+      { workspaceId },
+      git,
     )
-    expect(rebuilt).toEqual({
-      revision: 4,
+    expect(rebuilt).toMatchObject({
+      outcome: "rebuilt",
       documents: fixtures.allDocuments.length + 1,
     })
     expect(await snapshot()).toBe(before)
   })
 
   it("records the parser version on every row", async () => {
-    await apply(personActor(owner), [{ text: fixtures.musashi }])
+    await push(filesOf([fixtures.musashi]))
     for (const table of [
       schema.catalogIndexDocuments,
       schema.catalogIndexFacts,
@@ -293,63 +370,161 @@ describe("the D-006 invariant", () => {
       expect(versions).toEqual([{ version: parserVersion }])
     }
   })
-})
 
-describe("section credits", () => {
-  it("credits each section to the revision that last changed it", async () => {
-    const agent = await agentRevisionActor()
-    await buildCatalog(agent)
-    const { entity } = await getCatalogEntity(
-      asPerson(db, owner),
-      workspaceId,
-      { id: "machine/musashi" },
+  it("says the index is behind while an update of main waits, and queues the index job", async () => {
+    await push(filesOf([fixtures.guneet, fixtures.musashi]))
+    const ahead = git.push(workspaceId, {
+      "machine/daedalus.md": fixtures.daedalus,
+    })
+    const jobs = recordingJobs()
+    await db.transaction((tx) =>
+      recordCatalogMain({ tx, jobs, workspaceId, commit: ahead }),
     )
-    expect(
-      entity.body.map((s) => [
-        s.heading,
-        s.changed_in,
-        s.changed_by,
-        s.changed_by_kind,
-      ]),
-    ).toEqual([
-      [null, 1, owner.handle, "person"],
-      ["Musashi", 1, owner.handle, "person"],
-      ["Cautions", 2, agent.label, "agent"],
-    ])
-    expect(entity.body.map((s) => s.written_by_kind)).toEqual([
-      "person",
-      "person",
-      "agent",
-    ])
+    expect(jobs.sent).toEqual([{ workspaceId }])
+    const waiting = await searchCatalog(asPerson(db, owner), workspaceId, {
+      text: "Musashi",
+    })
+    expect(waiting.index_behind).toBe(true)
+    expect(waiting.catalog_commit).not.toBe(ahead)
+
+    await updateCatalogIndex(asShinan(db), { workspaceId }, git)
+    const caught = await searchCatalog(asPerson(db, owner), workspaceId, {
+      text: "Musashi",
+    })
+    expect(caught).toMatchObject({ catalog_commit: ahead, index_behind: false })
   })
 
-  it("credits a renamed section to whoever renamed it", async () => {
-    await apply(personActor(owner), [{ text: fixtures.musashi }])
-    await apply(shinanActor, [
-      {
-        documentId: await documentId("machine/musashi"),
-        text: fixtures.musashi.replace("## Cautions", "## Warnings"),
-      },
-    ])
-    const { entity } = await getCatalogEntity(
-      asPerson(db, owner),
+  it("keeps a newer main recorded while an older one is indexed", async () => {
+    await push(filesOf([fixtures.guneet]))
+    const first = git.push(workspaceId, filesOf([fixtures.musashi]))
+    // The job reads main (`first`) while a newer update is stored.
+    const read = { ...git }
+    let newer = ""
+    read.getRepository = async (id) => {
+      const found = await git.getRepository(id)
+      newer = git.push(workspaceId, filesOf([fixtures.daedalus]))
+      await db.transaction((tx) =>
+        recordCatalogMain({
+          tx,
+          jobs: recordingJobs(),
+          workspaceId,
+          commit: newer,
+        }),
+      )
+      return found
+    }
+    expect(await updateWorkspaceIndex(db, read, workspaceId)).toMatchObject({
+      commit: first,
+    })
+    expect(await stateOf()).toMatchObject({ commit: first, mainCommit: newer })
+    // The job the newer update queued catches up.
+    await updateWorkspaceIndex(db, git, workspaceId)
+    expect(await stateOf()).toMatchObject({ commit: newer, mainCommit: newer })
+  })
+
+  it("rebuilds when the commit it stood at is gone, as after a purge", async () => {
+    await push(filesOf([fixtures.guneet, fixtures.musashi]))
+    const old = (await stateOf()).commit!
+    const rewritten = git.create(
       workspaceId,
-      { id: "machine/musashi" },
+      filesOf([fixtures.guneet, fixtures.daedalus]),
     )
-    expect(entity.body.map((s) => [s.anchor, s.changed_in])).toEqual([
-      [null, 1],
-      ["musashi", 1],
-      ["warnings", 2],
-    ])
+    git.forget(workspaceId, old)
+    expect(await updateWorkspaceIndex(db, git, workspaceId)).toMatchObject({
+      outcome: "rebuilt",
+      commit: rewritten,
+    })
+    expect((await compareWithMain()).differences).toEqual([])
+  })
+
+  it("stays empty without a repository", async () => {
+    const other = await createWorkspace(asPerson(db, owner), { name: "Other" })
+    expect(
+      await updateWorkspaceIndex(db, git, other.workspace.id),
+    ).toMatchObject({ outcome: "no-repository" })
+    const answer = await searchCatalog(
+      asPerson(db, owner),
+      other.workspace.id,
+      {
+        text: "Musashi",
+      },
+    )
+    expect(answer).toMatchObject({ catalog_commit: null, index_behind: false })
+  })
+})
+
+describe("reading main however the Git container answers", () => {
+  it("asks again for documents a read deferred", async () => {
+    // One document an answer: every other one is deferred each time.
+    git.limits.documentBytes = 1
+    expect(await push(filesOf(fixtures.allDocuments))).toMatchObject({
+      outcome: "rebuilt",
+      documents: fixtures.allDocuments.length,
+    })
+    expect((await compareWithMain()).differences).toEqual([])
+    await push({
+      "schema/domain.md": fixtures.domainSchema.replace("30d", "60d"),
+      "machine/daedalus.md": fixtures.daedalus.replace("Agents", "People"),
+    })
+    expect((await compareWithMain()).differences).toEqual([])
+  })
+
+  it("lists a tree too large for one answer folder by folder", async () => {
+    // The whole tree (13 files) is past it; the root (two files and eight
+    // folders) and each folder are not.
+    git.limits.treeEntries = 10
+    await push(filesOf(fixtures.allDocuments))
+    expect((await compareWithMain()).differences).toEqual([])
+    const paths = await db
+      .select({ path: schema.catalogIndexDocuments.path })
+      .from(schema.catalogIndexDocuments)
+      .where(eq(schema.catalogIndexDocuments.workspaceId, workspaceId))
+    expect(paths).toHaveLength(fixtures.allDocuments.length)
+  })
+
+  it("stays behind, saying so, when one folder is too large to list", async () => {
+    await push(filesOf([fixtures.guneet]))
+    // The root (README.md and two folders) fits; machine/ does not, even
+    // one level down.
+    git.limits.treeEntries = 3
+    git.push(workspaceId, {
+      ...filesOf([fixtures.musashi, fixtures.daedalus, fixtures.takezo]),
+      "machine/extra.md": fixtures.daedalus.replace("daedalus", "extra"),
+    })
+    await expect(
+      rebuildCatalogIndex(asShinan(db), { workspaceId }, git),
+    ).rejects.toThrow(/Folder machine\/ of commit .* has more entries/)
+    const answer = await searchCatalog(asPerson(db, owner), workspaceId, {
+      text: "Musashi",
+    })
+    expect(answer.index_behind).toBe(true)
+  })
+
+  it("rebuilds when a diff is too large for one answer", async () => {
+    await push(filesOf([fixtures.guneet]))
+    git.limits.diffChanges = 1
+    expect(
+      await push(filesOf([fixtures.musashi, fixtures.daedalus])),
+    ).toMatchObject({ outcome: "rebuilt" })
+    expect((await compareWithMain()).differences).toEqual([])
+  })
+
+  it("waits while the Git container is busy, then gives up", async () => {
+    git.limits.busy = 2
+    expect(await push(filesOf([fixtures.guneet]))).toMatchObject({
+      outcome: "rebuilt",
+    })
+    git.limits.busy = 3
+    await expect(
+      whenNotBusy(() => git.getRepository(workspaceId), [1, 1]),
+    ).rejects.toMatchObject({ status: 503, code: "busy" })
+    git.limits.busy = 0
   })
 })
 
 describe("type schema changes", () => {
   it("indexes the type's entities again when its schema document changes", async () => {
-    await apply(personActor(owner), [
-      { text: fixtures.domainSchema },
-      { text: fixtures.guneetDev },
-    ])
+    await push(filesOf([fixtures.domainSchema, fixtures.guneetDev]))
     const before = await getCatalogEntity(asPerson(db, owner), workspaceId, {
       id: "domain/guneet-dev",
     })
@@ -358,14 +533,16 @@ describe("type schema changes", () => {
         .recheck_days,
     ).toBe(30)
 
-    await apply(personActor(owner), [
-      {
-        documentId: await documentId("schema/domain"),
-        text: fixtures.domainSchema.replace(
-          "expires_on: { recheck: 30d }",
-          "expires_on: { recheck: 60d }",
-        ),
-      },
+    git.calls.pathsRead.length = 0
+    await push({
+      "schema/domain.md": fixtures.domainSchema.replace(
+        "expires_on: { recheck: 30d }",
+        "expires_on: { recheck: 60d }",
+      ),
+    })
+    expect(git.calls.pathsRead.sort()).toEqual([
+      "domain/guneet-dev.md",
+      "schema/domain.md",
     ])
     const after = await getCatalogEntity(asPerson(db, owner), workspaceId, {
       id: "domain/guneet-dev",
@@ -375,128 +552,41 @@ describe("type schema changes", () => {
         .recheck_days,
     ).toBe(60)
     // The entity's own text did not change.
-    expect(after.entity.revision).toBe(1)
-    const compared = await db.transaction((tx) =>
-      compareWorkspaceIndex(tx, workspaceId),
-    )
-    expect(compared.differences).toEqual([])
-  })
-})
-
-describe("type schemas kept between revisions", () => {
-  const withTags = fixtures.domainSchema.replace(
-    "  registrar: {}\n",
-    "  registrar: {}\n  tags: { many: true }\n",
-  )
-  const withNotes = fixtures.domainSchema.replace(
-    "  registrar: {}\n",
-    "  registrar: {}\n  notes: {}\n",
-  )
-  const tagged = fixtures.guneetDev.replace(
-    "      registrar: Cloudflare\n",
-    "      registrar: Cloudflare\n      tags: main\n",
-  )
-
-  async function tagsFact() {
-    const { entity } = await getCatalogEntity(
-      asPerson(db, owner),
-      workspaceId,
-      {
-        id: "domain/guneet-dev",
-      },
-    )
-    return entity.facts.find((f) => f.key === "tags")
-  }
-
-  it("never come back from a revision that was rolled back", async () => {
-    await apply(personActor(owner), [
-      { text: fixtures.domainSchema },
-      { text: tagged },
-    ])
-    const schemaId = await documentId("schema/domain")
-    await expect(
-      db.transaction(async (tx) => {
-        await appendCatalogRevision(tx, workspaceId, personActor(owner), [
-          { documentId: schemaId, text: withTags },
-        ])
-        throw new Error("Something later in the apply failed")
-      }),
-    ).rejects.toThrow(/later in the apply/)
-    // The next revision takes the same number, with another schema.
-    const next = await apply(personActor(owner), [
-      { documentId: schemaId, text: withNotes },
-    ])
-    expect(next.revision).toBe(2)
-
-    expect(await tagsFact()).toMatchObject({ many: false, in_schema: false })
-    const compared = await db.transaction((tx) =>
-      compareWorkspaceIndex(tx, workspaceId),
-    )
-    expect(compared.differences).toEqual([])
+    expect(after.entity.blob).toBe(before.entity.blob)
+    expect((await compareWithMain()).differences).toEqual([])
   })
 
-  it("follow a schema document's text when it is rewritten in place, as purge does", async () => {
-    await apply(personActor(owner), [{ text: withTags }, { text: tagged }])
-    const schemaId = await documentId("schema/domain")
-    // Purge (M2-10) replaces content in a stored revision; here the schema's
-    // text loses the key that a revision applied earlier had cached.
-    await db.transaction(async (tx) => {
-      await tx.execute(
-        sql`alter table catalog_revision_documents disable trigger catalog_revision_documents_append_only`,
-      )
-      await tx
-        .update(schema.catalogRevisionDocuments)
-        .set({ text: fixtures.domainSchema })
-        .where(eq(schema.catalogRevisionDocuments.documentId, schemaId))
-      await tx.execute(
-        sql`alter table catalog_revision_documents enable trigger catalog_revision_documents_append_only`,
-      )
-    })
-    // A later revision of the entity is read with the schema as now stored.
-    await apply(personActor(owner), [
-      {
-        documentId: await documentId("domain/guneet-dev"),
-        text: tagged.replace("The main domain.", "The main domain, still."),
-      },
-    ])
-    expect(await tagsFact()).toMatchObject({ many: false, in_schema: false })
-  })
-
-  it("follow which of two schema documents defines a type", async () => {
+  it("follows which of two schema documents defines a type", async () => {
+    const tagged = fixtures.guneetDev.replace(
+      "      registrar: Cloudflare\n",
+      "      registrar: Cloudflare\n      tags: main\n",
+    )
     const second = fixtures.domainSchema.replace(
       "  registrar: {}\n",
       "  registrar: {}\n  tags: { many: true }\n",
     )
-    await apply(personActor(owner), [
-      { text: fixtures.domainSchema },
-      { text: second },
-      { text: tagged },
-    ])
-    // The schema that defines `domain` is the first by document ID; move
-    // that one to another type, so the other one takes over.
-    const [first] = (
-      await db
-        .select({ id: schema.catalogIndexDocuments.documentId })
-        .from(schema.catalogIndexDocuments)
-        .where(
-          sql`${schema.catalogIndexDocuments.workspaceId} = ${workspaceId} and ${schema.catalogIndexDocuments.kind} = 'schema'`,
-        )
-        .orderBy(asc(schema.catalogIndexDocuments.documentId))
-    ).map((r) => r.id)
-    const [firstText] = await db
-      .select({ text: schema.catalogRevisionDocuments.text })
-      .from(schema.catalogRevisionDocuments)
-      .where(eq(schema.catalogRevisionDocuments.documentId, first!))
-    await apply(personActor(owner), [
-      {
-        documentId: first!,
-        text: firstText!.text.replace("id: schema/domain", "id: schema/area"),
-      },
-    ])
-    const compared = await db.transaction((tx) =>
-      compareWorkspaceIndex(tx, workspaceId),
-    )
-    expect(compared.differences).toEqual([])
+    // Two documents describe `domain`; the first by path defines it.
+    await push({
+      "schema/domain.md": fixtures.domainSchema,
+      "schema/zz-domain.md": second,
+      "domain/guneet-dev.md": tagged,
+    })
+    const tags = async () =>
+      (
+        await getCatalogEntity(asPerson(db, owner), workspaceId, {
+          id: "domain/guneet-dev",
+        })
+      ).entity.facts.find((f) => f.key === "tags")
+    expect(await tags()).toMatchObject({ in_schema: false })
+    // Moving that one to another type lets the other take over.
+    await push({
+      "schema/domain.md": fixtures.domainSchema.replace(
+        "id: schema/domain",
+        "id: schema/area",
+      ),
+    })
+    expect((await compareWithMain()).differences).toEqual([])
+    expect(await tags()).toMatchObject({ in_schema: true })
     const domain = await getCatalogTypeSchema(
       asPerson(db, owner),
       workspaceId,
@@ -506,14 +596,26 @@ describe("type schemas kept between revisions", () => {
     )
     expect(domain.schema.document).toBe("schema/domain")
   })
+
+  it("uses the same type schemas after a rebuild that kept them parsed", async () => {
+    await push(filesOf([fixtures.domainSchema, fixtures.guneetDev]))
+    await rebuildCatalogIndex(asShinan(db), { workspaceId }, git)
+    git.calls.pathsRead.length = 0
+    await push({
+      "domain/guneet-dev.md": fixtures.guneetDev.replace(
+        "The main domain.",
+        "The main domain, still.",
+      ),
+    })
+    // The schema is known by its blob ID: it is not read again.
+    expect(git.calls.pathsRead).toEqual(["domain/guneet-dev.md"])
+    expect((await compareWithMain()).differences).toEqual([])
+  })
 })
 
 describe("queries", () => {
   beforeEach(async () => {
-    await apply(
-      personActor(owner),
-      fixtures.allDocuments.map((text) => ({ text })),
-    )
+    await push(filesOf(fixtures.allDocuments))
   })
 
   it("gets an entity by an alias, with facts, freshness and discrepancies", async () => {
@@ -634,10 +736,6 @@ describe("queries", () => {
     })
     expect(byFact.items.map((i) => i.entity.id)).toEqual(["machine/musashi"])
 
-    const byTitle = await searchCatalog(ctx, workspaceId, { text: "machines" })
-    expect(byTitle.items.map((i) => i.entity.id)).not.toContain(
-      "machine/takezo",
-    )
     const retired = await searchCatalog(ctx, workspaceId, {
       text: "takezo",
       includeRetired: true,
@@ -663,11 +761,13 @@ owner: person/guneet
 
 ${body}
 `
-    await apply(personActor(owner), [
-      { text: entity("one", "Keeps running all day.", "Quiet.") },
-      { text: entity("two", "Quiet.", "Keeps running all day.") },
-      { text: entity("three", "Quiet.", "Quiet.") },
-    ])
+    await push(
+      filesOf([
+        entity("one", "Keeps running all day.", "Quiet."),
+        entity("two", "Quiet.", "Keeps running all day."),
+        entity("three", "Quiet.", "Quiet."),
+      ]),
+    )
     const found = await searchCatalog(asPerson(db, owner), workspaceId, {
       text: "alpha -running",
     })
@@ -756,7 +856,7 @@ ${body}
       getCatalogTypeSchema(ctx, workspaceId, { type: "nothing" }),
     ).rejects.toThrow(NotFoundError)
 
-    await apply(personActor(owner), [{ text: fixtures.machineExtension }])
+    await push(filesOf([fixtures.machineExtension]))
     const machine = await getCatalogTypeSchema(ctx, workspaceId, {
       type: "machine",
     })
@@ -785,6 +885,7 @@ ${body}
     expect(answer.start_here).toMatchObject({
       path: "agents",
       title: "Start here",
+      document: { path: "start-here.md" },
       steps: [
         {
           to: "policy/deploy-approval",
@@ -801,33 +902,6 @@ ${body}
       path: "people",
     })
     expect(people.start_here?.steps).toHaveLength(1)
-  })
-
-  it("lists changes since a revision", async () => {
-    await apply(shinanActor, [
-      {
-        documentId: await documentId("machine/daedalus"),
-        text: fixtures.daedalus.replace("Agents work here.", "Agents work."),
-      },
-    ])
-    const changes = await getCatalogChanges(asPerson(db, owner), workspaceId, {
-      since: 1,
-    })
-    expect(changes.items).toEqual([
-      expect.objectContaining({
-        revision: 2,
-        changed_by: "shinan",
-        changed_by_kind: "shinan",
-        documents: [{ id: "machine/daedalus", kind: "entity" }],
-      }),
-    ])
-    expect(changes.next_since).toBeNull()
-    const first = await getCatalogChanges(asPerson(db, owner), workspaceId, {
-      since: 0,
-      limit: 1,
-    })
-    expect(first.items.map((c) => c.revision)).toEqual([1])
-    expect(first.next_since).toBe(1)
   })
 
   it("lets agents with catalog:read read, and nobody outside the workspace", async () => {
@@ -874,19 +948,31 @@ ${body}
     })
     expect(found.items).toEqual([])
   })
+
+  it("orders stored facts as written", async () => {
+    const rows = await db
+      .select({ key: schema.catalogIndexFacts.key })
+      .from(schema.catalogIndexFacts)
+      .where(
+        and(
+          eq(schema.catalogIndexFacts.workspaceId, workspaceId),
+          eq(schema.catalogIndexFacts.path, "machine/musashi.md"),
+        ),
+      )
+      .orderBy(asc(schema.catalogIndexFacts.position))
+    expect(rows.map((r) => r.key)).toEqual([
+      "disk.data.size",
+      "disk.data.free",
+      "role",
+      "disk.data.size",
+      "network.public_ipv6",
+    ])
+  })
 })
 
-describe("rebuilds and the round-trip check", () => {
-  async function stateOf(tx: Transaction | typeof db = db) {
-    const [state] = await tx
-      .select()
-      .from(schema.catalogIndexState)
-      .where(eq(schema.catalogIndexState.workspaceId, workspaceId))
-    return state!
-  }
-
+describe("rebuilds, catch-up and the round-trip check", () => {
   it("says the index is behind while built by other index rules, until rebuilt", async () => {
-    await apply(personActor(owner), [{ text: fixtures.musashi }])
+    await push(filesOf([fixtures.musashi]))
     await db
       .update(schema.catalogIndexState)
       .set({ rulesVersion: indexRulesVersion - 1 })
@@ -895,48 +981,49 @@ describe("rebuilds and the round-trip check", () => {
       id: "machine/musashi",
     })
     expect(behind.index_behind).toBe(true)
-    await rebuildCatalogIndex(asShinan(db), { workspaceId })
+    // The next job sees it and rebuilds.
+    expect(
+      await updateCatalogIndex(asShinan(db), { workspaceId }, git),
+    ).toMatchObject({ outcome: "rebuilt" })
     expect(await stateOf()).toMatchObject({ rulesVersion: indexRulesVersion })
   })
 
   it("reports rows an older release wrote as behind, not as differing", async () => {
-    await apply(
-      personActor(owner),
-      fixtures.allDocuments.map((text) => ({ text })),
-    )
+    await push(filesOf(fixtures.allDocuments))
+    await repositoryMade()
     // An older release, run against the same database after a rollback,
-    // re-indexed a document: its rows carry no rules version and no
-    // provenance.
-    const musashi = await documentId("machine/musashi")
+    // re-indexed a document.
     await db
       .update(schema.catalogIndexDocuments)
       .set({ rulesVersion: 0 })
-      .where(eq(schema.catalogIndexDocuments.documentId, musashi))
-    await db
-      .delete(schema.catalogIndexProvenance)
-      .where(eq(schema.catalogIndexProvenance.documentId, musashi))
+      .where(
+        and(
+          eq(schema.catalogIndexDocuments.workspaceId, workspaceId),
+          eq(schema.catalogIndexDocuments.path, "machine/musashi.md"),
+        ),
+      )
     const answer = await getCatalogEntity(asPerson(db, owner), workspaceId, {
       id: "person/guneet",
     })
     expect(answer.index_behind).toBe(true)
-    const [checked] = await checkCatalogIndexes(asShinan(db), {
+    const [checked] = await checkCatalogIndexes(asShinan(db), git, {
       workspaceIds: [workspaceId],
     })
     expect(checked).toMatchObject({ outcome: "behind" })
     const asked = await requestCatalogIndexRebuilds({
       ...asShinan(db),
-      jobs: { send: () => Promise.resolve(null) },
+      jobs: recordingJobs(),
     })
     expect(asked).toContain(workspaceId)
-    await rebuildCatalogIndex(asShinan(db), { workspaceId })
-    const [after] = await checkCatalogIndexes(asShinan(db), {
+    await updateCatalogIndex(asShinan(db), { workspaceId }, git)
+    const [after] = await checkCatalogIndexes(asShinan(db), git, {
       workspaceIds: [workspaceId],
     })
     expect(after).toMatchObject({ outcome: "matched" })
   })
 
   it("says the index is behind while built by another parser version, until rebuilt", async () => {
-    await apply(personActor(owner), [{ text: fixtures.musashi }])
+    const { commit } = await push(filesOf([fixtures.musashi]))
     await db
       .update(schema.catalogIndexState)
       .set({ parserVersion: parserVersion - 1 })
@@ -946,15 +1033,14 @@ describe("rebuilds and the round-trip check", () => {
     })
     expect(behind.index_behind).toBe(true)
 
-    const checks = await checkCatalogIndexes(asShinan(db), {
+    const checks = await checkCatalogIndexes(asShinan(db), git, {
       workspaceIds: [workspaceId],
     })
     expect(checks).toMatchObject([{ outcome: "behind" }])
 
-    expect(await rebuildCatalogIndex(asShinan(db), { workspaceId })).toEqual({
-      revision: 1,
-      documents: 1,
-    })
+    expect(
+      await rebuildCatalogIndex(asShinan(db), { workspaceId }, git),
+    ).toEqual({ outcome: "rebuilt", commit, documents: 1 })
     const after = await getCatalogEntity(asPerson(db, owner), workspaceId, {
       id: "machine/musashi",
     })
@@ -965,34 +1051,52 @@ describe("rebuilds and the round-trip check", () => {
     })
   })
 
-  it("finds stored rows that differ from the text, and reports them as health", async () => {
-    await apply(
-      personActor(owner),
-      fixtures.allDocuments.map((text) => ({ text })),
-    )
-    const clean = await checkCatalogIndexes(asShinan(db), {
+  it("finds stored rows that differ from main's text, by path only, and reports them as health", async () => {
+    const { commit } = await push(filesOf(fixtures.allDocuments))
+    const clean = await checkCatalogIndexes(asShinan(db), git, {
       workspaceIds: [workspaceId],
     })
-    expect(clean).toMatchObject([{ outcome: "matched", differenceCount: 0 }])
+    expect(clean).toMatchObject([
+      { outcome: "matched", differenceCount: 0, commit },
+    ])
 
-    const musashi = await documentId("machine/musashi")
     await db
       .update(schema.catalogIndexFacts)
       .set({ value: ["1 TiB"] })
       .where(
-        sql`${schema.catalogIndexFacts.documentId} = ${musashi} and ${schema.catalogIndexFacts.position} = 0`,
+        and(
+          eq(schema.catalogIndexFacts.workspaceId, workspaceId),
+          eq(schema.catalogIndexFacts.path, "machine/musashi.md"),
+          eq(schema.catalogIndexFacts.position, 0),
+        ),
       )
-    const [checked] = await checkCatalogIndexes(asShinan(db), {
+    await db
+      .delete(schema.catalogIndexDocuments)
+      .where(
+        and(
+          eq(schema.catalogIndexDocuments.workspaceId, workspaceId),
+          eq(schema.catalogIndexDocuments.path, "machine/daedalus.md"),
+        ),
+      )
+    const [checked] = await checkCatalogIndexes(asShinan(db), git, {
       workspaceIds: [workspaceId],
     })
     expect(checked).toMatchObject({
       outcome: "differs",
-      differenceCount: 1,
-      differences: [{ documentId: musashi, tables: ["facts"] }],
+      differenceCount: 2,
+      differences: [
+        {
+          path: "machine/daedalus.md",
+          tables: ["documents", "facts", "relations", "sections"],
+        },
+        { path: "machine/musashi.md", tables: ["facts"] },
+      ],
     })
+    // Paths and table names only: never a value.
+    expect(JSON.stringify(checked)).not.toContain("TiB")
     expect(await stateOf()).toMatchObject({
-      checkDifferences: 1,
-      checkedRevision: 1,
+      checkDifferences: 2,
+      checkedCommit: commit,
     })
 
     const operator = await newPerson(db, "operator")
@@ -1002,63 +1106,108 @@ describe("rebuilds and the round-trip check", () => {
     const health = await getCatalogIndexHealth(asPerson(db, operator))
     expect(
       health.workspaces.find((w) => w.workspaceId === workspaceId),
-    ).toMatchObject({ checkDifferences: 1, behind: false, revision: 1 })
+    ).toMatchObject({
+      checkDifferences: 2,
+      behind: false,
+      commit,
+      mainCommit: commit,
+    })
     await expect(getCatalogIndexHealth(asPerson(db, owner))).rejects.toThrow(
       ForbiddenError,
     )
 
-    await rebuildCatalogIndex(asShinan(db), { workspaceId })
-    const [fixed] = await checkCatalogIndexes(asShinan(db), {
+    await rebuildCatalogIndex(asShinan(db), { workspaceId }, git)
+    const [fixed] = await checkCatalogIndexes(asShinan(db), git, {
       workspaceIds: [workspaceId],
     })
     expect(fixed).toMatchObject({ outcome: "matched" })
   })
 
+  it("does not compare an index that is not at main, and queues its update", async () => {
+    await push(filesOf([fixtures.musashi]))
+    await repositoryMade()
+    git.push(workspaceId, filesOf([fixtures.daedalus]))
+    const jobs = recordingJobs()
+    const checks = await checkCatalogIndexes({ ...asShinan(db), jobs }, git, {})
+    expect(checks.find((c) => c.workspaceId === workspaceId)).toMatchObject({
+      outcome: "behind",
+    })
+    expect(jobs.sent).toContainEqual({ workspaceId })
+  })
+
+  it("catches up on start: a job for every workspace with a repository", async () => {
+    await repositoryMade()
+    const jobs = recordingJobs()
+    const queued = await catchUpCatalogIndexes({ ...asShinan(db), jobs })
+    expect(queued).toContain(workspaceId)
+    expect(jobs.sent).toContainEqual({ workspaceId })
+    // Its index was never built: a rebuild is asked for, and answers say so.
+    expect((await stateOf()).rebuildRequestedAt).not.toBeNull()
+    const answer = await searchCatalog(asPerson(db, owner), workspaceId, {
+      text: "Musashi",
+    })
+    expect(answer).toMatchObject({ catalog_commit: null, index_behind: true })
+    await updateCatalogIndex(asShinan(db), { workspaceId }, git)
+    expect(
+      await searchCatalog(asPerson(db, owner), workspaceId, {
+        text: "Musashi",
+      }),
+    ).toMatchObject({ index_behind: false })
+  })
+
+  it("queues the first index of a new repository's main", async () => {
+    const main = (await git.getRepository(workspaceId))!.main
+    const jobs = recordingJobs()
+    const creating = {
+      ...git,
+      createRepository: () =>
+        Promise.resolve({ workspaceId, main, created: true }),
+    }
+    await createCatalogRepository(
+      { ...asShinan(db), jobs },
+      { workspaceId },
+      creating,
+    )
+    expect(jobs.sent).toContainEqual({ workspaceId })
+    expect(await stateOf()).toMatchObject({ commit: null, mainCommit: main })
+    expect(
+      await searchCatalog(asPerson(db, owner), workspaceId, { text: "x y" }),
+    ).toMatchObject({ catalog_commit: null, index_behind: true })
+    await updateCatalogIndex(asShinan(db), { workspaceId }, git)
+    expect(await stateOf()).toMatchObject({ commit: main, mainCommit: main })
+  })
+
   it("asks for rebuilds once per workspace, however its ID is written", async () => {
-    await apply(personActor(owner), [{ text: fixtures.musashi }])
-    const sent: unknown[] = []
+    await push(filesOf([fixtures.musashi]))
+    const jobs = recordingJobs()
     const asked = await requestCatalogIndexRebuilds(
-      {
-        ...asShinan(db),
-        jobs: {
-          send: (_name: string, data: object) => {
-            sent.push(data)
-            return Promise.resolve(null)
-          },
-        } as JobQueue,
-      },
+      { ...asShinan(db), jobs },
       { workspaceIds: [workspaceId, workspaceId.toUpperCase()] },
     )
     expect(asked).toEqual([workspaceId])
-    expect(sent).toEqual([{ workspaceId }])
+    expect(jobs.sent).toEqual([{ workspaceId }])
     const behind = await getCatalogEntity(asPerson(db, owner), workspaceId, {
       id: "machine/musashi",
     })
     expect(behind.index_behind).toBe(true)
   })
 
-  it("only lets Shinan rebuild and check", async () => {
+  it("only lets Shinan update, rebuild and check", async () => {
     await expect(
-      rebuildCatalogIndex(asPerson(db, owner), { workspaceId }),
+      rebuildCatalogIndex(asPerson(db, owner), { workspaceId }, git),
     ).rejects.toThrow(ForbiddenError)
     await expect(
-      rebuildCatalogIndex(asShinan(db), { workspaceId: crypto.randomUUID() }),
+      updateCatalogIndex(asPerson(db, owner), { workspaceId }, git),
+    ).rejects.toThrow(ForbiddenError)
+    await expect(checkCatalogIndexes(asPerson(db, owner), git)).rejects.toThrow(
+      ForbiddenError,
+    )
+    await expect(
+      rebuildCatalogIndex(
+        asShinan(db),
+        { workspaceId: crypto.randomUUID() },
+        git,
+      ),
     ).rejects.toThrow(NotFoundError)
-  })
-
-  it("orders stored facts as written", async () => {
-    await apply(personActor(owner), [{ text: fixtures.musashi }])
-    const rows = await db
-      .select({ key: schema.catalogIndexFacts.key })
-      .from(schema.catalogIndexFacts)
-      .where(eq(schema.catalogIndexFacts.workspaceId, workspaceId))
-      .orderBy(asc(schema.catalogIndexFacts.position))
-    expect(rows.map((r) => r.key)).toEqual([
-      "disk.data.size",
-      "disk.data.free",
-      "role",
-      "disk.data.size",
-      "network.public_ipv6",
-    ])
   })
 })

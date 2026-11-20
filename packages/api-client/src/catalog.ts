@@ -1,19 +1,24 @@
-// The catalog as the REST API serves it to the wiki (human experience, the
-// wiki). The answers are the agent index's own JSON format (catalog §12.4),
-// so field names follow the catalog documents (`replaced_by`, `checked`,
-// `via`); every answer names the catalog revision it was built from and
-// says when the index is behind.
-
-import type { ActorKind, Confidence } from "./index.js"
+// The catalog as the REST API serves it to the catalog pages (human
+// experience, the catalog). The answers are the agent index's own JSON
+// format (catalog §12.4), so field names follow the catalog documents
+// (`replaced_by`, `checked`, `via`); every answer names the commit of
+// `main` it was built from and says when the index is behind.
 
 export type FactState = "intended" | "observed" | "planned" | "unknown"
 export type EntityStatus = "active" | "deprecated" | "retired"
 export type ScalarValue = string | number | boolean | null
 
-/** What every catalog answer carries (catalog §12.2). */
+/**
+ * What every catalog answer carries (catalog §12.2, §12.4). For a screen:
+ * `catalog_commit` null and not `index_behind` means the workspace has no
+ * repository yet (being set up); null and `index_behind` means it is being
+ * indexed for the first time; a commit means ready, catching up while
+ * `index_behind`.
+ */
 export interface CatalogAnswer {
-  catalog_revision: number
-  /** The index is behind the latest revision or being rebuilt: the answer may be out of date. */
+  /** The commit of `main` the answer was built from; null before the index's first build. */
+  catalog_commit: string | null
+  /** The index is behind `main` or being rebuilt: the answer may be out of date. */
   index_behind: boolean
 }
 
@@ -99,11 +104,6 @@ export interface CatalogSection {
   anchor: string | null
   /** The section's exact Markdown, heading line included. */
   text: string
-  changed_in: number
-  changed_by: string
-  changed_by_kind: ActorKind
-  written_by: string
-  written_by_kind: ActorKind
 }
 
 export interface CatalogEntity extends CatalogEntitySummary {
@@ -113,8 +113,10 @@ export interface CatalogEntity extends CatalogEntitySummary {
   decision_state?: string | null
   decided_on?: string | null
   decided_by?: string | null
-  /** The catalog revision that last changed it. */
-  revision: number
+  /** Its path on `main`, such as `machine/musashi.md`. */
+  path: string
+  /** The Git blob ID of its text on `main`. */
+  blob: string
   facts: CatalogFact[]
   relations: {
     outgoing: CatalogOutgoingRelation[]
@@ -126,19 +128,6 @@ export interface CatalogEntity extends CatalogEntitySummary {
   applies: { policies: CatalogApplies[]; runbooks: CatalogApplies[] }
   body: CatalogSection[]
   problems: { code: string; message: string }[]
-  /** Catalog proposals waiting for approval that change it, oldest first. */
-  pending_proposals: CatalogPendingProposal[]
-}
-
-/** A catalog proposal waiting for approval, on an entity it changes. */
-export interface CatalogPendingProposal {
-  proposal_id: string
-  number: number
-  author: string
-  author_kind: "person" | "agent"
-  created_at: string
-  approval_classes: string[]
-  related_task: string | null
 }
 
 export interface CatalogEntityAnswer extends CatalogAnswer {
@@ -242,29 +231,9 @@ export interface CatalogListAnswer<T = CatalogListItem> extends CatalogAnswer {
   next_offset: number | null
 }
 
-export interface CatalogChange {
-  revision: number
-  at: string
-  changed_by: string
-  changed_by_kind: string
-  /** Who gave catalog approval, when the change needed one. */
-  approved_by: string | null
-  documents: { id: string | null; kind: string | null }[]
-}
-
-export interface CatalogChangesAnswer extends CatalogAnswer {
-  since: number
-  items: CatalogChange[]
-  next_since: number | null
-}
-
 /** The workspace lists a start-here step may point to (catalog §11). */
 export type StartHereList =
-  | "discrepancies"
-  | "due-for-recheck"
-  | "known-unknowns"
-  | "recent-changes"
-  | "waiting-for-approval"
+  "discrepancies" | "due-for-recheck" | "known-unknowns" | "recent-changes"
 
 export type StartHereStep =
   | { to: string; note: string; entity: CatalogEntitySummary | null }
@@ -276,38 +245,8 @@ export interface StartHereAnswer extends CatalogAnswer {
     path: "people" | "agents"
     title: string | null
     summary: string | null
-    revision: number
+    /** The start-here document's path on `main` and the Git blob ID of its text. */
+    document: { path: string; blob: string }
     steps: StartHereStep[]
   } | null
-}
-
-export interface CatalogHistoryItem {
-  revision: number
-  at: string
-  changed_by: string
-  changed_by_kind: ActorKind
-  confidence: Confidence
-  /** The purge that stored this revision with purged text replaced by a marker; null for a change. */
-  purge: number | null
-  /** Who gave catalog approval, when it needed one. */
-  approved_by: string | null
-  /** The catalog proposal it applied. */
-  proposal: { id: string; number: number } | null
-}
-
-export interface CatalogHistoryAnswer extends CatalogAnswer {
-  id: string
-  kind: string
-  items: CatalogHistoryItem[]
-  next_before: number | null
-}
-
-export interface CatalogDocumentTextAnswer extends CatalogAnswer {
-  id: string
-  kind: string
-  revision: number
-  at: string
-  changed_by: string
-  changed_by_kind: ActorKind
-  text: string
 }

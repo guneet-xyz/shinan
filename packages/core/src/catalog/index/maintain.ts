@@ -1,55 +1,102 @@
-import { eq, inArray, isNull, ne, or, schema, sql } from "@shinan/db"
+import { and, eq, inArray, isNotNull, schema, sql } from "@shinan/db"
 import type { IndexCheckDifference, Transaction } from "@shinan/db"
 
 import { atInstallation } from "../../authorize.js"
 import type { Context } from "../../context.js"
 import { NotFoundError } from "../../errors.js"
 import { addJob } from "../../jobs.js"
-import type { QueueDefinition } from "../../jobs.js"
+import type { JobQueue, QueueDefinition } from "../../jobs.js"
 import { isId } from "../../validation.js"
 import { parserVersion } from "../document/index.js"
+import type { GitClient } from "../git/client.js"
 import { indexRulesVersion } from "./derive.js"
 import {
   compareWorkspaceIndex,
   hasStaleRows,
-  rebuildWorkspaceIndex,
   stateBehind,
+  updateWorkspaceIndex,
 } from "./indexer.js"
-import { latestRevision } from "./store.js"
+import type { IndexUpdate } from "./indexer.js"
+import { listDocuments, readTexts, whenNotBusy } from "./source.js"
 
 /**
- * Keeping the agent index in step with the stored text (architecture §5.2,
- * §5.3, §7): rebuilds when the parser changes or an operator asks, and the
- * daily round-trip check.
+ * Keeping the agent index in step with `main` (Git-based catalog plan
+ * §2.7; architecture §5.3, §7): an update after each accepted update of
+ * `main`, catch-up when the worker starts, rebuilds when the parser changes
+ * or an operator asks, and the daily round-trip check.
  */
 
 /**
- * The queue of index rebuilds, at most one waiting and one running per
- * workspace (`stately`, keyed by workspace). A rebuild that fails is
- * retried; until one succeeds, answers keep saying the index is behind.
+ * The queue of index updates, at most one waiting and one running per
+ * workspace (`stately`, keyed by workspace): however many updates of
+ * `main` arrive meanwhile, the next job brings the index up to `main` as it
+ * then is. A job that fails is retried; until one succeeds, answers keep
+ * saying the index is behind.
  */
-export const catalogIndexRebuildQueue = {
-  name: "catalog-index-rebuild",
+export const catalogIndexQueue = {
+  name: "catalog-index-update",
   options: {
     policy: "stately",
     retryLimit: 5,
-    retryDelay: 60,
+    retryDelay: 30,
     retryBackoff: true,
     expireInSeconds: 60 * 60,
   },
 } as const satisfies QueueDefinition
 
-/** What a rebuild job carries. */
-export interface CatalogIndexRebuildJob {
+/** What an index job carries. */
+export interface CatalogIndexJob {
   workspaceId: string
 }
 
+async function queueUpdate(
+  target: { tx: Transaction; jobs: JobQueue | undefined },
+  workspaceId: string,
+): Promise<void> {
+  await addJob(
+    target,
+    catalogIndexQueue,
+    { workspaceId } satisfies CatalogIndexJob,
+    { singletonKey: workspaceId },
+  )
+}
+
 /**
- * Asks the worker to rebuild workspaces' indexes: the given ones, or every
- * workspace whose index (or any of its rows) another parser or index rules
- * version built, after a release changed them or a rollback, or that was
- * never built. Answers say the index is behind from now until the rebuild
- * finishes. Returns the workspaces asked for.
+ * Records that `main` of a workspace's repository moved to `commit`, and
+ * queues the index job, in the caller's transaction: the one that stores an
+ * accepted update of `main` from the Git container's journal (plan §2.6,
+ * GC-3). Answers say the index is behind from then until the job has run.
+ */
+export async function recordCatalogMain(target: {
+  tx: Transaction
+  jobs: JobQueue | undefined
+  workspaceId: string
+  commit: string
+}): Promise<void> {
+  if (!/^([0-9a-f]{40}|[0-9a-f]{64})$/.test(target.commit))
+    throw new Error("A commit of main is a full Git object ID")
+  await target.tx
+    .insert(schema.catalogIndexState)
+    .values({
+      workspaceId: target.workspaceId,
+      mainCommit: target.commit,
+      parserVersion,
+      rulesVersion: indexRulesVersion,
+    })
+    .onConflictDoUpdate({
+      target: schema.catalogIndexState.workspaceId,
+      set: { mainCommit: target.commit },
+    })
+  await queueUpdate(target, target.workspaceId)
+}
+
+/**
+ * Asks the worker to rebuild workspaces' indexes from `main`: the given
+ * ones, or every workspace with a repository whose index (or any of its
+ * rows) another parser or index rules version built, after a release
+ * changed them or a rollback, or that was never built. Answers say the
+ * index is behind from now until the rebuild finishes. Returns the
+ * workspaces asked for.
  */
 export async function requestCatalogIndexRebuilds(
   ctx: Context,
@@ -60,18 +107,16 @@ export async function requestCatalogIndexRebuilds(
     if (input.workspaceIds) {
       workspaceIds = await existingWorkspaces(scope.tx, input.workspaceIds)
     } else {
+      const r = schema.catalogRepositories
       const s = schema.catalogIndexState
       const rows = await scope.tx
-        .selectDistinct({ workspaceId: schema.catalogRevisions.workspaceId })
-        .from(schema.catalogRevisions)
-        .leftJoin(s, eq(s.workspaceId, schema.catalogRevisions.workspaceId))
+        .select({ workspaceId: r.workspaceId })
+        .from(r)
+        .leftJoin(s, eq(s.workspaceId, r.workspaceId))
         .where(
-          or(
-            isNull(s.workspaceId),
-            ne(s.parserVersion, parserVersion),
-            ne(s.rulesVersion, indexRulesVersion),
-            sql`${s.rebuildRequestedAt} is not null`,
-            sql`exists (select 1 from ${schema.catalogIndexDocuments} d where d.workspace_id = ${schema.catalogRevisions.workspaceId} and (d.parser_version <> ${parserVersion} or d.rules_version <> ${indexRulesVersion}))`,
+          and(
+            isNotNull(r.firstCommit),
+            sql`(${s.workspaceId} is null or ${s.commit} is null or ${s.parserVersion} <> ${parserVersion} or ${s.rulesVersion} <> ${indexRulesVersion} or ${s.rebuildRequestedAt} is not null or exists (select 1 from ${schema.catalogIndexDocuments} d where d.workspace_id = ${r.workspaceId} and (d.parser_version <> ${parserVersion} or d.rules_version <> ${indexRulesVersion})))`,
           ),
         )
       workspaceIds = rows.map((r) => r.workspaceId)
@@ -79,23 +124,49 @@ export async function requestCatalogIndexRebuilds(
     // In one order everywhere, so two requests at once cannot deadlock.
     workspaceIds.sort()
     for (const workspaceId of workspaceIds) {
-      await scope.tx
-        .insert(schema.catalogIndexState)
-        .values({ workspaceId, parserVersion, rebuildRequestedAt: sql`now()` })
-        .onConflictDoUpdate({
-          target: schema.catalogIndexState.workspaceId,
-          set: {
-            rebuildRequestedAt: sql`coalesce(${schema.catalogIndexState.rebuildRequestedAt}, now())`,
-          },
-        })
-      await addJob(
-        scope,
-        catalogIndexRebuildQueue,
-        { workspaceId } satisfies CatalogIndexRebuildJob,
-        { singletonKey: workspaceId },
-      )
+      await markRebuild(scope.tx, workspaceId)
+      await queueUpdate(scope, workspaceId)
     }
     return workspaceIds
+  })
+}
+
+async function markRebuild(tx: Transaction, workspaceId: string) {
+  await tx
+    .insert(schema.catalogIndexState)
+    .values({
+      workspaceId,
+      parserVersion,
+      rulesVersion: indexRulesVersion,
+      rebuildRequestedAt: sql`now()`,
+    })
+    .onConflictDoUpdate({
+      target: schema.catalogIndexState.workspaceId,
+      set: {
+        rebuildRequestedAt: sql`coalesce(${schema.catalogIndexState.rebuildRequestedAt}, now())`,
+      },
+    })
+}
+
+/**
+ * Catch-up when the worker starts (plan §2.7): asks for the rebuilds
+ * `requestCatalogIndexRebuilds` finds, and queues an index job for every
+ * workspace with a repository, so `main` moving while no worker ran (a
+ * lost job, a push stored while the worker was down) never leaves an index
+ * silently behind. A job whose index already stands at `main` only asks
+ * the Git container for `main`. Returns the workspaces queued.
+ */
+export async function catchUpCatalogIndexes(ctx: Context): Promise<string[]> {
+  await requestCatalogIndexRebuilds(ctx)
+  return atInstallation(ctx, "catalog-index.maintain", async (scope) => {
+    const r = schema.catalogRepositories
+    const rows = await scope.tx
+      .select({ workspaceId: r.workspaceId })
+      .from(r)
+      .where(isNotNull(r.firstCommit))
+      .orderBy(r.workspaceId)
+    for (const { workspaceId } of rows) await queueUpdate(scope, workspaceId)
+    return rows.map((r) => r.workspaceId)
   })
 }
 
@@ -117,69 +188,78 @@ async function existingWorkspaces(
 }
 
 /**
- * Rebuilds one workspace's index from its stored text (the rebuild job, or
- * an operator's server command). First records that a rebuild is running,
- * so answers say the index is behind, then rebuilds in one transaction:
- * readers see the old rows until it commits.
+ * The index job: brings one workspace's index up to `main` (an update, or
+ * the rebuild its state asks for). Reads `main` through the Git container.
+ */
+export async function updateCatalogIndex(
+  ctx: Context,
+  input: CatalogIndexJob,
+  git: GitClient,
+): Promise<IndexUpdate> {
+  const [workspaceId] = await atInstallation(
+    ctx,
+    "catalog-index.maintain",
+    (scope) => existingWorkspaces(scope.tx, [input.workspaceId]),
+  )
+  return updateWorkspaceIndex(ctx.db, git, workspaceId!)
+}
+
+/**
+ * Rebuilds one workspace's index from `main` now (an operator's server
+ * command). First records that a rebuild is running, so answers say the
+ * index is behind, then rebuilds: readers see the old rows until it
+ * commits.
  */
 export async function rebuildCatalogIndex(
   ctx: Context,
-  input: CatalogIndexRebuildJob,
-): Promise<{ revision: number; documents: number }> {
+  input: CatalogIndexJob,
+  git: GitClient,
+): Promise<IndexUpdate> {
   const [workspaceId] = await atInstallation(
     ctx,
     "catalog-index.maintain",
     async (scope) => {
       const found = await existingWorkspaces(scope.tx, [input.workspaceId])
-      await scope.tx
-        .insert(schema.catalogIndexState)
-        .values({
-          workspaceId: found[0]!,
-          parserVersion,
-          rebuildRequestedAt: sql`now()`,
-        })
-        .onConflictDoUpdate({
-          target: schema.catalogIndexState.workspaceId,
-          set: {
-            rebuildRequestedAt: sql`coalesce(${schema.catalogIndexState.rebuildRequestedAt}, now())`,
-          },
-        })
+      await markRebuild(scope.tx, found[0]!)
       return found
     },
   )
-  return ctx.db.transaction((tx) => rebuildWorkspaceIndex(tx, workspaceId!))
+  return updateWorkspaceIndex(ctx.db, git, workspaceId!, { rebuild: true })
 }
 
 /** The outcome of the round-trip check for one workspace. */
 export interface WorkspaceIndexCheck {
   workspaceId: string
   /**
-   * `behind`: built (wholly or partly) by another parser or index rules
-   * version, or being rebuilt, so not compared; a rebuild is asked for.
+   * `behind`: not at `main`, built (wholly or partly) by another parser or
+   * index rules version, or being rebuilt, so not compared; an update or a
+   * rebuild is asked for.
    */
   outcome: "matched" | "differs" | "behind"
-  revision: number
+  /** The commit of `main` compared, or the one the index stands at when behind. */
+  commit: string | null
   documents: number
   /** How many documents differ; the first 50 are listed. */
   differenceCount: number
   differences: IndexCheckDifference[]
 }
 
-/** How many differing documents a check keeps, by ID. */
+/** How many differing documents a check keeps, by path. */
 const keptDifferences = 50
 
 /**
- * The daily round-trip check (architecture §5.2, rule 5): for each
- * workspace, text → parse → index compared with the stored index, in one
- * snapshot. Records the outcome on the workspace's index state, where
- * installation health reads it; the worker logs it. Workspaces whose index
- * is behind (another parser version, or a rebuild asked for) are not
- * compared but are asked to rebuild again, if a job queue is at hand: the
- * queue keeps one waiting rebuild per workspace, so a rebuild that was lost
- * or gave up is retried and one already waiting is not repeated.
+ * The daily round-trip check (architecture §5.3): for each workspace with a
+ * repository, the text on `main` → parse → index, compared with the stored
+ * index in one snapshot. Records the outcome on the workspace's index
+ * state, where installation health reads it; the worker logs it. A
+ * workspace whose index is not at `main`, or was built by another parser
+ * or rules version or is being rebuilt, is not compared: an update or
+ * rebuild is queued instead, if a job queue is at hand (one waiting job per
+ * workspace, so one already waiting is not repeated).
  */
 export async function checkCatalogIndexes(
   ctx: Context,
+  git: GitClient,
   input: { workspaceIds?: string[] } = {},
 ): Promise<WorkspaceIndexCheck[]> {
   const workspaceIds = await atInstallation(
@@ -188,85 +268,129 @@ export async function checkCatalogIndexes(
     async (scope) => {
       if (input.workspaceIds)
         return existingWorkspaces(scope.tx, input.workspaceIds)
+      const r = schema.catalogRepositories
       const rows = await scope.tx
-        .selectDistinct({ workspaceId: schema.catalogRevisions.workspaceId })
-        .from(schema.catalogRevisions)
+        .select({ workspaceId: r.workspaceId })
+        .from(r)
+        .where(isNotNull(r.firstCommit))
+        .orderBy(r.workspaceId)
       return rows.map((r) => r.workspaceId)
     },
   )
   const results: WorkspaceIndexCheck[] = []
   const stale: string[] = []
+  const lagging: string[] = []
   for (const workspaceId of workspaceIds) {
-    const result = await ctx.db.transaction(
-      async (tx): Promise<WorkspaceIndexCheck> => {
-        const [state] = await tx
-          .select()
-          .from(schema.catalogIndexState)
-          .where(eq(schema.catalogIndexState.workspaceId, workspaceId))
-        const latest = await latestRevision(tx, workspaceId)
-        if (
-          !state ||
-          stateBehind(state) ||
-          (await hasStaleRows(tx, workspaceId))
-        ) {
-          return {
-            workspaceId,
-            outcome: "behind",
-            revision: state?.revision ?? 0,
-            documents: 0,
-            differenceCount: 0,
-            differences: [],
-          }
-        }
-        const { documents, differences } = await compareWorkspaceIndex(
-          tx,
-          workspaceId,
-        )
-        if (state.revision !== latest)
-          differences.unshift({ documentId: "*", tables: ["state"] })
-        return {
-          workspaceId,
-          outcome: differences.length === 0 ? "matched" : "differs",
-          revision: latest,
-          documents,
-          differenceCount: differences.length,
-          differences: differences.slice(0, keptDifferences),
-        }
-      },
-      { isolationLevel: "repeatable read", accessMode: "read only" },
-    )
+    const result = await checkWorkspace(ctx, git, workspaceId)
     if (result.outcome === "behind") {
-      stale.push(workspaceId)
+      if (result.rebuild) stale.push(workspaceId)
+      else lagging.push(workspaceId)
     } else {
       await ctx.db
         .update(schema.catalogIndexState)
         .set({
           checkedAt: sql`now()`,
-          checkedRevision: result.revision,
+          checkedCommit: result.commit,
           checkDifferences: result.differenceCount,
           checkDetails: result.differences,
         })
         .where(eq(schema.catalogIndexState.workspaceId, workspaceId))
     }
-    results.push(result)
+    results.push({
+      workspaceId: result.workspaceId,
+      outcome: result.outcome,
+      commit: result.commit,
+      documents: result.documents,
+      differenceCount: result.differenceCount,
+      differences: result.differences,
+    })
   }
-  if (stale.length > 0 && ctx.jobs)
-    await requestCatalogIndexRebuilds(ctx, { workspaceIds: stale })
+  if (ctx.jobs) {
+    if (stale.length > 0)
+      await requestCatalogIndexRebuilds(ctx, { workspaceIds: stale })
+    if (lagging.length > 0)
+      await atInstallation(ctx, "catalog-index.maintain", async (scope) => {
+        for (const workspaceId of lagging.sort())
+          await queueUpdate(scope, workspaceId)
+      })
+  }
   return results
+}
+
+async function checkWorkspace(
+  ctx: Context,
+  git: GitClient,
+  workspaceId: string,
+): Promise<WorkspaceIndexCheck & { rebuild: boolean }> {
+  const behind = (commit: string | null, rebuild: boolean) => ({
+    workspaceId,
+    outcome: "behind" as const,
+    commit,
+    documents: 0,
+    differenceCount: 0,
+    differences: [],
+    rebuild,
+  })
+  const repository = await whenNotBusy(() => git.getRepository(workspaceId))
+  const [state] = await ctx.db
+    .select()
+    .from(schema.catalogIndexState)
+    .where(eq(schema.catalogIndexState.workspaceId, workspaceId))
+  if (!repository) return behind(state?.commit ?? null, false)
+  if (!state || state.commit === null || stateBehind(state))
+    return behind(state?.commit ?? null, true)
+  if (state.commit !== repository.main) return behind(state.commit, false)
+
+  // Read outside any transaction: the Git container may take a while.
+  const commit = state.commit
+  const texts = await readTexts(
+    git,
+    workspaceId,
+    commit,
+    await listDocuments(git, workspaceId, commit),
+  )
+  return ctx.db.transaction(
+    async (tx) => {
+      const [now] = await tx
+        .select()
+        .from(schema.catalogIndexState)
+        .where(eq(schema.catalogIndexState.workspaceId, workspaceId))
+      if (now?.commit !== commit) return behind(now?.commit ?? null, false)
+      if (stateBehind(now) || (await hasStaleRows(tx, workspaceId)))
+        return behind(commit, true)
+      const { documents, differences } = await compareWorkspaceIndex(
+        tx,
+        workspaceId,
+        texts,
+      )
+      return {
+        workspaceId,
+        outcome: differences.length === 0 ? "matched" : "differs",
+        commit,
+        documents,
+        differenceCount: differences.length,
+        differences: differences.slice(0, keptDifferences),
+        rebuild: false,
+      }
+    },
+    { isolationLevel: "repeatable read", accessMode: "read only" },
+  )
 }
 
 /** One workspace's agent index, for installation health: IDs and counts, never content. */
 export interface CatalogIndexWorkspaceHealth {
   workspaceId: string
-  revision: number
-  latestRevision: number
+  /** The commit of `main` the index stands at; null before its first build. */
+  commit: string | null
+  /** The latest commit of `main` Shinan knows of. */
+  mainCommit: string | null
   parserVersion: number
-  /** Behind the latest revision or the parser, or being rebuilt: answers say so. */
+  /** Behind `main` or the parser, or being rebuilt: answers say so. */
   behind: boolean
   rebuildRequestedAt: string | null
   rebuiltAt: string | null
   checkedAt: string | null
-  checkedRevision: number | null
+  checkedCommit: string | null
   /** Documents whose stored index differed from their text at the last check. */
   checkDifferences: number | null
 }
@@ -277,42 +401,32 @@ export interface CatalogIndexHealth {
 }
 
 /**
- * The agent index's health for installation operators (architecture §5.2,
- * rule 5; §13 in-app status): each workspace's index revision, whether it
- * is behind, and the last round-trip check.
+ * The agent index's health for installation operators (architecture §5.3,
+ * §13 in-app status): where each workspace's index stands, whether it is
+ * behind, and the last round-trip check.
  */
 export async function getCatalogIndexHealth(
   ctx: Context,
 ): Promise<CatalogIndexHealth> {
   return atInstallation(ctx, "catalog-index.read-health", async (scope) => {
     const s = schema.catalogIndexState
-    const r = schema.catalogRevisions
-    const latest = scope.tx
-      .select({
-        workspaceId: r.workspaceId,
-        latest: sql<number>`max(${r.number})::int`.as("latest"),
-      })
-      .from(r)
-      .groupBy(r.workspaceId)
-      .as("latest")
-    const rows = await scope.tx
-      .select({ state: s, latest: latest.latest })
-      .from(s)
-      .leftJoin(latest, eq(latest.workspaceId, s.workspaceId))
-      .orderBy(s.workspaceId)
+    const rows = await scope.tx.select().from(s).orderBy(s.workspaceId)
     const iso = (d: Date | null) => (d === null ? null : d.toISOString())
     return {
       parserVersion,
-      workspaces: rows.map(({ state, latest }) => ({
+      workspaces: rows.map((state) => ({
         workspaceId: state.workspaceId,
-        revision: state.revision,
-        latestRevision: latest ?? 0,
+        commit: state.commit,
+        mainCommit: state.mainCommit,
         parserVersion: state.parserVersion,
-        behind: state.revision < (latest ?? 0) || stateBehind(state),
+        behind:
+          state.commit === null ||
+          state.commit !== state.mainCommit ||
+          stateBehind(state),
         rebuildRequestedAt: iso(state.rebuildRequestedAt),
         rebuiltAt: iso(state.rebuiltAt),
         checkedAt: iso(state.checkedAt),
-        checkedRevision: state.checkedRevision,
+        checkedCommit: state.checkedCommit,
         checkDifferences: state.checkDifferences,
       })),
     }

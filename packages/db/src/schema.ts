@@ -1206,19 +1206,8 @@ export const catalogRevisionDocuments = pgTable(
   ],
 )
 
-/**
- * The agent index (catalog §12; architecture §5.2, §5.3): rows derived from
- * the stored text by the indexer alone, and rebuilt from the text when lost
- * or when the parser changes. Every row records the parser version that
- * produced it.
- */
-
 const tsvector = customType<{ data: string }>({
   dataType: () => "tsvector",
-})
-
-const bytea = customType<{ data: Buffer }>({
-  dataType: () => "bytea",
 })
 
 /**
@@ -1254,39 +1243,69 @@ export const catalogRepositories = pgTable(
   ],
 )
 
+/**
+ * The agent index (catalog §12; architecture §5.3): rows derived by the
+ * indexer alone from the documents on `main` of the workspace's catalog
+ * repository, and rebuilt from `main` when lost or when the parser changes
+ * (D-006). Every row records the parser version that produced it. A
+ * document is known by its path in the repository: its ID plus `.md`
+ * (Git-based catalog plan §2.1).
+ */
+
 const parserVersionColumn = () => integer("parser_version").notNull()
 
+/** A full Git object ID: SHA-1, or SHA-256 should repositories ever use it. */
+const objectIdFormat = "^([0-9a-f]{40}|[0-9a-f]{64})$"
+
 /** Where a workspace's index stands, and the last round-trip check. */
-export const catalogIndexState = pgTable("catalog_index_state", {
-  workspaceId: uuid("workspace_id")
-    .primaryKey()
-    .references(() => workspaces.id),
-  /** The latest catalog revision the index has been built up to. */
-  revision: integer("revision").notNull().default(0),
-  /** The parser version of the last full build. */
-  parserVersion: parserVersionColumn(),
-  /**
-   * The version of the index's own rules (such as how `written_by` is
-   * credited) of the last full build; 0 before the rules were versioned.
-   */
-  rulesVersion: integer("rules_version").notNull().default(0),
-  /** Set while a rebuild is asked for or running: answers say the index is behind. */
-  rebuildRequestedAt: timestamp("rebuild_requested_at", {
-    withTimezone: true,
-  }),
-  rebuiltAt: timestamp("rebuilt_at", { withTimezone: true }),
-  /** The last round-trip check (architecture §5.2, rule 5). */
-  checkedAt: timestamp("checked_at", { withTimezone: true }),
-  checkedRevision: integer("checked_revision"),
-  /** How many documents' stored rows differed from their text; 0 when they all matched. */
-  checkDifferences: integer("check_differences"),
-  /** Which documents differed and in which tables: IDs only, never text. */
-  checkDetails: jsonb("check_details").$type<IndexCheckDifference[]>(),
-})
+export const catalogIndexState = pgTable(
+  "catalog_index_state",
+  {
+    workspaceId: uuid("workspace_id")
+      .primaryKey()
+      .references(() => workspaces.id),
+    /** The commit of `main` the index was built from; null before the first build. */
+    commit: text("commit"),
+    /**
+     * The latest commit of `main` Shinan knows of: recorded with each
+     * accepted update of `main`, and whenever the indexer reads it. The
+     * index is behind while it differs from `commit`.
+     */
+    mainCommit: text("main_commit"),
+    /** The parser version of the last full build. */
+    parserVersion: parserVersionColumn(),
+    /** The version of the index's own rules of the last full build. */
+    rulesVersion: integer("rules_version").notNull(),
+    /** Set while a rebuild is asked for or running: answers say the index is behind. */
+    rebuildRequestedAt: timestamp("rebuild_requested_at", {
+      withTimezone: true,
+    }),
+    rebuiltAt: timestamp("rebuilt_at", { withTimezone: true }),
+    /** The last round-trip check (architecture §5.3). */
+    checkedAt: timestamp("checked_at", { withTimezone: true }),
+    /** The commit the last round-trip check compared the index with. */
+    checkedCommit: text("checked_commit"),
+    /** How many documents' stored rows differed from their text; 0 when they all matched. */
+    checkDifferences: integer("check_differences"),
+    /** Which documents differed and in which tables: paths only, never text. */
+    checkDetails: jsonb("check_details").$type<IndexCheckDifference[]>(),
+  },
+  (t) => [
+    check(
+      "catalog_index_state_commit_format",
+      sql`${t.commit} is null or ${t.commit} ~ '${sql.raw(objectIdFormat)}'`,
+    ),
+    check(
+      "catalog_index_state_main_commit_format",
+      sql`${t.mainCommit} is null or ${t.mainCommit} ~ '${sql.raw(objectIdFormat)}'`,
+    ),
+  ],
+)
 
 /** One document whose stored index rows differ from what its text gives. */
 export interface IndexCheckDifference {
-  documentId: string
+  /** The document's path on `main`, or `*` for the workspace as a whole. */
+  path: string
   tables: string[]
 }
 
@@ -1294,13 +1313,16 @@ export interface IndexCheckDifference {
 export const catalogIndexDocuments = pgTable(
   "catalog_index_documents",
   {
-    documentId: uuid("document_id").primaryKey(),
-    workspaceId: uuid("workspace_id").notNull(),
-    /** The catalog revision whose text these rows were built from. */
-    revision: integer("revision").notNull(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id),
+    /** Its path on `main`, such as `machine/musashi.md`. */
+    path: text("path").notNull(),
+    /** The Git blob ID of the text these rows were built from. */
+    blob: text("blob").notNull(),
     parserVersion: parserVersionColumn(),
-    /** The index rules version these rows were built by (with all the document's rows); 0 before it was recorded. */
-    rulesVersion: integer("rules_version").notNull().default(0),
+    /** The index rules version these rows were built by (with all the document's rows). */
+    rulesVersion: integer("rules_version").notNull(),
     /** `entity`, `schema` or `start-here` (catalog §2, §3.9, §11). */
     kind: text("kind").notNull(),
     /** The catalog ID, such as `machine/musashi`; null if the text has none. */
@@ -1342,11 +1364,11 @@ export const catalogIndexDocuments = pgTable(
       ),
   },
   (t) => [
-    foreignKey({
-      name: "catalog_index_documents_document_fk",
-      columns: [t.workspaceId, t.documentId],
-      foreignColumns: [catalogDocuments.workspaceId, catalogDocuments.id],
-    }),
+    primaryKey({ columns: [t.workspaceId, t.path] }),
+    check(
+      "catalog_index_documents_blob_format",
+      sql`${t.blob} ~ '${sql.raw(objectIdFormat)}'`,
+    ),
     index("catalog_index_documents_catalog_id").on(t.workspaceId, t.catalogId),
     index("catalog_index_documents_type_status").on(
       t.workspaceId,
@@ -1370,10 +1392,10 @@ export const catalogIndexDocuments = pgTable(
 export const catalogIndexFacts = pgTable(
   "catalog_index_facts",
   {
-    documentId: uuid("document_id").notNull(),
+    workspaceId: uuid("workspace_id").notNull(),
+    path: text("path").notNull(),
     /** Its place in the document, from 0. */
     position: integer("position").notNull(),
-    workspaceId: uuid("workspace_id").notNull(),
     parserVersion: parserVersionColumn(),
     entityId: text("entity_id").notNull(),
     identity: text("identity").notNull(),
@@ -1413,11 +1435,14 @@ export const catalogIndexFacts = pgTable(
     dueAt: timestamp("due_at", { withTimezone: true }),
   },
   (t) => [
-    primaryKey({ columns: [t.documentId, t.position] }),
+    primaryKey({ columns: [t.workspaceId, t.path, t.position] }),
     foreignKey({
       name: "catalog_index_facts_document_fk",
-      columns: [t.documentId],
-      foreignColumns: [catalogIndexDocuments.documentId],
+      columns: [t.workspaceId, t.path],
+      foreignColumns: [
+        catalogIndexDocuments.workspaceId,
+        catalogIndexDocuments.path,
+      ],
     }).onDelete("cascade"),
     index("catalog_index_facts_entity").on(t.workspaceId, t.entityId),
     index("catalog_index_facts_due_at")
@@ -1438,9 +1463,9 @@ export const catalogIndexFacts = pgTable(
 export const catalogIndexRelations = pgTable(
   "catalog_index_relations",
   {
-    documentId: uuid("document_id").notNull(),
-    position: integer("position").notNull(),
     workspaceId: uuid("workspace_id").notNull(),
+    path: text("path").notNull(),
+    position: integer("position").notNull(),
     parserVersion: parserVersionColumn(),
     fromId: text("from_id").notNull(),
     fromType: text("from_type"),
@@ -1458,11 +1483,14 @@ export const catalogIndexRelations = pgTable(
     field: boolean("field").notNull(),
   },
   (t) => [
-    primaryKey({ columns: [t.documentId, t.position] }),
+    primaryKey({ columns: [t.workspaceId, t.path, t.position] }),
     foreignKey({
       name: "catalog_index_relations_document_fk",
-      columns: [t.documentId],
-      foreignColumns: [catalogIndexDocuments.documentId],
+      columns: [t.workspaceId, t.path],
+      foreignColumns: [
+        catalogIndexDocuments.workspaceId,
+        catalogIndexDocuments.path,
+      ],
     }).onDelete("cascade"),
     index("catalog_index_relations_from").on(t.workspaceId, t.fromId),
     index("catalog_index_relations_to").on(t.workspaceId, t.toId),
@@ -1473,9 +1501,9 @@ export const catalogIndexRelations = pgTable(
 export const catalogIndexDiscrepancies = pgTable(
   "catalog_index_discrepancies",
   {
-    documentId: uuid("document_id").notNull(),
-    key: text("key").notNull(),
     workspaceId: uuid("workspace_id").notNull(),
+    path: text("path").notNull(),
+    key: text("key").notNull(),
     parserVersion: parserVersionColumn(),
     entityId: text("entity_id").notNull(),
     values: jsonb("values").$type<string[]>().notNull(),
@@ -1484,27 +1512,25 @@ export const catalogIndexDiscrepancies = pgTable(
     accepted: boolean("accepted").notNull(),
   },
   (t) => [
-    primaryKey({ columns: [t.documentId, t.key] }),
+    primaryKey({ columns: [t.workspaceId, t.path, t.key] }),
     foreignKey({
       name: "catalog_index_discrepancies_document_fk",
-      columns: [t.documentId],
-      foreignColumns: [catalogIndexDocuments.documentId],
+      columns: [t.workspaceId, t.path],
+      foreignColumns: [
+        catalogIndexDocuments.workspaceId,
+        catalogIndexDocuments.path,
+      ],
     }).onDelete("cascade"),
-    index("catalog_index_discrepancies_workspace_id").on(t.workspaceId),
   ],
 )
 
-/**
- * Body sections (catalog §2.5, §12.1), split by heading, each with the
- * catalog revision that last changed it and that revision's author, from
- * which trust labels are set (agent integrations, trust labels).
- */
+/** Body sections (catalog §2.5, §12.1), split by heading, for search and the catalog pages. */
 export const catalogIndexSections = pgTable(
   "catalog_index_sections",
   {
-    documentId: uuid("document_id").notNull(),
-    position: integer("position").notNull(),
     workspaceId: uuid("workspace_id").notNull(),
+    path: text("path").notNull(),
+    position: integer("position").notNull(),
     parserVersion: parserVersionColumn(),
     catalogId: text("catalog_id"),
     heading: text("heading"),
@@ -1514,16 +1540,6 @@ export const catalogIndexSections = pgTable(
     /** Its range in the document's text. */
     start: integer("start").notNull(),
     end: integer("end").notNull(),
-    changedRevision: integer("changed_revision").notNull(),
-    authorKind: actorKindEnum("author_kind").notNull(),
-    /** The author's written form (identity §8.7). */
-    author: text("author").notNull(),
-    /**
-     * The least-trusted author whose words may be in the section, from the
-     * document's word provenance (catalog §12.4), for trust labels.
-     */
-    leastTrustedKind: actorKindEnum("least_trusted_kind").notNull(),
-    leastTrusted: text("least_trusted").notNull(),
     search: tsvector("search")
       .notNull()
       .generatedAlwaysAs(
@@ -1536,45 +1552,17 @@ export const catalogIndexSections = pgTable(
       ),
   },
   (t) => [
-    primaryKey({ columns: [t.documentId, t.position] }),
+    primaryKey({ columns: [t.workspaceId, t.path, t.position] }),
     foreignKey({
       name: "catalog_index_sections_document_fk",
-      columns: [t.documentId],
-      foreignColumns: [catalogIndexDocuments.documentId],
+      columns: [t.workspaceId, t.path],
+      foreignColumns: [
+        catalogIndexDocuments.workspaceId,
+        catalogIndexDocuments.path,
+      ],
     }).onDelete("cascade"),
-    index("catalog_index_sections_workspace_id").on(t.workspaceId),
     index("catalog_index_sections_search").using("gin", t.search),
     index("catalog_index_sections_search_simple").using("gin", t.searchSimple),
-  ],
-)
-
-/**
- * Where a document's words came from (catalog §12.4, `written_by`): for each
- * unit of its words (a hashed, normalised word 3-gram) that anyone less
- * trusted than a person ever introduced into the document, the
- * least-trusted author who did. Derived from the document's history like
- * every index row, and compared by the round-trip check.
- */
-export const catalogIndexProvenance = pgTable(
-  "catalog_index_provenance",
-  {
-    documentId: uuid("document_id").primaryKey(),
-    workspaceId: uuid("workspace_id").notNull(),
-    parserVersion: parserVersionColumn(),
-    /** The authors the units name, sorted: their kind and written form. */
-    authors: jsonb("authors")
-      .$type<{ kind: ActorKind; author: string }[]>()
-      .notNull(),
-    /** The units, sorted, 10 bytes each: a 53-bit hash and the author's place in `authors`. */
-    units: bytea("units").notNull(),
-  },
-  (t) => [
-    foreignKey({
-      name: "catalog_index_provenance_document_fk",
-      columns: [t.documentId],
-      foreignColumns: [catalogIndexDocuments.documentId],
-    }).onDelete("cascade"),
-    index("catalog_index_provenance_workspace_id").on(t.workspaceId),
   ],
 )
 

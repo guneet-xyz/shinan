@@ -43,9 +43,10 @@ import type { ScalarValue, YamlEntry, YamlMap, YamlNode } from "./yaml.js"
 /**
  * The version of the document model's reading rules. Anything derived from
  * parsed documents (the agent index) records it and is rebuilt when it
- * changes (architecture §5.2, M2-3).
+ * changes (architecture §5.2, M2-3). 5: no `waiting-for-approval` list,
+ * since there is no catalog approval (D-060).
  */
-export const parserVersion = 4
+export const parserVersion = 5
 
 /**
  * The largest document Shinan reads: 64 KiB of UTF-8, the form documents are
@@ -109,8 +110,12 @@ export function readDocumentId(text: string): string | null {
   }
 }
 
-/** A document that could not be read at all: only its text and the problem. */
-function unread(
+/**
+ * A document that could not be read at all: only its text and the problem.
+ * Also for a document Shinan was not given the text of, such as a file on
+ * `main` larger than the Git container reads (the index).
+ */
+export function unread(
   text: string,
   code: ProblemCode,
   message: string,

@@ -3,6 +3,7 @@ import { afterAll, describe, expect, it } from "vitest"
 
 import {
   NestedConnectionError,
+  refuseDuringTransactions,
   takeNestedConnectionRefusals,
 } from "./nesting.js"
 import * as schema from "./schema.js"
@@ -32,6 +33,24 @@ describe("a query on db while the same work holds a transaction", () => {
       db.transaction(() => db.transaction(() => Promise.resolve())),
     ).rejects.toBeInstanceOf(NestedConnectionError) // Each refusal is recorded; taken here, since they are on purpose.
     expect(takeNestedConnectionRefusals()).toHaveLength(3)
+  })
+
+  it("refuses a call to another service's client too, inside a transaction only", async () => {
+    const client = refuseDuringTransactions(
+      { read: (n: number) => Promise.resolve(n + 1) },
+      "git",
+    )
+    expect(await client.read(1)).toBe(2)
+    await expect(
+      db.transaction(async () => {
+        await client.read(1)
+      }),
+    ).rejects.toBeInstanceOf(NestedConnectionError)
+    expect(takeNestedConnectionRefusals()).toEqual([
+      expect.stringMatching(
+        /^git\.read\(\) was called while this work holds a database transaction/,
+      ) as string,
+    ])
   })
 
   it("records a refusal even when the code swallows the error", async () => {
