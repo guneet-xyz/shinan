@@ -115,6 +115,8 @@ describe("a member of one workspace", () => {
           eq(schema.securityLog.action, "request.refused"),
         ),
       )
+      // In the order they were written: the last is this refusal.
+      .orderBy(schema.securityLog.id)
     expect(installationLevel.at(-1)?.details).toEqual({
       action: "workspace.read",
       reason: "not-member",
