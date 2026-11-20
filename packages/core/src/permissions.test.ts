@@ -16,7 +16,7 @@ const contributor: Requester = {
 }
 const allScopes: Scope[] = [
   "catalog:read",
-  "catalog:propose",
+  "catalog:write",
   "tasks:read",
   "tasks:write",
   "presence",
@@ -280,80 +280,6 @@ describe("decide", () => {
         allowed: false,
         reason: "actor",
       })
-    })
-
-    it("lets every member, and no agent, record the pages they opened", () => {
-      expect(allowed("catalog.mark-opened", owner)).toEqual({ allowed: true })
-      expect(allowed("catalog.mark-opened", contributor)).toEqual({
-        allowed: true,
-      })
-      expect(
-        allowed("catalog.mark-opened", {
-          ...ownersAgent,
-          scopes: ["catalog:read", "catalog:propose"],
-        }),
-      ).toMatchObject({ allowed: false })
-    })
-
-    it("lets every member propose, and agents with catalog:propose", () => {
-      expect(allowed("catalog.propose", owner)).toEqual({ allowed: true })
-      expect(allowed("catalog.propose", contributor)).toEqual({ allowed: true })
-      expect(
-        allowed("catalog.propose", {
-          ...ownersAgent,
-          scopes: ["catalog:propose"],
-        }),
-      ).toEqual({ allowed: true })
-      expect(
-        allowed("catalog.propose", {
-          ...ownersAgent,
-          scopes: ["catalog:read"],
-        }),
-      ).toEqual({ allowed: false, reason: "scope" })
-    })
-
-    it("lets every member comment on proposals, and agents with catalog:propose", () => {
-      expect(allowed("catalog.comment", contributor)).toEqual({ allowed: true })
-      expect(
-        allowed("catalog.comment", {
-          ...ownersAgent,
-          scopes: ["catalog:propose"],
-        }),
-      ).toEqual({ allowed: true })
-      expect(
-        allowed("catalog.comment", {
-          ...ownersAgent,
-          scopes: ["catalog:read"],
-        }),
-      ).toEqual({ allowed: false, reason: "scope" })
-    })
-
-    it("reserves catalog approval for people", () => {
-      expect(allowed("catalog.approve", owner)).toEqual({ allowed: true })
-      expect(allowed("catalog.approve", contributor)).toEqual({ allowed: true })
-      expect(
-        allowed("catalog.approve", {
-          ...ownersAgent,
-          scopes: ["catalog:read", "catalog:propose"],
-        }),
-      ).toEqual({ allowed: false, reason: "people-only" })
-    })
-
-    it("reserves repairing a document for workspace owners who signed in again recently", () => {
-      expect(allowed("catalog.repair", owner)).toEqual({ allowed: true })
-      expect(
-        allowed("catalog.repair", { ...owner, reauthenticated: false }),
-      ).toEqual({ allowed: false, reason: "reauthentication" })
-      expect(allowed("catalog.repair", contributor)).toEqual({
-        allowed: false,
-        reason: "role",
-      })
-      expect(
-        allowed("catalog.repair", {
-          ...ownersAgent,
-          scopes: ["catalog:read", "catalog:propose"],
-        }),
-      ).toEqual({ allowed: false, reason: "people-only" })
     })
 
     it("lets only Shinan keep the index in step", () => {

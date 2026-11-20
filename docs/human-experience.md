@@ -144,7 +144,7 @@ repositories. **Decided** (owner, O-43, [#25]).
 | [Task page](#task-page)                                | The story of one task, and steering it                                                                                       | 1       |
 | [Timeline](#timelines)                                 | Everything that happened in the workspace                                                                                    | 1       |
 | [Wiki](#the-wiki)                                      | The catalog for people, including [start here](#start-here-and-onboarding)                                                   | 1       |
-| [Catalog review](#reviewing-catalog-changes)           | Catalog changes waiting for approval, and recent changes                                                                     | 1       |
+| [Catalog review](#reviewing-catalog-changes)           | Removed (GC-5, [D-060](decisions/D-060-no-catalog-approval.md)): no catalog approval; GC-7 rewrites the map                  | 1       |
 | [Agents](#agents-view)                                 | Agent sessions and their presence                                                                                            | 1       |
 | [Triage](#triage)                                      | A filtered task list in phase 1; the full triage inbox in phase 2                                                            | 1 and 2 |
 | [Unlinked work](#unlinked-work)                        | Branches and PRs with no task ID                                                                                             | 1       |
@@ -191,7 +191,7 @@ missed when nobody is assigned.
 | Agent session silent on a task      | An attached agent session is `unresponsive`, or sends no heartbeats and is [overdue](#when-an-agent-session-goes-quiet)                                                                           | Opens the task with options to [start a new agent session](#when-no-agent-session-is-attached) | 1     |
 | Work link to confirm                | An unconfirmed work link is waiting: from an outside actor's marker (only a person can confirm it), or from a member's closing reference to an `origin` issue that no agent session has confirmed | Opens the task's [work](#work) with **Confirm** and **Dismiss**                                | 1     |
 | Tasks in triage                     | One or more tasks are in `triage`                                                                                                                                                                 | Phase 1: the task list filtered to `triage`. Phase 2: the [triage inbox](#triage)              | 1     |
-| Catalog change waiting for approval | A `pending` catalog proposal in a gated class                                                                                                                                                     | Opens [catalog review](#reviewing-catalog-changes)                                             | 1     |
+| Catalog change waiting for approval | Removed (GC-5, [D-060](decisions/D-060-no-catalog-approval.md)): catalog changes no longer wait for approval                                                                                      | Opens [catalog review](#reviewing-catalog-changes)                                             | 1     |
 | Git host connection failing         | A connection's health is failing                                                                                                                                                                  | Opens the connection's settings                                                                | 1     |
 | Invitation for you                  | You have a pending invitation to another workspace                                                                                                                                                | Accept or decline                                                                              | 1     |
 | Workspace setup checklist           | The workspace is new and setup is not finished                                                                                                                                                    | Opens the [setup checklist](#first-run-for-a-new-workspace)                                    | 1     |
@@ -978,129 +978,19 @@ those. Search leaves retired entities out unless asked.
 
 ### Changing the catalog from the wiki
 
-- **Suggest a change** opens the page's text and fields for editing. Saving
-  creates a catalog proposal. Only high-risk (gated) classes of change need
-  catalog approval, from the start; the rest apply at once. **Decided**
-  (owner, O-3, [#25]). Which classes are gated is owned by the
-  [Catalog](catalog.md) document (it gates rules, lifecycle, people and
-  agents, and doubtful changes). Before saving, the screen says whether the
-  change applies at once or waits for approval, and shows the Catalog
-  document's validation results. **Proposed.**
-- **Record a check** lets a person record that they checked a fact. It asks
-  what was checked (the scope) and how (the source), and cannot be saved
-  without both. Every check is a catalog proposal. A recheck that leaves the
-  value unchanged applies on its own, unless it falls in the Catalog
-  document's doubtful class (for example a fact check older than the current
-  one); a changed value or fact state follows the same rule as any other
-  change. **Proposed**, following [Catalog](catalog.md) sections 8.1 and 8.2.
-  Reason: the `workspace` repository's rule that dates refer to actual checks
-  and must not be refreshed mechanically, and the catalog's rule that every
-  change, including a recheck, is a catalog proposal.
-
-**Decided (owner, 2026-11-19, M2-Q17; M2-8, [#89](https://github.com/guneet-xyz/shinan/issues/89)):**
-details of the editors as built.
-
-- **One path.** Every editor builds the operations agents send
-  ([catalog §8.1](catalog.md#81-catalog-proposals)), each expecting what
-  the page held when the editor opened it. Field, body, type schema and
-  start-here expectations are read from the stored text (the `editable`
-  read), facts from the entity page. A page changed meanwhile conflicts;
-  the editor says so and asks to reload, and never overwrites. There is
-  no raw frontmatter editing (build plan M2-8).
-- **Check, then save.** "Check the change" asks Shinan what the change
-  would do, stored nowhere: applies at once or waits, the reasons it needs
-  approval, the kinds of change, and validation's warnings, or the
-  problems that stop it. "Save" is offered only after a check of exactly
-  what will be saved, and only when that check says it applies or waits; a
-  save carries one idempotency key per checked change, so a second click or
-  a retry never makes a second proposal. Checks are counted: a person has
-  120 in 10 minutes, an agent's count as its proposals, and checks never
-  take more than a quarter of a workspace's catalog queue. A member's own gated change applies at once as their
-  approval, and the check says so. Every change needs an explanation.
-- **Suggest a change** on an entity page: title, summary, owner, status
-  (active or deprecated) and a decision's fields; each fact kept, changed
-  or removed; new facts; the description as Markdown with a preview;
-  retiring (with a replacement) and a new ID. One fact check, written
-  once, covers every new or changed fact that says what is or should be.
-  A planned or unknown fact that becomes known settles the old one.
-- **Record a check** opens from the page or from a fact's row, with that
-  fact chosen; any of the page's observed and intended facts can be
-  added. When, what (scope) and how (source) are required.
-- **New entity** (from the wiki home or a type's page), **New type** (a
-  type schema document; naming a built-in type extends it) and changes to
-  a type schema (fields, keys kept, changed, removed or added, retiring).
-- **Start here** is written or changed from its page: the two paths step
-  by step (a page, a workspace list or a web address, each with why to
-  read it), in order, plus its fields and text.
-
-Reason: one path for every change keeps review, history and conflicts the
-same for people and agents; checking first is what the documents ask
-for ("before saving, the screen says…").
+**Removed** (owner, GD-7, [D-064](decisions/D-064-catalog-not-wiki.md); GC-5):
+there is no editing in the browser for now. Agents change the catalog by
+pushing to its Git repository; people ask their agents
+([Git-based catalog plan §3](build-plan-git-catalog.md#3-the-catalog-ui)).
+M2's "Suggest a change", the editing screens, "Check the change" and the
+repair page are gone; the screens leave the web app in GC-5b.
 
 ### Reviewing catalog changes
 
-**Catalog review** has two lists. **Proposed.**
-
-- **Waiting for approval:** gated catalog proposals, oldest first. The review
-  screen shows, per entity changed, each fact before and after (value, fact
-  state, source, last checked), body text changes, the evidence, the related
-  task, the author with attribution, and agents' review comments. Actions:
-  **Approve**, **Reject** with a reason, and **Comment**. Only people approve.
-  While one person uses Shinan, they may approve their own agent's proposals
-  (owner, O-46, [#25]); the screen marks such proposals "from your agent".
-- **Recent changes feed:** catalog changes that applied without approval,
-  grouped per proposal, newest first, each with **Revert** (one action, which
-  creates a new catalog proposal restoring the earlier values, following
-  [Catalog](catalog.md) section 8.2).
-  **Proposed.** Reason: with most changes applying at once (O-3), review after
-  the fact is how people stay informed and correct mistakes.
-
-**Decided (owner, 2026-11-19, M2-Q17; M2-8):** catalog review is in the wiki (`Review`). The waiting
-list shows each proposal's number, author, what it touches and why it needs
-approval. A proposal's page shows its explanation, related task, kinds of
-change, validation's warnings and, per document, each fact before and
-after with its fact check, fields before and after, and body text as
-removed and added lines. **Approve** is not offered on your own agent's
-proposal once the workspace has more than one member (owner, M2-Q8 in the
-[M2 build plan](build-plan-m2.md#71-answers)); **Reject** needs a reason;
-the author (or the person behind the agent) may **Withdraw**. Text written
-by others (explanations, fields, facts, evidence, body changes) shows hidden
-characters as visible markers like `⟨U+202E⟩`: every control and format
-character (including right-to-left overrides and the invisible tag
-characters that can hide instructions only a model reads), line and
-paragraph separators, and characters that draw as blank. A proposal holding
-any of them is flagged at the top of its page. Reason: a proposal must not
-disguise what it says, or carry text an agent reads but its reviewer cannot
-see. If a
-proposal no longer applies when approved, the approver is told why and it
-keeps waiting. A revert waiting for approval shows the text it puts back
-against the document's current text, and links the proposal it undoes.
-Recent changes link each revision to its proposal. A proposal whose agent
-has since been disabled, or whose member has left, says so where it is
-decided.
-
-**Decided (owner, 2026-11-19, M2-Q17; M2-8, with M2-4b's operations):**
-
-- **Comments** are listed on a proposal's page, oldest first, a page at a
-  time, agents' marked as such and with hidden characters shown; anyone who
-  may propose comments, once per click.
-- **Revert** is on each change in Recent changes while every document it
-  wrote is still as it left it; it asks first, takes an optional reason,
-  and makes one revert proposal (which may wait, like any change). A change
-  already reverted links its revert; one a later change built on says it
-  cannot be reverted in one step.
-- **Bulk approval** shows on catalog review while the strict setting is on:
-  the chosen proposals (each named with its author), or all of a task's
-  that were shown, are approved or (with a reason) rejected together, and
-  each one's result is listed. A task is not offered for approval when all
-  of its proposals are your own agents' and another member must approve
-  them.
-
-If catalog accuracy slips during the trial, a workspace owner turns on the
-strict setting (owner, O-3, [#25]); while it is on, approval works in bulk
-(all proposals of one task, or a selected list), following the Catalog
-document. Bulk approval approves exactly the list the person was shown: a
-proposal added to the task after they looked waits for its own review. The setting is in [workspace settings](#workspace-settings).
+**Removed** (owner, GD-2, [D-060](decisions/D-060-no-catalog-approval.md);
+GC-5): there is no catalog approval, so no review list, comments, bulk
+approval or revert by proposal. `main`'s commit history in the catalog
+UI shows what changed (GC-7); undo is `git revert`.
 
 ## Start here and onboarding
 
@@ -1264,17 +1154,16 @@ members and owners are is no secret, and a contributor needs somewhere to
 leave the workspace and to read their own security log. Actions their role
 does not allow are still not offered.
 
-| Screen               | Shows                                                                                                                                                                      | Actions                                                                                                                                             |
-| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| General              | Name, task ID prefix and any earlier prefixes, creation date, workspace owners, the setting "contributors may give deployment approval" (off by default)                   | Rename; change the task ID prefix; turn the deployment approval setting on or off; delete workspace (typed confirmation, consequences listed first) |
-| Members              | Each member: name, role (workspace owner or contributor), joined, invited by, linked git host accounts, their agents, last active                                          | Change role; remove member. The last workspace owner cannot be removed or made a contributor                                                        |
-| Invitations          | Pending, expired and declined invitations with role and who invited                                                                                                        | Invite; resend; withdraw                                                                                                                            |
-| Agents               | Every agent: name (person, coding tool and machine), member it acts for, state, last agent session seen, its token (created, last used, full or read-only)                 | Disable an agent; revoke its token                                                                                                                  |
-| Git host connections | Each connection: git host, account used, repositories covered, each repository's "turn new issues into tasks" setting, who set it up, health, last successful contact      | Add; reconnect; change repositories covered; turn new issues into tasks on or off per repository; import existing issues into triage; remove        |
-| Task flags           | Built-in and workspace-defined flags, each with its description, whether it shows in Needs you, and how many tasks have it                                                 | Add; edit; remove                                                                                                                                   |
-| Catalog settings     | The strict setting (off: only gated classes need approval; on: every change except rechecks needs approval), with links to the type schema documents and to catalog review | Turn the strict setting on or off (rules owned by the [Catalog](catalog.md) document)                                                               |
-| Security log         | Security-relevant events, kept forever and never purged                                                                                                                    | Read only                                                                                                                                           |
-| Data                 | The time of the last export; what can be purged, including operational records about this workspace                                                                        | Export the workspace; import an export into an empty workspace; purge (typed confirmation). Security-log entries are never offered for purge        |
+| Screen               | Shows                                                                                                                                                                 | Actions                                                                                                                                             |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| General              | Name, task ID prefix and any earlier prefixes, creation date, workspace owners, the setting "contributors may give deployment approval" (off by default)              | Rename; change the task ID prefix; turn the deployment approval setting on or off; delete workspace (typed confirmation, consequences listed first) |
+| Members              | Each member: name, role (workspace owner or contributor), joined, invited by, linked git host accounts, their agents, last active                                     | Change role; remove member. The last workspace owner cannot be removed or made a contributor                                                        |
+| Invitations          | Pending, expired and declined invitations with role and who invited                                                                                                   | Invite; resend; withdraw                                                                                                                            |
+| Agents               | Every agent: name (person, coding tool and machine), member it acts for, state, last agent session seen, its token (created, last used, full or read-only)            | Disable an agent; revoke its token                                                                                                                  |
+| Git host connections | Each connection: git host, account used, repositories covered, each repository's "turn new issues into tasks" setting, who set it up, health, last successful contact | Add; reconnect; change repositories covered; turn new issues into tasks on or off per repository; import existing issues into triage; remove        |
+| Task flags           | Built-in and workspace-defined flags, each with its description, whether it shows in Needs you, and how many tasks have it                                            | Add; edit; remove                                                                                                                                   |
+| Security log         | Security-relevant events, kept forever and never purged                                                                                                               | Read only                                                                                                                                           |
+| Data                 | The time of the last export; what can be purged, including operational records about this workspace                                                                   | Export the workspace; import an export into an empty workspace; purge (typed confirmation). Security-log entries are never offered for purge        |
 
 **Proposed** screen set, based on these answers: task flags managed per
 workspace (owner, O-8, [#25]); the strict setting (O-3); the security log is
@@ -1310,11 +1199,9 @@ an entity page's history. Exports come with a later milestone.
 
 Screen details:
 
-- **Catalog settings** (**decided**, owner, 2026-11-19, M2-Q17; M2-8): every member sees the tab.
-  It says which changes wait for approval, lists the type schema
-  documents (changed from their type's page) and links to catalog review.
-  It shows the strict setting, on or off; a workspace owner turns it on
-  or off after confirming (and a recent sign-in), and other members see it.
+- **Catalog settings:** removed with the strict setting (GC-5,
+  [D-060](decisions/D-060-no-catalog-approval.md)). The tab returns for
+  the owner's "not a secret" values (GC-7).
 - **Task ID prefix.** Changing it keeps every earlier prefix working as an
   alias forever, and it is never given to another workspace; the screen says
   so before saving. Old task IDs keep their old prefix. **Proposed**, following

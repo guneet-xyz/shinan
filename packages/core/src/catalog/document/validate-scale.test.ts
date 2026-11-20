@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest"
 
-import { applyOperations } from "./apply.js"
 import { readCatalog } from "./catalog.js"
 import type { CatalogDocument } from "./model.js"
 import { parseCatalogDocument } from "./parse.js"
@@ -181,28 +180,21 @@ describe("validation on a large catalog", () => {
       now: Date.UTC(2026, 10, 20, 12),
       memberHandles: new Set(["guneet", "ana"]),
     }
-    const applied = time(() =>
-      applyOperations(
-        documents,
-        [
-          {
-            op: "set-field",
-            document: "machine/m7",
-            field: "title",
-            value: "Machine seven",
-            expect: { value: "Machine 7" },
-          },
-        ],
-        { by: "guneet" },
+    // A one-field change, as a push to main would bring it.
+    const at = documents.findIndex((d) => d.text.includes("id: machine/m7\n"))
+    const edited = parseCatalogDocument(
+      documents[at]!.text.replace(
+        "title: Machine 7\n",
+        "title: Machine seven\n",
       ),
     )
-    if (!applied.value.applied) throw new Error("The change did not apply")
-    const { before, after, changes } = applied.value
+    const before = readCatalog(documents)
+    const after = readCatalog(documents.map((d, i) => (i === at ? edited : d)))
     const change = {
       before,
       after,
-      changed: changes.map((c) => c.after),
-      texts: [{ label: "The explanation", text: "A clearer title." }],
+      changed: [edited],
+      texts: [{ label: "The commit message", text: "A clearer title." }],
     }
 
     const full = time(() => validateChangeFully(change, context))
@@ -234,7 +226,6 @@ describe("validation on a large catalog", () => {
       console.info(
         [
           `${size} documents, one-field change:`,
-          `applyOperations ${applied.ms.toFixed(0)} ms`,
           `full validation (two catalogs) ${full.ms.toFixed(0)} ms`,
           `validation of the base revision ${prepared.ms.toFixed(0)} ms`,
           `validateChange with the base ${incremental.ms.toFixed(1)} ms (${again.length} documents validated again)`,

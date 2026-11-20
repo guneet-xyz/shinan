@@ -3,7 +3,7 @@ import type { ActorKind, Confidence, Role } from "@shinan/db"
 /** Agent token scopes (identity §7.2). */
 export const scopes = [
   "catalog:read",
-  "catalog:propose",
+  "catalog:write",
   "tasks:read",
   "tasks:write",
   "presence",

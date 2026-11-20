@@ -1247,348 +1247,33 @@ through any exports (see [section 9](#9-history-and-purge)).
 
 ### 8.1 Catalog proposals
 
-Every change to the catalog, by a person or an agent, is a catalog proposal.
-A proposal is applied (immediately or after catalog approval), rejected or
-withdrawn, with the states `pending`, `applied`, `rejected`, `withdrawn` from
-the glossary.
-
-- **Decided** that agents propose and people approve where needed (plan,
-  Catalog pillar), inside Shinan (owner, O-12, [#25]).
-- **Proposed:** people's own edits are also catalog proposals. Reason: one
-  path for every change gives one history, one validation and one event
-  stream.
-- **Proposed:** only people give catalog approval (glossary). Reason: an agent
-  acts for a person, so an agent approving would be that person approving
-  without looking.
-- **Decided (owner, O-46, [#25]):** a person may approve catalog proposals made
-  by their own agents while one person uses Shinan. What applies after that is
-  owned by [identity](identity.md).
-
-A catalog proposal contains (**proposed**; reason: what a reviewer and the
-history need):
-
-- the author (actor) and, where there is one, the related task;
-- a short explanation of why;
-- the changes, as a list of operations, each stating what it expects to find
-  (see [8.5](#85-conflicts));
-- for every new or changed fact, its fact check, inline.
-
-**Operations** (**proposed**): create entity; set a fact (replacing or adding
-beside, per [4.2](#42-fact-identity-cardinality-and-current-facts)); remove a
-fact; recheck facts; edit body (whole body or one section); change an entity
-field (title, summary, status, owner); retire; change ID; create or change a
-type schema document; change the start-here document. Agents send operations
-through MCP or the CLI ([agent integrations](agent-integrations.md)); the web
-editor produces the same operations. Shinan applies them by writing new
-Markdown from the latest revision and validating the result
-([the D-006 invariant](#21-one-document-per-entity-and-what-source-of-truth-means)).
-Reason: operations on single facts rarely conflict and make review precise
-("disk.data.size: 64 GiB → 128 GiB"), where a whole-file diff hides what
-changed.
-
-One proposal may change several entities and is applied all or nothing.
-**Proposed.** Reason: retiring a machine and moving its checkouts must not
-half-happen.
-
-**Decided (owner, 2026-11-19, M2-Q17; M2-2, [#84](https://github.com/guneet-xyz/shinan/issues/84)):**
-the operations as Shinan applies them (`packages/core`,
-`applyOperations`). Each names its document by ID and states what it
-expects ([8.5](#85-conflicts)).
-
-| Operation             | What it does                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `create-entity`       | A new entity with its fields, facts (each with its fact check) and body. The type comes from the ID.                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| `set-fact`            | Writes one fact: it replaces the current fact with the same identity, or is added beside the others ([4.2](#42-fact-identity-cardinality-and-current-facts)). A change of state names the fact it settles in `supersedes`: a `planned` or `unknown` fact of the same key, settled by an `intended` or `observed` one ([4.4](#44-fact-states)). Taking away an `intended` or `observed` fact is a `remove-fact` of its own.                                                                                                    |
-| `remove-fact`         | Removes one fact, named by its identity.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| `recheck-facts`       | A new fact check for facts whose values did not change; they move to its group. When every fact of a group is rechecked, the group keeps its place and only its fact check is rewritten.                                                                                                                                                                                                                                                                                                                                      |
-| `accept-discrepancy`  | Accepts a discrepancy ([4.7](#47-discrepancies)): every fact of it gets the reason as its `note` and `accepted`, naming the person who approves the proposal. It applies only when a person approves it.                                                                                                                                                                                                                                                                                                                      |
-| `edit-body`           | The whole body, or one section named by its anchor (or the text before the first heading). A section's new text starts with its own heading and holds no other (the text before the first heading holds none), and every other section stays as it was, with the same headings, anchors, order and text (so new text cannot leave a code block open over the sections after it): adding sections is an edit of the whole body; a section expected to be absent is added at the end of the body; empty text removes a section. |
-| `set-field`           | An entity's `title`, `summary`, `status` (between `active` and `deprecated` only), `owner` and decision fields; a type schema document's `title`, `summary`, `status`, `owner`, `required` and `sections`; the start-here document's `title`, `summary` and `owner`. Null removes an optional field.                                                                                                                                                                                                                          |
-| `retire`              | Sets `status: retired` on an entity or type schema document, with an entity's `replaced_by`.                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| `change-id`           | A new ID of the same type; the old ID is added to `aliases`. Changing back to a former ID puts the old one in its place in `aliases`.                                                                                                                                                                                                                                                                                                                                                                                         |
-| `create-schema`       | A new type schema document, `schema/<type>`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| `set-schema-key`      | Adds, changes or removes one key of a type schema document.                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| `create-start-here`   | The start-here document.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| `set-start-here-path` | Replaces the `people` or the `agents` path.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| `restore-document`    | Replaces a document's whole text, expecting it to be exactly as it was read (by the SHA-256 of its text). Only a revert (M2-4, below) and a workspace owner's repair ([8.3](#83-validation)) make it; agents and the API cannot send it.                                                                                                                                                                                                                                                                                      |
-
-Lifecycle changes beyond `retire` have no operation: `set-field` never sets
-`retired`, never changes the status of a retired document, and never writes
-`replaced_by`. Bringing a retired entity back would need its own gated
-operation that also removes `replaced_by`; none is built, and
-**decided (owner, 2026-11-19, M2-Q17):** a retired entity stays retired. Reason: lifecycle changes are a gated class
-([8.2](#82-when-catalog-approval-is-needed)), and an active entity with a
-`replaced_by` would contradict [2.3](#23-entity-fields).
-
-How they are applied (**decided**, owner, 2026-11-19, M2-Q17; M2-2):
-
-- **As text edits** ([architecture §5.2](architecture.md#52-the-invariant),
-  rule 2). An operation changes only the YAML entries, list items or body
-  sections it targets; other text, including comments (a comment stays with the value or entry it belongs to), quoting,
-  indentation, flow or block style and `\r\n` line breaks, stays as it was.
-  What is removed goes with its own lines, including comments on them. A
-  document whose frontmatter cannot be read is not edited.
-- **New content in one canonical style:** block maps and lists indented by
-  two spaces; one line per fact, in the short form or a flow map in the
-  order `to`, relation attributes, `value`, `via`, `note`, `task`,
-  `remove`, `accepted`; flow lists for lists of names (`aliases`,
-  `required`, `sections`) and flow maps for a key's options; a new field
-  in the order of [2.3](#23-entity-fields); a new group at the end of
-  `facts`. Text and keys are written plain when YAML's core schema reads
-  them back as the same text, and double-quoted otherwise, so anything
-  that would read as a number, a boolean or null is quoted (`"1.10"`,
-  `"true"`, `"null"`, `"~"`); numbers are written as JavaScript writes
-  them, which the parser always reads back. A value that replaces a block
-  scalar (`|`, `>`) is written on the key's line, keeping the line break
-  the block scalar ended with. New body text takes the document's line
-  breaks.
-- **Facts move, never copy.** A fact that moves to another group (a
-  recheck, or a new check of a fact) keeps its own text and the comment at
-  the end of its line, re-indented if it is a block map; only text that
-  cannot stand in its new place (a block scalar, or a plain value moving
-  into a flow collection) is written again. A multi-valued key that gains a
-  second value becomes a list, in the style of the map it is in. A fact
-  written in a group with a matching check replaces the old one where it
-  stands. The new place is written before the old one is removed; keys,
-  state maps and groups left empty are then removed, and so is `facts`
-  when no group is left. A group cannot hold two facts of one
-  single-valued key, so such a fact goes to another group even when the
-  checks match.
-- **`by` and `accepted`** are written by Shinan: `by` from the request's
-  actor (identity §8.7), `accepted` from the person who approves an
-  `accept-discrepancy` ([4.7](#47-discrepancies)). An operation that sends
-  either is refused.
-- **Settled unknowns and acceptance.** A known value removes the `unknown`
-  facts it settles ([4.2](#42-fact-identity-cardinality-and-current-facts)).
-  A fact that replaces one with the same value keeps its `accepted` (and
-  its `note`, if the operation gives none); when the facts or values of a
-  discrepancy change, `accepted` is removed from all its facts
-  ([4.7](#47-discrepancies)).
-- **Order:** operations on type schema documents apply first and those on
-  the start-here document last, otherwise in proposal order, so a proposal
-  can create a type and entities of it. Each operation sees the documents
-  as the earlier ones left them, and an entity operation's identities are
-  those of the type schema as the proposal changes it. One limit follows:
-  a proposal cannot remove an entity's extra values of a multi-valued key
-  and make the key single-valued, since the entity operation's
-  expectations would name identities the schema change has already
-  replaced. Do it in two proposals: remove the values, then change the
-  schema.
-- **Malformed operations** (a missing or unknown field, a value of the
-  wrong type) are refused before anything applies.
-- **Limits** (**decided**, owner, 2026-11-19, M2-Q16): at most 50 operations in a proposal, naming
-  at most 100 facts in all (one per `set-fact` and `remove-fact`, and each
-  fact of a `create-entity`, `recheck-facts` or `accept-discrepancy`).
-  Reason: each operation reads its document again after every edit, so the
-  work grows with the facts written (on a busy machine, about a tenth of a
-  second per fact in a 40 KB document); the limits sit far above real use (a
-  full recheck of Musashi, the largest trial entity, names 22 facts), and
-  applying runs off the main event loop with a time limit
-  ([security checklist 10.8](security-checklist.md#10-features-not-built-yet)).
-- **Self-check:** each operation's result is read back. It is refused
-  instead of stored if it reads with a problem the document did not have
-  before, if what it wrote (a fact, a field, a schema key, a path) does not
-  read back as written, or if anything it does not touch (other fields,
-  other facts, the body, or the frontmatter for a body edit) reads
-  differently. Validation ([8.3](#83-validation)) then runs on the whole
-  result.
-
-Reason: the Markdown stays the source of truth people wrote, while what
-Shinan adds looks the same everywhere and always reads back as written.
+**Removed with the Git-based catalog** ([D-059](decisions/D-059-catalog-in-git-hosted-by-shinan.md),
+[D-060](decisions/D-060-no-catalog-approval.md);
+[GC-5](build-plan-git-catalog.md#gc-5-remove-the-m2-write-path)). M2's
+catalog proposals, their operations applied as text edits, their states,
+withdrawal, rejection, idempotency keys, turns in a catalog worker and
+retries are gone, with repair and revert by proposal. Agents change the
+catalog by committing and pushing to its Git repository, and Shinan checks
+every push ([Git-based catalog plan §2.5](build-plan-git-catalog.md#25-checks-on-push));
+until GC-2 and GC-3 are built, nothing changes the catalog. The document
+format, validation ([8.3](#83-validation)) and the check for secret-looking
+values ([7.3](#73-a-check-for-secret-looking-values)) are unchanged. M2's
+stored proposals stay in the database, read only by purge, until GC-6 moves
+the catalog into Git and drops them. M2's design is recorded in the
+[M2 build plan](build-plan-m2.md) and this document's history.
 
 ### 8.2 When catalog approval is needed
 
-**Decided (owner, O-3, [#25]):** only high-risk (gated) changes need catalog
-approval, from the start of the trial; switch to strict if accuracy slips.
-Reason: it keeps today's standing authority for routine updates (the
-`workspace` repository's access policy says "do not add a generic final
-signoff gate") while people keep control of rules, irreversible changes and
-identity. From the `workspace` repository's history (49 changes to the
-13 trial entries in ten days, none in a gated class), strict approval would
-have meant 4 to 5 approvals a day; gated approval meant close to none.
+**Never** (owner, GD-2, [D-060](decisions/D-060-no-catalog-approval.md),
+superseding D-024): every push that passes Shinan's checks applies. M2's
+approval classes, the strict setting, bulk approval and rejection, the
+rules for approving one's own agents' proposals and `accept-discrepancy`
+through a person's approval are gone (GC-5). Undo is `git revert`
+([Git-based catalog plan §2.9](build-plan-git-catalog.md#29-undo-and-purge)).
 
-| Class                     | Examples                                                                                                                                                                    | Default            | Strict setting     |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ | ------------------ |
-| Recheck                   | New fact check, value unchanged                                                                                                                                             | Applies on its own | Applies on its own |
-| Observed or unknown facts | Add, change or remove an `observed`/`unknown` fact or relation                                                                                                              | Applies on its own | Catalog approval   |
-| Intended facts            | From an owning source pinned to a revision                                                                                                                                  | Applies on its own | Catalog approval   |
-| Planned changes           | Add or remove a `planned` fact                                                                                                                                              | Applies on its own | Catalog approval   |
-| Body and bookkeeping      | Body text, title, summary, new entity of any type                                                                                                                           | Applies on its own | Catalog approval   |
-| Rules (gated)             | Create or change a `policy`; change a `decision` to `accepted`, `rejected` or `superseded`; create, change or retire a type schema document; change the start-here document | Catalog approval   | Catalog approval   |
-| Lifecycle (gated)         | Deprecate, retire, change ID, change owner                                                                                                                                  | Catalog approval   | Catalog approval   |
-| People and agents (gated) | Any change to `person` or `agent` entities                                                                                                                                  | Catalog approval   | Catalog approval   |
-| Doubtful (gated)          | A recheck or change whose fact check is older than the current one; accepting a discrepancy; a warning from validation, including a secret-looking value                    | Catalog approval   | Catalog approval   |
-
-- **Proposed:** the strict setting is one workspace setting, switched on by a
-  workspace owner when catalog accuracy slips (for example when roadmap
-  criterion R6 misses its target) and off again when it recovers. When it is
-  on, approval works in bulk (all proposals of one task, or a selected list).
-  Reason: the owner's answer names the switch; bulk approval keeps it
-  bearable.
-- **Proposed:** a person's own edit that would need catalog approval is
-  applied at once when that person may approve it. Reason: approving one's own
-  edit is a formality.
-- **Proposed:** changes that apply on their own appear in a **recent changes**
-  feed, grouped per proposal, and can be reverted with one action (a new
-  proposal restoring the earlier values). Reason: review after the fact keeps
-  people informed without blocking agents. The feed's design is owned by
-  [human experience](human-experience.md).
-- Settings and who may approve are owned by [identity](identity.md).
-
-**Decided (owner, 2026-11-19, M2-Q17; M2-4, [#86](https://github.com/guneet-xyz/shinan/issues/86)):**
-how proposals are applied and classed (`packages/core`, `catalog/proposals`).
-
-- **Outcomes.** A proposal applies at once as a new catalog revision, or
-  is stored as `pending` when it is in a gated class. One that conflicts
-  ([8.5](#85-conflicts)), has an operation that cannot apply as written,
-  is blocked by validation ([8.3](#83-validation)) or changes nothing is not
-  stored: its author is told why, with every problem and the operation's
-  position, and sends a corrected one. Reason: a proposal nobody can apply
-  is not worth a reviewer's time.
-- **Classes come from the Markdown, not the operations:** each written
-  document is compared before and after. Type schema documents and the
-  start-here document are **rules**, and so are `policy` entities and a
-  `decision` whose state or decision fields (`decision_state`,
-  `decided_on`, `decided_by`) change while it is, or becomes, `accepted`,
-  `rejected` or `superseded`. **Owner (2026-11-18, M2-Q7 in the
-  [M2 build plan](build-plan-m2.md#71-answers)):** the rest of such a
-  decision is not gated: an agent may edit the title, summary or body of
-  an accepted decision, or create a new decision that supersedes one,
-  without approval. Any change to a `person`
-  or `agent` entity is **people and agents**. A change of status, ID,
-  aliases, `replaced_by` or owner is **lifecycle**. Title, summary, body
-  and a new entity are **body and bookkeeping**. Facts are compared by
-  identity: when only a fact's check changes, it is a **recheck**;
-  otherwise the class of its fact state. A new `accepted`, and every
-  validation warning, makes it **doubtful**, with the warning as the
-  reason. Each gated finding has a reason the reviewer sees. **Fail
-  closed (M2-4b):** a document counts as a recheck only when nothing but
-  its fact checks changed; any other change these rules do not sort is at
-  least body and bookkeeping, so it never hides behind a recheck beside
-  it, and a proposal takes every class of every document it changes.
-- **Who applies it.** A person's own gated edit applies at once (any
-  member may approve). An agent's gated proposal waits for a person's
-  approval. **Owner (2026-11-18, M2-Q8):** as D-024 and O-46 say, a person
-  may approve their own agents' proposals only while the workspace has
-  one member; with more, another member approves (`own-agent`). Approval
-  applies the operations again to the latest revision, as the author: if
-  they now conflict or are blocked, the proposal stays waiting and the
-  approver is told why. One whose change is already in the catalog
-  (`unchanged`) also stays waiting; the approver rejects it.
-- **Accepting a discrepancy** (`accept-discrepancy`, [4.7](#47-discrepancies)).
-  `applyOperations`' `acceptedBy` is set only from a real person's
-  approval: the approving person's `person` entity, the one whose `member`
-  fact holds their handle. A person's own edit is their approval, so it
-  names their own entity and applies at once. An agent's proposal with
-  `accept-discrepancy` is **held for approval, not rejected**: it is
-  stored as pending in the doubtful class, and the person who approves it
-  is the one named. If the approver has no such entity, approval answers
-  `needs-approval` and the proposal keeps waiting. To check the rest of an
-  agent's proposal when it is made, the author's person (or another
-  member's) stands in; that trial text is never stored or applied.
-  Reason: accepting a discrepancy is a person's judgement; an agent or
-  another member cannot give it in their name.
-- **Limits.** The operation and fact limits of [8.1](#81-catalog-proposals),
-  an explanation of 4,000 characters and 256 KiB of JSON per proposal.
-  `applyOperations` checks each operation's shape. The catalog worker
-  stops a proposal after 20 seconds of its own work (the slowest proposal
-  within the limits, a 100-fact recheck of a 54 KB document, took about
-  8 s on a busy development host); reading the stored catalog first is
-  not counted ([architecture §5.3](architecture.md#53-how-sync-works)).
-- **A workspace's catalog** (**decided**, owner, 2026-11-19, M2-Q16) holds at most 20,000 documents, 50 MiB of text,
-  and 320 MiB as Shinan estimates the memory it takes to hold it and its
-  validation (text, facts, links, and every problem and suspected secret
-  validation finds count: `estimatedBytes`,
-  [architecture §5.3](architecture.md#53-how-sync-works)). A change that
-  takes it past any of these and grows it is refused (`catalog-full`, which
-  says which limit); one that does not grow it always applies. To make room:
-  shorten documents (`edit-body`), remove facts no longer needed
-  (`remove-fact`), and fix the warnings a stored catalog can hold, each of
-  which counts: suspected secrets, keys outside their type's schema, task
-  statuses written as facts, owners not linked to a current member, and
-  start-here steps to retired entities or entities with discrepancies
-  ([8.3](#83-validation)). Links count whether or not they resolve; one that
-  resolves nowhere is blocking, so a stored catalog holds none. Retiring an
-  entity keeps its text, so it does not make room. Raised from 5,000 documents and
-  25 MiB when validation became incremental
-  ([#116](https://github.com/guneet-xyz/shinan/issues/116), "Cost" in
-  [8.3](#83-validation)): at the new limits a one-field change took 0.1 to
-  2 s on a busy Daedalus, against 2 to 4.3 s at the old ones, and extending
-  the type of every document 0.1 to 1.3 s. An agent sends at most 60 proposals in
-  10 minutes, counted when Shinan starts on each. When the catalog workers
-  are busy or an agent is over its limit, the proposal is refused at once
-  as busy (HTTP 429 with `Retry-After`) and can be sent again. Reason: new
-  entities from agents apply on their own, so without these an agent
-  could fill a workspace with large documents.
-- **Retries.** A proposal may carry an idempotency key, kept per author;
-  the same key with the same content (in any key order) returns the stored
-  proposal, with other content it is refused.
-- **Text that cannot be stored.** A proposal, comment, rejection reason or
-  revert whose text holds a NUL character or an unpaired surrogate,
-  anywhere, is refused as invalid input (`text-characters`): PostgreSQL
-  stores neither.
-- **Withdrawal** is for the author: a person withdraws their own proposals
-  and their agents', an agent only its own. A reviewer rejects instead,
-  with a reason for the author.
-- **Records.** Each applied proposal is one `catalog.changed` event
-  credited to its author, with the approver in its data ([9](#9-history-and-purge));
-  waiting, rejected and withdrawn proposals have their own events. Event
-  summaries name catalog IDs, never a proposal's explanation or text,
-  which validation may have held as secret-looking. Catalog approvals
-  (including a person applying their own gated edit) and rejections are
-  recorded in the security log.
-- **A waiting proposal from an agent that has since been disabled**, or
-  whose member has left, can still be approved or rejected. Reason:
-  approval is a person's judgement of the change itself, which the review
-  screen shows with its author.
-
-**Decided (owner, 2026-11-19, M2-Q17; M2-4b, [#86](https://github.com/guneet-xyz/shinan/issues/86)):**
-the strict setting, bulk approval, recent changes and revert.
-
-- **The strict setting** is a workspace setting, off by default, that
-  workspace owners change after signing in again, recorded as an event and
-  in the security log. While it is on, every proposal that is more than a
-  recheck waits for catalog approval, with the reason "The workspace's
-  strict setting is on". A person's own edit still applies at once, as
-  their own approval (the rule above): strict holds agents' changes for a
-  person, and a person's edit already has one. Turning it off leaves
-  waiting proposals waiting; bulk approval clears them.
-- **Bulk approval** takes exactly what the person was shown: a list of
-  proposals, or one related task's waiting proposals up to the highest
-  proposal number they saw (`seenUpTo`), so one added later is left for its
-  own review. Oldest first, at most 50 at a time. Each is approved as on
-  its own, in its own turn: checked again against the latest revision,
-  applied and recorded separately. One that cannot apply (a conflict, the
-  own-agent rule, already decided) is reported with why, and the others
-  go on. When Shinan is busy, the results so far come back and the rest
-  are "not attempted", with when to send them again. **Bulk rejection**
-  takes the same selection and one reason, for example for the waiting
-  proposals of an agent that was disabled. Proposals that are read say
-  whether their author is still current, a disabled agent or a member who
-  left, so the reviewer can look harder.
-- **The recent-changes feed** lists applied proposals, one per revision,
-  newest first: by default those that applied without approval, which no
-  person has reviewed. Each says whether it can still be reverted (every
-  document it changed is still as it left it) and which proposal reverted
-  it, if one did.
-- **A revert is a new proposal**, made by one action and taking the same
-  path as any other: its turn, validation, approval classes (from the
-  Markdown, so reverting a body edit is bookkeeping and reverting a new
-  entity is lifecycle), the strict setting and the author's rate limit. A
-  retry with the same idempotency key is the same revert (the proposal it
-  reverts and the explanation), and gets the stored proposal back. It is
-  worked out in its turn, from the stored text read there, again on every
-  attempt, never from a copy read earlier. It
-  restores each document the reverted proposal changed to its text just
-  before that revision (`restore-document`), expecting the document to be
-  exactly as the proposal left it; if anything changed it since, the
-  revert conflicts and is not stored, and the change is reverted by hand. A
-  document the proposal created is retired instead, since documents are
-  never deleted; a proposal that created the start-here document cannot be
-  reverted. The earlier text is read from the stored revisions, so what
-  purge (M2-10) removes from them is never restored; M2-10 also purges a
-  revert proposal's stored operations, which hold that text. Reason: one
-  path for every change, and history stays whole (§9).
+**Kept:** a workspace's catalog is at most 20,000 documents and 50 MiB of
+text on `main` (owner, M2-Q16), checked on push
+([Git-based catalog plan §2.10](build-plan-git-catalog.md#210-limits)).
 
 ### 8.3 Validation
 
@@ -1638,45 +1323,13 @@ how the rules are applied.
   value is never taken for an accepted one. A document the change does not
   write is compared with its earlier, identical text, so even a document
   that no longer reads is never charged to others.
-- **Repairing a document that reads with problems.** **Decided
-  (owner, 2026-11-19, M2-Q17; [#133](https://github.com/guneet-xyz/shinan/issues/133)):**
-  - **The problem.** A stored document can hold something the parser no
-    longer reads, such as a reserved attribute name since parser version 4,
-    or an object-member key. The unreadable fact drops out of the parsed
-    model, so no operation can name it, and its blocking problem blocks
-    every later change to the document.
-  - **The repair.** A workspace owner, after re-authentication, replaces
-    the document's whole text, starting from the text at a revision they
-    read. Only a document whose stored text reads with problems may be
-    repaired (`not-needed` otherwise): anything else is changed with
-    ordinary operations. It is a catalog proposal with one `restore-document` operation,
-    the one a revert uses. It takes the same turn, conflict check (the
-    document must still be at that revision), validation and records.
-  - **Validation charges the document only with problems it did not
-    already have.** So a repair may fix some and leave the rest, while
-    anything it newly breaks, in that document or another, blocks it. A
-    near-certain secret is charged even when the document already held it,
-    since the repair writes the whole text again.
-  - **Nobody else's name in `by`** ([identity §8.7](identity.md#87-how-an-actor-is-written-in-text)):
-    a fact check credited to anyone but the repairing owner must be one the
-    earlier text had, field for field, covering only facts it covered
-    there. The owner may remove facts from it, or put facts under a fact
-    check naming themselves, which says they checked those facts
-    themselves; the repair page and the refusal say so. Reason: otherwise a
-    repair could make a fact look checked by another member or an agent.
-  - **Text PostgreSQL cannot store** (a NUL character, an unpaired
-    surrogate) in the text, explanation or idempotency key is refused as
-    input (`text-characters`), as everywhere.
-  - **Reverting a repair** puts back the earlier text, which read with
-    problems, and ordinary validation charges them, so the revert is
-    blocked while that text reads with problems.
-  - **It applies at once and is recorded as the owner's approval** in the
-    security log (`catalog-proposal.approved`, with `repair: true`),
-    whatever its approval classes.
-  - **Who:** agents and contributors can never repair; it is the
-    `catalog.repair` action (identity §5.1).
-  - Reason: parser versions keep tightening, and the trial's documents must
-    stay fixable without an operator editing the database.
+- **Repairing a document that reads with problems:** **removed** with
+  catalog proposals (GC-5, [D-060](decisions/D-060-no-catalog-approval.md)).
+  M2 let a workspace owner replace a stored document's whole text
+  (`restore-document`, `catalog.repair`); a document that reads with
+  problems is now fixed by a commit pushed to the catalog repository, which
+  Shinan checks like any other
+  ([Git-based catalog plan §2.5](build-plan-git-catalog.md#25-checks-on-push)).
 - **Type schema changes.** When a change to a type schema document adds a
   problem a schema can cause (an unknown or retired type, a key outside the
   schema, a list on a single-valued key, a relation to a type no longer
@@ -1798,31 +1451,11 @@ what each operation expects.
 
 ### 8.6 Who sees and reviews proposals
 
-- Pending catalog proposals are shown on the entities they touch and in a
-  review list; agents can read them through the agent index so they do not
-  duplicate one another. **Proposed.** Reason: agents working in parallel need
-  to see pending changes, as they see open pull requests today.
-- Members and agents can comment on a catalog proposal; only people approve.
-  An agent may be asked to review a proposal (for example by the skill, for
-  large or doubtful proposals) and records its findings as a comment.
-  **Proposed.** Reason: agent review is cheap and is how documents in this
-  repository are reviewed today; a comment informs the person without letting
-  an agent approve.
-- **Decided (owner, 2026-11-19, M2-Q17; M2-4b, [#86](https://github.com/guneet-xyz/shinan/issues/86)):**
-  how. Waiting proposals appear on each entity they touch, in the agent
-  index's `pending_proposals` ([12.4](#124-the-index-format)). Comments
-  are kept with the proposal, in any state, up to 4,000 characters each,
-  from members and from agents whose token has `catalog:propose`; they
-  are not edited, and purge (M2-10) can replace text in one. A comment may carry an
-  idempotency key, kept per author, so a retry is stored once; an agent
-  sends at most 60 comments in 10 minutes. Each comment is an event whose
-  summary does not repeat its text, since an agent's comment is outside
-  text (agent integrations, trust labels); MCP's
-  `comment_on_catalog_proposal` adds one, and `get_catalog_proposal` shows
-  them, each labelled by who wrote it. Comments are read a page at a time,
-  oldest first, with how many there are in all: 50 a page by default (at
-  most 200), 20 in `get_catalog_proposal`, so a proposal with many
-  comments is never read whole.
+**Removed** with catalog proposals ([8.1](#81-catalog-proposals); GC-5):
+waiting proposals on entities, the review list and comments on proposals.
+Agents working in parallel see each other's work as branches of the
+catalog repository
+([Git-based catalog plan §2.8](build-plan-git-catalog.md#28-branches)).
 
 ### 8.7 No edits outside Shinan
 

@@ -21,33 +21,15 @@ import { addMember } from "../../identity/members.js"
 import type { Person } from "../../identity/people.js"
 import { createWorkspace } from "../../identity/workspaces.js"
 import { storeCatalogRevision } from "../../testing.js"
-import type { CatalogOperation, CheckInput } from "../document/index.js"
 import { compareWorkspaceIndex } from "../index/indexer.js"
 import {
   getCatalogChanges,
   getCatalogEntity,
   searchCatalog,
 } from "../index/queries.js"
-import { CatalogWorkers, replaceCatalogWorkers } from "../proposals/pool.js"
-import type { Prepare, Turn } from "../proposals/pool.js"
-import {
-  getCatalogProposal,
-  proposeCatalogChange,
-  rejectCatalogProposal,
-} from "../proposals/proposals.js"
-import type {
-  CatalogProposal,
-  ProposalOutcome,
-} from "../proposals/proposals.js"
-import {
-  commentOnCatalogProposal,
-  listCatalogProposalComments,
-} from "../proposals/review.js"
-import {
-  editableOf,
-  getCatalogDocumentText,
-  listCatalogHistory,
-} from "../wiki.js"
+import { findCatalogDocument } from "../revisions.js"
+import type { RevisionActor } from "../revisions.js"
+import { getCatalogDocumentText, listCatalogHistory } from "../wiki.js"
 import { PurgeMatcher } from "./matcher.js"
 import {
   listCatalogPurges,
@@ -63,11 +45,6 @@ afterAll(async () => {
 })
 
 const today = new Date().toISOString().slice(0, 10)
-const check: CheckInput = {
-  checked: today,
-  scope: "A look at the machine",
-  source: "ssh musashi",
-}
 
 let owner: Person
 let contributor: Person
@@ -96,133 +73,298 @@ beforeEach(async () => {
   secret = `plum-otter-${randomBytes(4).toString("hex")}-lantern`
 })
 
-async function propose(
-  ctx: Context,
-  operations: CatalogOperation[],
-  explanation = "A test change.",
-): Promise<CatalogProposal> {
-  return stored(
-    await proposeCatalogChange(ctx, workspaceId, { explanation, operations }),
-  )
+// M2's catalog proposals and their comments are gone as operations, but
+// their rows stay in the database until GC-6 moves the catalog into Git, and
+// purge must still clean them; the tests store them directly.
+
+/** A stored M2 catalog proposal, as purge sees it. */
+interface StoredProposal {
+  id: string
+  number: number
 }
 
-function stored(outcome: ProposalOutcome): CatalogProposal {
-  if (!("proposal" in outcome))
-    throw new Error(`Not stored: ${JSON.stringify(outcome, null, 2)}`)
-  return outcome.proposal
+function actorOf(ctx: Context): RevisionActor {
+  if (ctx.actor.kind === "agent")
+    return {
+      kind: "agent",
+      personId: ctx.actor.personId,
+      agentId: ctx.actor.agentId,
+      agentSessionId: null,
+      label: `${owner.handle} via ${ctx.actor.agentHandle}`,
+      confidence: "recorded",
+    }
+  return {
+    kind: "person",
+    personId: owner.id,
+    agentId: null,
+    agentSessionId: null,
+    label: owner.handle,
+    confidence: "recorded",
+  }
 }
 
 /**
+ * Stores a catalog revision of these documents, by this actor: a new
+ * revision of a document already stored under the same ID.
+ */
+async function store(ctx: Context, texts: string[]): Promise<number> {
+  const documents = []
+  for (const text of texts) {
+    const id = /^id: (.+)$/m.exec(text)![1]!
+    const documentId = await db.transaction((tx) =>
+      findCatalogDocument(tx, workspaceId, id),
+    )
+    documents.push(documentId ? { documentId, text } : { text })
+  }
+  const applied = await storeCatalogRevision(
+    db,
+    workspaceId,
+    actorOf(ctx),
+    documents,
+  )
+  return applied.revision
+}
+
+/** Stores an M2 catalog proposal's row. */
+async function storeProposal(
+  ctx: Context,
+  input: {
+    explanation: string
+    operations: unknown[]
+    touches: string[]
+    state: "applied" | "pending" | "rejected"
+    basedOnRevision: number
+    appliedRevision?: number
+    rejectionReason?: string
+  },
+): Promise<StoredProposal> {
+  const actor = actorOf(ctx)
+  const [{ next }] = (
+    await db.execute<{ next: number }>(
+      sql`select coalesce(max(number), 0) + 1 as next from catalog_proposals where workspace_id = ${workspaceId}`,
+    )
+  ).rows as [{ next: number }]
+  const decided = input.state !== "pending"
+  const [row] = await db
+    .insert(schema.catalogProposals)
+    .values({
+      workspaceId,
+      number: next,
+      actorKind: actor.kind,
+      actorPersonId: actor.personId,
+      actorAgentId: actor.agentId,
+      actorLabel: actor.label,
+      confidence: actor.confidence,
+      explanation: input.explanation,
+      operations: input.operations,
+      basedOnRevision: input.basedOnRevision,
+      state: input.state,
+      approvalClasses: ["body-and-bookkeeping"],
+      approvalReasons: [],
+      touches: input.touches,
+      validation: [],
+      requestHash: randomBytes(8).toString("hex"),
+      appliedRevision: input.appliedRevision ?? null,
+      decidedAt: decided ? new Date() : null,
+      decidedByPersonId: decided ? owner.id : null,
+      decidedByLabel: decided ? owner.handle : null,
+      rejectionReason: input.rejectionReason ?? null,
+    })
+    .returning({ id: schema.catalogProposals.id })
+  return { id: row!.id, number: next }
+}
+
+/** Stores a comment on a proposal. */
+async function storeComment(
+  ctx: Context,
+  proposal: StoredProposal,
+  text: string,
+  idempotencyKey: string | null = null,
+): Promise<void> {
+  const actor = actorOf(ctx)
+  await db.insert(schema.catalogProposalComments).values({
+    workspaceId,
+    proposalId: proposal.id,
+    actorKind: actor.kind,
+    actorPersonId: actor.personId,
+    actorAgentId: actor.agentId,
+    actorLabel: actor.label,
+    confidence: actor.confidence,
+    text,
+    idempotencyKey,
+  })
+}
+
+/** A proposal's row as stored. */
+async function proposalRow(proposal: StoredProposal) {
+  const [row] = await db
+    .select()
+    .from(schema.catalogProposals)
+    .where(eq(schema.catalogProposals.id, proposal.id))
+  return row!
+}
+
+const ownerEntity = () => `---
+id: ${person}
+type: person
+title: Owner
+summary: Owns the workspace.
+status: active
+owner: ${person}
+facts:
+  - checked: ${today}
+    by: ${owner.handle}
+    scope: Membership
+    source: Shinan
+    observed:
+      member: ${owner.handle}
+---
+
+# Owner
+`
+
+const musashi = (access: string) => `---
+id: machine/musashi
+type: machine
+title: Musashi
+summary: The production host.
+status: active
+owner: ${person}
+facts:
+  - checked: ${today}
+    by: ${owner.handle}
+    scope: A look at the machine
+    source: ssh musashi
+    observed:
+      hostname: musashi
+---
+
+# Musashi
+
+The shared production host.
+
+## Access
+
+${access}
+`
+
+const daedalus = (summary: string, passphrase = secret) => `---
+id: machine/daedalus
+type: machine
+title: Daedalus
+summary: ${summary}
+status: active
+owner: ${person}
+facts:
+  - checked: ${today}
+    by: ${owner.handle} via opencode-daedalus
+    scope: A look at the machine
+    source: ssh musashi
+    observed:
+      hostname:
+        value: daedalus
+        note: Reached with ${passphrase}
+---
+
+# Daedalus
+
+Log in with ${passphrase} until it is rotated.
+`
+
+/**
  * The secret, planted wherever the catalog stores text: in Musashi's first
- * revision only, in Daedalus's latest text, in proposals (applied, waiting
- * and rejected: operations, explanations, a rejection reason), in a comment
- * on a proposal, and in a timeline event (the rejection's reason).
+ * revision only, in Daedalus's latest text, in M2 proposals (applied,
+ * waiting and rejected: operations, explanations, a rejection reason), in a
+ * comment on a proposal, and in a timeline event (the rejection's reason).
  */
 async function plant(): Promise<{
-  waiting: CatalogProposal
-  rejected: CatalogProposal
+  waiting: StoredProposal
+  rejected: StoredProposal
 }> {
-  await propose(asOwner, [
-    {
-      op: "create-entity",
-      id: person,
-      title: "Owner",
-      summary: "Owns the workspace.",
-      owner: person,
-      facts: [
-        {
-          fact: { key: "member", state: "observed", value: owner.handle },
-          check: { ...check, scope: "Membership", source: "Shinan" },
-        },
-      ],
-    },
-    {
-      op: "create-entity",
-      id: "machine/musashi",
-      title: "Musashi",
-      summary: "The production host.",
-      owner: person,
-      facts: [
-        {
-          fact: { key: "hostname", state: "observed", value: "musashi" },
-          check,
-        },
-      ],
-      body: `# Musashi\n\nThe shared production host.\n\n## Access\n\nThe console passphrase is ${secret} for now.\n`,
-    },
+  const first = await store(asOwner, [
+    ownerEntity(),
+    musashi(`The console passphrase is ${secret} for now.`),
   ])
-  await propose(
-    asOwnersAgent,
-    [
+  await storeProposal(asOwner, {
+    explanation: "A test change.",
+    operations: [
+      {
+        op: "create-entity",
+        id: "machine/musashi",
+        body: `# Musashi\n\nThe console passphrase is ${secret} for now.\n`,
+      },
+    ],
+    touches: [person, "machine/musashi"],
+    state: "applied",
+    basedOnRevision: 0,
+    appliedRevision: first,
+  })
+  const second = await store(asOwnersAgent, [
+    musashi("Ask the owner for console access."),
+  ])
+  await storeProposal(asOwnersAgent, {
+    explanation: `Took ${secret} out of the page.`,
+    operations: [
       {
         op: "edit-body",
         document: "machine/musashi",
-        section: "access",
-        text: "## Access\n\nAsk the owner for console access.\n",
         expect: {
           text: `## Access\n\nThe console passphrase is ${secret} for now.\n`,
         },
       },
     ],
-    `Took ${secret} out of the page.`,
-  )
-  await propose(asOwnersAgent, [
-    {
-      op: "create-entity",
-      id: "machine/daedalus",
-      title: "Daedalus",
-      summary: `The build host; its old passphrase was ${secret}.`,
-      owner: person,
-      facts: [
-        {
-          fact: {
-            key: "hostname",
-            state: "observed",
-            value: "daedalus",
-            note: `Reached with ${secret}`,
-          },
-          check,
-        },
-      ],
-      body: `# Daedalus\n\nLog in with ${secret} until it is rotated.\n`,
-    },
+    touches: ["machine/musashi"],
+    state: "applied",
+    basedOnRevision: first,
+    appliedRevision: second,
+  })
+  const third = await store(asOwnersAgent, [
+    daedalus(`The build host; its old passphrase was ${secret}.`),
   ])
-  const waiting = await propose(
-    asOwnersAgent,
-    [
-      {
-        op: "set-field",
-        document: "machine/daedalus",
-        field: "status",
-        value: "deprecated",
-        expect: { value: "active" },
-      },
+  await storeProposal(asOwnersAgent, {
+    explanation: "A test change.",
+    operations: [
+      { op: "create-entity", id: "machine/daedalus", summary: secret },
     ],
-    `Daedalus is going away; ${secret} goes with it.`,
-  )
-  expect(waiting.state).toBe("pending")
-  const rejected = await propose(
+    touches: ["machine/daedalus"],
+    state: "applied",
+    basedOnRevision: second,
+    appliedRevision: third,
+  })
+  const waiting = await storeProposal(asOwnersAgent, {
+    explanation: `Daedalus is going away; ${secret} goes with it.`,
+    operations: [{ op: "set-field", document: "machine/daedalus" }],
+    touches: ["machine/daedalus"],
+    state: "pending",
+    basedOnRevision: third,
+  })
+  const reason = `Not before ${secret} is rotated.`
+  const rejected = await storeProposal(asOwnersAgent, {
+    explanation: "Musashi is going away.",
+    operations: [{ op: "set-field", document: "machine/musashi" }],
+    touches: ["machine/musashi"],
+    state: "rejected",
+    basedOnRevision: third,
+    rejectionReason: reason,
+  })
+  await db.insert(schema.events).values({
+    workspaceId,
+    kind: "catalog.proposal-rejected",
+    origin: "shinan_action",
+    actorKind: "person",
+    actorPersonId: owner.id,
+    actorLabel: owner.handle,
+    confidence: "recorded",
+    subjects: [{ type: "catalog-proposal", id: rejected.id }],
+    summary: `${owner.handle} rejected catalog proposal ${rejected.number}`,
+    data: { proposalId: rejected.id, reason },
+  })
+  await storeComment(
     asOwnersAgent,
-    [
-      {
-        op: "set-field",
-        document: "machine/musashi",
-        field: "status",
-        value: "deprecated",
-        expect: { value: "active" },
-      },
-    ],
-    "Musashi is going away.",
+    waiting,
+    `The old passphrase ${secret}\nstill works.`,
+    "comment-1",
   )
-  await rejectCatalogProposal(asOwner, workspaceId, {
-    proposalId: rejected.id,
-    reason: `Not before ${secret} is rotated.`,
-  })
-  await commentOnCatalogProposal(asOwnersAgent, workspaceId, {
-    proposalId: waiting.id,
-    text: `The old passphrase ${secret}\nstill works.`,
-    idempotencyKey: "comment-1",
-  })
   return { waiting, rejected }
 }
 
@@ -253,8 +395,7 @@ async function securityLog() {
     .orderBy(asc(schema.securityLog.id))
 }
 
-// Each test applies proposals in catalog worker threads, which start slowly
-// on a busy machine.
+// Each test stores and indexes several revisions, slowly on a busy machine.
 describe("purging catalog text", { timeout: 60_000 }, () => {
   it("removes a leaked secret from everything the database stores, keeping the security log", async () => {
     const { waiting, rejected } = await plant()
@@ -365,10 +506,10 @@ describe("purging catalog text", { timeout: 60_000 }, () => {
     expect(first.text).toContain(
       `The console passphrase is ${purgeMarker} for now.`,
     )
-    const daedalus = await getCatalogEntity(asOwner, workspaceId, {
+    const entity = await getCatalogEntity(asOwner, workspaceId, {
       id: "machine/daedalus",
     })
-    expect(daedalus).toMatchObject({
+    expect(entity).toMatchObject({
       catalog_revision: 4,
       entity: {
         summary: `The build host; its old passphrase was ${purgeMarker}.`,
@@ -393,30 +534,24 @@ describe("purging catalog text", { timeout: 60_000 }, () => {
     expect(found.items).toEqual([])
 
     // Proposals keep their shape; the waiting one was rejected.
-    expect(
-      await getCatalogProposal(asOwner, workspaceId, waiting.id),
-    ).toMatchObject({
+    expect(await proposalRow(waiting)).toMatchObject({
       state: "rejected",
       explanation: `Daedalus is going away; ${purgeMarker} goes with it.`,
       rejectionReason: `Rejected by purge 1: it held text a workspace owner purged`,
-      decidedBy: owner.handle,
-    })
-    const [comment] = await listCatalogProposalComments(
-      asOwner,
-      workspaceId,
-      waiting.id,
-    ).then((page) => page.items)
-    expect(comment).toMatchObject({
-      text: `The old passphrase ${purgeMarker}\nstill works.`,
+      decidedByLabel: owner.handle,
     })
     const [stored] = await db
-      .select({ key: schema.catalogProposalComments.idempotencyKey })
+      .select({
+        text: schema.catalogProposalComments.text,
+        key: schema.catalogProposalComments.idempotencyKey,
+      })
       .from(schema.catalogProposalComments)
       .where(eq(schema.catalogProposalComments.proposalId, waiting.id))
-    expect(stored!.key).toBeNull()
-    expect(
-      await getCatalogProposal(asOwner, workspaceId, rejected.id),
-    ).toMatchObject({
+    expect(stored).toEqual({
+      text: `The old passphrase ${purgeMarker}\nstill works.`,
+      key: null,
+    })
+    expect(await proposalRow(rejected)).toMatchObject({
       state: "rejected",
       rejectionReason: `Not before ${purgeMarker} is rotated.`,
     })
@@ -428,18 +563,11 @@ describe("purging catalog text", { timeout: 60_000 }, () => {
         isolationLevel: "repeatable read",
       })
     expect((await compare()).differences).toEqual([])
-    const after = await propose(asOwnersAgent, [
-      {
-        op: "set-field",
-        document: "machine/daedalus",
-        field: "summary",
-        value: "The build host.",
-        expect: {
-          value: `The build host; its old passphrase was ${purgeMarker}.`,
-        },
-      },
+    // A later revision on top of the purged text.
+    const after = await store(asOwnersAgent, [
+      daedalus("The build host.", purgeMarker),
     ])
-    expect(after).toMatchObject({ state: "applied", appliedRevision: 5 })
+    expect(after).toBe(5)
     expect((await compare()).differences).toEqual([])
     expect(await tablesHolding(secret)).toEqual([])
 
@@ -448,26 +576,6 @@ describe("purging catalog text", { timeout: 60_000 }, () => {
     expect(await listCatalogPurges(asContributor, workspaceId)).toEqual([
       listed,
     ])
-  })
-
-  it("forgets the editable forms this process read, so none holds the text", async () => {
-    await plant()
-    const text = `---
-id: machine/x
-type: machine
-title: X
-summary: Holds ${secret}.
-status: active
-owner: person/${owner.handle}
----
-`
-    const read = editableOf(text)
-    expect(editableOf(text)).toBe(read)
-    await purgeCatalogText(asOwner, workspaceId, {
-      text: secret,
-      reason: "A passphrase was written into the catalog.",
-    })
-    expect(editableOf(text)).not.toBe(read)
   })
 
   it("is only for workspace owners who signed in again recently, never agents", async () => {
@@ -575,35 +683,28 @@ owner: person/${owner.handle}
   it("matches any run of whitespace, so wrapped text and split secrets go too", async () => {
     const address = "Jane Q Example, 12 Baker Street, Springfield"
     const split = secret.replace("-lantern", "-\nlantern")
-    await propose(asOwner, [
-      {
-        op: "create-entity",
-        id: person,
-        title: "Owner",
-        summary: "Owns the workspace.",
-        owner: person,
-        facts: [
-          {
-            fact: { key: "member", state: "observed", value: owner.handle },
-            check: { ...check, scope: "Membership", source: "Shinan" },
-          },
-        ],
-      },
+    const body = `# Daedalus\n\nAsk Jane Q Example, 12 Baker\nStreet, Springfield for the key.\n\n    Indented:  Jane Q\r\n  Example, 12   Baker Street,\tSpringfield\n\nThe passphrase is ${split} for now.\n`
+    const first = await store(asOwner, [ownerEntity()])
+    const second = await store(asOwnersAgent, [
+      `---
+id: machine/daedalus
+type: machine
+title: Daedalus
+summary: Contact ${address}.
+status: active
+owner: ${person}
+---
+
+${body}`,
     ])
-    await propose(
-      asOwnersAgent,
-      [
-        {
-          op: "create-entity",
-          id: "machine/daedalus",
-          title: "Daedalus",
-          summary: `Contact ${address}.`,
-          owner: person,
-          body: `# Daedalus\n\nAsk Jane Q Example, 12 Baker\nStreet, Springfield for the key.\n\n    Indented:  Jane Q\r\n  Example, 12   Baker Street,\tSpringfield\n\nThe passphrase is ${split} for now.\n`,
-        },
-      ],
-      `Contact ${address.replaceAll(" ", "  ")}.`,
-    )
+    await storeProposal(asOwnersAgent, {
+      explanation: `Contact ${address.replaceAll(" ", "  ")}.`,
+      operations: [{ op: "create-entity", id: "machine/daedalus", body }],
+      touches: ["machine/daedalus"],
+      state: "applied",
+      basedOnRevision: first,
+      appliedRevision: second,
+    })
     const words = ["Baker", "Springfield", "Jane Q"]
     const preview = await previewCatalogPurge(asOwner, workspaceId, {
       text: "Jane Q Example,\n12 Baker Street, Springfield",
@@ -637,11 +738,12 @@ owner: person/${owner.handle}
 
   it("purges a comment's idempotency key that holds the text", async () => {
     const { waiting } = await plant()
-    await commentOnCatalogProposal(asOwnersAgent, workspaceId, {
-      proposalId: waiting.id,
-      text: "Looks fine to me.",
-      idempotencyKey: `review-${secret}`,
-    })
+    await storeComment(
+      asOwnersAgent,
+      waiting,
+      "Looks fine to me.",
+      `review-${secret}`,
+    )
     expect(
       await previewCatalogPurge(asOwner, workspaceId, { text: secret }),
     ).toMatchObject({ comments: 2 })
@@ -843,61 +945,6 @@ owner: person/${owner.handle}
       { isolationLevel: "repeatable read" },
     )
     expect(compared).toMatchObject({ documents: 2, differences: [] })
-  })
-
-  it("makes a proposal worked out before a purge be worked out again, even when no latest text changed", async () => {
-    await plant()
-    // Musashi's latest text no longer holds it; only its first revision does.
-    const text = "The console passphrase is"
-    let purged = false
-    let prepared = 0
-    class Racing extends CatalogWorkers {
-      override run<T>(
-        workspace: string,
-        work: (prepare: Prepare, turn: Turn) => Promise<T>,
-      ): Promise<T> {
-        return super.run(workspace, (prepare, turn) =>
-          work(async (...args) => {
-            const result = await prepare(...args)
-            prepared++
-            if (!purged) {
-              purged = true
-              await purgeCatalogText(asOwner, workspaceId, {
-                text,
-                reason: "Old wording.",
-              })
-            }
-            return result
-          }, turn),
-        )
-      }
-    }
-    const workers = new Racing()
-    const previous = replaceCatalogWorkers(workers)
-    try {
-      const proposal = await propose(asOwnersAgent, [
-        {
-          op: "recheck-facts",
-          document: "machine/musashi",
-          facts: [
-            {
-              identity: "hostname|observed",
-              value: "musashi",
-              check: { checked: today },
-            },
-          ],
-          check: { ...check, scope: "Recheck of hostname" },
-        },
-      ])
-      expect(proposal).toMatchObject({ state: "applied", basedOnRevision: 3 })
-    } finally {
-      replaceCatalogWorkers(previous!)
-      await workers.close()
-    }
-    expect(prepared).toBe(2)
-    expect(await listCatalogPurges(asOwner, workspaceId)).toMatchObject([
-      { number: 1, revision: null, counts: { latestDocuments: 0 } },
-    ])
   })
 })
 

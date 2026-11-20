@@ -1,5 +1,5 @@
 import { Hono } from "hono"
-import type { Context as HonoContext, MiddlewareHandler } from "hono"
+import type { Context as HonoContext } from "hono"
 import { bodyLimit } from "hono/body-limit"
 
 import type * as Api from "@shinan/api-client"
@@ -49,7 +49,6 @@ import {
   revokeAgentToken,
   shinan,
   startSetup,
-  throttleAddress,
   withdrawInvitation,
 } from "@shinan/core"
 import type {
@@ -71,25 +70,10 @@ import type { Database } from "@shinan/db"
 
 import { clientAddress, noTrustedProxies } from "../client-address.js"
 import type { TrustedProxies } from "../client-address.js"
-import { limitInFlight } from "../in-flight.js"
 import { rateLimited, sameOriginOnly } from "../security.js"
 import { isSafeReturnPath } from "../sign-in/paths.js"
 import { requireAgent } from "./agent-auth.js"
 import type { AgentEnv } from "./agent-auth.js"
-import {
-  catalogProposalRoutes,
-  isProposalPath,
-  lengthRequired,
-  proposalBodyLimit,
-  proposalInFlight,
-  tooManyInFlight,
-} from "./catalog-proposals.js"
-import {
-  catalogRepairRoutes,
-  isRepairPath,
-  repairBodyLimit,
-} from "./catalog-repair.js"
-import { catalogReviewRoutes } from "./catalog-review.js"
 import { catalogRoutes } from "./catalog.js"
 import { BadRequestError, errorHandler, errorResponse } from "./errors.js"
 import { appendHeaders, requirePerson } from "./sign-in.js"
@@ -228,46 +212,7 @@ export function createApi({
     limit("/invitations/decline", "invitation-token")
     limit("/account/email-change/confirm", "sign-in-link-open")
   }
-  // A repair carries a whole catalog document (catalog §8.3).
-  const limitRepairBody = bodyLimit({
-    maxSize: repairBodyLimit,
-    onError: (c) =>
-      errorResponse(c, 413, {
-        error: "payload-too-large",
-        message: "The request is too large",
-      }),
-  })
-  // Catalog proposals may carry a whole document (catalog §8.1).
-  const limitProposalBody = bodyLimit({
-    maxSize: proposalBodyLimit,
-    onError: (c) =>
-      errorResponse(c, 413, {
-        error: "payload-too-large",
-        message: "The request is too large",
-      }),
-  })
-  // Per address, for the routes that take large bodies, before any is read.
-  const proposalsPerAddress = limitInFlight({
-    max: proposalInFlight.perAddress,
-    // An IPv6 address by its /64, as the rate limits count it.
-    key: (c) => throttleAddress(requestInfo(c).networkAddress),
-    refuse: tooManyInFlight,
-  })
-  // The repair route takes a whole document too, so it gets the same
-  // 411 and the same cap per address as the proposal routes.
-  const limitRequestBody: MiddlewareHandler = async (c, next) => {
-    const repair = isRepairPath(c.req.path)
-    if (!repair && !isProposalPath(c.req.path)) return limitBody(c, next)
-    const undeclared = lengthRequired(c)
-    if (undeclared) return undeclared
-    const limitLarge = repair ? limitRepairBody : limitProposalBody
-    return proposalsPerAddress(c, async () => {
-      // The body limit answers 413 by returning it.
-      const refused = await limitLarge(c, next)
-      if (refused instanceof Response && refused !== c.res) c.res = refused
-    })
-  }
-  api.use("*", limitRequestBody)
+  api.use("*", limitBody)
 
   // Public: the sign-in and invitation pages show the installation's name
   // before sign-in (identity §5.2).
@@ -698,9 +643,6 @@ export function createApi({
   )
 
   catalogRoutes(signedIn, ctx)
-  catalogReviewRoutes(signedIn, ctx)
-  catalogRepairRoutes(signedIn, ctx)
-  catalogProposalRoutes(signedIn, ctx)
 
   api.route("/", signedIn)
   api.all("*", (c) =>

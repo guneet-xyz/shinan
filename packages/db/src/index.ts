@@ -142,10 +142,14 @@ export type Database = ReturnType<typeof createDatabase>["db"]
 export type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0]
 
 /** Applies all pending migrations from this package's migrations folder. */
-export async function migrateDatabase(databaseUrl: string): Promise<void> {
+export async function migrateDatabase(
+  databaseUrl: string,
+  /** Another migrations folder, for tests of a migration on data. */
+  folder: string = migrationsFolder,
+): Promise<void> {
   const { db, pool } = createDatabase(databaseUrl)
   try {
-    await migrate(db, { migrationsFolder })
+    await migrate(db, { migrationsFolder: folder })
   } finally {
     await pool.end()
   }

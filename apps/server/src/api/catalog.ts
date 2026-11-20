@@ -3,22 +3,18 @@ import type { Hono, Context as HonoContext } from "hono"
 import type * as Api from "@shinan/api-client"
 import {
   catalogLists,
-  getAgentStartHerePreview,
   getCatalogChanges,
   getCatalogDocumentText,
-  getCatalogEditable,
   getCatalogEntity,
   getCatalogList,
   getCatalogStartHere,
   getCatalogTypeSchema,
   listCatalogHistory,
-  listCatalogPagesOpened,
   listCatalogPurges,
   listCatalogTypeIndex,
   listCatalogTypeSchemas,
   previewCatalogPurge,
   purgeCatalogText,
-  recordCatalogPageOpened,
   searchCatalog,
 } from "@shinan/core"
 import type {
@@ -33,8 +29,7 @@ import type { SignedInEnv } from "./sign-in.js"
 
 /**
  * The catalog for the wiki (human experience, the wiki; build plan M2-7):
- * the agent index's queries, a page's history and earlier text, and the
- * person's own "opened" records. Every answer is core's, in the agent
+ * the agent index's queries, and a page's history and earlier text. Every answer is core's, in the agent
  * index's JSON format; handlers only read the request.
  */
 export function catalogRoutes(
@@ -143,21 +138,6 @@ export function catalogRoutes(
     return c.json(answer)
   })
 
-  app.get(`${base}/start-here/agent-preview`, async (c) => {
-    const answer: Api.AgentStartHerePreviewAnswer =
-      await getAgentStartHerePreview(ctx(c), workspaceId(c))
-    return c.json(answer)
-  })
-
-  app.get(`${base}/editable`, async (c) => {
-    const answer: Api.CatalogEditableAnswer = await getCatalogEditable(
-      ctx(c),
-      workspaceId(c),
-      { id: requiredQuery(c, "id") },
-    )
-    return c.json(answer)
-  })
-
   app.get(`${base}/history`, async (c) => {
     const before = integerQuery(c, "before")
     const limit = integerQuery(c, "limit")
@@ -184,26 +164,6 @@ export function catalogRoutes(
       },
     )
     return c.json(answer)
-  })
-
-  app.get(`${base}/opened`, async (c) => {
-    const answer: { items: Api.CatalogPageOpened[] } =
-      await listCatalogPagesOpened(ctx(c), workspaceId(c), {
-        ids: c.req.queries("id") ?? [],
-      })
-    return c.json(answer)
-  })
-
-  app.post(`${base}/opened`, async (c) => {
-    const body = (await c.req.json().catch(() => null)) as unknown
-    const id =
-      typeof body === "object" && body !== null && "id" in body
-        ? body.id
-        : undefined
-    if (typeof id !== "string")
-      throw new BadRequestError('"id" must be a string')
-    await recordCatalogPageOpened(ctx(c), workspaceId(c), { id })
-    return c.body(null, 204)
   })
 
   // Catalog purge (catalog §9; M2-10): the text comes in the body, never in

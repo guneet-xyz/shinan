@@ -88,39 +88,6 @@ export const rateLimits = {
     windowSeconds: 3600,
     record: { action: "request.throttled" },
   },
-  /**
-   * Catalog proposals by one agent, counted by the agent (catalog §8.2,
-   * **proposed**, M2-4): with the workspace's catalog size limit, an agent
-   * cannot flood a workspace with large entities that apply on their own.
-   * Well above real use: one proposal holds up to 50 operations.
-   */
-  "catalog-proposal": {
-    max: 60,
-    windowSeconds: 600,
-    record: { action: "request.throttled" },
-  },
-  /**
-   * Comments on catalog proposals by one agent, counted by the agent
-   * (**proposed**, M2-4b): an agent asked to review proposals comments a
-   * few times an hour; this stops one from filling the review screens.
-   */
-  "catalog-comment": {
-    max: 60,
-    windowSeconds: 600,
-    record: { action: "request.throttled" },
-  },
-  /**
-   * "Check the change" by one person, counted by the person (human
-   * experience, changing the catalog from the wiki; **proposed**, M2-8): a
-   * check takes a catalog worker's turn like a proposal but leaves no
-   * proposal behind. 120 in 10 minutes is a check every 5 seconds, far
-   * above editing by hand. An agent's checks count as its proposals.
-   */
-  "catalog-check": {
-    max: 120,
-    windowSeconds: 600,
-    record: { action: "request.throttled" },
-  },
 } as const satisfies Record<string, RateLimit>
 
 export type RateLimitName = keyof typeof rateLimits

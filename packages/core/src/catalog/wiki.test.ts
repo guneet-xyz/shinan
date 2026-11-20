@@ -1,13 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 
 import * as fixtures from "../../test/catalog-index-fixtures.js"
-import {
-  asAgent,
-  asPerson,
-  newPerson,
-  testDatabase,
-} from "../../test/helpers.js"
-import { ForbiddenError, NotFoundError } from "../errors.js"
+import { asPerson, newPerson, testDatabase } from "../../test/helpers.js"
+import { NotFoundError } from "../errors.js"
 import { addMember } from "../identity/members.js"
 import type { Person } from "../identity/people.js"
 import { createWorkspace } from "../identity/workspaces.js"
@@ -16,9 +11,7 @@ import type { RevisionActor, RevisionDocument } from "./revisions.js"
 import {
   getCatalogDocumentText,
   listCatalogHistory,
-  listCatalogPagesOpened,
   listCatalogTypeIndex,
-  recordCatalogPageOpened,
 } from "./wiki.js"
 
 const { db, pool } = testDatabase()
@@ -185,71 +178,5 @@ describe("the index per entity type", () => {
     })
     expect(retired).toBe(false)
     expect(all.items.length).toBeGreaterThanOrEqual(index.items.length)
-  })
-})
-
-describe("the start-here markers", () => {
-  it("records what each person opened, and shows what changed since", async () => {
-    const ids = ["machine/musashi", "project/dockyard", "machine/nowhere"]
-    const before = await listCatalogPagesOpened(
-      asPerson(db, owner),
-      workspaceId,
-      { ids },
-    )
-    expect(before.items).toEqual([
-      expect.objectContaining({
-        id: "machine/musashi",
-        revision: 2,
-        opened_revision: null,
-      }),
-      expect.objectContaining({
-        id: "project/dockyard",
-        revision: 1,
-        opened_revision: null,
-      }),
-    ])
-    await recordCatalogPageOpened(asPerson(db, owner), workspaceId, {
-      id: "machine/musashi",
-    })
-    const after = await listCatalogPagesOpened(
-      asPerson(db, owner),
-      workspaceId,
-      { ids },
-    )
-    expect(after.items[0]).toMatchObject({ revision: 2, opened_revision: 2 })
-    // Records are each person's own.
-    const theirs = await listCatalogPagesOpened(
-      asPerson(db, contributor),
-      workspaceId,
-      { ids },
-    )
-    expect(theirs.items[0]).toMatchObject({ opened_revision: null })
-
-    // A change after opening shows as changed.
-    await apply([
-      {
-        documentId: await documentId("machine/musashi"),
-        text: fixtures.musashi,
-      },
-    ])
-    const changed = await listCatalogPagesOpened(
-      asPerson(db, owner),
-      workspaceId,
-      { ids: ["machine/musashi"] },
-    )
-    expect(changed.items[0]).toMatchObject({ revision: 3, opened_revision: 2 })
-  })
-
-  it("is for people: agents cannot record or read them", async () => {
-    const agent = await asAgent(db, owner, workspaceId, [
-      "catalog:read",
-      "catalog:propose",
-    ])
-    await expect(
-      recordCatalogPageOpened(agent, workspaceId, { id: "machine/musashi" }),
-    ).rejects.toBeInstanceOf(ForbiddenError)
-    await expect(
-      listCatalogPagesOpened(agent, workspaceId, { ids: ["machine/musashi"] }),
-    ).rejects.toBeInstanceOf(ForbiddenError)
   })
 })

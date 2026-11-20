@@ -104,8 +104,6 @@ services:
       SHINAN_URL: ${SHINAN_URL:?Set SHINAN_URL in .env to the installation's https address}
       SHINAN_OPERATORS: ${SHINAN_OPERATORS:?Set SHINAN_OPERATORS in .env to the operators' email addresses}
       SHINAN_TRUSTED_PROXIES: ${SHINAN_TRUSTED_PROXIES:-}
-      SHINAN_CATALOG_WORKERS: ${SHINAN_CATALOG_WORKERS:-1}
-      SHINAN_CATALOG_WORKER_HEAP_MB: ${SHINAN_CATALOG_WORKER_HEAP_MB:-768}
       DATABASE_URL_FILE: /run/secrets/database_url
       SHINAN_SESSION_SECRET_FILE: /run/secrets/session_secret
     secrets:
@@ -118,8 +116,8 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
-    # The web process, and its catalog worker thread with a heap of up to
-    # SHINAN_CATALOG_WORKER_HEAP_MB (768 MiB by default; operator guide).
+    # M2's 1,536 MiB, kept until the Git-based catalog's push checks are
+    # measured (Git-based catalog plan, GC-11; operator guide).
     mem_limit: ${SHINAN_WEB_MEMORY:-1536m}
     stop_grace_period: 30s
     networks:
