@@ -1196,39 +1196,37 @@ describe("rebuilds, catch-up and the round-trip check", () => {
     expect(fixed).toMatchObject({ outcome: "matched" })
   })
 
-  it("checks every workspace, whatever one of them fails with", async () => {
+  it("checks every workspace after one that fails", async () => {
     await push(filesOf([fixtures.musashi]))
     await repositoryMade()
-    const first = workspaceId
+    const one = workspaceId
     const other = await createWorkspace(asPerson(db, owner), { name: "Two" })
     workspaceId = other.workspace.id
     git.create(workspaceId, filesOf([fixtures.daedalus]))
     await updateWorkspaceIndex(db, git, workspaceId)
     await repositoryMade()
-    // The Git container fails for the first workspace only.
+    // Workspaces are checked in the order of their IDs: the Git container
+    // fails for the first, so the second is checked only if the check goes
+    // on after a failure.
+    const [failed, checked] = [one, workspaceId].sort()
     const failing = {
       ...git,
       getRepository: (id: string) =>
-        id === first
+        id === failed
           ? Promise.reject(new GitServiceError(500, "failed", "down"))
           : git.getRepository(id),
     }
     const checks = await checkCatalogIndexes(asShinan(db), failing, {
-      workspaceIds: [first, workspaceId],
+      workspaceIds: [checked!, failed!],
     })
-    // In the order of their IDs, whichever fails.
-    expect(checks.find((c) => c.workspaceId === first)).toMatchObject({
-      outcome: "failed",
-      reason: "git-unavailable",
-    })
-    expect(checks.find((c) => c.workspaceId === workspaceId)).toMatchObject({
-      outcome: "matched",
-    })
-    expect(checks).toHaveLength(2)
+    expect(checks).toMatchObject([
+      { workspaceId: failed, outcome: "failed", reason: "git-unavailable" },
+      { workspaceId: checked, outcome: "matched" },
+    ])
     const [state] = await db
       .select()
       .from(schema.catalogIndexState)
-      .where(eq(schema.catalogIndexState.workspaceId, first))
+      .where(eq(schema.catalogIndexState.workspaceId, failed!))
     expect(state).toMatchObject({ failure: "git-unavailable" })
   })
 
