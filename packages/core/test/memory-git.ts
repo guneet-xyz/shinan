@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto"
 
+import { refuseDuringTransactions } from "@shinan/db"
+
 import type {
   CommitRef,
   DocumentRead,
@@ -14,8 +16,10 @@ import type { GitClient } from "../src/catalog/git/client.js"
  * what reads `main` through `GitClient` (the index). Object IDs are real
  * Git blob IDs for files, so the same text always has the same ID; commit
  * IDs are made up but unique. Errors are the Git container's: an unknown
- * repository or commit is `404 not-found`. The real API is exercised
- * against real Git in `apps/server`.
+ * repository or commit is `404 not-found`. Like the real client in tests,
+ * it refuses to be called while a database transaction is open
+ * (`refuseDuringTransactions`). The real API is exercised against real Git
+ * in `apps/server`.
  */
 export interface MemoryGit extends GitClient {
   /** Makes the workspace's repository with one commit holding `files`. */
@@ -112,7 +116,7 @@ export function createMemoryGit(): MemoryGit {
     return id
   }
 
-  return {
+  const client: MemoryGit = {
     calls,
     create(workspaceId, files = { "README.md": "# Catalog\n" }) {
       const r: Repository = { main: "", commits: new Map() }
@@ -170,9 +174,19 @@ export function createMemoryGit(): MemoryGit {
     readDocuments: (workspaceId, input) =>
       later(() => {
         const { id, files } = tree(workspaceId, input.commit)
+        // As the Git container: a name with a control character refuses
+        // the whole request; a name that was not UTF-8 reaches Shinan with
+        // U+FFFD in it, and so names no file.
+        // eslint-disable-next-line no-control-regex -- control characters are what it looks for
+        if (input.paths.some((p) => /[\u0000-\u001f\u007f]/.test(p)))
+          throw new GitServiceError(
+            400,
+            "invalid-request",
+            "Not a path in a repository",
+          )
         calls.pathsRead.push(...input.paths)
         const documents: DocumentRead[] = input.paths.map((path) => {
-          const f = files.get(path)
+          const f = path.includes("\uFFFD") ? undefined : files.get(path)
           if (!f) return { path, missing: true }
           const content = blobs.get(f.oid)!
           if (content.length > 1024 * 1024)
@@ -217,4 +231,5 @@ export function createMemoryGit(): MemoryGit {
     readJournal: notHere,
     acknowledgeJournal: notHere,
   }
+  return refuseDuringTransactions(client, "git")
 }

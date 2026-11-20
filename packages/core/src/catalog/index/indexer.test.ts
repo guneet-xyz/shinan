@@ -269,6 +269,57 @@ describe("indexing main", () => {
     expect((await compareWithMain()).differences).toEqual([])
   })
 
+  it.each([
+    ["a newline", "machine/new\nline.md"],
+    ["bytes that are not UTF-8", "machine/caf\uFFFD.md"],
+  ])(
+    "records a file whose name holds %s as unreadable, never stopping",
+    async (_, name) => {
+      const indexed = async () =>
+        (
+          await db
+            .select({
+              path: schema.catalogIndexDocuments.path,
+              problems: schema.catalogIndexDocuments.problems,
+            })
+            .from(schema.catalogIndexDocuments)
+            .where(eq(schema.catalogIndexDocuments.workspaceId, workspaceId))
+            .orderBy(asc(schema.catalogIndexDocuments.path))
+        ).map((r) => [r.path, r.problems.map((p) => p.code)])
+      // Added by an update of `main`: a rebuild lists it once.
+      await push(filesOf([fixtures.guneet]))
+      git.calls.pathsRead.length = 0
+      expect(await push({ [name]: fixtures.daedalus })).toMatchObject({
+        outcome: "rebuilt",
+      })
+      expect(await indexed()).toEqual([
+        [name, ["unreadable-path"]],
+        ["person/guneet.md", []],
+      ])
+      expect(git.calls.pathsRead).not.toContain(name)
+      // Other documents still update from the diff.
+      expect(await push(filesOf([fixtures.musashi]))).toMatchObject({
+        outcome: "updated",
+        documents: 1,
+      })
+      // The daily check and a rebuild agree.
+      await repositoryMade()
+      const [checked] = await checkCatalogIndexes(asShinan(db), git, {
+        workspaceIds: [workspaceId],
+      })
+      expect(checked).toMatchObject({ outcome: "matched", differenceCount: 0 })
+      await rebuildCatalogIndex(asShinan(db), { workspaceId }, git)
+      expect((await compareWithMain()).differences).toEqual([])
+      // Renamed to its ID plus `.md`, it reads.
+      await push({ [name]: null, "machine/daedalus.md": fixtures.daedalus })
+      expect(await indexed()).toEqual([
+        ["machine/daedalus.md", []],
+        ["machine/musashi.md", []],
+        ["person/guneet.md", []],
+      ])
+    },
+  )
+
   it("gives the same rows after deleting every index row and rebuilding (D-006)", async () => {
     await push(filesOf(fixtures.allDocuments))
     await push({

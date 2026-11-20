@@ -16,9 +16,10 @@ import { AsyncLocalStorage } from "node:async_hooks"
  * is guarded like `db`.
  */
 export class NestedConnectionError extends Error {
-  constructor(method: string) {
+  constructor(method: string, message?: string) {
     super(
-      `db.${method}() was called while this work holds a transaction: use the transaction's tx, or call it before the transaction opens`,
+      message ??
+        `db.${method}() was called while this work holds a transaction: use the transaction's tx, or call it before the transaction opens`,
     )
     this.name = "NestedConnectionError"
   }
@@ -48,8 +49,8 @@ export function takeNestedConnectionRefusals(): string[] {
   return refusals.splice(0)
 }
 
-function refuse(name: string): never {
-  const error = new NestedConnectionError(name)
+function refuse(name: string, message?: string): never {
+  const error = new NestedConnectionError(name, message)
   const where = (error.stack ?? "")
     .split("\n")
     .slice(2, 6)
@@ -57,6 +58,34 @@ function refuse(name: string): never {
     .join(" < ")
   refusals.push(`${error.message} (${where})`)
   throw error
+}
+
+/**
+ * For tests: `target`, such as a client of another service, whose methods
+ * refuse to run while this work holds a transaction of a database that
+ * refuses nested connections. Code that calls a slow service with a
+ * transaction open holds a connection meanwhile; the Git container is never
+ * called inside one (architecture §5.3). A refusal is recorded like a
+ * nested connection's, so a test fails even if the code caught it.
+ */
+export function refuseDuringTransactions<T extends object>(
+  target: T,
+  name: string,
+): T {
+  return new Proxy(target, {
+    get(object, property, receiver) {
+      const value: unknown = Reflect.get(object, property, receiver)
+      if (typeof value !== "function") return value
+      return (...args: unknown[]): unknown => {
+        if (inTransaction())
+          refuse(
+            String(property),
+            `${name}.${String(property)}() was called while this work holds a database transaction: call it before the transaction opens or after it ends`,
+          )
+        return (value as (...a: unknown[]) => unknown).apply(object, args)
+      }
+    },
+  })
 }
 
 /** The pool's methods that take a connection. */

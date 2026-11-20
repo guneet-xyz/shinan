@@ -673,7 +673,12 @@ indexing (**Proposed**).
     document's 64 KiB) is indexed as a document with one `too-large`
     problem; bytes that are not UTF-8, and NUL characters, which PostgreSQL
     cannot store, read as U+FFFD, so such a file reads with problems rather
-    than stopping the index. (**Proposed** in GC-4; reason: one bad file
+    than stopping the index. A file whose name the Git container cannot
+    read (a control character such as a newline, or bytes that are not
+    UTF-8, which reach Shinan as U+FFFD) is not read at all: it is indexed
+    under its name with one `unreadable-path` problem, an update whose diff
+    touches such a name rebuilds, and two names that reach Shinan as the
+    same text are one row. GC-3b refuses such names on `main`. (**Proposed** in GC-4; reason: one bad file
     must not leave a workspace's index behind for good.)
   - **Where the index stands.** Each workspace's index state records the
     commit the index was built from (`commit`) and the latest commit of

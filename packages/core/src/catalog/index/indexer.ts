@@ -19,7 +19,13 @@ import type { GitClient } from "../git/client.js"
 import { deriveDocumentRows, indexRulesVersion } from "./derive.js"
 import type { DocumentRows } from "./derive.js"
 import { pauser } from "./pause.js"
-import { compare, isDocumentPath, listDocuments, readTexts } from "./source.js"
+import {
+  compare,
+  isDocumentPath,
+  isReadablePath,
+  listDocuments,
+  readTexts,
+} from "./source.js"
 import type { DocumentText, TreeDocument } from "./source.js"
 
 /**
@@ -54,9 +60,18 @@ export async function lockIndexState(
   return state!
 }
 
-/** A document's text, read: a file larger than the Git container reads is a document with one problem. */
+/**
+ * A document's text, read: a file larger than the Git container reads, or
+ * one whose name it cannot read, is a document with one problem.
+ */
 function parse(text: DocumentText): CatalogDocument {
   if ("text" in text) return parseCatalogDocument(text.text)
+  if ("unreadablePath" in text)
+    return unread(
+      "",
+      "unreadable-path",
+      "Shinan cannot read a file by this name: it holds a control character or bytes that are not UTF-8. Rename the file to the document's ID plus .md",
+    )
   return unread(
     "",
     "too-large",
@@ -397,6 +412,15 @@ async function planUpdate(
   const removed = new Set<string>()
   const changed = new Map<string, TreeDocument>()
   for (const c of changes) {
+    // A name the Git container cannot read may stand for several files
+    // (`listDocuments`): only a rebuild lists them as one.
+    if (
+      !isReadablePath(c.path) &&
+      [c.oldMode, c.newMode].some(
+        (mode) => mode !== null && isDocumentPath({ path: c.path, mode }),
+      )
+    )
+      return "rebuild"
     if (c.oldMode !== null && isDocumentPath({ path: c.path, mode: c.oldMode }))
       removed.add(c.path)
     if (

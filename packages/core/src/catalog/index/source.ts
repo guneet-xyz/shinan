@@ -24,32 +24,56 @@ export function isDocumentPath(entry: Pick<TreeEntry, "path" | "mode">) {
   )
 }
 
+/**
+ * Whether the Git container can read a file by this name: Git paths are
+ * bytes, but the read API names files as text without control characters
+ * (`packages/git`'s `treePath`), and a name that is not UTF-8 reaches Shinan
+ * with U+FFFD in place of its bytes, so it names no file. Such names never
+ * reach `main` once pushes are checked (GC-3b); until then the index
+ * records them without reading them, so one cannot stop it.
+ */
+export function isReadablePath(path: string): boolean {
+  if (path.startsWith("/") || path.includes("\uFFFD")) return false
+  for (let i = 0; i < path.length; i++) {
+    const code = path.charCodeAt(i)
+    if (code < 0x20 || code === 0x7f) return false
+  }
+  return path.split("/").every((p) => p !== "" && p !== "." && p !== "..")
+}
+
 /** A document on `main`: its path and the Git blob ID of its text. */
 export interface TreeDocument {
   path: string
   blob: string
 }
 
-/** The documents of a commit's tree, by path. */
+/**
+ * The documents of a commit's tree, by path. Two names that are not UTF-8
+ * can reach Shinan as the same path; it is listed once, with the lowest
+ * blob ID, and recorded as unreadable either way.
+ */
 export async function listDocuments(
   git: GitClient,
   workspaceId: string,
   commit: string,
 ): Promise<TreeDocument[]> {
   const { entries } = await git.listTree(workspaceId, { commit })
-  return entries
+  const documents = entries
     .filter((e) => e.type === "blob" && isDocumentPath(e))
     .map((e) => ({ path: e.path, blob: e.oid }))
-    .sort((a, b) => compare(a.path, b.path))
+    .sort((a, b) => compare(a.path, b.path) || compare(a.blob, b.blob))
+  return documents.filter((d, i) => documents[i - 1]?.path !== d.path)
 }
 
 /**
  * A document's text, or why it has none: larger than the Git container
- * reads (1 MiB, far over the 64 KiB a document may hold).
+ * reads (1 MiB, far over the 64 KiB a document may hold), or a name it
+ * cannot read (`isReadablePath`).
  */
 export type DocumentText =
   | { path: string; blob: string; text: string }
   | { path: string; blob: string; tooLarge: number }
+  | { path: string; blob: string; unreadablePath: true }
 
 /** How many documents one read asks the Git container for. */
 const readBatch = 200
@@ -67,10 +91,14 @@ export async function readTexts(
   commit: string,
   documents: readonly TreeDocument[],
 ): Promise<DocumentText[]> {
-  const result: DocumentText[] = []
+  const result = new Map<string, DocumentText>()
+  const readable: TreeDocument[] = []
+  for (const d of documents)
+    if (isReadablePath(d.path)) readable.push(d)
+    else result.set(d.path, { ...d, unreadablePath: true })
   const batch = Math.min(readBatch, maxDocumentsPerRead)
-  for (let i = 0; i < documents.length; i += batch) {
-    const wanted = documents.slice(i, i + batch)
+  for (let i = 0; i < readable.length; i += batch) {
+    const wanted = readable.slice(i, i + batch)
     const read = await git.readDocuments(workspaceId, {
       commit,
       paths: wanted.map((d) => d.path),
@@ -81,15 +109,15 @@ export async function readTexts(
       if (!found || "missing" in found)
         throw new Error(`Commit ${commit} has no document at ${path}`)
       if ("tooLarge" in found) {
-        result.push({ path, blob, tooLarge: found.size })
+        result.set(path, { path, blob, tooLarge: found.size })
         continue
       }
       if (found.oid !== blob)
         throw new Error(`Commit ${commit} holds another text at ${path}`)
-      result.push({ path, blob, text: decode(found.content) })
+      result.set(path, { path, blob, text: decode(found.content) })
     }
   }
-  return result
+  return documents.map((d) => result.get(d.path)!)
 }
 
 const decoder = new TextDecoder("utf-8")

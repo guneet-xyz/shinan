@@ -60,6 +60,7 @@ export const migrationsFolder = fileURLToPath(
 
 export {
   NestedConnectionError,
+  refuseDuringTransactions,
   takeNestedConnectionRefusals,
 } from "./nesting.js"
 

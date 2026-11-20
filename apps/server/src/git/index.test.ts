@@ -14,10 +14,10 @@ import {
   updateCatalogIndex,
 } from "@shinan/core"
 import type { GitClient, Person } from "@shinan/core"
-import { eq, schema, sql } from "@shinan/db"
+import { eq, refuseDuringTransactions, schema, sql } from "@shinan/db"
 import { connectTestDatabase } from "@shinan/db/testing"
 import { createGit } from "@shinan/git"
-import { commitFiles } from "@shinan/git/testing"
+import { commitFiles, fixtureIdentity } from "@shinan/git/testing"
 
 import { insertPerson } from "../../test/people.js"
 import { runCommand } from "../commands.js"
@@ -68,7 +68,11 @@ beforeAll(async () => {
       (info) => resolve(`http://127.0.0.1:${info.port}`),
     )
   })
-  client = createGitClient({ url, serviceToken: token })
+  // Never asked while a database transaction is open (architecture §5.3).
+  client = refuseDuringTransactions(
+    createGitClient({ url, serviceToken: token }),
+    "git",
+  )
   owner = await insertPerson(db, "owner")
   workspaceId = (
     await createWorkspace(
@@ -149,6 +153,79 @@ describe("the agent index from a repository in the Git container", () => {
       commit: second,
       documents: 1,
     })
+  })
+
+  it("records files whose names the Git container cannot read, never stopping", async () => {
+    const gitDir = join(root, `${workspaceId}.git`)
+    const run = async (args: string[], input?: Uint8Array) =>
+      (await git.run(args, { gitDir, input, env: fixtureIdentity() })).stdout
+        .toString()
+        .trim()
+    const main = (await client.getRepository(workspaceId))!.main
+    const blob = await run(
+      ["hash-object", "-w", "--stdin"],
+      new TextEncoder().encode(machine("odd", "A file with an odd name.")),
+    )
+    // A tree Shinan's own tools cannot write: names as raw bytes, two of
+    // them not UTF-8 (reaching Shinan as one name) and one with a newline.
+    const entries = (await run(["ls-tree", "-z", main])).split("\0")
+    const raw = (name: number[]) =>
+      Buffer.concat([
+        Buffer.from(`100644 blob ${blob}\t`),
+        Buffer.from(name),
+        Buffer.from([0]),
+      ])
+    const tree = await run(
+      ["mktree", "-z"],
+      Buffer.concat([
+        ...entries.filter(Boolean).map((e) => Buffer.from(`${e}\0`)),
+        raw([...Buffer.from("caf"), 0xe9, ...Buffer.from(".md")]),
+        raw([...Buffer.from("caf"), 0xe8, ...Buffer.from(".md")]),
+        raw([...Buffer.from("new\nline.md")]),
+      ]),
+    )
+    const commit = await run(
+      ["commit-tree", "-p", main, "-m", "Odd names", tree],
+      undefined,
+    )
+    await run(["update-ref", "refs/heads/main", commit])
+
+    expect(
+      await updateCatalogIndex(ctx(), { workspaceId }, client),
+    ).toMatchObject({ outcome: "rebuilt", commit })
+    const rows = await db
+      .select({
+        path: schema.catalogIndexDocuments.path,
+        problems: schema.catalogIndexDocuments.problems,
+      })
+      .from(schema.catalogIndexDocuments)
+      .where(eq(schema.catalogIndexDocuments.workspaceId, workspaceId))
+    expect(
+      rows
+        .filter((r) => r.problems.some((p) => p.code === "unreadable-path"))
+        .map((r) => r.path)
+        .sort(),
+    ).toEqual(["caf\uFFFD.md", "new\nline.md"])
+    const [checked] = await checkCatalogIndexes(ctx(), client, {
+      workspaceIds: [workspaceId],
+    })
+    expect(checked).toMatchObject({ outcome: "matched", commit })
+
+    // Renamed away, the index updates again.
+    const back = await commitOnMain({
+      "README.md": "# C\n",
+      "machine/musashi.md": machine("musashi", "The production host, resized."),
+    })
+    expect(
+      await updateCatalogIndex(ctx(), { workspaceId }, client),
+    ).toMatchObject({ commit: back, outcome: "rebuilt" })
+    expect(
+      (
+        await checkCatalogIndexes(ctx(), client, {
+          workspaceIds: [workspaceId],
+        })
+      )[0],
+    ).toMatchObject({ outcome: "matched", documents: 1 })
   })
 
   it("rebuilds and checks on an operator's command", async () => {
