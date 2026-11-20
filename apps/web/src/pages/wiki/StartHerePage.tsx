@@ -1,80 +1,33 @@
-import { useEffect, useState } from "react"
-import { Link, useLocation } from "react-router"
+import { Link } from "react-router"
 
-import type {
-  AgentStartHerePreviewAnswer,
-  StartHereAnswer,
-  StartHereStep,
-} from "@shinan/api-client"
-
-import { Badge } from "@/components/ui/badge"
-import { Button, buttonVariants } from "@/components/ui/button"
+import type { StartHereAnswer, StartHereStep } from "@shinan/api-client"
 
 import { useApi, useResource } from "../../api"
 import { PageHeader, Section } from "../../components/page"
 import { ErrorMessage, Loading } from "../../components/status"
 import { useWorkspace } from "../workspace/context"
 import { EntityLink, linkClass, MaybeLink } from "./facts"
-import { agentPathWarningBytes, entityPath, sizeText, wikiPath } from "./format"
-import { Markdown } from "./markdown"
-import { IndexBehind, PageNotice, SavedNotice } from "./notices"
+import { wikiPath } from "./format"
+import { IndexBehind, PageNotice } from "./notices"
 
 /**
  * Start here (catalog §11; human experience, start here and onboarding):
- * the people's path as numbered steps, each saying whether the person has
- * opened it and whether it changed since; the agents' path with "Preview as
- * agent" and its size.
+ * the people's path as numbered steps, and the agents' path.
  */
 export function StartHerePage() {
   const api = useApi()
   const { workspace } = useWorkspace()
   const paths = useResource(`start-here:${workspace.id}`, async () => {
-    const [people, agents, preview] = await Promise.all([
+    const [people, agents] = await Promise.all([
       api.catalogStartHere(workspace.id, "people"),
       api.catalogStartHere(workspace.id, "agents"),
-      api.catalogAgentPreview(workspace.id),
     ])
-    const ids = (people.start_here?.steps ?? []).flatMap((s) =>
-      "to" in s ? [s.to] : [],
-    )
-    const [opened, editable] = await Promise.all([
-      ids.length === 0
-        ? { items: [] }
-        : api.catalogPagesOpened(workspace.id, ids),
-      // The document's own text, so links to its sections land on them.
-      people.start_here
-        ? api
-            .catalogEditable(workspace.id, "start-here")
-            // Optional: the paths are shown without it.
-            .catch(() => null)
-        : null,
-    ])
-    return {
-      people,
-      agents,
-      preview,
-      opened: opened.items,
-      body: editable?.document.body.sections ?? [],
-    }
+    return { people, agents }
   })
-  const location = useLocation()
-  const loaded = paths.data !== undefined
-  // A link to one of its sections (`#section-…`) scrolls there once the
-  // page has its text, as on an entity page.
-  useEffect(() => {
-    if (!loaded || location.hash.length < 2) return
-    let target: string
-    try {
-      target = decodeURIComponent(location.hash.slice(1))
-    } catch {
-      return
-    }
-    document.getElementById(target)?.scrollIntoView()
-  }, [loaded, location.hash])
 
   if (paths.error) return <ErrorMessage error={paths.error} />
   if (!paths.data) return <Loading />
-  const { people, agents, preview, opened, body } = paths.data
+  const { people, agents } = paths.data
   const startHere = people.start_here
   return (
     <div className="flex flex-col gap-6">
@@ -82,27 +35,15 @@ export function StartHerePage() {
         {startHere?.summary ??
           "The path through this workspace's catalog, for people and for agents."}
       </PageHeader>
-      <SavedNotice workspaceId={workspace.id} />
-      <div className="-mt-4 flex flex-wrap gap-2">
-        <Link
-          to={wikiPath(workspace.id, "/edit/start-here")}
-          className={buttonVariants({ variant: "outline" })}
-        >
-          {startHere ? "Suggest a change" : "Write Start here"}
-        </Link>
-      </div>
       <IndexBehind behind={people.index_behind || agents.index_behind} />
       {!startHere ? (
         <PageNotice>
           This workspace has no start-here document yet. It is written like any
-          catalog document, and changing it needs catalog approval.
+          catalog document.
         </PageNotice>
       ) : (
         <>
-          <Section
-            title="For people"
-            description="Each step says whether you have opened it, and whether it changed since you did."
-          >
+          <Section title="For people">
             {startHere.steps.length === 0 ? (
               <p className="text-sm text-muted-foreground">No steps yet.</p>
             ) : (
@@ -116,14 +57,7 @@ export function StartHerePage() {
                       {i + 1}
                     </span>
                     <div className="flex min-w-0 flex-col gap-1">
-                      <span className="flex flex-wrap items-center gap-2">
-                        <StepTarget workspaceId={workspace.id} step={step} />
-                        {"to" in step && (
-                          <Marker
-                            opened={opened.find((o) => o.id === step.to)}
-                          />
-                        )}
-                      </span>
+                      <StepTarget workspaceId={workspace.id} step={step} />
                       <span className="text-muted-foreground">{step.note}</span>
                     </div>
                   </li>
@@ -131,38 +65,11 @@ export function StartHerePage() {
               </ol>
             )}
           </Section>
-          <AgentsPath
-            workspaceId={workspace.id}
-            answer={agents}
-            preview={preview}
-          />
-          {body.some((s) => s.text.trim() !== "") && (
-            <Section title="About these paths">
-              <Markdown
-                text={body.map((s) => s.text).join("")}
-                anchors={body
-                  .filter((s) => s.heading !== null)
-                  .map((s) => s.anchor)}
-                entityPath={(id) => entityPath(workspace.id, id)}
-              />
-            </Section>
-          )}
+          <AgentsPath workspaceId={workspace.id} answer={agents} />
         </>
       )}
     </div>
   )
-}
-
-function Marker(props: {
-  opened: { revision: number; opened_revision: number | null } | undefined
-}) {
-  const { opened } = props
-  if (!opened) return null
-  if (opened.opened_revision === null)
-    return <Badge variant="outline">not opened yet</Badge>
-  if (opened.revision > opened.opened_revision)
-    return <Badge variant="destructive">changed since you opened it</Badge>
-  return <Badge variant="secondary">opened</Badge>
 }
 
 const listTitles: Record<string, string> = {
@@ -186,15 +93,15 @@ function StepTarget(props: { workspaceId: string; step: StartHereStep }) {
     )
   if ("url" in step) return <MaybeLink text={step.url} />
   const title = listTitles[step.list] ?? step.list
+  // Catalog approval is gone (D-060): nothing waits for it, so that list
+  // has no page to open.
+  if (step.list === "waiting-for-approval")
+    return <span className="font-medium">{title}</span>
   return (
     <Link
       to={wikiPath(
         workspaceId,
-        step.list === "recent-changes"
-          ? "/changes"
-          : step.list === "waiting-for-approval"
-            ? "/review"
-            : `/lists/${step.list}`,
+        step.list === "recent-changes" ? "/changes" : `/lists/${step.list}`,
       )}
       className={linkClass}
     >
@@ -203,30 +110,11 @@ function StepTarget(props: { workspaceId: string; step: StartHereStep }) {
   )
 }
 
-/**
- * The agents' path, its size, and exactly what an agent is given: the text
- * MCP's `workspace_context` sends for it, trust labels included.
- */
-function AgentsPath(props: {
-  workspaceId: string
-  answer: StartHereAnswer
-  preview: AgentStartHerePreviewAnswer
-}) {
-  const [preview, setPreview] = useState(false)
+/** The agents' path. */
+function AgentsPath(props: { workspaceId: string; answer: StartHereAnswer }) {
   const steps = props.answer.start_here?.steps ?? []
-  const given = props.preview.text ?? "null"
-  const bytes = props.preview.bytes
   return (
-    <Section
-      title="For agents"
-      description={`Agents read this whole path when they start. Its size: ${sizeText(bytes)}.`}
-    >
-      {bytes > agentPathWarningBytes && (
-        <PageNotice warning>
-          The agents' path is large ({sizeText(bytes)}). Every agent session
-          reads all of it; consider linking to fewer, more focused pages.
-        </PageNotice>
-      )}
+    <Section title="For agents">
       {steps.length === 0 ? (
         <p className="text-sm text-muted-foreground">No steps yet.</p>
       ) : (
@@ -238,25 +126,6 @@ function AgentsPath(props: {
             </li>
           ))}
         </ol>
-      )}
-      <Button
-        variant="outline"
-        className="self-start"
-        aria-expanded={preview}
-        aria-controls="agent-preview"
-        onClick={() => setPreview((p) => !p)}
-      >
-        {preview ? "Hide the preview" : "Preview as agent"}
-      </Button>
-      {preview && (
-        <pre
-          id="agent-preview"
-          tabIndex={0}
-          aria-label="What an agent is given"
-          className="max-h-96 overflow-auto rounded-md border bg-muted p-3 font-mono text-xs/5 break-all whitespace-pre-wrap"
-        >
-          {given}
-        </pre>
       )}
     </Section>
   )

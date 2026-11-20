@@ -91,9 +91,6 @@ export function SettingsLayout() {
               Agents
             </NavLink>
           )}
-          <NavLink to="catalog" className={tab}>
-            Catalog
-          </NavLink>
           <NavLink to="security-log" className={tab}>
             Security log
           </NavLink>

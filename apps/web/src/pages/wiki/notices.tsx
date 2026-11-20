@@ -1,11 +1,7 @@
 import { InfoIcon, TriangleAlertIcon } from "lucide-react"
 import type { ReactNode } from "react"
-import { Link, useLocation } from "react-router"
 
 import { cn } from "@/lib/utils"
-
-import { linkClass } from "./facts"
-import { wikiPath } from "./format"
 
 /**
  * A notice on a page that is not an error: the index being behind, an
@@ -39,31 +35,6 @@ export function IndexBehind(props: { behind: boolean }) {
     <PageNotice warning>
       The catalog is being brought up to date, so this page may not show the
       latest changes yet.
-    </PageNotice>
-  )
-}
-
-/** What an editor passes back to the page it returns to after saving. */
-export interface SavedState {
-  saved: { number: number; id: string }
-}
-
-/** Shown on a page an editor came back to: the proposal it saved. */
-export function SavedNotice(props: { workspaceId: string }) {
-  const saved = (useLocation().state as Partial<SavedState> | null)?.saved
-  if (!saved) return null
-  return (
-    <PageNotice>
-      <p role="status">
-        Saved as{" "}
-        <Link
-          to={wikiPath(props.workspaceId, `/proposals/${saved.id}`)}
-          className={linkClass}
-        >
-          catalog proposal {saved.number}
-        </Link>
-        .
-      </p>
     </PageNotice>
   )
 }

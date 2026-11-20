@@ -1,20 +1,10 @@
 import type {
-  CatalogBulkApprovalResult,
-  CatalogBulkRejectionResult,
-  CatalogBulkSelection,
-  CatalogProposalComment,
-  CatalogSettings,
-  RecentCatalogChanges,
-} from "./catalog-review.js"
-import type {
-  AgentStartHerePreviewAnswer,
   CatalogChangesAnswer,
   CatalogDocumentTextAnswer,
   CatalogEntityAnswer,
   CatalogHistoryAnswer,
   CatalogList,
   CatalogListAnswer,
-  CatalogPageOpened,
   CatalogSearchAnswer,
   CatalogTypeIndexAnswer,
   CatalogTypeSchemaAnswer,
@@ -22,21 +12,9 @@ import type {
   EntityStatus,
   StartHereAnswer,
 } from "./catalog.js"
-import type {
-  CatalogApprovalOutcome,
-  CatalogEditableAnswer,
-  CatalogPreviewOutcome,
-  CatalogProposal,
-  CatalogProposalInput,
-  CatalogProposalList,
-  CatalogProposalOutcome,
-  CatalogProposalState,
-} from "./proposals.js"
 
 export { sameSitePath } from "./paths.js"
 export * from "./catalog.js"
-export * from "./catalog-review.js"
-export * from "./proposals.js"
 
 // The REST API's contract, shared by the web app, CLI and plugin. Times are
 // ISO 8601 strings; IDs of records are UUIDs, except event and security-log
@@ -743,11 +721,6 @@ export function createApiClient(options: ApiClientOptions = {}) {
         "GET",
         `${catalog(workspaceId)}/start-here${search({ path })}`,
       ),
-    catalogAgentPreview: (workspaceId: string) =>
-      request<AgentStartHerePreviewAnswer>(
-        "GET",
-        `${catalog(workspaceId)}/start-here/agent-preview`,
-      ),
     catalogHistory: (
       workspaceId: string,
       id: string,
@@ -769,114 +742,6 @@ export function createApiClient(options: ApiClientOptions = {}) {
           revision: revision?.toString(),
         })}`,
       ),
-    catalogPagesOpened: (workspaceId: string, ids: readonly string[]) =>
-      request<{ items: CatalogPageOpened[] }>(
-        "GET",
-        `${catalog(workspaceId)}/opened?${new URLSearchParams(
-          ids.map((id) => ["id", id]),
-        ).toString()}`,
-      ),
-    markCatalogPageOpened: (workspaceId: string, id: string) =>
-      request<void>("POST", `${catalog(workspaceId)}/opened`, { id }),
-
-    // Reviewing catalog changes (M2-4).
-    catalogSettings: (workspaceId: string) =>
-      request<CatalogSettings>("GET", `${catalog(workspaceId)}/settings`),
-    setCatalogStrict: (workspaceId: string, strict: boolean) =>
-      request<CatalogSettings>("PATCH", `${catalog(workspaceId)}/settings`, {
-        strict,
-      }),
-    bulkApproveCatalogProposals: (
-      workspaceId: string,
-      selection: CatalogBulkSelection,
-    ) =>
-      request<{ results: CatalogBulkApprovalResult[] }>(
-        "POST",
-        `${catalog(workspaceId)}/proposals/bulk-approve`,
-        selection,
-      ),
-    bulkRejectCatalogProposals: (
-      workspaceId: string,
-      selection: CatalogBulkSelection,
-      reason: string,
-    ) =>
-      request<{ results: CatalogBulkRejectionResult[] }>(
-        "POST",
-        `${catalog(workspaceId)}/proposals/bulk-reject`,
-        { ...selection, reason },
-      ),
-    catalogProposalComments: (
-      workspaceId: string,
-      proposalId: string,
-      options: { cursor?: string; limit?: number } = {},
-    ) =>
-      request<{
-        items: CatalogProposalComment[]
-        nextCursor: string | null
-        total: number
-      }>(
-        "GET",
-        `${catalog(workspaceId)}/proposals/${encodeURIComponent(proposalId)}/comments${search(
-          {
-            cursor: options.cursor,
-            limit: options.limit?.toString(),
-          },
-        )}`,
-      ),
-    commentOnCatalogProposal: (
-      workspaceId: string,
-      proposalId: string,
-      text: string,
-      idempotencyKey?: string,
-    ) =>
-      request<CatalogProposalComment>(
-        "POST",
-        `${catalog(workspaceId)}/proposals/${encodeURIComponent(proposalId)}/comments`,
-        idempotencyKey === undefined ? { text } : { text, idempotencyKey },
-      ),
-    revertCatalogProposal: (
-      workspaceId: string,
-      proposalId: string,
-      options: { explanation?: string; idempotencyKey?: string } = {},
-    ) =>
-      request<CatalogProposalOutcome>(
-        "POST",
-        `${catalog(workspaceId)}/proposals/${encodeURIComponent(proposalId)}/revert`,
-        options,
-      ),
-    // A workspace owner's repair of a document that reads with problems
-    // (catalog §8.3): its whole text, replacing the text at `revision`.
-    repairCatalogDocument: (
-      workspaceId: string,
-      input: {
-        id: string
-        revision: number
-        text: string
-        explanation: string
-        idempotencyKey?: string
-      },
-    ) =>
-      request<CatalogProposalOutcome>(
-        "POST",
-        `${catalog(workspaceId)}/proposals/repair`,
-        input,
-      ),
-    recentCatalogChanges: (
-      workspaceId: string,
-      options: {
-        cursor?: number
-        limit?: number
-        approval?: "without" | "any"
-      } = {},
-    ) =>
-      request<RecentCatalogChanges>(
-        "GET",
-        `${catalog(workspaceId)}/recent-changes${search({
-          cursor: options.cursor?.toString(),
-          limit: options.limit?.toString(),
-          approval: options.approval,
-        })}`,
-      ),
 
     // Catalog purge (M2-10): the text goes in request bodies only, never
     // in an address.
@@ -892,66 +757,6 @@ export function createApiClient(options: ApiClientOptions = {}) {
     ) => request<CatalogPurge>("POST", `${catalog(workspaceId)}/purge`, input),
     catalogPurges: (workspaceId: string) =>
       request<CatalogPurge[]>("GET", `${catalog(workspaceId)}/purges`),
-    catalogEditable: (workspaceId: string, id: string) =>
-      request<CatalogEditableAnswer>(
-        "GET",
-        `${catalog(workspaceId)}/editable${search({ id })}`,
-      ),
-    proposeCatalogChange: (workspaceId: string, input: CatalogProposalInput) =>
-      request<CatalogProposalOutcome>(
-        "POST",
-        `${catalog(workspaceId)}/proposals`,
-        input,
-      ),
-    previewCatalogChange: (workspaceId: string, input: CatalogProposalInput) =>
-      request<CatalogPreviewOutcome>(
-        "POST",
-        `${catalog(workspaceId)}/proposals/preview`,
-        input,
-      ),
-    catalogProposals: (
-      workspaceId: string,
-      options: {
-        state?: CatalogProposalState
-        order?: "oldest" | "newest"
-        limit?: number
-        cursor?: number
-      } = {},
-    ) =>
-      request<CatalogProposalList>(
-        "GET",
-        `${catalog(workspaceId)}/proposals${search({
-          state: options.state,
-          order: options.order,
-          limit: options.limit?.toString(),
-          cursor: options.cursor?.toString(),
-        })}`,
-      ),
-    catalogProposal: (workspaceId: string, proposalId: string) =>
-      request<CatalogProposal>(
-        "GET",
-        `${catalog(workspaceId)}/proposals/${encodeURIComponent(proposalId)}`,
-      ),
-    approveCatalogProposal: (workspaceId: string, proposalId: string) =>
-      request<CatalogApprovalOutcome>(
-        "POST",
-        `${catalog(workspaceId)}/proposals/${encodeURIComponent(proposalId)}/approve`,
-      ),
-    rejectCatalogProposal: (
-      workspaceId: string,
-      proposalId: string,
-      reason: string,
-    ) =>
-      request<CatalogProposal>(
-        "POST",
-        `${catalog(workspaceId)}/proposals/${encodeURIComponent(proposalId)}/reject`,
-        { reason },
-      ),
-    withdrawCatalogProposal: (workspaceId: string, proposalId: string) =>
-      request<CatalogProposal>(
-        "POST",
-        `${catalog(workspaceId)}/proposals/${encodeURIComponent(proposalId)}/withdraw`,
-      ),
   }
 }
 

@@ -22,7 +22,7 @@ import {
  * How a fact looks wherever it appears: its value, its fact state in words,
  * its freshness as age (never as right or wrong), and its fact check one
  * step away (human experience, how freshness is shown). Shared by the
- * entity page, the workspace lists and (M2-8) catalog review.
+ * entity page and the workspace lists.
  */
 
 export const linkClass =
@@ -260,8 +260,7 @@ export function CheckDetails(props: { fact: CatalogFact }) {
 }
 
 /**
- * One fact as a row: key, value, state, freshness and check details, with
- * an `actions` slot (M2-8 puts "Record a check" there).
+ * One fact as a row: key, value, state, freshness and check details.
  */
 export function FactRow(props: {
   workspaceId: string
@@ -269,7 +268,6 @@ export function FactRow(props: {
   target?: CatalogOutgoingRelation | undefined
   /** Show the key; lists that group by key leave it out. */
   showKey?: boolean
-  actions?: ReactNode
 }) {
   const { fact } = props
   return (
@@ -292,7 +290,6 @@ export function FactRow(props: {
         target={props.target}
       />
       <CheckDetails fact={fact} />
-      {props.actions}
     </div>
   )
 }

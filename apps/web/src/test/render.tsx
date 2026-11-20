@@ -138,14 +138,6 @@ export function fakeApi(overrides: Partial<ApiClient> = {}): Fake {
     // A workspace opens on the wiki's home page.
     catalogTypes: () =>
       Promise.resolve({ catalog_revision: 0, index_behind: false, items: [] }),
-    markCatalogPageOpened: () => Promise.resolve(),
-    // No catalog proposals unless a test makes some.
-    catalogProposals: () => Promise.resolve({ items: [] }),
-    catalogSettings: () => Promise.resolve({ strict: false }),
-    catalogProposalComments: () =>
-      Promise.resolve({ items: [], nextCursor: null, total: 0 }),
-    recentCatalogChanges: () =>
-      Promise.resolve({ items: [], nextCursor: null }),
   }
   const names: (keyof ApiClient)[] = [
     "status",
@@ -203,31 +195,11 @@ export function fakeApi(overrides: Partial<ApiClient> = {}): Fake {
     "catalogList",
     "catalogChanges",
     "catalogStartHere",
-    "catalogAgentPreview",
     "catalogHistory",
     "catalogText",
-    "catalogPagesOpened",
-    "markCatalogPageOpened",
-    "repairCatalogDocument",
     "previewCatalogPurge",
     "purgeCatalogText",
     "catalogPurges",
-    "catalogEditable",
-    "proposeCatalogChange",
-    "previewCatalogChange",
-    "catalogProposals",
-    "catalogProposal",
-    "approveCatalogProposal",
-    "rejectCatalogProposal",
-    "withdrawCatalogProposal",
-    "catalogSettings",
-    "setCatalogStrict",
-    "bulkApproveCatalogProposals",
-    "bulkRejectCatalogProposals",
-    "catalogProposalComments",
-    "commentOnCatalogProposal",
-    "revertCatalogProposal",
-    "recentCatalogChanges",
   ]
   const fake = {} as Record<string, unknown>
   for (const name of names) {

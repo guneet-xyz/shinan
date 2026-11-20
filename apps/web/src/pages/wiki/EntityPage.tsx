@@ -8,14 +8,10 @@ import {
   useSearchParams,
 } from "react-router"
 
-import type {
-  ApprovalClass,
-  CatalogFact,
-  CatalogHistoryAnswer,
-} from "@shinan/api-client"
+import type { CatalogFact, CatalogHistoryAnswer } from "@shinan/api-client"
 
 import { Badge } from "@/components/ui/badge"
-import { Button, buttonVariants } from "@/components/ui/button"
+import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
 import { isApiError, useApi, useResource } from "../../api"
@@ -23,29 +19,26 @@ import { Section } from "../../components/page"
 import { ErrorMessage, Loading } from "../../components/status"
 import { formatDate, formatTime } from "../../format"
 import { NotFound } from "../NotFound"
-import { useWorkspace } from "../workspace/context"
 import { EntityPageContext, useEntityPage } from "./context"
 import { diffLines } from "./diff"
 import type { DiffLine } from "./diff"
-import { classNames } from "./edit/words"
 import { EntityLink, FactRow, linkClass, MaybeLink } from "./facts"
 import {
   entityPath,
   freshnessSummary,
   isWebAddress,
-  repairPath,
   summaryParts,
   valueText,
   wikiPath,
 } from "./format"
 import { Markdown } from "./markdown"
-import { IndexBehind, PageNotice, SavedNotice } from "./notices"
+import { IndexBehind, PageNotice } from "./notices"
 
 /**
  * An entity page (human experience, an entity page), in order of
- * importance: what it is (and whether it is retired), pending catalog
- * proposals, discrepancies, owning sources, a freshness summary, the facts,
- * the body, links both ways, and history. Tasks come with M3.
+ * importance: what it is (and whether it is retired), discrepancies, owning
+ * sources, a freshness summary, the facts, the body, links both ways, and
+ * history. Tasks come with M3.
  */
 export function EntityPage() {
   const api = useApi()
@@ -57,12 +50,6 @@ export function EntityPage() {
     api.catalogEntity(workspaceId, id),
   )
   const entity = answer.data?.entity
-
-  // Record that the person opened the page, for the start-here markers.
-  useEffect(() => {
-    if (entity)
-      api.markCatalogPageOpened(workspaceId, entity.id).catch(() => undefined)
-  }, [api, workspaceId, entity?.id, entity?.revision, entity])
 
   // A link to a section of this page (`#section-…`), followed from another
   // page or search, scrolls to it once the page has rendered: the browser
@@ -99,18 +86,16 @@ export function EntityPage() {
 
   const revision = Number(search.get("revision"))
   return (
-    <EntityPageContext value={{ workspaceId, entity, reload: answer.reload }}>
+    <EntityPageContext value={{ workspaceId, entity }}>
       {Number.isInteger(revision) && revision > 0 ? (
         <RevisionView revision={revision} />
       ) : (
         <div className="flex flex-col gap-6">
-          <SavedNotice workspaceId={workspaceId} />
-          <EntityHeader actions={<EditActions />} />
+          <EntityHeader />
           <IndexBehind behind={answer.data.index_behind} />
-          <PendingProposals />
           <Discrepancies />
           <OwningSources />
-          <Facts factActions={(fact) => <RecheckAction fact={fact} />} />
+          <Facts />
           <Body />
           <Links />
           <History />
@@ -122,12 +107,10 @@ export function EntityPage() {
 
 /**
  * Title, type, ID, entity status and owner; a deprecated or retired entity
- * says so first, with its replacement. `actions` is where M2-8 puts
- * "Suggest a change".
+ * says so first, with its replacement.
  */
-export function EntityHeader(props: { actions?: ReactNode }) {
+export function EntityHeader() {
   const { workspaceId, entity } = useEntityPage()
-  const owner = useWorkspace().workspace.role === "owner"
   const movedFrom = (useLocation().state as { movedFrom?: string } | null)
     ?.movedFrom
   return (
@@ -160,16 +143,13 @@ export function EntityHeader(props: { actions?: ReactNode }) {
           </p>
         </PageNotice>
       )}
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex min-w-0 flex-col gap-1">
-          <h1 className="text-2xl font-semibold tracking-tight wrap-anywhere">
-            {entity.title ?? entity.id}
-          </h1>
-          {entity.summary && (
-            <p className="text-sm text-muted-foreground">{entity.summary}</p>
-          )}
-        </div>
-        {props.actions}
+      <div className="flex min-w-0 flex-col gap-1">
+        <h1 className="text-2xl font-semibold tracking-tight wrap-anywhere">
+          {entity.title ?? entity.id}
+        </h1>
+        {entity.summary && (
+          <p className="text-sm text-muted-foreground">{entity.summary}</p>
+        )}
       </div>
       <dl className="flex flex-wrap gap-x-6 gap-y-2 text-sm [&_dt]:text-muted-foreground [&>div]:flex [&>div]:gap-2">
         <div>
@@ -237,69 +217,9 @@ export function EntityHeader(props: { actions?: ReactNode }) {
               <li key={i}>{p.message}</li>
             ))}
           </ul>
-          {owner ? (
-            <p>
-              <Link
-                to={repairPath(workspaceId, entity.id)}
-                className={linkClass}
-              >
-                Repair this page
-              </Link>{" "}
-              by correcting its text.
-            </p>
-          ) : (
-            <p>A workspace owner can repair it by correcting its text.</p>
-          )}
         </PageNotice>
       )}
     </header>
-  )
-}
-
-/**
- * Pending catalog proposals for this entity (human experience, item 2;
- * catalog §8.6): those changing its ID or a former one, oldest first,
- * from the entity answer's `pending_proposals` (catalog §12.4). Nothing
- * when there are none.
- */
-export function PendingProposals() {
-  const { workspaceId, entity } = useEntityPage()
-  const items = entity.pending_proposals
-  if (items.length === 0) return null
-  return (
-    <Section
-      title="Waiting for approval"
-      description="Proposed changes to this page that a person has not approved yet. The page shows the catalog as it is now."
-    >
-      <ul className="flex flex-col divide-y rounded-lg border">
-        {items.map((p) => (
-          <li
-            key={p.proposal_id}
-            className="flex flex-col gap-1 p-3 text-sm sm:p-4"
-          >
-            <p>
-              <Link
-                to={wikiPath(workspaceId, `/proposals/${p.proposal_id}`)}
-                className={linkClass}
-              >
-                Catalog proposal {p.number}
-              </Link>{" "}
-              <span className="text-muted-foreground">
-                · {formatTime(p.created_at)} · {p.author}
-                {p.author_kind === "agent" && " (an agent)"}
-                {p.related_task && ` · ${p.related_task}`}
-              </span>
-            </p>
-            <p className="text-muted-foreground">
-              Kind of change:{" "}
-              {p.approval_classes
-                .map((c) => classNames(c as ApprovalClass))
-                .join(", ")}
-            </p>
-          </li>
-        ))}
-      </ul>
-    </Section>
   )
 }
 
@@ -409,10 +329,7 @@ export function OwningSources() {
 }
 
 /** The facts, grouped by key, after a one-line freshness summary. */
-export function Facts(props: {
-  /** Per fact, what M2-8 adds to its row, such as "Record a check". */
-  factActions?: (fact: CatalogFact) => ReactNode
-}) {
+export function Facts() {
   const { workspaceId, entity } = useEntityPage()
   const keys: string[] = []
   const byKey = new Map<string, CatalogFact[]>()
@@ -451,7 +368,6 @@ export function Facts(props: {
                     target={entity.relations.outgoing.find(
                       (r) => r.identity === fact.identity,
                     )}
-                    actions={props.factActions?.(fact)}
                   />
                 ))}
               </dd>
@@ -607,21 +523,6 @@ export function History() {
                   {item.purge !== null && ` · purge ${item.purge}`}
                   {item.approved_by && ` · approved by ${item.approved_by}`}
                 </span>
-                {item.proposal && (
-                  <>
-                    {" "}
-                    <span className="text-muted-foreground">·</span>{" "}
-                    <Link
-                      to={wikiPath(
-                        workspaceId,
-                        `/proposals/${item.proposal.id}`,
-                      )}
-                      className={cn(linkClass, "text-sm")}
-                    >
-                      catalog proposal {item.proposal.number}
-                    </Link>
-                  </>
-                )}
               </span>
               {i === 0 && item.revision === entity.revision ? (
                 <span className="text-xs text-muted-foreground">current</span>
@@ -746,47 +647,5 @@ export function DiffView(props: { lines: readonly DiffLine[] }) {
         </div>
       ))}
     </div>
-  )
-}
-
-/** Suggest a change and Record a check (human experience, changing the catalog from the wiki). */
-function EditActions() {
-  const { workspaceId, entity } = useEntityPage()
-  const checkable = entity.facts.some(
-    (f) => f.state === "intended" || f.state === "observed",
-  )
-  return (
-    <div className="flex flex-wrap gap-2">
-      <Link
-        to={wikiPath(workspaceId, `/edit/${entity.id}`)}
-        className={buttonVariants({ variant: "outline" })}
-      >
-        Suggest a change
-      </Link>
-      {checkable && (
-        <Link
-          to={wikiPath(workspaceId, `/check/${entity.id}`)}
-          className={buttonVariants({ variant: "outline" })}
-        >
-          Record a check
-        </Link>
-      )}
-    </div>
-  )
-}
-
-/** Record a check for one fact, from its row. */
-function RecheckAction(props: { fact: CatalogFact }) {
-  const { workspaceId, entity } = useEntityPage()
-  if (props.fact.state !== "intended" && props.fact.state !== "observed")
-    return null
-  return (
-    <Link
-      to={`${wikiPath(workspaceId, `/check/${entity.id}`)}?${new URLSearchParams({ fact: props.fact.identity }).toString()}`}
-      className={cn(linkClass, "self-start text-xs")}
-      aria-label={`Record a check of ${props.fact.key}`}
-    >
-      Record a check
-    </Link>
   )
 }

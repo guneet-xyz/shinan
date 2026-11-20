@@ -17,11 +17,6 @@ export function entityPath(workspaceId: string, id: string): string {
   return `/w/${workspaceId}/wiki/e/${id.split("/").map(encodeURIComponent).join("/")}`
 }
 
-/** The page where a workspace owner repairs a document's text (catalog §8.3). */
-export function repairPath(workspaceId: string, id: string): string {
-  return `/w/${workspaceId}/wiki/repair/${id.split("/").map(encodeURIComponent).join("/")}`
-}
-
 export function wikiPath(workspaceId: string, path = ""): string {
   return `/w/${workspaceId}/wiki${path}`
 }
@@ -110,16 +105,3 @@ export function valueText(value: ScalarValue | undefined): string {
 export function isWebAddress(text: string): boolean {
   return /^https?:\/\/\S+$/i.test(text.trim())
 }
-
-/** Bytes of text as UTF-8, in words. */
-export function sizeText(bytes: number): string {
-  if (bytes < 1024) return `${bytes} bytes`
-  return `${(bytes / 1024).toFixed(1)} KB`
-}
-
-/**
- * The agents' path grows large when its steps pass this size: every agent
- * session reads all of it (human experience, start here for agents).
- * **Proposed:** 8 KB, about 2,000 words of an agent's context.
- */
-export const agentPathWarningBytes = 8 * 1024
