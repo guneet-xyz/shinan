@@ -136,6 +136,32 @@ describe("dropping M2's catalog tables", { timeout: 60_000 }, () => {
     })
   })
 
+  it("waits at most 15 seconds for a session that holds M2's tables, then fails, keeping them", async () => {
+    await before(async (url, pool) => {
+      for (const state of (await m2State(pool)).values())
+        await move(pool, state)
+      // As 0.3's web left running, in a transaction that read a table.
+      const holder = await pool.connect()
+      try {
+        await holder.query("begin")
+        await holder.query("select 1 from catalog_page_visits limit 1")
+        const started = Date.now()
+        await expect(migrateDatabase(url)).rejects.toMatchObject({
+          cause: { code: "55P03" },
+        })
+        expect(Date.now() - started).toBeGreaterThanOrEqual(14_000)
+        expect(Date.now() - started).toBeLessThan(40_000)
+        expect(await tables(pool)).toHaveLength(6)
+      } finally {
+        await holder.query("rollback")
+        holder.release()
+      }
+      // Once it has gone, the drop runs.
+      await migrateDatabase(url)
+      expect(await tables(pool)).toEqual([])
+    })
+  })
+
   it("runs on an installation that never had M2 documents", async () => {
     const database = await createTestDatabase({ migrate: false })
     const { pool } = createDatabase(database.url)

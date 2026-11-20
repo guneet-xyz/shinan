@@ -544,9 +544,9 @@ async function runMigrate(env: Env): Promise<number> {
     try {
       await migrateDatabase(databaseUrl)
     } catch (error) {
-      // The drop's own refusal (`RAISE EXCEPTION` in 0020_m2_dropped): its
-      // message is Shinan's, never a value, so it is shown.
-      const refusal = refusalOf(error)
+      // The drop's own refusal, or its lock waited for too long
+      // (0020_m2_dropped): explained, never a value.
+      const refusal = migrationRefusal(error)
       if (refusal === null) throw error
       console.error(refusal)
       return false
@@ -558,8 +558,13 @@ async function runMigrate(env: Env): Promise<number> {
   return 0
 }
 
-/** The message of a migration's own `RAISE EXCEPTION` (SQLSTATE P0001), or null. */
-function refusalOf(error: unknown): string | null {
+/**
+ * Why a migration refused to run, to show the operator, or null for any
+ * other failure: its own `RAISE EXCEPTION` (SQLSTATE P0001), whose message
+ * is Shinan's, never a value; or a lock it waited for past its
+ * `lock_timeout` (55P03), the drop of M2's tables (0020_m2_dropped).
+ */
+export function migrationRefusal(error: unknown): string | null {
   let current: unknown = error
   for (let depth = 0; depth < 5 && current; depth++) {
     const { code, message, cause } = current as {
@@ -568,6 +573,8 @@ function refusalOf(error: unknown): string | null {
       cause?: unknown
     }
     if (code === "P0001" && typeof message === "string") return message
+    if (code === "55P03")
+      return "M2's catalog tables are kept: the drop waited 15 seconds for them while another session held them (is 0.3's web or worker still running?). Stop it and run migrate again; the moves already made are kept."
     current = cause
   }
   return null

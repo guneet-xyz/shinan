@@ -353,6 +353,11 @@ succeeded changes nothing.
   workspace's catalog … changed after it was moved": something still wrote
   to 0.3's catalog, so `web` or `worker` was running. Roll back with the
   dump from step 1, then start again at step 1.
+- **"The drop waited 15 seconds for them while another session held
+  them":** something still has 0.3's tables open, so `web` or `worker` is
+  probably running. Stop it and run `docker compose up -d` again: the moves
+  already made are kept, and the drop runs if nothing was written
+  meanwhile (if something was, the message above follows).
 
 **To roll back to 0.3:** 0.4's migrations are not backward compatible
 (M2's tables are dropped and the index tables change shape). Restore the
