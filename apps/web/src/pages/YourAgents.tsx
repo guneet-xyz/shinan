@@ -51,7 +51,7 @@ export function YourAgents() {
           to="/account/agents/setup"
           className="text-foreground underline underline-offset-4"
         >
-          Set up OpenCode
+          Set up an agent
         </Link>
       </PageHeader>
       {issued && (
@@ -162,7 +162,7 @@ function CreateToken(props: { onIssued: (issued: IssuedAgentToken) => void }) {
   return (
     <Section
       title="Create a token by hand"
-      description="For a coding tool that sends a header to Shinan's MCP server. If you already have an agent for that tool and machine, it gets the new token and its old one stops working. You will be asked to sign in again."
+      description="For a coding tool on one of your machines. If that tool and machine already have an agent, it gets the new token and its old token stops working. You'll be asked to sign in again."
     >
       <form onSubmit={submit}>
         <FieldGroup>

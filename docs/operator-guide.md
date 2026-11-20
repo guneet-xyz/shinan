@@ -341,7 +341,7 @@ in the `Authorization` header, and load the agent skill from
 ([agent integrations](agent-integrations.md#mcp-server-and-tools)).
 
 - **Tokens** are made by members, by hand, for their own agents (Your agents,
-  then **Set up OpenCode** for the steps). Each is shown once and stored only
+  then **Set up an agent** for the steps). Each is shown once and stored only
   as a hash. A token is read-only or full, works only in the workspace it was
   made for, and is bound to `SHINAN_URL`. Members revoke their own tokens;
   workspace owners can revoke any token in the workspace. Each new token

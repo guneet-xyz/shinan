@@ -347,7 +347,8 @@ export function TokenShownOnce(props: {
       </AlertTitle>
       <AlertDescription className="flex flex-col gap-3 text-foreground">
         <p>
-          Copy it now and put it on the machine. It will not be shown again.
+          It will not be shown again. Keep this open until the setup command on
+          the machine asks you to paste it.
           {issued.replacedToken &&
             " The agent's previous token stopped working."}
         </p>
@@ -372,20 +373,15 @@ export function TokenShownOnce(props: {
           </Button>
         </div>
         <p className="text-muted-foreground">
-          The coding tool sends it as the header{" "}
-          <code className="font-mono text-foreground">
-            Authorization: Bearer &lt;token&gt;
-          </code>
-          . Keep it in a file only you can read, never in a project file, chat
-          or issue.{" "}
           <Link
-            to="/account/agents/setup"
+            to={`/account/agents/setup?agent=${encodeURIComponent(issued.agent.id)}`}
             target="_blank"
             rel="noopener"
             className="text-foreground underline underline-offset-4"
           >
-            How to set up OpenCode (opens in a new tab)
+            Set up this agent (opens in a new tab)
           </Link>
+          . Never paste the token into a chat, a project file or an issue.
         </p>
         <div>
           <Button type="button" onClick={props.onDismiss}>

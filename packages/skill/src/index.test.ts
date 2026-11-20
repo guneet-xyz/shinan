@@ -136,6 +136,7 @@ describe("loadSkillCatalog", () => {
       "references/changing.md",
       "references/facts.md",
       "references/reading.md",
+      "references/types.md",
     ])
     const main = read(catalog.files.get("shinan/SKILL.md")!.body)
     // OpenCode advertises a skill only when it has a description.
@@ -147,9 +148,11 @@ describe("loadSkillCatalog", () => {
     for (const [path, file] of catalog.files) {
       if (!path.endsWith(".md")) continue
       const folder = path.split("/").slice(0, -1).join("/")
-      for (const [, target] of read(file.body).matchAll(
-        /\]\(([^)#\s]+)(?:#[^)]*)?\)/g,
-      )) {
+      // Code shows the catalog's own links, which are not the skill's.
+      const prose = read(file.body)
+        .replace(/```[\s\S]*?```/g, "")
+        .replace(/`[^`\n]*`/g, "")
+      for (const [, target] of prose.matchAll(/\]\(([^)#\s]+)(?:#[^)]*)?\)/g)) {
         if (/^https:\/\//.test(target!)) continue
         const resolved = new URL(target!, `http://x/${folder}/`).pathname.slice(
           1,

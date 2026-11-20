@@ -8,10 +8,19 @@
       "@shinan/source": "./src/index.ts",
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./setup": {
+      "@shinan/source": "./src/setup.ts",
+      "types": "./dist/setup.d.ts",
+      "default": "./dist/setup.js"
     }
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
+    "generate": "tsx --conditions=@shinan/source scripts/types-reference.ts",
     "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@shinan/core": "workspace:*"
   }
 }

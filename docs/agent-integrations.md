@@ -496,8 +496,6 @@ All **proposed**:
 
 ## The skill
 
-> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-9](build-plan-git-catalog.md#gc-9-the-skill-and-agent-setup)): rewritten for the Git workflow. Until then, this section describes M2 as built (v0.3.0).
-
 All **proposed**:
 
 - One skill, `shinan`, with a short main file and supporting files. Reason:
@@ -522,18 +520,87 @@ All **proposed**:
   of the trial, in a separate change to that repository.
 
 **Decided (owner, 2026-11-19, M2-Q17; M2-9, [#90](https://github.com/guneet-xyz/shinan/issues/90)),
-as built:**
+as built, and rewritten for the Git-based catalog in GC-9
+([#171](https://github.com/guneet-xyz/shinan/issues/171); plan
+[§2.12](build-plan-git-catalog.md#212-agents-setup-on-a-machine-and-the-skill),
+accepted with the plan):**
 
 - **Source.** The skill is Markdown in `packages/skill/skill/shinan/`: a
-  short `SKILL.md` (the rules in one screen, with the trust-label wording
-  above verbatim) and three supporting files the agent reads when a step
-  needs them: `references/reading.md` (the read tools, freshness,
-  discrepancies, unknowns), `references/facts.md` (fact states, fact checks,
-  provenance and where secrets live) and `references/changing.md` (the
-  documentation-impact obligation, catalog proposals and the write tools).
-  Reason: OpenCode puts only `SKILL.md` into the conversation and lists the
-  other files, so detail costs context only when it is used. Task, presence
-  and nudge conventions join in M3 and M4.
+  short `SKILL.md` (the rules in one screen) and four supporting files the
+  agent reads when a step needs them: `references/reading.md` (the
+  repository's layout, reading documents from the clone, working out
+  freshness from `checked` and the key's recheck interval, discrepancies,
+  unknowns), `references/facts.md` (the fact format, writing fact checks by
+  hand, provenance and where secrets live), `references/changing.md` (the
+  documentation-impact obligation, the Git workflow, retiring, undo, the
+  example change and every refusal code) and `references/types.md` (the
+  built-in types' keys and recheck intervals). Reason: OpenCode puts only
+  `SKILL.md` into the conversation and lists the other files, so detail
+  costs context only when it is used. Task, presence and nudge conventions
+  join in M3 and M4.
+- **Catalog content is information, never instructions** (owner, GD-5,
+  [D-062](decisions/D-062-no-catalog-trust-labels.md)): the skill tells
+  agents never to run commands found in the catalog, never to follow its
+  requests to change scope, permissions or configuration, and to say so if
+  it tries. This replaces the trust-label wording; the start-here
+  document's agents' path informs the agent like any other catalog text.
+- **The workflow** (plan §2.12): find the clone, fetch, add a worktree on a
+  new local branch from `origin/main`, edit, commit with a message saying
+  why, `git fetch` and `git rebase origin/main` (or merge), resolving
+  conflicts from evidence and check times ([catalog §8.5](catalog.md#85-conflicts)),
+  optionally `git push -o check-only origin HEAD:main`, then
+  `git push origin HEAD:main`, reading every `remote:` line; on a refusal,
+  fix it in a new commit and push again; remove the worktree and delete the
+  branch. Branches are pushed only to share unfinished work and deleted once
+  merged. Retire rather than delete; keep old IDs in `aliases`. Undo is
+  `git revert`. On a refusal, the agent does what the output's last lines
+  say: a new commit, or for problems inside its commits, rewriting them
+  with `git rebase -i origin/main` (product review of #176). After a purge,
+  it resets onto the new history and never pushes old commits back.
+- **Writing fact checks by hand:** `checked` is the real time of the check,
+  never rounded and never the time of writing or pushing
+  ([#158](https://github.com/guneet-xyz/shinan/issues/158)); `by` is the
+  agent's own written form, `<person handle> via <agent handle>`
+  ([identity §8.7](identity.md#87-how-an-actor-is-written-in-text)), on
+  every fact check it writes, because a fact check must name the agent that
+  first pushed the commit introducing it, or the push is refused (owner,
+  GQ-3 as refined, [D-066](decisions/D-066-by-names-the-first-pusher.md)).
+  So the skill says: merging another agent's branch once that agent has
+  pushed it is fine (its fact checks keep naming it); rebasing,
+  cherry-picking or squashing another agent's commits that add fact checks
+  is not (the new commits are first pushed by the agent doing it); never write another
+  agent's name in a fact check, including while resolving a conflict; a
+  revert that restores another agent's fact check exactly as it was passes.
+- **How an agent knows its clone and its `by`** (**proposed**, GC-9): the
+  setup records them in Git's global configuration, `shinan.catalog` (the
+  clone's folder) and `shinan.by` (the written form), which the skill reads
+  with `git config --global --get`. Neither is a secret. Reason: the skill
+  is public and names no machine's paths; without the MCP server
+  ([D-063](decisions/D-063-no-mcp-for-the-catalog.md)) nothing else tells
+  the agent who it is, and Git's configuration is where the clone's other
+  settings already live. A project's or machine's own instructions may
+  name another clone. A refusal for `by` also states the form expected.
+- **`accepted`** on a discrepancy's facts is written by the agent only when
+  the person it names told it so, in the task (**proposed**, GC-9). Reason:
+  Shinan no longer writes it ([plan §2.5](build-plan-git-catalog.md#25-checks-on-push));
+  validation checks only that it names a `person` entity.
+- **The built-in types reference** (`references/types.md`) is generated from
+  the code's built-in type schemas (`pnpm --filter @shinan/skill generate`)
+  and a test checks that the file matches them, so the two cannot drift.
+  Reason: built-in types have no schema document in the repository, so an
+  agent reading the clone has no other way to know their intervals.
+- **The refusal codes** in `references/changing.md` are tested against the
+  code: every validation code of `packages/core` and every push check code
+  (GC-3's `pushCheckCodes`, [#165](https://github.com/guneet-xyz/shinan/issues/165))
+  must be explained there, each with what to do next, the same next steps
+  as the push output gives. For `by-not-first-pusher` the skill repeats the
+  output's advice: name yourself only on fact checks you made; for another
+  agent's, merge its pushed branch; don't rebase, cherry-pick or squash it.
+- **The token reaches Git only through the credential helper.** The skill
+  says never to put it in a remote URL (`https://agent:<token>@…`): Git
+  would keep it in `.git/config` and send it as the same Basic
+  authentication, so Shinan cannot tell the difference and cannot refuse
+  it.
 - **The catalog format**, checked against
   [OpenCode skills](https://opencode.ai/docs/skills) ("Catalogs") on
   2026-11-18: `/skills/index.json` is
@@ -556,80 +623,157 @@ as built:**
   address is ever in the skill.
 - **Decided (owner, 2026-11-18, M2-Q12 in the
   [build plan](build-plan-m2.md#71-answers)): if Shinan is down,** the
-  skill tells the agent to carry on with its project's own instructions and
-  the owning sources, say so, and record the catalog updates it owes. It
-  does not name the `workspace` repository. Reason: the skill is public and
-  serves every installation, so which fallback a project has belongs to that
-  project's instructions. For the trial, the `workspace` repository's note
-  says it ([trial start kit](build-plan-m2.md#313-m2-13-trial-start-kit)).
-- **The write tools** are described as built in M2-6
-  (`references/changing.md`); a test applies the file's example proposal
-  through the MCP tool, so the two cannot drift apart.
+  skill tells the agent to read the clone as of its last fetch (saying how
+  old it is), carry on with its project's own instructions and the owning
+  sources, say so, and keep its commits locally or record the catalog
+  updates it owes. It does not name the `workspace` repository. Reason: the
+  skill is public and serves every installation, so which fallback a
+  project has belongs to that project's instructions.
+- **The example change** in `references/changing.md` (a document before
+  and after a recheck) is tested: both validate with Shinan's validation,
+  and `apps/server/src/git/push/skill.test.ts` runs the setup page's command
+  and the skill's quick path with a real `git` through `web` to a Git
+  container running Shinan's own push checks. The change is accepted; a
+  check-only push answers as the skill says; and a fact check naming
+  someone else is refused with `by-not-first-pusher`, whose advice line the
+  skill repeats word for word, and every code printed is in the skill's
+  table.
 - **Serving** is in [architecture §10.2](architecture.md#102-web-hardening).
 
-### Setting up OpenCode with a hand-made token
+### Setting up an agent with a hand-made token
 
-> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-9](build-plan-git-catalog.md#gc-9-the-skill-and-agent-setup)): becomes "Set up an agent": the token file, a Git credential helper, a clone and the skill, without the MCP entry. Until then, this section describes M2 as built (v0.3.0).
+**Decided (owner, 2026-11-19, M2-Q17; M2-9), as built, and rewritten for
+Git in GC-9** (plan [§2.12](build-plan-git-catalog.md#212-agents-setup-on-a-machine-and-the-skill),
+accepted with the plan; shape from the product owner's brief on
+[#171](https://github.com/guneet-xyz/shinan/issues/171), D-067): a
+signed-in page, **Set up an agent** (`/account/agents/setup`), linked from
+Your agents and from the token shown once (in a new tab, so the token stays
+on screen, with `?agent=<id>` so the page fills in that agent). It fills in
+the installation's own address, the agent's workspace and its written form,
+and gives four steps of one sentence each, with how each works behind a
+"What does this do?" disclosure. Step 2's long one-line command has a
+"Show the whole command" button that wraps it, so a person can read it
+before running it (product review of #176). The command is built in
+`packages/skill/src/setup.ts`, which the page shows and a test runs with a
+real `git`, so the two cannot differ.
 
-**Decided (owner, 2026-11-19, M2-Q17; M2-9), as built:** a signed-in page, **Set up OpenCode**
-(`/account/agents/setup`), linked from Your agents and from the token shown
-once (in a new tab, so the token stays on screen). It fills in the
-installation's own address and gives four steps:
-
-1. Make a token by hand in Your agents (read-only if the agent only reads).
-2. Store it on the machine from a terminal, in any shell, never the coding
-   tool's chat, then paste the token and press Enter:
+1. **Create a token for this machine** in Your agents (read-only if the
+   agent should only read). The token panel says to keep it open until the
+   setup command asks for it.
+2. **Run one command on the machine, then paste the token when it asks.**
+   The page says to copy the command first and only then go back to the
+   token, so copying the command never replaces the token on the clipboard
+   before it is used (product review of #176). The command, on one line:
 
    ```sh
-   bash -c 'umask 077; mkdir -p ~/.config/shinan && chmod 700 ~/.config/shinan && IFS= read -rs t && : > ~/.config/shinan/token && chmod 600 ~/.config/shinan/token && printf "%s\n" "$t" > ~/.config/shinan/token'
+   bash -c 'set -e; umask 077; mkdir -p ~/.config/shinan; chmod 700 ~/.config/shinan; printf %s "Paste the agent token (it is not shown), then press Enter: " >&2; IFS= read -rs t; echo >&2; [ -n "$t" ] || { echo "No token was pasted." >&2; exit 1; }; : > ~/.config/shinan/token; chmod 600 ~/.config/shinan/token; printf "%s\n" "$t" > ~/.config/shinan/token; unset t; helper=$(printf "\041%s" '\''f() { test "$1" = get && printf "username=agent\npassword=%s\n" "$(cat ~/.config/shinan/token)"; }; f'\''); [ -e ~/shinan-catalog/main ] || GIT_TERMINAL_PROMPT=0 git clone -c credential.https://<installation>.helper= -c "credential.https://<installation>.helper=$helper" "https://<installation>/git/<workspace ID>.git" ~/shinan-catalog/main; git config --global shinan.catalog ~/shinan-catalog/main; git config --global shinan.by "<person handle> via <agent handle>"; echo "Done. The catalog is in ~/shinan-catalog/main." >&2'
    ```
 
-   Reason ([requirement 3](#authentication-requirements)): `read -s` shows
-   nothing, so the token is not on screen, in scrollback or terminal logs;
-   it is never on a command line or in shell history, and `printf` is a
-   shell builtin, so it is never in the process list either. The folder is
-   700 and the file 600 even if they existed before (`cat >` or a plain
-   redirect would keep an older file's mode), and the file is emptied and
-   locked down before the token goes in. The commands run in `bash`
-   whatever shell they are pasted into (checked in bash, zsh, dash, fish
-   and tcsh), so wherever bash is installed, a shell without `read -s`
-   never ends up reading the pasted token as a command line, or keeping it
-   in its history. Decided (owner, 2026-11-19, M2-Q17;
-   M2-6, after the [#119](https://github.com/guneet-xyz/shinan/pull/119)
-   review).
+   - **The token** ([requirement 3](#authentication-requirements)):
+     `read -s` shows nothing, so the token is not on screen, in scrollback
+     or terminal logs; it is never on a command line or in shell history,
+     and `printf` is a shell builtin, so it is never in the process list
+     either. The folder is 700 and the file 600 even if they existed before,
+     and the file is emptied and locked down before the token goes in. An
+     empty paste stops the command and keeps any earlier token. Decided for
+     the token step (owner, 2026-11-19, M2-Q17; M2-6, after the
+     [#119](https://github.com/guneet-xyz/shinan/pull/119) review); kept.
+   - **Any shell:** the command runs in `bash` whatever shell it is pasted
+     into, and is one line, so shells without multi-line quotes take it
+     too. The credential helper's leading `!` is made by `printf "\041"`,
+     because a `!` in the pasted line is history expansion in csh and tcsh,
+     even inside single quotes. Checked in GC-9 (bash, zsh, dash, fish and
+     tcsh, interactive, in a Debian 13 container): each passes bash exactly
+     the same script; with a literal `!`, tcsh failed with "Event not
+     found".
+   - **The clone**, unless the folder exists (so running it again only
+     replaces the token), with Shinan's credential helper in the clone's own
+     configuration (owner, GD-4): `git clone -c` writes both values into
+     the clone's `.git/config`, which worktrees share. The empty value drops
+     every helper configured before it for that address, and the clone's
+     configuration is read after the global and system ones, so no other
+     helper is asked for the token or told it. Git runs the helper only
+     when Shinan asks for credentials (a `401`); the helper answers only
+     `get`, so it never stores or erases anything, and passes the token on
+     standard output, never on a command line. The user name is ignored.
+     The clone is not quiet (`-q`), so Shinan's own `remote:` message, such
+     as "this agent's token was not accepted (revoked or replaced)",
+     reaches the person: with `-q`, Git hid it and failed without a word
+     (found by the acceptance test in `apps/server/src/git/push/skill.test.ts`).
+     The default folder is `~/shinan-catalog/main` (**proposed**); worktrees
+     go beside it. A machine's own conventions may put it elsewhere (on
+     Daedalus, `/mnt/projects/shinan-catalog/main`, plan §2.12; the trial
+     guide gives that form, GC-12). The address for agents is
+     `/git/<workspace ID>.git`, as GC-2 serves it and Settings › Catalog
+     shows it.
+   - **`shinan.catalog` and `shinan.by`** in Git's global configuration
+     (**proposed**, GC-9, see [the skill](#the-skill)).
 
-3. Add to `opencode.jsonc` in a folder above the projects that should use
-   Shinan, or to `~/.config/opencode/opencode.jsonc` for every folder:
+   **Proposed (GC-9), instead of the plan's two `git config --global`
+   lines** ([plan §2.12](build-plan-git-catalog.md#212-agents-setup-on-a-machine-and-the-skill)).
+   Reason, checked on Daedalus with Git 2.47.3 (recorded on
+   [#171](https://github.com/guneet-xyz/shinan/issues/171)): Git collects
+   credential helpers in the order it reads configuration, and an empty
+   value clears only those read before it. With the lines in the global
+   file, a `credential.helper store` written later in the same file (or in
+   a repository's configuration) was still used: after a successful fetch
+   Git told it the token, and it saved the token in plain text in
+   `~/.git-credentials`. In the clone's configuration the clearing value is
+   read last. Tested in `packages/skill/src/setup.test.ts` with helpers
+   before and after in the global file, for every address and for Shinan's
+   own: none is asked or told anything, nothing is stored, and the same
+   helpers are still asked outside the clone. A refused token fails at once
+   with `GIT_TERMINAL_PROMPT=0` ("Authentication failed"). `GIT_TRACE`,
+   `GIT_TRACE_CURL`, `GIT_CURL_VERBOSE` and `GIT_TRACE_PACKET` show
+   `Authorization: Basic <redacted>`, never the token; with
+   `GIT_TRACE_REDACT=0` the header appears, so the skill forbids turning
+   redaction off. Configuration given on the command line
+   (`git -c credential.helper=…`) or through `GIT_CONFIG_COUNT`,
+   `GIT_CONFIG_KEY_<n>` and `GIT_CONFIG_VALUE_<n>` is read after the clone's,
+   so it could add a helper back; the skill names both and forbids them. A
+   refused token never makes Git prompt for a password, even in a terminal
+   without `GIT_TERMINAL_PROMPT=0`: the helper's answer was refused, so Git
+   fails with "Authentication failed" (tested in a pseudo-terminal, where
+   the same Git without a helper does prompt).
+
+3. **Add Shinan to OpenCode:** the page says to merge the block into the
+   global OpenCode config (`~/.config/opencode/opencode.jsonc` or
+   `opencode.json`), keeping other settings and adding to any `skills` and
+   `permissions` already there (or into an `opencode.jsonc` in a folder
+   above the projects that should use Shinan), with the `shinan` MCP server
+   entry of an earlier setup removed (owner, GD-6,
+   [D-063](decisions/D-063-no-mcp-for-the-catalog.md)):
 
    ```jsonc
    {
      "$schema": "https://opencode.ai/config.json",
-     "mcp": {
-       "servers": {
-         "shinan": {
-           "type": "remote",
-           "url": "https://<installation>/mcp",
-           "oauth": false,
-           "headers": {
-             "Authorization": "Bearer {file:~/.config/shinan/token}",
-           },
-         },
-       },
-     },
      "skills": ["https://<installation>/skills/"],
+     "permissions": [
+       { "action": "read", "resource": "~/.config/shinan/*", "effect": "deny" },
+     ],
    }
    ```
 
-   The file holds no secret; OpenCode reads the token when it connects and
-   drops the file's trailing newline.
+   The rule denies OpenCode's `read` tool the token's folder (OpenCode
+   [permissions](https://opencode.ai/docs/permissions), checked
+   2026-11-19); shell commands can still read it, so the skill's rule
+   remains the real control. The skill's address is shown as text, not a
+   link: `/skills/` itself is not a page.
 
-4. Check with `opencode mcp list` (`shinan connected`; a first run can find
-   no servers), then ask the agent to load the `shinan` skill and call
-   `workspace_context`.
+4. **Check it:** if `git fetch` in the clone finishes without asking for
+   anything, the setup is done; then ask the agent to read Start here.
 
-It also says never to paste the token into a chat, issue, project file or
-command line, and to revoke it in Your agents if it leaks. The trial's
-machine-level layout on Daedalus is in the [trial guide](trial.md#4-opencode-configuration-on-daedalus).
+Three short rules close the page: never paste the token anywhere but the
+setup command; if it leaks or the machine is lost, revoke it in Your agents;
+to replace it, make a new token and run step 2 again. The page says nothing
+about MCP or headers (D-063). The trial's machine-level layout on Daedalus
+is in the [trial guide](trial.md#4-opencode-configuration-on-daedalus).
+
+**Open (for later):** one token file serves one agent, and an agent belongs
+to one workspace, so a machine user reaches one workspace's catalog. A
+second workspace on the same machine needs a second token file and a
+helper that tells the two repositories apart, which this setup does not yet
+give.
 
 ## Conventions agents follow
 
@@ -1107,8 +1251,6 @@ phase 3):
 
 ## Authentication requirements
 
-> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-9](build-plan-git-catalog.md#gc-9-the-skill-and-agent-setup)): the token also authenticates pushes at `/git/`, supplied by a credential helper. Until then, this section describes M2 as built (v0.3.0).
-
 The [identity document](identity.md) owns registration, tokens, scopes,
 machines, revocation and attribution. The [architecture document](architecture.md)
 owns how tokens reach each endpoint.
@@ -1137,6 +1279,11 @@ This document needs the following, which NO-1 meets:
    model's context, a repository or a command-line argument. The MCP server
    gets the token as a request header from local configuration (OpenCode
    `headers` with `oauth: false`; Claude Code `headers` or `headersHelper`).
+   Git gets it as the password of HTTP Basic authentication from a
+   credential helper scoped to the installation, which reads the token file
+   only when Shinan asks; it is never in a remote URL, and Git's trace
+   output redacts it (owner, GD-4, [D-061](decisions/D-061-push-authentication-and-push-log.md);
+   [setting up an agent](#setting-up-an-agent-with-a-hand-made-token)).
 4. **Revocation.** A revoked token stops working at once. The plugin then stops
    reporting, tells the agent through its context, and asks the person to
    approve the machine again. Reason: with long-lived tokens, revocation is the
