@@ -629,9 +629,13 @@ accepted with the plan):**
   project has belongs to that project's instructions.
 - **The example change** in `references/changing.md` (a document before
   and after a recheck) is tested: both validate with Shinan's validation,
-  and a test pushes it with a real `git`, through the setup's credential
-  helper, to a test Git server. Against Shinan's own push checks this test
-  is **to be completed** once GC-3 provides a test server.
+  and `apps/server/src/git/push/skill.test.ts` runs the setup page's command
+  and the skill's quick path with a real `git` through `web` to a Git
+  container running Shinan's own push checks. The change is accepted; a
+  check-only push answers as the skill says; and a fact check naming
+  someone else is refused with `by-not-first-pusher`, whose advice line the
+  skill repeats word for word, and every code printed is in the skill's
+  table.
 - **Serving** is in [architecture §10.2](architecture.md#102-web-hardening).
 
 ### Setting up an agent with a hand-made token
@@ -658,7 +662,7 @@ real `git`, so the two cannot differ.
    before it is used (product review of #176). The command, on one line:
 
    ```sh
-   bash -c 'set -e; umask 077; mkdir -p ~/.config/shinan; chmod 700 ~/.config/shinan; printf %s "Paste the agent token (it is not shown), then press Enter: " >&2; IFS= read -rs t; echo >&2; [ -n "$t" ] || { echo "No token was pasted." >&2; exit 1; }; : > ~/.config/shinan/token; chmod 600 ~/.config/shinan/token; printf "%s\n" "$t" > ~/.config/shinan/token; unset t; helper=$(printf "\041%s" '\''f() { test "$1" = get && printf "username=agent\npassword=%s\n" "$(cat ~/.config/shinan/token)"; }; f'\''); [ -e ~/shinan-catalog/main ] || GIT_TERMINAL_PROMPT=0 git clone -q -c credential.https://<installation>.helper= -c "credential.https://<installation>.helper=$helper" "https://<installation>/git/<workspace ID>.git" ~/shinan-catalog/main; git config --global shinan.catalog ~/shinan-catalog/main; git config --global shinan.by "<person handle> via <agent handle>"; echo "Done. The catalog is in ~/shinan-catalog/main." >&2'
+   bash -c 'set -e; umask 077; mkdir -p ~/.config/shinan; chmod 700 ~/.config/shinan; printf %s "Paste the agent token (it is not shown), then press Enter: " >&2; IFS= read -rs t; echo >&2; [ -n "$t" ] || { echo "No token was pasted." >&2; exit 1; }; : > ~/.config/shinan/token; chmod 600 ~/.config/shinan/token; printf "%s\n" "$t" > ~/.config/shinan/token; unset t; helper=$(printf "\041%s" '\''f() { test "$1" = get && printf "username=agent\npassword=%s\n" "$(cat ~/.config/shinan/token)"; }; f'\''); [ -e ~/shinan-catalog/main ] || GIT_TERMINAL_PROMPT=0 git clone -c credential.https://<installation>.helper= -c "credential.https://<installation>.helper=$helper" "https://<installation>/git/<workspace ID>.git" ~/shinan-catalog/main; git config --global shinan.catalog ~/shinan-catalog/main; git config --global shinan.by "<person handle> via <agent handle>"; echo "Done. The catalog is in ~/shinan-catalog/main." >&2'
    ```
 
    - **The token** ([requirement 3](#authentication-requirements)):
@@ -688,11 +692,16 @@ real `git`, so the two cannot differ.
      when Shinan asks for credentials (a `401`); the helper answers only
      `get`, so it never stores or erases anything, and passes the token on
      standard output, never on a command line. The user name is ignored.
+     The clone is not quiet (`-q`), so Shinan's own `remote:` message, such
+     as "this agent's token was not accepted (revoked or replaced)",
+     reaches the person: with `-q`, Git hid it and failed without a word
+     (found by the acceptance test in `apps/server/src/git/push/skill.test.ts`).
      The default folder is `~/shinan-catalog/main` (**proposed**); worktrees
      go beside it. A machine's own conventions may put it elsewhere (on
      Daedalus, `/mnt/projects/shinan-catalog/main`, plan §2.12; the trial
-     guide gives that form, GC-12). The address for agents is **to be
-     confirmed** with GC-2's routes.
+     guide gives that form, GC-12). The address for agents is
+     `/git/<workspace ID>.git`, as GC-2 serves it and Settings › Catalog
+     shows it.
    - **`shinan.catalog` and `shinan.by`** in Git's global configuration
      (**proposed**, GC-9, see [the skill](#the-skill)).
 

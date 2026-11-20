@@ -2,7 +2,12 @@ import { readFile } from "node:fs/promises"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 
-import { readCatalog, validateCatalog, validateChange } from "@shinan/core"
+import {
+  pushCheckCodes,
+  readCatalog,
+  validateCatalog,
+  validateChange,
+} from "@shinan/core"
 import type { ProblemCode } from "@shinan/core"
 
 import {
@@ -53,38 +58,8 @@ const validationCodes = {
   "owner-not-member": true,
 } satisfies Record<ProblemCode, true>
 
-/**
- * The push checks' own codes: GC-3's `pushCheckCodes` (#191, #193), copied
- * until it is on `main`, when this list is replaced by its keys.
- */
-const pushCodes = [
-  "ref-not-branch",
-  "ref-name-invalid",
-  "main-not-fast-forward",
-  "too-many-branches",
-  "purged-commit",
-  "symlink",
-  "submodule",
-  "file-too-large",
-  "commit-too-large",
-  "too-many-commits",
-  "tree-too-large",
-  "path-not-portable",
-  "secret",
-  "repository-full",
-  "busy",
-  "too-slow",
-  "check-only",
-  "push-option-unknown",
-  "check-failed",
-  "secret-suspected",
-  "path-not-allowed",
-  "path-id-mismatch",
-  "id-disappeared",
-  "by-not-first-pusher",
-  "catalog-too-large",
-  "main-too-many-commits",
-]
+/** The push checks' own codes (GC-3), which `pushCheckCodes` lists. */
+const pushCodes = Object.keys(pushCheckCodes)
 
 const changingFile = join(skillDirectory, "references", "changing.md")
 

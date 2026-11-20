@@ -98,6 +98,10 @@ one group.
   is refused. Merging that agent's pushed branch keeps its fact checks
   naming it; rebasing, cherry-picking or squashing its commits does not
   ([changing.md](changing.md)).
+- **A restored fact check** (one put back exactly as it once was on `main`,
+  for example by `git revert`) passes, still naming whoever made it, but it
+  says only what was true at its old `checked`: it may be out of date.
+  Recheck it if anything depends on it.
 - **Nothing is removed by omission.** A value that no longer holds is
   removed on purpose, in a commit that says why.
 

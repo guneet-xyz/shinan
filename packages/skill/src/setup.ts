@@ -54,8 +54,8 @@ function helperKey(origin: string) {
 }
 
 /**
- * The catalog repository's address, the "address for agents" (plan §2.2).
- * **To be confirmed** with GC-2's routes: `/git/<workspace ID>.git`.
+ * The catalog repository's address, the "address for agents", as `web`
+ * serves it (plan §2.2, GC-2): `/git/<workspace ID>.git`.
  */
 export function catalogRepositoryUrl(
   origin: string,
@@ -111,7 +111,7 @@ export function setupCommand(options: {
     // single quotes.
     `helper=$(printf "\\041%s" ${shellQuote(credentialHelper.slice(1))})`,
     [
-      `[ -e ${folder} ] || GIT_TERMINAL_PROMPT=0 git clone -q`,
+      `[ -e ${folder} ] || GIT_TERMINAL_PROMPT=0 git clone`,
       `-c ${helperKey(options.origin)}=`,
       `-c "${helperKey(options.origin)}=$helper"`,
       `"${catalogRepositoryUrl(options.origin, options.workspaceId)}" ${folder}`,

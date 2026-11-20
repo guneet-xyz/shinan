@@ -2,19 +2,12 @@ import { CheckIcon, CopyIcon } from "lucide-react"
 import { useState } from "react"
 import { Link } from "react-router"
 
+import { catalogRepositoryUrl } from "@shinan/skill/setup"
+
 import { Button } from "@/components/ui/button"
 
 import { Section } from "../../components/page"
 import { useWorkspace } from "./context"
-
-/**
- * The address agents clone the workspace's catalog from, through `web`'s
- * Git endpoint (Git-based catalog plan §2.2): `/git/<workspace ID>.git`
- * on this installation.
- */
-function cloneAddress(workspaceId: string, origin: string): string {
-  return `${origin}/git/${workspaceId}.git`
-}
 
 /**
  * Settings › Catalog (product brief on #169), for every member: the
@@ -23,7 +16,8 @@ function cloneAddress(workspaceId: string, origin: string): string {
  */
 export function CatalogSettings() {
   const { workspace } = useWorkspace()
-  const address = cloneAddress(workspace.id, window.location.origin)
+  // The same address the setup command clones (`@shinan/skill/setup`).
+  const address = catalogRepositoryUrl(window.location.origin, workspace.id)
   const [copied, setCopied] = useState(false)
   const copy = () => {
     void navigator.clipboard?.writeText(address).then(
