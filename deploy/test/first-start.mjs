@@ -427,6 +427,38 @@ function writeWideBranch(workspaceId, parent) {
 }
 
 /**
+ * Inside the running `git` container: a branch off `main` whose 50,001
+ * files each have a path of about 4,040 characters (under 16 folders of 251
+ * characters), near Git's own 4 KiB limit for a path. Built tree by tree,
+ * so it is small to write. Answers its commit.
+ */
+function writeLongPathBranch(workspaceId, parent) {
+  const script = `
+    const { createGit } = await import("/app/packages/git/dist/index.js")
+    const git = createGit({ timeoutMs: 600000 })
+    const gitDir = "/var/lib/shinan/catalog/${workspaceId}.git"
+    const text = async (args, input, env) => (await git.run(args, { gitDir, input, env })).stdout.toString().trim()
+    const blob = await text(["hash-object", "-w", "--stdin"], "long\\n")
+    const leaf = []
+    for (let i = 0; i <= 50000; i++) leaf.push("100644 blob " + blob + "\\tf" + String(i).padStart(5, "0") + ".md")
+    let tree = await text(["mktree"], leaf.join("\\n") + "\\n")
+    for (let level = 0; level < 16; level++) {
+      const name = "x".repeat(250) + String.fromCharCode(97 + level)
+      tree = await text(["mktree"], "040000 tree " + tree + "\\t" + name + "\\n")
+    }
+    const ident = { GIT_AUTHOR_NAME: "T", GIT_AUTHOR_EMAIL: "t@example.com", GIT_COMMITTER_NAME: "T", GIT_COMMITTER_EMAIL: "t@example.com" }
+    const commit = await text(["commit-tree", "-p", "${parent}", "-m", "Long paths", tree], undefined, ident)
+    await git.run(["update-ref", "refs/heads/long", commit], { gitDir })
+    console.log(commit)`
+  const id = compose("ps", "--quiet", "git").trim()
+  return execFileSync(
+    "docker",
+    ["exec", id, "/nodejs/bin/node", "--input-type=module", "-e", script],
+    { encoding: "utf8" },
+  ).trim()
+}
+
+/**
  * Many requests to the Git container at once, from one container on its
  * network. Each reader waits `waitMs` after its answer starts before
  * reading it, as a slow client would. Answers a summary of each.
@@ -838,6 +870,29 @@ async function run() {
       (r) => r.status === 200 && r.entries === 50_000 && r.truncated === true,
     ),
     `6 tree and 6 diff reads at once of 250,000 paths each return 50,000, truncated (${JSON.stringify(crowd.slice(0, 2))})`,
+  )
+  // Paths near Git's 4 KiB limit: the answers stop at 8 MiB of paths, not
+  // at 50,000 entries (which would be about 200 MiB each).
+  const long = writeLongPathBranch(heavyId, heavyMain)
+  const longCrowd = askGitCrowd([
+    ...Array.from({ length: 4 }, () => ({
+      path: `/repositories/${heavyId}/tree?commit=${long}`,
+    })),
+    ...Array.from({ length: 4 }, () => ({
+      path: `/repositories/${heavyId}/diff?from=${heavyMain}&to=${long}`,
+    })),
+  ])
+  check(
+    longCrowd.every(
+      (r) =>
+        r.status === 200 &&
+        r.truncated === true &&
+        // 8 MiB is about 2,075 such paths; the diffs also hold the 1,000
+        // short deletions of main's files, which sort first.
+        r.entries > 2000 &&
+        r.entries < 3200,
+    ),
+    `4 tree and 4 diff reads at once of 50,001 paths of 4,040 characters stop at 8 MiB of paths, truncated (${JSON.stringify(longCrowd.map((r) => r.entries))})`,
   )
   const slow = askGitCrowd(
     Array.from({ length: 40 }, () => ({

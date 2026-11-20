@@ -1,7 +1,9 @@
 import { openCatFile } from "./cat-file.js"
+import type { CatFile } from "./cat-file.js"
 import { isObjectId, revision, treePath } from "./names.js"
 import type { Git, RunOptions } from "./run.js"
 import { GitError } from "./run.js"
+import { MAX_TREE_OBJECT_BYTES, walkTreeDiff } from "./tree-walk.js"
 
 /** Options every read takes: the repository, and a push's quarantine. */
 export type ReadOptions = Pick<
@@ -128,19 +130,24 @@ export interface TreeEntry {
  * listing blobs, symbolic links and submodules but not folders; `path`
  * limits it to one file or folder.
  */
-export async function listTree(
+export async function listTreePage(
   git: Git,
   gitDir: string,
   treeish: string,
   options: ReadOptions & {
     path?: string
     recursive?: boolean
-    /** At most this many entries; Git is stopped once they have come. */
+    /** At most this many entries. */
     limit?: number
+    /** At most this many bytes of paths, together. */
+    maxPathBytes?: number
   } = {},
-): Promise<TreeEntry[]> {
+): Promise<{ entries: TreeEntry[]; truncated: boolean }> {
   const limit =
     options.limit === undefined ? Infinity : count(options.limit, "The limit")
+  const maxPathBytes = options.maxPathBytes ?? Infinity
+  let pathBytes = 0
+  let truncated = false
   const entries: TreeEntry[] = []
   await readFields(
     git,
@@ -157,8 +164,11 @@ export async function listTree(
     ],
     options,
     (record) => {
-      if (entries.length >= limit) return false
       if (record === "") return
+      if (entries.length >= limit) {
+        truncated = true
+        return false
+      }
       const tab = record.indexOf("\t")
       const [mode, type, oid, size] = record.slice(0, tab).split(/ +/)
       if (tab < 0 || !mode || !type || !oid || !isObjectId(oid)) {
@@ -168,16 +178,36 @@ export async function listTree(
           "git ls-tree gave a line Shinan cannot read",
         )
       }
+      const path = record.slice(tab + 1)
+      pathBytes += Buffer.byteLength(path)
+      if (pathBytes > maxPathBytes) {
+        truncated = true
+        return false
+      }
       entries.push({
         mode,
         type: type as EntryType,
         oid,
-        path: record.slice(tab + 1),
+        path,
         size: size === undefined || size === "-" ? null : Number(size),
       })
     },
   )
-  return entries
+  return { entries, truncated }
+}
+
+/**
+ * The entries of a tree (or of a commit's tree). Recursive by default,
+ * listing blobs, symbolic links and submodules but not folders; `path`
+ * limits it to one file or folder. {@link listTreePage} stops at a limit.
+ */
+export async function listTree(
+  git: Git,
+  gitDir: string,
+  treeish: string,
+  options: ReadOptions & { path?: string; recursive?: boolean } = {},
+): Promise<TreeEntry[]> {
+  return (await listTreePage(git, gitDir, treeish, options)).entries
 }
 
 export type ChangeStatus = "added" | "deleted" | "modified" | "type-changed"
@@ -191,13 +221,6 @@ export interface TreeChange {
   /** `null` when the path is deleted. */
   newMode: string | null
   newOid: string | null
-}
-
-const STATUS: Record<string, ChangeStatus> = {
-  A: "added",
-  D: "deleted",
-  M: "modified",
-  T: "type-changed",
 }
 
 /** The empty tree's ID in this repository's object format. */
@@ -219,76 +242,78 @@ export async function emptyTree(
  * without rename detection: a renamed file is one deletion and one
  * addition. `from` `null` compares with the empty tree.
  */
-export async function diffTrees(
+export async function diffTreesPage(
   git: Git,
   gitDir: string,
   from: string | null,
   to: string,
   options: ReadOptions & {
-    /** At most this many changes; Git is stopped once they have come. */
+    /** At most this many changes. */
     limit?: number
+    /** At most this many bytes of paths, together. */
+    maxPathBytes?: number
   } = {},
-): Promise<TreeChange[]> {
+): Promise<{ changes: TreeChange[]; truncated: boolean }> {
   const limit =
     options.limit === undefined ? Infinity : count(options.limit, "The limit")
-  const base =
-    from === null ? await emptyTree(git, gitDir, options) : revision(from)
+  const maxPathBytes = options.maxPathBytes ?? Infinity
+  const fromName = from === null ? null : revision(from)
+  const toName = revision(to)
+  let pathBytes = 0
   const changes: TreeChange[] = []
-  let meta: string | undefined
-  await readFields(
-    git,
-    gitDir,
-    [
-      "diff-tree",
-      "-r",
-      "-z",
-      "--raw",
-      "--no-renames",
-      "--no-commit-id",
-      "--full-index",
-      "--end-of-options",
-      base,
-      revision(to),
-    ],
-    options,
-    (field) => {
-      // Each change is two fields: `:<modes> <IDs> <status>`, then its path.
-      if (meta === undefined) {
-        if (field === "") return
-        if (changes.length >= limit) return false
-        meta = field
-        return
-      }
-      const [oldMode, newMode, oldOid, newOid, code] = meta
-        .replace(/^:/, "")
-        .split(" ")
-      meta = undefined
-      const status = STATUS[code ?? ""]
-      if (!status || !oldMode || !newMode || !oldOid || !newOid) {
-        throw new GitError(
-          "exit",
-          "diff-tree",
-          "git diff-tree gave a line Shinan cannot read",
-        )
-      }
-      changes.push({
-        status,
-        path: field,
-        oldMode: status === "added" ? null : oldMode,
-        oldOid: status === "added" ? null : oldOid,
-        newMode: status === "deleted" ? null : newMode,
-        newOid: status === "deleted" ? null : newOid,
-      })
-    },
-  )
-  if (meta !== undefined) {
-    throw new GitError(
-      "exit",
-      "diff-tree",
-      "git diff-tree gave a line Shinan cannot read",
-    )
+  const reader = openCatFile(git, gitDir, {
+    env: options.env,
+    timeoutMs: options.timeoutMs,
+    maxObjectBytes: MAX_TREE_OBJECT_BYTES,
+  })
+  try {
+    const fromTree =
+      fromName === null
+        ? null
+        : await treeOf(git, gitDir, reader, fromName, options)
+    const toTree = await treeOf(git, gitDir, reader, toName, options)
+    const truncated = await walkTreeDiff(reader, fromTree, toTree, (change) => {
+      pathBytes += Buffer.byteLength(change.path)
+      if (changes.length >= limit || pathBytes > maxPathBytes) return false
+      changes.push(change)
+    })
+    return { changes, truncated }
+  } finally {
+    await reader.close()
   }
-  return changes
+}
+
+/** The tree of a commit or tree named by a full object ID or a branch. */
+async function treeOf(
+  git: Git,
+  gitDir: string,
+  reader: CatFile,
+  name: string,
+  options: ReadOptions,
+): Promise<string> {
+  const info = await reader.info(name)
+  if (info?.type === "tree") return info.oid
+  if (info?.type === "commit") {
+    const [commit] = await readCommits(git, gitDir, [info.oid], options)
+    return commit!.tree
+  }
+  throw new GitError("exit", "diff", `${name} is not a commit or a tree`)
+}
+
+/**
+ * Every file that differs between two trees (or commits), recursively,
+ * without rename detection: a renamed file is one deletion and one
+ * addition. `from` `null` compares with the empty tree.
+ * {@link diffTreesPage} stops at a limit.
+ */
+export async function diffTrees(
+  git: Git,
+  gitDir: string,
+  from: string | null,
+  to: string,
+  options: ReadOptions = {},
+): Promise<TreeChange[]> {
+  return (await diffTreesPage(git, gitDir, from, to, options)).changes
 }
 
 /**
@@ -455,16 +480,23 @@ export async function changedPaths(
   options: ReadOptions & {
     maxPerCommit?: number
     maxCommitBytes?: number
+    /**
+     * At most this many bytes of paths across every commit's list: past
+     * it, paths are still counted but not listed.
+     */
+    maxPathBytes?: number
   } = {},
 ): Promise<Map<string, CommitChanges>> {
   if (!commits.every(isObjectId)) {
     throw new GitError(
       "start",
-      "diff-tree",
+      "diff",
       "Changed paths are asked for by object ID",
     )
   }
   const max = options.maxPerCommit ?? DEFAULT_MAX_CHANGES_PER_COMMIT
+  const maxPathBytes = options.maxPathBytes ?? Infinity
+  let pathBytes = 0
   const result = new Map<string, CommitChanges>()
   if (commits.length === 0) return result
 
@@ -484,101 +516,40 @@ export async function changedPaths(
   for (const parent of await readCommits(git, gitDir, outside, options)) {
     heads.set(parent.oid, parent)
   }
-  const empty = await emptyTree(git, gitDir, options)
-  const lines = commits.map((oid) => {
-    const commit = heads.get(oid)!
-    const parent = commit.parents[0]
-    return `${parent ? heads.get(parent)!.tree : empty} ${commit.tree}`
+  const reader = openCatFile(git, gitDir, {
+    env: options.env,
+    timeoutMs: options.timeoutMs,
+    maxObjectBytes: MAX_TREE_OBJECT_BYTES,
   })
-
-  // Every pair gets a header line (`--always`), in the order sent, so the
-  // n-th header is the n-th commit's.
-  const proc = git.spawn(
-    [
-      "diff-tree",
-      "--stdin",
-      "--always",
-      "-r",
-      "-z",
-      "--no-renames",
-      "--name-status",
-    ],
-    { gitDir, env: options.env, timeoutMs: options.timeoutMs },
-  )
-  let index = -1
-  let current: CommitChanges | undefined
-  let status: ChangeStatus | undefined
-  let rest: Buffer = Buffer.alloc(0)
-  let failure: Error | undefined
-  const fail = (message: string) => {
-    failure ??= new GitError("exit", "diff-tree", message)
-    proc.kill()
-  }
-  const header = /^[0-9a-f]{40,64} [0-9a-f]{40,64}$/
-  // One NUL-ended field: a path, or headers and a status joined by line
-  // breaks (`<old> <new>\nM`), or the end of the output.
-  const field = (text: string) => {
-    if (status !== undefined) {
-      if (current) {
-        current.count++
-        if (current.changes.length < max)
-          current.changes.push({ status, path: text })
-        else current.truncated = true
-      }
-      status = undefined
-      return
-    }
-    const segments = text.split("\n")
-    const last = segments.pop()!
-    for (const segment of segments) {
-      if (!header.test(segment))
-        return fail("git diff-tree gave a line Shinan cannot read")
-      index++
-      const oid = commits[index]
-      if (oid === undefined)
-        return fail("git diff-tree answered a pair nobody sent")
-      current = { changes: [], count: 0, truncated: false }
+  try {
+    for (const oid of commits) {
+      if (result.has(oid)) continue
+      const commit = heads.get(oid)!
+      const parent = commit.parents[0]
+      const current: CommitChanges = { changes: [], count: 0, truncated: false }
       result.set(oid, current)
+      // Every change is counted; only the first, within the budgets, kept.
+      await walkTreeDiff(
+        reader,
+        parent ? heads.get(parent)!.tree : null,
+        commit.tree,
+        ({ status, path }) => {
+          current.count++
+          const bytes = Buffer.byteLength(path)
+          if (
+            current.changes.length < max &&
+            pathBytes + bytes <= maxPathBytes
+          ) {
+            pathBytes += bytes
+            current.changes.push({ status, path })
+          } else current.truncated = true
+        },
+      )
     }
-    if (last === "") return
-    const next = STATUS[last]
-    if (!next) return fail("git diff-tree gave a line Shinan cannot read")
-    status = next
+    return result
+  } finally {
+    await reader.close()
   }
-  proc.child.stdout.on("data", (chunk: Buffer) => {
-    let data = rest.length ? Buffer.concat([rest, chunk]) : chunk
-    for (let end = data.indexOf(0); end >= 0; end = data.indexOf(0)) {
-      field(data.subarray(0, end).toString("utf8"))
-      data = data.subarray(end + 1)
-    }
-    // A path is at most 4 KiB; anything longer is not Git's output.
-    if (data.length > 64 * 1024)
-      fail("git diff-tree gave a field too long to read")
-    rest = data
-  })
-  proc.child.stdin.end(`${lines.join("\n")}\n`)
-  const ended = await proc.ended
-  if (rest.length) field(`${rest.toString("utf8")}`)
-  if (failure) throw failure
-  if (ended.timedOut) {
-    throw new GitError(
-      "timeout",
-      "diff-tree",
-      "git diff-tree took too long and was stopped",
-    )
-  }
-  if (ended.code !== 0) {
-    throw new GitError(
-      "exit",
-      "diff-tree",
-      `git diff-tree failed (exit code ${ended.code ?? "none"})`,
-      ended.code,
-    )
-  }
-  if (result.size !== new Set(commits).size) {
-    throw new GitError("exit", "diff-tree", "git diff-tree left out a commit")
-  }
-  return result
 }
 
 /**

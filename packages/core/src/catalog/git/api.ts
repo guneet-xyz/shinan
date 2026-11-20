@@ -37,6 +37,16 @@ export const maxChangesPerCommit = 50
  * than `main`'s 20,000 documents.
  */
 export const maxTreeEntries = 50_000
+/**
+ * The most path bytes one tree listing or diff returns: 8 MiB, with
+ * `truncated` set when there were more. A path may be up to 4 KiB (Git's
+ * own limit), so the entry cap alone would allow about 200 MiB. With the
+ * other fields, one answer stays under about 16 MiB of JSON, and four at
+ * once beside a streamed documents read fit the Git container's memory.
+ */
+export const maxTreePathBytes = 8 * 1024 * 1024
+/** The most path bytes a history page lists, across its commits' changes. */
+export const maxChangedPathBytes = 2 * 1024 * 1024
 /** How many reads that hold document, tree or commit data run at once. */
 export const maxConcurrentReads = 4
 /** How many more wait their turn; past that, `503` with `Retry-After`. */

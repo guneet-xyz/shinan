@@ -555,15 +555,46 @@ describe("tree and diff answers", () => {
     })
   })
 
+  it("hold at most their budget of path bytes, and say when there were more", async () => {
+    const store = createRepositoryStore({
+      root,
+      git,
+      hooksDirectory: hooks,
+      maxPathBytes: 9,
+    })
+    const small = createGitApp({
+      serviceToken: token,
+      store,
+      journal,
+      log: () => {},
+    })
+    const ask = async (path: string) =>
+      (await (
+        await small.request(`/repositories/${id}${path}`, { headers: auth })
+      ).json()) as {
+        entries?: { path: string }[]
+        changes?: { path: string }[]
+        truncated: boolean
+      }
+    const tree = await ask(`/tree?commit=${first}`)
+    expect(tree.entries!.map((e) => e.path)).toEqual(["a.md", "b.md"])
+    expect(tree.truncated).toBe(true)
+    const diff = await ask(`/diff?to=${first}`)
+    expect(diff.changes!.map((c) => c.path)).toEqual(["a.md", "b.md"])
+    expect(diff.truncated).toBe(true)
+  })
+
   it("answer 422 for a tree deeper than Git reads", async () => {
+    // With the default limits, so each read reaches the deep part.
     for (const path of [
       `/tree?commit=${deep}`,
       `/diff?from=${first}&to=${deep}`,
       `/history?commit=${deep}&path=d/d`,
+      `/history?commit=${deep}`,
     ]) {
-      const response = await get(path)
+      const response = await request(`/repositories/${id}${path}`)
       expect(response.status, path).toBe(422)
-      expect(response.body).toMatchObject({ error: "tree-too-deep" })
+      expect(await response.json()).toMatchObject({ error: "tree-too-deep" })
     }
   })
 })
@@ -632,6 +663,7 @@ describe("the read gate", () => {
         )
         return o
       },
+      destroy: () => o.close(),
       close: () => {
         o.destroyed = true
         const fs = listeners.get("close") ?? []
@@ -675,6 +707,38 @@ describe("the read gate", () => {
     expect(slow.started()).toBe(1)
     o1.close()
     await tick()
+    expect(slow.started()).toBe(2)
+    slow.waiting.shift()!()
+    expect((await second).status).toBe(200)
+    o2.close()
+  })
+
+  it("cuts off an answer not sent by its deadline, which gives up its place", async () => {
+    const slow = slowStore()
+    const gated = createGitApp({
+      serviceToken: token,
+      store: slow.store,
+      journal,
+      log: () => {},
+      readLimits: { running: 1, queued: 1, sendDeadlineMs: 100 },
+    })
+    const ask = (o: ReturnType<typeof outgoing>) =>
+      gated.request(
+        `/repositories/${workspaceId}/tree`,
+        { headers: auth },
+        { outgoing: o },
+      )
+    const [o1, o2] = [outgoing(), outgoing()]
+    const first = ask(o1)
+    const second = ask(o2)
+    await tick()
+    slow.waiting.shift()!()
+    expect((await first).status).toBe(200)
+    // Its client never finishes reading: nothing closes o1 but the deadline.
+    await tick()
+    expect(slow.started()).toBe(1)
+    await new Promise((resolve) => setTimeout(resolve, 150))
+    expect(o1.destroyed).toBe(true)
     expect(slow.started()).toBe(2)
     slow.waiting.shift()!()
     expect((await second).status).toBe(200)

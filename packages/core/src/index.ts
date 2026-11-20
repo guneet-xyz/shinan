@@ -224,6 +224,7 @@ export {
   gitContextMaxLength,
   GitContextError,
   maxAllowedValues,
+  maxChangedPathBytes,
   maxChangesPerCommit,
   maxConcurrentReads,
   maxContextMemberHandles,
@@ -236,6 +237,7 @@ export {
   maxQueuedReads,
   maxRequestBodyBytes,
   maxTreeEntries,
+  maxTreePathBytes,
   serviceTokenMinLength,
 } from "./catalog/git/api.js"
 export type {

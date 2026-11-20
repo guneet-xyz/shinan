@@ -13,6 +13,7 @@ import {
 import { join } from "node:path"
 
 import {
+  maxChangedPathBytes,
   maxChangesPerCommit,
   maxDocumentsPerRead,
   maxDocumentsResponseBytes,
@@ -20,6 +21,7 @@ import {
   maxHistoryPage,
   maxHistorySkip,
   maxTreeEntries,
+  maxTreePathBytes,
 } from "@shinan/core"
 import type {
   CommitInfo,
@@ -32,12 +34,12 @@ import type {
 import {
   changedPaths,
   checkObjects,
-  diffTrees,
+  diffTreesPage,
   GitError,
   history,
   hooksDirectory as imageHooks,
   isObjectId,
-  listTree,
+  listTreePage,
   objectName,
   openCatFile,
   writeCommit,
@@ -162,10 +164,13 @@ export function createRepositoryStore(options: {
   maxResponseBytes?: number
   /** The most entries one tree listing or diff returns; default `maxTreeEntries`. */
   maxEntries?: number
+  /** The most path bytes one tree listing or diff returns; default `maxTreePathBytes`. */
+  maxPathBytes?: number
 }): RepositoryStore {
   const { root, git } = options
   const maxResponseBytes = options.maxResponseBytes ?? maxDocumentsResponseBytes
   const maxEntries = options.maxEntries ?? maxTreeEntries
+  const maxPathBytes = options.maxPathBytes ?? maxTreePathBytes
   const hooks = options.hooksDirectory ?? imageHooks
   const temporary = join(root, ".tmp")
   const creating = new Map<
@@ -329,19 +334,15 @@ export function createRepositoryStore(options: {
     },
     async listTree(workspaceId, input) {
       const { gitDir, commit } = await resolve(workspaceId, input.commit)
-      const entries = await tooDeep(() =>
-        listTree(git, gitDir, commit, {
+      const page = await tooDeep(() =>
+        listTreePage(git, gitDir, commit, {
           path: input.path,
           recursive: input.recursive,
-          // One more than the cap shows there were more.
-          limit: maxEntries + 1,
+          limit: maxEntries,
+          maxPathBytes,
         }),
       )
-      return {
-        commit,
-        entries: entries.slice(0, maxEntries),
-        truncated: entries.length > maxEntries,
-      }
+      return { commit, ...page }
     },
     async openDocuments(workspaceId, input) {
       if (input.paths.length > maxDocumentsPerRead) {
@@ -400,15 +401,13 @@ export function createRepositoryStore(options: {
         input.from === null
           ? null
           : (await resolve(workspaceId, input.from)).commit
-      const changes = await tooDeep(() =>
-        diffTrees(git, gitDir, from, to, { limit: maxEntries + 1 }),
+      const page = await tooDeep(() =>
+        diffTreesPage(git, gitDir, from, to, {
+          limit: maxEntries,
+          maxPathBytes,
+        }),
       )
-      return {
-        from,
-        to,
-        changes: changes.slice(0, maxEntries),
-        truncated: changes.length > maxEntries,
-      }
+      return { from, to, ...page }
     },
     async history(workspaceId, input) {
       if ((input.skip ?? 0) > maxHistorySkip) {
@@ -443,7 +442,10 @@ export function createRepositoryStore(options: {
           git,
           gitDir,
           commits.map((c) => c.oid),
-          { maxPerCommit: maxChangesPerCommit },
+          {
+            maxPerCommit: maxChangesPerCommit,
+            maxPathBytes: maxChangedPathBytes,
+          },
         ),
       )
       return {
@@ -488,6 +490,16 @@ async function tooDeep<T>(read: () => Promise<T>): Promise<T> {
         422,
         "tree-too-deep",
         "A tree here is deeper than Git reads (2,048 levels)",
+      )
+    }
+    if (
+      error instanceof GitError &&
+      /tree object too large/.test(error.stderr)
+    ) {
+      throw new StoreError(
+        422,
+        "tree-too-large",
+        "A tree here is larger than Shinan reads (16 MiB, or 64 MiB along one path)",
       )
     }
     throw error

@@ -3,9 +3,11 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import {
   changedPaths,
   diffTrees,
+  diffTreesPage,
   emptyTree,
   history,
   listTree,
+  listTreePage,
   newCommits,
   parseCommit,
 } from "./read.js"
@@ -101,14 +103,19 @@ describe("listTree", () => {
     ])
   })
 
-  it("stops Git at a limit", async () => {
-    const two = await listTree(git, repository.gitDir, "refs/heads/main", {
-      limit: 2,
-    })
-    expect(two.map((e) => e.path)).toEqual(["README.md", "link.md"])
-    expect(
-      await listTree(git, repository.gitDir, "refs/heads/main", { limit: 0 }),
-    ).toEqual([])
+  it("stops Git at an entry limit or a byte budget, and says it did", async () => {
+    const page = (options: { limit?: number; maxPathBytes?: number }) =>
+      listTreePage(git, repository.gitDir, "refs/heads/main", options)
+    const two = await page({ limit: 2 })
+    expect(two.entries.map((e) => e.path)).toEqual(["README.md", "link.md"])
+    expect(two.truncated).toBe(true)
+    expect(await page({ limit: 0 })).toEqual({ entries: [], truncated: true })
+    expect((await page({ limit: 5 })).truncated).toBe(false)
+    // "README.md" (9 bytes) and "link.md" (7) fit in 16; "machine/…" not.
+    const bytes = await page({ maxPathBytes: 16 })
+    expect(bytes.entries.map((e) => e.path)).toEqual(["README.md", "link.md"])
+    expect(bytes.truncated).toBe(true)
+    expect((await page({ maxPathBytes: 10_000 })).truncated).toBe(false)
   })
 
   it("reads a path literally, never as a pattern", async () => {
@@ -161,11 +168,16 @@ describe("diffTrees", () => {
     expect(deleted.newOid).toBeNull()
   })
 
-  it("stops Git at a limit", async () => {
-    const changes = await diffTrees(git, repository.gitDir, second, third, {
-      limit: 2,
-    })
-    expect(changes.map((c) => c.path)).toEqual(["README.md", "link.md"])
+  it("stops Git at an entry limit or a byte budget, and says it did", async () => {
+    const page = (options: { limit?: number; maxPathBytes?: number }) =>
+      diffTreesPage(git, repository.gitDir, second, third, options)
+    const two = await page({ limit: 2 })
+    expect(two.changes.map((c) => c.path)).toEqual(["README.md", "link.md"])
+    expect(two.truncated).toBe(true)
+    expect((await page({ limit: 5 })).truncated).toBe(false)
+    const bytes = await page({ maxPathBytes: 16 })
+    expect(bytes.changes.map((c) => c.path)).toEqual(["README.md", "link.md"])
+    expect(bytes.truncated).toBe(true)
   })
 
   it("compares with the empty tree", async () => {
@@ -392,6 +404,28 @@ describe("changedPaths", () => {
     expect(
       (await changedPaths(git, repository.gitDir, [same])).get(same),
     ).toEqual({ changes: [], count: 0, truncated: false })
+  })
+
+  it("lists no more path bytes than its budget across the page, but counts every path", async () => {
+    const changes = await changedPaths(
+      git,
+      repository.gitDir,
+      [third, second],
+      {
+        maxPathBytes: 20,
+      },
+    )
+    // third's first two paths (16 bytes) fit; nothing more does.
+    expect(changes.get(third)!.changes.map((c) => c.path)).toEqual([
+      "README.md",
+      "link.md",
+    ])
+    expect(changes.get(third)).toMatchObject({ count: 5, truncated: true })
+    expect(changes.get(second)).toMatchObject({
+      changes: [],
+      count: 3,
+      truncated: true,
+    })
   })
 
   it("takes object IDs only, and nothing for nothing", async () => {

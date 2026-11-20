@@ -265,25 +265,38 @@ no shell. As built (GC-1b,
     most 32 MiB of contents a response (each size is read from the object's
     header first; documents past the budget come back `deferred`, to ask for
     again; a file over 1 MiB is `tooLarge`).
-  - **A tree listing or a diff** returns at most 50,000 entries, `truncated`
-    when there were more; Git is stopped there.
+  - **A tree listing or a diff** returns at most 50,000 entries and 8 MiB of
+    paths (a path may be up to 4 KiB), `truncated` when there were more;
+    it stops there. Diffs, and history's changed paths, are not `git
+diff-tree`'s, which builds its whole list of changes before printing
+    any (50,000 paths of 4 KiB are 200 MiB inside Git): Shinan walks the two
+    trees itself, reading tree objects one at a time through `cat-file`
+    (at most 16 MiB each and 64 MiB along one path, else `422
+tree-too-large`), skipping subtrees with equal IDs. A test checks it
+    finds exactly what `git diff-tree` finds, in its order.
   - **A history page** of at most 100 commits reads each commit only up to
     256 KiB (a longer message comes back truncated and flagged) and lists,
     per commit, at most 50 of the paths it changed against its first parent
-    (with their count and a flag), compared tree to tree so no whole commit
-    is held. A page may skip at most 1,000,000 commits.
+    (with their count and a flag; at most 2 MiB of paths across the page),
+    by the same tree walk, so no whole commit is held. A page may skip at
+    most 1,000,000 commits.
   - **These reads take turns:** at most 4 at once, each holding its place
     until its answer has been sent or its client has gone (a slow reader
     holds memory too), and up to 64 waiting, which leave if their client
-    goes; past that, `503` with `Retry-After`.
+    goes; past that, `503` with `Retry-After`. An answer not sent within
+    120 seconds of starting (a client that stopped reading) is cut off, and
+    so is one whose reading fails after its headers went out: closing the
+    connection gives up its place.
   - **A tree deeper than Git reads** (`core.maxTreeDepth`, 2,048 levels)
     answers `422 tree-too-deep`.
   - **Tested under the container's 1,024 MiB limit:** the first-start test
     builds a repository past these limits (1,000 paths to one 1 MiB file,
-    70 commits with 15 MiB messages, a branch with 250,000 paths) and reads
-    it: one documents read and one history page, then 6 tree and 6 diff
-    reads at once, then 40 document reads at once whose clients wait before
-    reading. The container peaked at 559 MiB.
+    70 commits with 15 MiB messages, a branch with 250,000 paths, a branch
+    of 50,001 paths of about 4,040 characters) and reads it: one documents
+    read and one history page, 6 tree and 6 diff reads at once of the wide
+    branch, 4 tree and 4 diff reads at once of the long paths, and 40
+    document reads at once whose clients wait before reading. The test
+    reports the container's memory peak.
 - **Repositories** are made with `git init --template=` (no sample hooks)
   in `.tmp/` on the volume, configured (`core.hooksPath` to the image's
   read-only hooks, `fsckObjects`, `receive.maxInputSize`, push options,

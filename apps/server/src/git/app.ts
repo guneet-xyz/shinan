@@ -15,7 +15,11 @@ import {
   maxQueuedReads,
   maxRequestBodyBytes,
 } from "@shinan/core"
-import type { GitRequestContext, RepositoryFile } from "@shinan/core"
+import type {
+  DocumentRead,
+  GitRequestContext,
+  RepositoryFile,
+} from "@shinan/core"
 import { createLimitedLog, errorSummary } from "@shinan/db"
 import type { LimitedLog } from "@shinan/db"
 import { GitError } from "@shinan/git"
@@ -85,14 +89,18 @@ async function jsonBody(c: Context): Promise<Record<string, unknown>> {
  * its answer has been sent or its client has gone: an answer waiting on a
  * slow reader still holds its memory. Up to `queued` more wait their turn,
  * and leave the queue if their client goes; past that, 503 with
- * `Retry-After`.
+ * `Retry-After`. An answer not sent within `sendDeadlineMs` (a client that
+ * took the headers and stopped reading, or an answer whose reading failed
+ * while it waited) is cut off: its connection is closed, which gives up its
+ * place.
  */
 export function readGate(
-  limits: { running: number; queued: number } = {
+  limits: { running: number; queued: number; sendDeadlineMs?: number } = {
     running: maxConcurrentReads,
     queued: maxQueuedReads,
   },
 ): MiddlewareHandler<GitAppEnv> {
+  const sendDeadlineMs = limits.sendDeadlineMs ?? answerSendSeconds * 1000
   let running = 0
   const waiting: (() => void)[] = []
   const release = () => {
@@ -150,12 +158,23 @@ export function readGate(
       throw error
     }
     if (outgoing && !outgoing.writableFinished && !outgoing.destroyed) {
-      outgoing.once("close", done)
+      const deadline = setTimeout(() => outgoing.destroy(), sendDeadlineMs)
+      outgoing.once("close", () => {
+        clearTimeout(deadline)
+        done()
+      })
     } else {
       done()
     }
   }
 }
+
+/**
+ * How long an answer may take to be sent once it has started: 120 seconds,
+ * like a push's request body (plan §2.10). A 32 MiB answer needs a reader
+ * of under 300 KB/s to miss it.
+ */
+export const answerSendSeconds = 120
 
 /**
  * The Git container's API (Git-based catalog plan §2.2, D-065), on its own
@@ -169,8 +188,8 @@ export function createGitApp(options: {
   store: RepositoryStore
   journal: Journal
   log?: LimitedLog
-  /** How many reads run and wait at once; default `readGate()`'s. */
-  readLimits?: { running: number; queued: number }
+  /** How many reads run and wait at once, and how long an answer may take to send; default `readGate()`'s. */
+  readLimits?: { running: number; queued: number; sendDeadlineMs?: number }
 }) {
   const log = options.log ?? createLimitedLog()
   const authorized = serviceTokenCheck(options.serviceToken)
@@ -317,7 +336,17 @@ export function createGitApp(options: {
           )
         },
         async pull(controller) {
-          const next = await read.documents.next()
+          let next: IteratorResult<DocumentRead>
+          try {
+            next = await read.documents.next()
+          } catch (error) {
+            // Headers are sent: the only way to say so is to cut the answer
+            // off, which also gives up its place in the read gate.
+            log(`Git API documents read failed: ${errorSummary(error)}`)
+            c.env?.outgoing?.destroy()
+            controller.error(new Error("The documents could not be read"))
+            return
+          }
           if (next.done) {
             controller.enqueue(encoder.encode("]}"))
             controller.close()
