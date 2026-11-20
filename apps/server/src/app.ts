@@ -2,7 +2,10 @@ import { extname } from "node:path"
 import { serveStatic } from "@hono/node-server/serve-static"
 import { Hono } from "hono"
 
-import type { DatabaseReadiness } from "@shinan/db"
+import { createGitClient, shinan, storeCatalogJournal } from "@shinan/core"
+import type { GitClient, JobQueue } from "@shinan/core"
+import { createLimitedLog, errorSummary } from "@shinan/db"
+import type { Database, DatabaseReadiness } from "@shinan/db"
 import type { SkillCatalog } from "@shinan/skill"
 
 import { errorHandler } from "./api/errors.js"
@@ -82,6 +85,13 @@ export function createApp(options: AppOptions) {
       // One client of the Git container for the catalog's reads and this.
       git: options.gitClient,
       inFlight,
+      afterPush: options.git
+        ? journalStorer({
+            db: options.db,
+            jobs: options.jobs,
+            git: createGitClient(options.git),
+          })
+        : undefined,
     }),
   )
   // The skill (D-056): public, and only its own files. Every other path
@@ -110,6 +120,44 @@ export function createApp(options: AppOptions) {
 
   return app
 }
+
+/**
+ * Stores the Git container's journal after a push (plan §2.6): at most one
+ * run at a time in this process, and one more after it if pushes ended
+ * meanwhile. The worker's minute job stores whatever this misses.
+ */
+function journalStorer(options: {
+  db: Database
+  jobs: JobQueue | undefined
+  git: GitClient
+}): () => void {
+  let running: Promise<void> | null = null
+  let again = false
+  const run = (): Promise<void> =>
+    storeCatalogJournal(
+      { db: options.db, actor: shinan, jobs: options.jobs, origin: "git_push" },
+      options.git,
+    ).then(
+      () => undefined,
+      (error: unknown) =>
+        log(`Storing the Git journal failed: ${errorSummary(error)}`),
+    )
+  return () => {
+    if (running) {
+      again = true
+      return
+    }
+    running = run().finally(async () => {
+      while (again) {
+        again = false
+        await run()
+      }
+      running = null
+    })
+  }
+}
+
+const log = createLimitedLog()
 
 /** How long a readiness check waits for the database. */
 const readinessTimeoutMs = 2000

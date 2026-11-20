@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto"
+
 import { agentTokenPrefix } from "../../tokens.js"
 import type { Severity } from "./problems.js"
 import type { Range } from "./source.js"
@@ -219,6 +221,53 @@ export function findSecrets(text: string, offset = 0): SecretFinding[] {
   )
 }
 
+/**
+ * A value's fingerprint: the SHA-256 of its UTF-8 bytes, in lowercase hex.
+ * A push refused for a secret shows it, and a workspace owner may allow
+ * exactly that value as "not a secret" by it (plan §2.5, GQ-2).
+ */
+export function secretFingerprint(value: string): string {
+  return createHash("sha256").update(value, "utf8").digest("hex")
+}
+
+/** A finding of the push checks: where, what, and the value's fingerprint, never the value. */
+export interface PushSecretFinding extends SecretFinding {
+  fingerprint: string
+}
+
+/**
+ * The secret check of every push (plan §2.5, check 3): as `findSecrets`,
+ * with each value's fingerprint, leaving out the values whose fingerprints
+ * the workspace's owners allowed.
+ */
+export function findPushSecrets(
+  text: string,
+  allowed: ReadonlySet<string> = new Set(),
+): PushSecretFinding[] {
+  const findings: PushSecretFinding[] = []
+  // A file may be longer than one scan reads (`maxCheckedLength`): it is
+  // read in windows that overlap by more than any match is long, and each
+  // finding is taken from the window it starts in.
+  const step = maxCheckedLength - windowOverlap
+  for (let at = 0; at === 0 || at < text.length; at += step) {
+    const last = at + maxCheckedLength >= text.length
+    for (const { severity, kind, range, excerpt, secret } of scanSecrets(
+      text.slice(at, at + maxCheckedLength),
+      at,
+    )) {
+      if (!last && range.start >= at + step) continue
+      const fingerprint = secretFingerprint(secret)
+      if (allowed.has(fingerprint)) continue
+      findings.push({ severity, kind, range, excerpt, fingerprint })
+    }
+    if (last) break
+  }
+  return findings
+}
+
+/** Longer than any match the patterns make, but a private key's base64. */
+const windowOverlap = 64 * 1024
+
 /** As `findSecrets`, with each secret's value. Internal to core: see `SecretMatch`. */
 export function scanSecrets(text: string, offset = 0): SecretMatch[] {
   const checked =
@@ -295,8 +344,25 @@ function placeholder(value: string): boolean {
  * (starting `AAAA`) are left alone.
  */
 function randomLooking(s: string): boolean {
-  if (!mixed(s) || s.startsWith("AAAA")) return false
+  if (!mixed(s) || s.startsWith("AAAA") || wordsAndNumbers(s)) return false
   return entropy(s) >= 4
+}
+
+/**
+ * Names made of words and numbers joined by `-` or `_`, such as a decision's
+ * file name in a pinned link (`D-054-public-image-registry-project`): each
+ * part is one word (lowercase, capitalised or all capitals) or a number.
+ * Random strings with dashes mix cases and digits inside their parts
+ * (#157).
+ */
+function wordsAndNumbers(s: string): boolean {
+  const parts = s.split(/[-_]+/).filter(Boolean)
+  return (
+    parts.length >= 3 &&
+    parts.every((part) =>
+      /^(?:[A-Z]?[a-z]{1,24}|[A-Z]{1,24}|[0-9]{1,24})$/.test(part),
+    )
+  )
 }
 
 function entropy(s: string): number {

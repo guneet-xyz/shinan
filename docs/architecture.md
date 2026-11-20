@@ -590,7 +590,7 @@ How:
 
 ## 5. Catalog Markdown and agent index
 
-> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-3](build-plan-git-catalog.md#gc-3-push-checks-and-the-push-log)): the invariant holds for `main`'s files, and checks run on push instead of in a proposal. The agent index is built from `main` already ([5.3](#53-how-sync-works), "As built (GC-4)"); the rest of this section describes M2 as built (v0.3.0) until GC-3.
+> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-3](build-plan-git-catalog.md#gc-3-push-checks-and-the-push-log)): the invariant holds for `main`'s files, and checks run on push instead of in a proposal. The agent index is built from `main` already ([5.3](#53-how-sync-works), "As built (GC-4)"), and pushes are checked and logged ("As built (GC-3a)"); the checks of `main` come with GC-3b. The rest of this section describes M2 as built (v0.3.0).
 
 The [catalog document](catalog.md) owns the schema, fact format, catalog
 proposals and their operations, conflict rules, approval classes (owner, O-3)
@@ -906,6 +906,78 @@ days (read 2026-11-16). If each change rewrote two entities of about 4 KB, that
 is under 25 MB of revision text a year; ten times more, from frequent rechecks,
 is still well under a gigabyte. **Proposed:** store full text per revision; revisit
 only if measured growth requires it.
+
+- **As built (GC-3a, [#165](https://github.com/guneet-xyz/shinan/issues/165)):
+  changes arrive as pushes, checked in the Git container** ([plan §2.5,
+  §2.6](build-plan-git-catalog.md#25-checks-on-push)).
+  - **The hooks are thin clients.** When `git http-backend` starts for a
+    push ([8.5](#85-git-endpoint)), the `git` role puts a one-time nonce
+    and the address of its own loopback listener (`127.0.0.1`, a port
+    chosen at start, never published) in Git's environment.
+    `pre-receive` sends the ref lines, the quarantine variables and the
+    push options there with the nonce; `post-receive` says the refs were
+    updated. Both are Node.js scripts that start no other process (a
+    detached one would escape Git's time limit; a test reads them for
+    it). Without a nonce, a nonce used already, or no answer, the push is
+    refused ("Shinan: this push could not be checked").
+  - **One push at a time per repository.** The `git` role holds the
+    repository's lock from `pre-receive` until it has recorded which refs
+    Git updated (at `post-receive`, or when the request ends if Git updated
+    none); the next push waits up to 30 seconds, then is refused `busy`.
+    Git's compare-and-swap still decides a race: a push checked against an
+    old `main` fails to update it and records nothing.
+  - **The checks of every push** (checks 1 to 3, and the limits that keep
+    a repository readable): only branches with plain names of at most 100
+    characters; `main` never deleted or forced; at most 100 branches; no
+    commit a purge removed; at most 1,000 new commits, each at most 64 KiB;
+    new files at most 1 MiB (from the object's size, never inflated); no
+    symbolic links or submodules; names that Windows and macOS can check
+    out (no case or Unicode-normalisation pairs in a folder, no trailing
+    dot or space, no `\`, `:` or other characters Windows refuses, no
+    reserved device names, at most 255 bytes); at most 20,000 entries in a
+    folder and 200,000 reached from a commit's tree (counting a subtree
+    every place it appears); the repository under 1 GiB (branch deletions
+    still pass); the secret check on every new file, commit message and
+    branch name ([catalog §7.3](catalog.md#73-a-check-for-secret-looking-values)).
+    They read only objects no branch held before, through the push's
+    quarantine, and stop after 30 seconds (`too-slow`). Codes and limits
+    are core's `pushCheckCodes` and `pushLimits`.
+  - **`main` stays closed until its checks exist** (layout, validation,
+    the `by` rule: GC-3b): a push that changes `main` is refused
+    `main-not-open`, so nothing unvalidated reaches the catalog.
+  - **Output.** Every refusal and warning is one `remote:` line with its
+    place (file and line, commit, or ref), Shinan's code and a message, and
+    never a suspected secret's value; warnings do not block. A
+    `-o check-only` push runs the checks and changes nothing; any other
+    push option is refused.
+  - **The journal and the first-pusher record.** `pre-receive` appends the
+    verdict with the context `web` sent (`push.checked`). After Git updated
+    the refs, the `git` role compares each ref with what the push asked,
+    appends `push.confirmed` with the refs that moved, the commits they
+    first brought (each with the first ref, in Git's order, that carried
+    it, only for commits Shinan never received before) and the update of
+    `main`, and then, before any other request is served, writes those
+    commits to the first-pusher record on its volume
+    (`records/<workspace ID>/first-pushes.jsonl`, outside the repository,
+    inserted once). A new repository's first commit is recorded the same
+    way, first pushed by `shinan` (`repository.created`). At start, the
+    `git` role completes the record from the journal entries not
+    acknowledged yet, so a stop between the two writes loses nothing. Only
+    the `git` role's process appends to the journal. The journal has an ID
+    of its own, so a new volume is read from its first entry.
+  - **`web` stores the journal** right after each forwarded push, and the
+    worker every minute (a push whose connection dropped), in one
+    transaction per page, idempotent by entry number per journal, then
+    acknowledges it: `catalog_pushes`, `catalog_push_refs` (confirmed once
+    Git applied them), `catalog_commit_first_pushes`, a `catalog.pushed`
+    event for each accepted update of `main` (credited to the agent, with
+    the documents it changed), `recordCatalogMain` for the index, and a
+    `catalog.push-refused` security-log entry for a refusal that held a
+    secret. These tables are append-only by triggers. Every minute the
+    worker also compares each repository's branches (read under its lock,
+    with the journal's number at that moment) with the push log, and
+    records an update the log does not explain once
+    (`catalog.unlogged-update`).
 
 ### 5.4 Importing the `workspace` repository's catalog
 

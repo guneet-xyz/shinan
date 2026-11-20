@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest"
 
 import { agentTokenPrefix } from "../../tokens.js"
-import { findSecrets, maxCheckedLength, scanSecrets } from "./secrets.js"
+import {
+  findPushSecrets,
+  findSecrets,
+  maxCheckedLength,
+  scanSecrets,
+  secretFingerprint,
+} from "./secrets.js"
 
 const kinds = (text: string) =>
   findSecrets(text).map((f) => [f.severity, f.kind])
@@ -142,6 +148,11 @@ describe("the check for secret-looking values (catalog §7.3)", () => {
       "aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
     ],
     ["a long random-looking string", "kV9xQ2mZ7pL4tR8wB3nF6hJ1cY5dG0sAe"],
+    ["a random string with dashes", "kV9x-Q2mZ7pL4-tR8wB3nF6-hJ1cY5dG0sAe"],
+    [
+      "a random string in a URL path",
+      "https://x.example/files/kV9xQ2mZ7pL4tR8wB3nF6hJ1cY5dG0sAe/get",
+    ],
     // Prose that reads like an assignment is held for a person to confirm.
     ["a sentence with `password:`", "The password: stored in Obscuro"],
     [
@@ -160,6 +171,18 @@ describe("the check for secret-looking values (catalog §7.3)", () => {
     [
       "a commit in a pinned URL",
       "https://github.com/guneet-xyz/dockyard/blob/4f1c2e9a7b3d5e6f8a9b0c1d2e3f4a5b6c7d8e9f/AGENTS.md",
+    ],
+    [
+      "a pinned link to a decision record (#157)",
+      "https://github.com/guneet-xyz/shinan/blob/3e6860a1b2c3d4e5f60718293a4b5c6d7e8f9012/docs/decisions/D-054-public-image-registry-project.md",
+    ],
+    [
+      "commit, tree and compare links on code hosts (#157)",
+      "https://github.com/guneet-xyz/shinan/commit/3e6860a1b2c3d4e5f60718293a4b5c6d7e8f9012 https://git.guneet.dev/guneet/workspace/src/commit/4f1c2e9a7b3d5e6f8a9b0c1d2e3f4a5b6c7d8e9f https://gitlab.com/g/p/-/tree/4f1c2e9a7b3d5e6f8a9b0c1d2e3f4a5b6c7d8e9f/docs https://github.com/g/p/compare/4f1c2e9a7b3d5e6f8a9b0c1d2e3f4a5b6c7d8e9f...3e6860a1b2c3d4e5f60718293a4b5c6d7e8f9012",
+    ],
+    [
+      "names of words and numbers",
+      "D-066-By-Names-The-First-Pusher_2026_11_20 RFC-9110-HTTP-Semantics-Section-13",
     ],
     [
       "an image digest",
@@ -327,5 +350,38 @@ describe("the check on hostile input", () => {
     const started = performance.now()
     findSecrets(text)
     expect(performance.now() - started).toBeLessThan(1000)
+  })
+})
+
+describe("findPushSecrets", () => {
+  const token = "ghp_0123456789abcdefghijABCDEFGHIJ012345"
+
+  it("gives each value's fingerprint, never the value", () => {
+    const [finding] = findPushSecrets(`x ${token}`)
+    expect(finding).toMatchObject({
+      severity: "blocking",
+      kind: "GitHub token",
+      fingerprint: secretFingerprint(token),
+    })
+    expect(finding!.fingerprint).toMatch(/^[0-9a-f]{64}$/)
+    expect(JSON.stringify(finding)).not.toContain(token.slice(6))
+  })
+
+  it("leaves out exactly the allowed values", () => {
+    const allowed = new Set([secretFingerprint(token)])
+    expect(findPushSecrets(`x ${token}`, allowed)).toEqual([])
+    const changed = `${token.slice(0, -1)}6`
+    expect(findPushSecrets(`x ${changed}`, allowed)).toHaveLength(1)
+  })
+
+  it("reads a whole file past one scan's length, each finding once", () => {
+    const filler = "word ".repeat(200_000)
+    const text = `${token}\n${filler}${token}\n${filler.slice(0, maxCheckedLength - 3)}${token}`
+    const found = findPushSecrets(text)
+    expect(found.map((f) => f.range.start)).toEqual([
+      0,
+      token.length + 1 + filler.length,
+      text.length - token.length,
+    ])
   })
 })

@@ -40,6 +40,8 @@ import {
 import type { EmailConfig, Env } from "./config.js"
 import { createGitApp, createGitInternalApp } from "./git/app.js"
 import { openJournal } from "./git/journal.js"
+import { openRecords } from "./git/push/records.js"
+import { createPushService } from "./git/push/service.js"
 import { checkGitRole, readGitRoleConfig } from "./git/startup.js"
 import { cleanTemporary, createRepositoryStore } from "./git/store.js"
 import { checkHealth } from "./health.js"
@@ -389,10 +391,32 @@ async function runGit(env: Env): Promise<void> {
   cleanTemporary(config.catalogDir)
   const store = createRepositoryStore({ root: config.catalogDir, git })
   const journal = openJournal(config.catalogDir)
+  const push = createPushService({
+    store,
+    journal,
+    records: openRecords(config.catalogDir),
+  })
+  // Only this process appends to the journal (#165): the records are made
+  // whole from it before anything is served.
+  await push.recover()
+  // The hooks' listener: loopback inside the container, never published.
+  const hooks = serve(
+    {
+      fetch: push.hookApp.fetch,
+      hostname: "127.0.0.1",
+      port: 0,
+      serverOptions: listenerOptions(),
+    },
+    (info) => {
+      push.hookUrl = `http://127.0.0.1:${info.port}`
+    },
+  )
+  await new Promise<void>((resolve) => hooks.once("listening", resolve))
   const app = createGitApp({
     serviceToken: config.serviceToken,
     store,
     journal,
+    push,
   })
   const internal = createGitInternalApp({
     ready: () => {
@@ -423,6 +447,7 @@ async function runGit(env: Env): Promise<void> {
       ...config.internal,
     },
   ])
+  await new Promise<void>((resolve) => hooks.close(() => resolve()))
   console.info(`${productName} git stopped`)
 }
 

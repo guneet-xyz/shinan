@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto"
 import {
   closeSync,
   fsyncSync,
@@ -52,6 +53,12 @@ export interface Journal {
   acknowledge(through: number): { deleted: number }
   /** The last number given, 0 before the first entry. */
   last(): number
+  /**
+   * The journal's own ID, made with it and never changed: `web` keeps how
+   * far it has stored each journal by it, so a new journal (a replaced
+   * volume) is read from its first entry.
+   */
+  readonly id: string
 }
 
 /** Writes `content` to `path` through a temporary file, synced, then renamed into place. */
@@ -106,6 +113,21 @@ export function openJournal(root: string): Journal {
   for (const name of readdirSync(entries)) {
     const match = entryPattern.exec(name)
     if (match) sequence = Math.max(sequence, Number(match[1]))
+  }
+
+  const idFile = join(folder, "id")
+  let id: string
+  try {
+    id = readFileSync(idFile, "utf8").trim()
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
+    id = randomUUID()
+    writeDurably(folder, "id", `${id}\n`)
+  }
+  if (
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id)
+  ) {
+    throw new Error("The journal's id file is damaged")
   }
 
   let tail: Promise<unknown> = Promise.resolve()
@@ -223,5 +245,6 @@ export function openJournal(root: string): Journal {
       return { deleted }
     },
     last: () => sequence,
+    id,
   }
 }

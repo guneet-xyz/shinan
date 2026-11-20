@@ -1196,7 +1196,7 @@ catalog records **where a secret lives**, not the secret.
 
 ### 7.3 A check for secret-looking values
 
-> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-3](build-plan-git-catalog.md#gc-3-push-checks-and-the-push-log)): the check runs on every push, near-certain credentials refuse it, and owners can allow a value as "not a secret" (D-060). Until then, this section describes M2 as built (v0.3.0).
+> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-3](build-plan-git-catalog.md#gc-3-push-checks-and-the-push-log)): the check runs on every push, near-certain credentials refuse it, and owners can allow a value as "not a secret" (D-060). **As built for pushes (GC-3a):** "On every push" at the end of this section. The rest describes M2 as built (v0.3.0), whose proposals are gone.
 
 Even with no secrets allowed, a value can slip in by mistake. Once applied,
 it is shown to every member of the workspace, sent to the model provider of
@@ -1255,9 +1255,39 @@ Reason: blocking only near-certain matches costs almost nothing, while one
 leaked secret would have to be purged, rotated at its source, and chased
 through any exports (see [section 9](#9-history-and-purge)).
 
+**On every push (as built, GC-3a; Git-based catalog plan §2.5, check 3,
+GQ-2):**
+
+- **What is read:** every file, commit message (and author and committer
+  line) and branch name a push brings that no branch held before, on any
+  branch. History already checked is not read again. A file of up to 1 MiB
+  is read whole.
+- **A near-certain credential refuses the push**, whatever branch. The
+  refusal names the file and line (or the commit, or "the branch name"),
+  the kind of credential and its **fingerprint**, the SHA-256 of the value
+  (`sha256:…`), never the value. Weaker signs are warnings
+  (`secret-suspected`), printed and not blocking: nobody approves pushes.
+- **"Not a secret" (decided, owner, GQ-2):** a workspace owner, after
+  signing in again, allows one exact value by pasting it or the
+  fingerprint from the refusal (`POST /api/workspaces/:id/catalog/allowed-values`).
+  Shinan stores only the fingerprint, at most 100 per workspace, and
+  records the allowance and its removal in the security log
+  (`catalog.secret-allowed`, `catalog.secret-allow-removed`, fingerprint
+  only). The workspace's pushes then let exactly that value through, as
+  found or warned about; the same value with one character changed is
+  refused again.
+- **Not flagged (#157):** names made of words and numbers joined by `-` or
+  `_`, such as a decision record's file name in a pinned link
+  (`…/blob/<commit>/docs/decisions/D-054-public-image-registry-project.md`),
+  and commit IDs in links to code hosts, are not "long random-looking
+  strings".
+- A refused push that held a secret is recorded in the security log
+  (`catalog.push-refused`, with its codes and how many secrets, never
+  text); the push and its objects are not kept.
+
 ## 8. Editing and approval
 
-> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-3](build-plan-git-catalog.md#gc-3-push-checks-and-the-push-log), [GC-9](build-plan-git-catalog.md#gc-9-the-skill-and-agent-setup)): this section becomes "Changing the catalog": pushes, checks on push and no catalog approval (D-060). GC-5 has removed proposals, approval classes, the strict setting and comments; the rest of this section still describes M2 as built (v0.3.0).
+> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-3](build-plan-git-catalog.md#gc-3-push-checks-and-the-push-log), [GC-9](build-plan-git-catalog.md#gc-9-the-skill-and-agent-setup)): this section becomes "Changing the catalog": pushes, checks on push and no catalog approval (D-060). GC-5 has removed proposals, approval classes, the strict setting and comments. Pushes are checked on every branch since GC-3a ([7.3](#73-a-check-for-secret-looking-values), [architecture §5.3](architecture.md#53-how-sync-works)); this section is rewritten as "Changing the catalog" with GC-3b's checks of `main`. The rest still describes M2 as built (v0.3.0).
 
 ### 8.1 Catalog proposals
 

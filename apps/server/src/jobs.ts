@@ -6,6 +6,7 @@ import {
   catalogRepositoryQueue,
   catchUpCatalogIndexes,
   checkCatalogIndexes,
+  checkCatalogRefs,
   createCatalogRepository,
   deliverEmail,
   emailQueue,
@@ -20,6 +21,7 @@ import {
   requestCatalogIndexRebuilds,
   requestPendingCatalogRepositories,
   shinan,
+  storeCatalogJournal,
   summarizeAgentTokenUse,
   summarizeCatalogFetches,
   updateCatalogIndex,
@@ -45,6 +47,12 @@ const schema = "pgboss"
 export const queues = {
   /** A trivial scheduled job that shows the worker is running. */
   heartbeat: "heartbeat",
+  /**
+   * Every minute: stores what the Git container's journal recorded that
+   * `web` has not (a push whose connection dropped), and compares the
+   * repositories' branches with the push log (Git-based catalog plan §2.6).
+   */
+  catalogPushLog: "catalog-push-log",
   /**
    * Hourly: gives up emails the job queue lost, removing their message, and
    * deletes old email records (architecture §4.2, §7).
@@ -270,6 +278,25 @@ export async function startWorker(options: WorkerOptions): Promise<Worker> {
         )
       return update
     })
+    await boss.createQueue(queues.catalogPushLog)
+    await boss.schedule(queues.catalogPushLog, "* * * * *")
+    await boss.work(queues.catalogPushLog, polling, () =>
+      safely(queues.catalogPushLog, async () => {
+        const ctx = {
+          db: options.db,
+          actor: shinan,
+          jobs: boss,
+          origin: "git_push" as const,
+        }
+        const { stored } = await storeCatalogJournal(ctx, git)
+        const { unlogged } = await checkCatalogRefs(ctx, git)
+        if (unlogged > 0)
+          console.warn(
+            `${unlogged} catalog branch updates the push log does not explain; see the security log (catalog.unlogged-update)`,
+          )
+        return { stored, unlogged }
+      }),
+    )
     await boss.createQueue(queues.catalogIndexCheck)
     await boss.schedule(queues.catalogIndexCheck, "40 3 * * *")
     await boss.work(queues.catalogIndexCheck, polling, () =>

@@ -1,0 +1,33 @@
+#!/nodejs/bin/node
+// Git runs this after it updated the refs of an accepted push. A thin
+// client: it tells the git role, with the push's nonce, so the git role
+// records which refs moved and the commits they first brought, and lets
+// the next push to the repository in. It starts no other process; its exit
+// code does not matter to Git.
+//
+// Plain JavaScript that runs as a CommonJS or an ES module.
+const nonce = process.env.SHINAN_PUSH_NONCE
+const url = process.env.SHINAN_HOOK_URL
+if (nonce && url && /^http:\/\/127\.0\.0\.1:\d{1,5}$/.test(url)) {
+  const chunks = []
+  process.stdin.on("data", (chunk) => chunks.push(chunk))
+  process.stdin.on("end", () => {
+    fetch(`${url}/post-receive`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "shinan-push-nonce": nonce,
+      },
+      body: JSON.stringify({ updates: Buffer.concat(chunks).toString("utf8") }),
+      signal: AbortSignal.timeout(60_000),
+    })
+      .then((response) => response.json())
+      .then((answer) => {
+        for (const line of Array.isArray(answer.lines) ? answer.lines : [])
+          process.stderr.write(`${String(line)}\n`)
+      })
+      .catch(() => {})
+  })
+} else {
+  process.stdin.resume()
+}

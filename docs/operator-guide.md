@@ -129,6 +129,12 @@ All files go in one directory, next to `compose.yml`.
    it that owner and mode: the Git container refuses a folder others can
    write.
 
+   It holds one repository per workspace (`<workspace ID>.git`), the
+   journal of pushes not yet stored in PostgreSQL (`journal/`), and, beside
+   each repository, the first pusher of each of its commits
+   (`records/<workspace ID>/`). Back up and restore them together: a
+   repository without its records loses who first pushed its commits.
+
 ### Reverse proxy
 
 Point your proxy at `http://127.0.0.1:3000` (or your `SHINAN_PORT`), with

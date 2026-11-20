@@ -416,7 +416,10 @@ describe("the Git endpoint", () => {
         `Bearer ${serviceToken}`,
       )
       expect(request.headers.get("cookie")).toBeNull()
-      expect(request.headers.get("shinan-git-context")).not.toBeNull()
+      // Agents' requests carry their context; web's own (reading the
+      // journal after a push) have none.
+      if (new URL(request.url).pathname.startsWith("/git/"))
+        expect(request.headers.get("shinan-git-context")).not.toBeNull()
     }
     const files = readdirSync(envs)
     const read = (name: string) => readFileSync(join(envs, name), "utf8")

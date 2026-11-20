@@ -7,6 +7,7 @@ import type * as Api from "@shinan/api-client"
 import {
   acceptInvitation,
   addToAllowlist,
+  allowCatalogValue,
   cancelEmailChange,
   changeRole,
   checkAddGitHub,
@@ -32,6 +33,7 @@ import {
   leaveWorkspace,
   listAgents,
   listAllowlist,
+  listCatalogAllowedValues,
   listEvents,
   listInvitations,
   listInvitationsForYou,
@@ -41,6 +43,7 @@ import {
   listYourAgents,
   pageSize,
   productName,
+  removeCatalogAllowedValue,
   removeFromAllowlist,
   removeGitHub,
   removeMember,
@@ -55,6 +58,7 @@ import {
 } from "@shinan/core"
 import type {
   Agent,
+  CatalogAllowedValue,
   Context,
   Event,
   GitClient,
@@ -616,6 +620,40 @@ export function createApi({
     return c.json(pageJson(entries, page, securityLogEntryJson))
   })
 
+  // The values the owners allowed as "not a secret" in pushes (Git-based
+  // catalog plan §2.5, GQ-2): fingerprints only.
+  signedIn.get("/workspaces/:workspaceId/catalog/allowed-values", async (c) => {
+    const values = await listCatalogAllowedValues(
+      ctx(c),
+      c.req.param("workspaceId"),
+    )
+    return c.json(values.map(allowedValueJson))
+  })
+
+  signedIn.post(
+    "/workspaces/:workspaceId/catalog/allowed-values",
+    async (c) => {
+      const body = await readBody(c)
+      const value = await allowCatalogValue(ctx(c), {
+        workspaceId: c.req.param("workspaceId"),
+        value: optionalStringField(body, "value"),
+        fingerprint: optionalStringField(body, "fingerprint"),
+      })
+      return c.json(allowedValueJson(value), 201)
+    },
+  )
+
+  signedIn.delete(
+    "/workspaces/:workspaceId/catalog/allowed-values/:fingerprint",
+    async (c) => {
+      await removeCatalogAllowedValue(ctx(c), {
+        workspaceId: c.req.param("workspaceId"),
+        fingerprint: c.req.param("fingerprint"),
+      })
+      return c.body(null, 204)
+    },
+  )
+
   signedIn.get("/workspaces/:workspaceId/invitations", async (c) => {
     const invitations = await listInvitations(
       ctx(c),
@@ -794,6 +832,14 @@ function agentJson(agent: Agent): Api.Agent {
 
 function issuedTokenJson(issued: IssuedToken): Api.IssuedAgentToken {
   return { ...issued, agent: agentJson(issued.agent) }
+}
+
+function allowedValueJson(value: CatalogAllowedValue): Api.CatalogAllowedValue {
+  return {
+    fingerprint: value.fingerprint,
+    allowedByPersonId: value.allowedByPersonId,
+    createdAt: iso(value.createdAt),
+  }
 }
 
 function invitationJson(invitation: Invitation): Api.Invitation {

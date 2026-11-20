@@ -122,6 +122,7 @@ describe("authorizeGitRequest", () => {
       mayPush: true,
       memberHandles: [contributor.handle, owner.handle].sort(),
       allowedValues: [],
+      tokenId: actor.tokenId,
     })
   })
 

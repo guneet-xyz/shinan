@@ -5,6 +5,8 @@
  * typed client (`client.ts`) calls it. Every request carries the service
  * token; the Git container accepts nothing else.
  */
+import { isIP } from "node:net"
+
 import { isId } from "../../validation.js"
 
 /** The header that carries the service token: `Authorization: Bearer <token>`. */
@@ -178,6 +180,10 @@ export interface GitRequestContext {
   memberHandles: string[]
   /** SHA-256 (hex) of each value the workspace's owners allowed as "not a secret". */
   allowedValues: string[]
+  /** The agent token the request came with, for the push log. */
+  tokenId?: string
+  /** The client's network address, for the push log. */
+  networkAddress?: string
 }
 
 export class GitContextError extends Error {
@@ -288,7 +294,19 @@ export function decodeGitContext(value: string): GitRequestContext {
       maxContextMemberHandles,
     ).map((h) => handleOf(h, "member handle")),
     allowedValues,
+    ...(c.tokenId === undefined ? {} : { tokenId: id(c.tokenId, "token ID") }),
+    ...(c.networkAddress === undefined
+      ? {}
+      : { networkAddress: address(c.networkAddress) }),
   }
+}
+
+function address(value: unknown): string {
+  const v = text(value, "network address", 64)
+  if (isIP(v) === 0) {
+    throw new GitContextError("The context's network address is not one")
+  }
+  return v
 }
 
 /** Which commit a read is of: `main` (the branch's current commit) or a full commit ID. */
@@ -368,6 +386,18 @@ export interface CommitInfo {
    * budget ran out before every change was found.
    */
   changeCountAtLeast: boolean
+}
+
+/** A repository's branches, as the minute check of the push log reads them. */
+export interface RepositoryRefs {
+  workspaceId: string
+  /** A push to the repository is being checked: its refs are read later. */
+  busy: boolean
+  /** Each branch (`refs/heads/…`) and its commit; empty when busy. */
+  refs: { ref: string; commit: string }[]
+  /** The journal and its last number when the refs were read. */
+  journalId: string
+  journalLast: number
 }
 
 /** One journal entry: what the Git container recorded for `web` to store. */

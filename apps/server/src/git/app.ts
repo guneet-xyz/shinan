@@ -26,6 +26,7 @@ import { GitError } from "@shinan/git"
 
 import type { Journal } from "./journal.js"
 import { JournalDamagedError, JournalError } from "./journal.js"
+import type { PushService } from "./push/service.js"
 import { createSmartHttp } from "./smart-http.js"
 import type { GitProcessLimits } from "./smart-http.js"
 import type { RepositoryStore } from "./store.js"
@@ -55,7 +56,7 @@ export function serviceTokenCheck(
 
 function fail(
   c: Context,
-  status: 400 | 401 | 404 | 413 | 422 | 500 | 503,
+  status: 400 | 401 | 404 | 409 | 413 | 422 | 500 | 503,
   error: string,
   message: string,
 ) {
@@ -201,6 +202,8 @@ export function createGitApp(options: {
   answerStallSeconds?: number
   /** Opens a push's spool file; tests give one that fails. */
   openSpool?: (path: string) => NodeJS.WritableStream
+  /** The push checks (Git-based catalog plan §2.5); without them, the hooks refuse every push. */
+  push?: PushService
 }) {
   const log = options.log ?? createLimitedLog()
   const authorized = serviceTokenCheck(options.serviceToken)
@@ -261,6 +264,14 @@ export function createGitApp(options: {
 
   const workspace = (c: Context) => c.req.param("workspaceId") ?? ""
 
+  // The minute check of the push log reads a repository's branches.
+  app.get("/repositories/:workspaceId/refs", async (c) => {
+    const id = workspace(c)
+    if (!options.store.exists(id)) return fail(c, 404, "not-found", "Not found")
+    if (options.push) return c.json(await options.push.refs(id))
+    return fail(c, 404, "not-found", "Not found")
+  })
+
   app.get("/repositories/:workspaceId", async (c) => {
     const main = await options.store.main(workspace(c))
     if (!main) return fail(c, 404, "not-found", "Not found")
@@ -291,6 +302,9 @@ export function createGitApp(options: {
         files,
         message: body.message,
       })
+      // Its first commit is first pushed by Shinan (plan §2.6).
+      if (created.created)
+        await options.push?.repositoryCreated(workspace(c), created.main)
       return c.json(
         { workspaceId: workspace(c), ...created },
         created.created ? 201 : 200,
@@ -404,6 +418,7 @@ export function createGitApp(options: {
 
   app.get("/journal", (c) =>
     c.json({
+      journalId: options.journal.id,
       entries: options.journal.read(
         whole(c.req.query("after"), "after", 0),
         whole(c.req.query("limit"), "limit", 100),
@@ -415,6 +430,11 @@ export function createGitApp(options: {
   app.post("/journal/acknowledge", limit(1024), async (c) => {
     const body = await jsonBody(c)
     if (typeof body.through !== "number") bad("through must be a whole number")
+    // Acknowledging another journal's numbers would delete entries never
+    // stored.
+    if (body.journalId !== undefined && body.journalId !== options.journal.id) {
+      return fail(c, 409, "other-journal", "That is not this journal")
+    }
     return c.json(options.journal.acknowledge(body.through))
   })
 
@@ -428,6 +448,7 @@ export function createGitApp(options: {
       processSeconds: options.gitProcessSeconds,
       answerStallSeconds: options.answerStallSeconds,
       openSpool: options.openSpool,
+      push: options.push,
     }),
   )
 

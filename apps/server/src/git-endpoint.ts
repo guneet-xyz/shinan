@@ -49,6 +49,12 @@ export interface GitEndpointOptions {
   git?: GitClient
   /** The caps on requests in flight, shared with `/mcp`. */
   inFlight: { perToken: InFlightCounter; perAddress: InFlightCounter }
+  /**
+   * Called when a push's answer has been sent, or its agent went: `web`
+   * then stores what the Git container's journal recorded (plan §2.2,
+   * step 5).
+   */
+  afterPush?: () => void
 }
 
 const log = createLimitedLog()
@@ -230,9 +236,16 @@ export function createGitEndpoint(options: GitEndpointOptions) {
       }
       const response = await forward(c, target, context, options.git, limit)
       const outgoing = (c.env as NodeBindings | undefined)?.outgoing
+      const pushed =
+        push && !target.advertisement ? options.afterPush : undefined
       if (outgoing && !outgoing.writableFinished && !outgoing.destroyed) {
         handedOver = true
-        outgoing.once("close", releasePlaces)
+        outgoing.once("close", () => {
+          releasePlaces()
+          pushed?.()
+        })
+      } else {
+        pushed?.()
       }
       return response
     } finally {

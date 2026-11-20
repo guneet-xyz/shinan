@@ -110,8 +110,13 @@ export type {
   YamlNode,
   YamlScalar,
 } from "./yaml.js"
-export { findSecrets, maxCheckedLength } from "./secrets.js"
-export type { SecretFinding } from "./secrets.js"
+export {
+  findPushSecrets,
+  findSecrets,
+  maxCheckedLength,
+  secretFingerprint,
+} from "./secrets.js"
+export type { PushSecretFinding, SecretFinding } from "./secrets.js"
 export {
   prepareCatalogValidation,
   SecretScans,

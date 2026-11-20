@@ -57,6 +57,7 @@ export const eventOrigins = [
   "reconciliation",
   "plugin_report",
   "mcp_call",
+  "git_push",
 ] as const
 export type EventOrigin = (typeof eventOrigins)[number]
 export const eventOriginEnum = pgEnum("event_origin", eventOrigins)
@@ -1249,6 +1250,183 @@ export const catalogRepositories = pgTable(
     ),
   ],
 )
+
+const gitObjectId = (column: string) =>
+  sql`${sql.identifier(column)} ~ '^([0-9a-f]{40}|[0-9a-f]{64})$'`
+
+/** How a push ended at the push checks (Git-based catalog plan §2.6). */
+export const catalogPushOutcomes = [
+  "accepted",
+  "refused",
+  "check-only",
+] as const
+export type CatalogPushOutcome = (typeof catalogPushOutcomes)[number]
+
+/** What a push did to one ref. */
+export const catalogPushRefKinds = [
+  "create",
+  "update",
+  "forced-update",
+  "delete",
+] as const
+export type CatalogPushRefKind = (typeof catalogPushRefKinds)[number]
+
+/**
+ * The push log (Git-based catalog plan §2.6): one row per push that
+ * reached the push checks, copied from the Git container's journal (its
+ * `push.checked` entry, `journalEntry`). Append-only (migration triggers);
+ * codes only, never the text of a refusal.
+ */
+export const catalogPushes = pgTable(
+  "catalog_pushes",
+  {
+    /** The request's ID, which `web` gave the push. */
+    id: uuid("id").primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id),
+    /** The journal and entry it was copied from. */
+    journalId: uuid("journal_id").notNull(),
+    journalEntry: bigint("journal_entry", { mode: "number" }).notNull(),
+    pushedAt: timestamp("pushed_at", { withTimezone: true }).notNull(),
+    agentId: uuid("agent_id").notNull(),
+    tokenId: uuid("token_id"),
+    memberId: uuid("member_id").notNull(),
+    personId: uuid("person_id").notNull(),
+    /** The pusher's written form (identity §8.7), as the `by` rule reads it. */
+    byLabel: text("by_label").notNull(),
+    networkAddress: inet("network_address"),
+    outcome: text("outcome").$type<CatalogPushOutcome>().notNull(),
+    /** The refusal codes, one of each; empty when accepted. */
+    codes: text("codes")
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    warnings: integer("warnings").notNull().default(0),
+    receivedBytes: bigint("received_bytes", { mode: "number" }).notNull(),
+    receivedObjects: integer("received_objects").notNull(),
+    newCommits: integer("new_commits").notNull(),
+  },
+  (t) => [
+    check(
+      "catalog_pushes_outcome",
+      sql`${t.outcome} in ('accepted', 'refused', 'check-only')`,
+    ),
+    index("catalog_pushes_workspace_pushed_at").on(t.workspaceId, t.pushedAt),
+  ],
+)
+
+/**
+ * The refs of each push: the commit before and after, the kind, and
+ * whether Git applied the update (`confirmed`, from the journal's
+ * `push.confirmed` entry; the only change the triggers allow, false to
+ * true).
+ */
+export const catalogPushRefs = pgTable(
+  "catalog_push_refs",
+  {
+    pushId: uuid("push_id")
+      .notNull()
+      .references(() => catalogPushes.id),
+    /** The order Git listed the refs in, from 0. */
+    position: integer("position").notNull(),
+    ref: text("ref").notNull(),
+    oldCommit: text("old_commit"),
+    newCommit: text("new_commit"),
+    kind: text("kind").$type<CatalogPushRefKind>().notNull(),
+    confirmed: boolean("confirmed").notNull().default(false),
+  },
+  (t) => [
+    primaryKey({ columns: [t.pushId, t.position] }),
+    check(
+      "catalog_push_refs_kind",
+      sql`${t.kind} in ('create', 'update', 'forced-update', 'delete')`,
+    ),
+    check(
+      "catalog_push_refs_commits",
+      sql`(${t.oldCommit} is null or ${gitObjectId("old_commit")}) and (${t.newCommit} is null or ${gitObjectId("new_commit")})`,
+    ),
+  ],
+)
+
+/**
+ * The first pusher of every commit Shinan has received (Git-based catalog
+ * plan §2.6, D-066), copied from the journal: the push whose applied ref
+ * update first brought it and the first of its refs that carried it, or
+ * `shinan` for commits Shinan made. Inserted once and never changed; the
+ * Git container keeps the authoritative copy on its volume.
+ */
+export const catalogCommitFirstPushes = pgTable(
+  "catalog_commit_first_pushes",
+  {
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id),
+    commit: text("commit").notNull(),
+    /** Null for a commit Shinan made. */
+    pushId: uuid("push_id").references(() => catalogPushes.id),
+    ref: text("ref"),
+    firstPushedAt: timestamp("first_pushed_at", {
+      withTimezone: true,
+    }).notNull(),
+    pusherKind: text("pusher_kind").$type<"agent" | "shinan">().notNull(),
+    agentId: uuid("agent_id"),
+    personId: uuid("person_id"),
+    /** The written form the `by` rule expects of this commit's fact checks. */
+    byLabel: text("by_label").notNull(),
+    /** For a commit a purge rewrote, the commit it replaces. */
+    replacesCommit: text("replaces_commit"),
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.commit] }),
+    check("catalog_commit_first_pushes_commit", gitObjectId("commit")),
+    check(
+      "catalog_commit_first_pushes_pusher",
+      sql`(${t.pusherKind} = 'shinan' and ${t.pushId} is null and ${t.agentId} is null) or (${t.pusherKind} = 'agent' and ${t.pushId} is not null and ${t.agentId} is not null)`,
+    ),
+    index("catalog_commit_first_pushes_push").on(t.pushId),
+  ],
+)
+
+/**
+ * The values a workspace's owners allowed as "not a secret" (plan §2.5,
+ * GQ-2): only the SHA-256 of each value, at most 100 per workspace. The
+ * push checks let exactly these values through.
+ */
+export const catalogAllowedValues = pgTable(
+  "catalog_allowed_values",
+  {
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id),
+    fingerprint: text("fingerprint").notNull(),
+    allowedByPersonId: uuid("allowed_by_person_id")
+      .notNull()
+      .references(() => people.id),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.fingerprint] }),
+    check(
+      "catalog_allowed_values_fingerprint",
+      sql`${t.fingerprint} ~ '^[0-9a-f]{64}$'`,
+    ),
+  ],
+)
+
+/**
+ * How far `web` has stored each journal of the Git container (plan §2.6):
+ * the last entry number stored, so an entry read twice is stored once.
+ * Keyed by the journal's own ID, so a new journal (a replaced volume)
+ * starts again from its first entry.
+ */
+export const catalogJournals = pgTable("catalog_journals", {
+  journalId: uuid("journal_id").primaryKey(),
+  lastStored: bigint("last_stored", { mode: "number" }).notNull().default(0),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+})
 
 /**
  * The agent index (catalog §12; architecture §5.3): rows derived by the

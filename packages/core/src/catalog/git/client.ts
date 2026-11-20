@@ -9,6 +9,7 @@ import type {
   JournalEntry,
   RepositoryFile,
   RepositoryInfo,
+  RepositoryRefs,
   TreeChange,
   TreeEntry,
 } from "./api.js"
@@ -91,10 +92,25 @@ export interface GitClient {
     workspaceId: string,
     input: { commit: CommitRef; path?: string; limit: number; skip?: number },
   ): Promise<{ commit: string; commits: CommitInfo[] }>
-  /** Journal entries numbered above `after`, oldest first. */
-  readJournal(input: { after: number; limit?: number }): Promise<JournalEntry[]>
-  /** Deletes the entries up to `through`. Safe to repeat. */
-  acknowledgeJournal(through: number): Promise<{ deleted: number }>
+  /** The journal's ID, and its entries numbered above `after`, oldest first. */
+  readJournal(input: {
+    after: number
+    limit?: number
+  }): Promise<{ journalId: string; entries: JournalEntry[]; last: number }>
+  /**
+   * Deletes the entries up to `through` of the journal `journalId` (refused
+   * if the Git container's journal is another). Safe to repeat.
+   */
+  acknowledgeJournal(input: {
+    journalId: string
+    through: number
+  }): Promise<{ deleted: number }>
+  /**
+   * A repository's branches and the commits they point to, unless a push to
+   * it is being checked (`busy`), with the journal's last number when they
+   * were read: every update applied before then is in the journal up to it.
+   */
+  listRefs(workspaceId: string): Promise<RepositoryRefs | null>
 }
 
 type Json = Record<string, unknown>
@@ -251,12 +267,23 @@ export function createGitClient(options: GitClientOptions): GitClient {
           limit: input.limit === undefined ? undefined : String(input.limit),
         },
       })
-      return (body as { entries: JournalEntry[] }).entries
+      return body as unknown as {
+        journalId: string
+        entries: JournalEntry[]
+        last: number
+      }
     },
-    async acknowledgeJournal(through) {
-      return (await call("POST", "/journal/acknowledge", {
-        body: { through },
-      })) as unknown as { deleted: number }
+    async acknowledgeJournal(input) {
+      const body = await call("POST", "/journal/acknowledge", {
+        body: { journalId: input.journalId, through: input.through },
+      })
+      return body as { deleted: number }
+    },
+    async listRefs(workspaceId) {
+      const body = await call("GET", repository(workspaceId, "/refs"), {
+        notFound: true,
+      })
+      return body ? (body as unknown as RepositoryRefs) : null
     },
   }
 }

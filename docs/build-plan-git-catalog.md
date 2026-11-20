@@ -500,6 +500,28 @@ seconds for any other push; past it the push is refused as too slow. M2
 measured validating a 20,000-document catalog from nothing at 1 to 6 seconds
 on a busy Daedalus.
 
+**As built (GC-3a, [architecture §5.3](architecture.md#53-how-sync-works)):**
+checks 1 to 3, with these additions from the reviews of GC-1b (#165): new
+commit objects at most 64 KiB (history reads them whole); names Windows and
+macOS can check out, on every branch; at most 20,000 entries per folder and
+200,000 reached from a commit's tree, so the read path only sees bounded
+repositories; the 1 GiB repository limit (branch deletions pass); and the
+1,000-new-commit limit. `-o check-only` is accepted already (any other
+option is refused), so an agent asking for a check never changes anything.
+Until GC-3b adds checks 4 to 7, a push that changes `main` is refused
+(`main-not-open`). The codes are core's `pushCheckCodes`, which GC-9's
+skill test reads: `ref-not-branch`, `ref-name-invalid`,
+`main-not-fast-forward`, `too-many-branches`, `purged-commit`, `symlink`,
+`submodule`, `file-too-large`, `commit-too-large`, `too-many-commits`,
+`tree-too-large`, `path-not-portable`, `secret`, `repository-full`, `busy`,
+`too-slow`, `check-only`, `push-option-unknown`, `check-failed`,
+`main-not-open`, the warning `secret-suspected`, and GC-3b's
+`path-not-allowed`, `path-id-mismatch`, `id-disappeared`,
+`by-not-first-pusher`, `catalog-too-large` and `main-too-many-commits`.
+Checks run in the `git` role's main thread, reading through `git` processes
+and yielding between large files; GC-3b moves them into a worker thread
+with the blob-ID cache.
+
 ### 2.6 The push log and events
 
 **Decided (owner, GD-4):** Shinan records which agent and which person pushed
@@ -566,6 +588,15 @@ each push, with the commits, the ref and the commits before and after.
   after, the number of commits and the IDs of the documents that changed
   (catalog IDs only, never text). Branch pushes are in the push log only.
   Reason: the timeline is about the catalog, which is `main`.
+
+**As built (GC-3a):** the journal entries are `push.checked`,
+`push.confirmed` and `repository.created`; the journal has an ID of its own,
+and `web` keeps how far it stored each journal (`catalog_journals`), so a
+new volume's journal is read from its first entry. The first-pusher record
+is `records/<workspace ID>/first-pushes.jsonl` on the volume, written right
+after the journal entry and completed from the journal at start. `web`
+stores the journal after each forwarded push; the worker's minute job
+stores what that missed and runs the check against the refs.
 
 ### 2.7 The index after a push
 
