@@ -273,6 +273,7 @@ otherwise, fix the problem in a new commit.
 | `too-slow`               | Any branch: checking took longer than Shinan allows                                            | Push smaller changes                                                                                                                                   |
 | `catalog-too-large`      | The catalog would pass 20,000 documents or 50 MiB of text, or is too large to check            | Tell your person                                                                                                                                       |
 | `repository-full`        | Any branch: the repository is over its 1 GiB limit; only branch deletions are accepted         | Tell your person                                                                                                                                       |
+| `unreadable-path`        | A file name on `main` that Shinan cannot read (a control character, bytes that are not UTF-8)  | Rename it to `<type>/<slug>.md`                                                                                                                        |
 | `read-failed`            | Shinan could not read a document: a bug in Shinan                                              | Tell your person, with the file                                                                                                                        |
 
 **Warnings** do not block the push, but read them: they are often a typo.

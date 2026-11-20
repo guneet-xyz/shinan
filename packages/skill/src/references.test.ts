@@ -19,6 +19,7 @@ import { skillDirectory } from "./index.js"
  */
 const validationCodes = {
   "too-large": true,
+  "unreadable-path": true,
   "frontmatter-invalid": true,
   "body-invalid": true,
   "read-failed": true,
