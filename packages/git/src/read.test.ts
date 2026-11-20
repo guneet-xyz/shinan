@@ -339,6 +339,7 @@ describe("changedPaths", () => {
       changes: [{ status: "added", path: "README.md" }],
       count: 1,
       truncated: false,
+      countAtLeast: false,
     })
     expect(changes.get(third)!.changes).toEqual([
       { status: "modified", path: "README.md" },
@@ -398,12 +399,13 @@ describe("changedPaths", () => {
       changes: [],
       count: 0,
       truncated: false,
+      countAtLeast: false,
     })
     expect(changes.get(first)!.count).toBe(1)
     expect(changes.get(second)!.count).toBe(3)
     expect(
       (await changedPaths(git, repository.gitDir, [same])).get(same),
-    ).toEqual({ changes: [], count: 0, truncated: false })
+    ).toEqual({ changes: [], count: 0, truncated: false, countAtLeast: false })
   })
 
   it("lists no more path bytes than its budget across the page, but counts every path", async () => {

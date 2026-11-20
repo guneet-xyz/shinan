@@ -267,13 +267,21 @@ no shell. As built (GC-1b,
     again; a file over 1 MiB is `tooLarge`).
   - **A tree listing or a diff** returns at most 50,000 entries and 8 MiB of
     paths (a path may be up to 4 KiB), `truncated` when there were more;
-    it stops there. Diffs, and history's changed paths, are not `git
-diff-tree`'s, which builds its whole list of changes before printing
-    any (50,000 paths of 4 KiB are 200 MiB inside Git): Shinan walks the two
-    trees itself, reading tree objects one at a time through `cat-file`
-    (at most 16 MiB each and 64 MiB along one path, else `422
-tree-too-large`), skipping subtrees with equal IDs. A test checks it
-    finds exactly what `git diff-tree` finds, in its order.
+    it stops there.
+  - **Diffs, and history's changed paths,** do not use `git diff-tree`,
+    which builds its whole list of changes before printing any (50,000
+    paths of 4 KiB are 200 MiB inside Git). Shinan walks the two trees
+    itself: it reads tree objects one at a time through `cat-file`, at most
+    16 MiB each and 64 MiB along one path (else `422 tree-too-large`), and
+    their entries one at a time from those bytes, never all made into
+    objects; it skips subtrees with equal IDs. A test checks that it finds
+    exactly what `git diff-tree` finds, in its order.
+  - **A work budget per request:** 20,000 tree objects read and 5,000,000
+    entries visited, shared by the request's walks. Past it, a diff stops
+    `truncated`, and a history commit's change count becomes a lower bound
+    (`changeCountAtLeast`). Nothing fails for it, so a few KB of repeated
+    subtrees (50 × 50,000 references to one tree) cost seconds, not a
+    minute of CPU and an error.
   - **A history page** of at most 100 commits reads each commit only up to
     256 KiB (a longer message comes back truncated and flagged) and lists,
     per commit, at most 50 of the paths it changed against its first parent
@@ -292,11 +300,14 @@ tree-too-large`), skipping subtrees with equal IDs. A test checks it
   - **Tested under the container's 1,024 MiB limit:** the first-start test
     builds a repository past these limits (1,000 paths to one 1 MiB file,
     70 commits with 15 MiB messages, a branch with 250,000 paths, a branch
-    of 50,001 paths of about 4,040 characters) and reads it: one documents
-    read and one history page, 6 tree and 6 diff reads at once of the wide
-    branch, 4 tree and 4 diff reads at once of the long paths, and 40
-    document reads at once whose clients wait before reading. The test
-    reports the container's memory peak.
+    of 50,001 paths of about 4,040 characters, two root trees of 500,000
+    entries each) and reads it: one documents read and one history page,
+    6 tree and 6 diff reads at once of the wide branch, 4 tree and 4 diff
+    reads at once of the long paths, 4 diffs and 4 history pages at once of
+    the two 500,000-entry trees, and 40 document reads at once whose
+    clients wait before reading. The test reports the container's memory
+    peak. Unit tests cover repeated subtrees (50 × 50,000) against the work
+    budget.
 - **Repositories** are made with `git init --template=` (no sample hooks)
   in `.tmp/` on the volume, configured (`core.hooksPath` to the image's
   read-only hooks, `fsckObjects`, `receive.maxInputSize`, push options,

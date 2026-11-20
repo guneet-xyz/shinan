@@ -463,6 +463,7 @@ export function createRepositoryStore(options: {
               changes: changed?.changes ?? [],
               changeCount: changed?.count ?? 0,
               changesTruncated: changed?.truncated ?? false,
+              changeCountAtLeast: changed?.countAtLeast ?? false,
             }
           },
         ),

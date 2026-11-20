@@ -5,24 +5,34 @@ import { GitError } from "./run.js"
  * Comparing two trees by reading their tree objects through a `cat-file`
  * reader, one object at a time, rather than with `git diff-tree`, which
  * builds its whole list of changes before printing any of it (50,000 paths
- * of 4 KiB are 200 MiB inside Git). This walk holds only the trees on its
- * current path, skips subtrees whose IDs are equal, and stops whenever its
- * caller has enough.
+ * of 4 KiB are 200 MiB inside Git). The walk holds only the tree objects
+ * on its current path, as their bytes (entries are read from them one at a
+ * time, never all made into objects), skips subtrees whose IDs are equal,
+ * and stops whenever its caller has enough or its work budget runs out.
  */
 
 /** Git's limit on how deep trees nest (`core.maxTreeDepth`). */
 export const MAX_TREE_DEPTH = 2048
-/** The largest single tree object read. */
+/** The largest single tree object read: about 500,000 entries in one folder. */
 export const MAX_TREE_OBJECT_BYTES = 16 * 1024 * 1024
 /** The most bytes of tree objects held at once, along one path. */
 export const MAX_HELD_TREE_BYTES = 64 * 1024 * 1024
 
-/** One entry of a tree object. */
-interface Entry {
-  /** Git's mode, six digits: `100644`, `100755`, `120000`, `160000`, `040000`. */
-  mode: string
-  name: Buffer
-  oid: string
+/**
+ * How much one request's walks may do: tree objects read and tree entries
+ * visited, shared by every walk of the request. Past either, the walks stop
+ * early, as if their caller had enough; they never fail for it. A catalog
+ * at its limits (20,000 documents) needs a small part of it for one diff,
+ * and a history page of 100 such commits fits too.
+ */
+export interface WalkBudget {
+  objects: number
+  entries: number
+}
+
+/** A new budget with the default sizes. */
+export function walkBudget(): WalkBudget {
+  return { objects: 20_000, entries: 5_000_000 }
 }
 
 /** A change between two trees, as `git diff-tree --raw -r` reports it. */
@@ -35,64 +45,114 @@ export interface WalkChange {
   newOid: string | null
 }
 
-const isTree = (entry: Entry) => entry.mode === "040000"
+/** How a walk ended. */
+export interface WalkEnd {
+  /** Its caller asked it to stop. */
+  stopped: boolean
+  /** Its work budget ran out: changes after that were not found. */
+  exhausted: boolean
+}
+
+/**
+ * Reads a tree object's entries one at a time, as views into its bytes:
+ * an entry costs nothing until it is looked at.
+ */
+class TreeCursor {
+  private at = 0
+  /** The current entry's mode, name (a view) and ID bytes (a view). */
+  mode = ""
+  name: Buffer = Buffer.alloc(0)
+  id: Buffer = Buffer.alloc(0)
+  done = false
+
+  constructor(
+    private readonly content: Buffer,
+    private readonly oidBytes: number,
+  ) {
+    this.next()
+  }
+
+  /** Moves to the next entry, or sets `done`. */
+  next(): void {
+    if (this.at >= this.content.length) {
+      this.done = true
+      return
+    }
+    const space = this.content.indexOf(0x20, this.at)
+    const nul = space < 0 ? -1 : this.content.indexOf(0, space + 1)
+    if (space < 0 || nul < 0 || nul + 1 + this.oidBytes > this.content.length) {
+      throw new GitError("exit", "cat-file", "A tree object Shinan cannot read")
+    }
+    this.mode = this.content
+      .subarray(this.at, space)
+      .toString("latin1")
+      .padStart(6, "0")
+    this.name = this.content.subarray(space + 1, nul)
+    this.id = this.content.subarray(nul + 1, nul + 1 + this.oidBytes)
+    this.at = nul + 1 + this.oidBytes
+  }
+
+  get isTree(): boolean {
+    return this.mode === "040000"
+  }
+
+  get oid(): string {
+    return this.id.toString("hex")
+  }
+}
 
 /** The kind of a non-tree entry: a file, a symbolic link or a submodule. */
 const kind = (mode: string) =>
   mode === "120000" ? "link" : mode === "160000" ? "submodule" : "file"
 
-/** Reads a tree object's entries. */
-export function parseTree(content: Buffer, oidBytes: number): Entry[] {
-  const entries: Entry[] = []
-  let at = 0
-  while (at < content.length) {
-    const space = content.indexOf(0x20, at)
-    const nul = space < 0 ? -1 : content.indexOf(0, space + 1)
-    if (space < 0 || nul < 0 || nul + 1 + oidBytes > content.length) {
-      throw new GitError("exit", "cat-file", "A tree object Shinan cannot read")
-    }
-    entries.push({
-      mode: content.subarray(at, space).toString("latin1").padStart(6, "0"),
-      name: content.subarray(space + 1, nul),
-      oid: content.subarray(nul + 1, nul + 1 + oidBytes).toString("hex"),
-    })
-    at = nul + 1 + oidBytes
-  }
-  return entries
-}
-
 /**
  * Git's order of tree entries: by name, byte for byte, as if each tree's
  * name ended with `/`.
  */
-function compare(a: Entry, b: Entry): number {
+function compare(a: TreeCursor, b: TreeCursor): number {
   const length = Math.min(a.name.length, b.name.length)
   const common = Buffer.compare(
     a.name.subarray(0, length),
     b.name.subarray(0, length),
   )
   if (common !== 0) return common
-  const next = (e: Entry) =>
-    e.name.length > length ? e.name[length]! : isTree(e) ? 0x2f : 0
+  const next = (e: TreeCursor) =>
+    e.name.length > length ? e.name[length]! : e.isTree ? 0x2f : 0
   return next(a) - next(b)
+}
+
+/** A snapshot of the entry a cursor is on, for a change. */
+function entryOf(c: TreeCursor) {
+  return { mode: c.mode, oid: c.oid }
 }
 
 /**
  * Walks the differences between two trees (`from` `null`: the empty tree)
  * in Git's order, handing each to `onChange`; `onChange` returns `false` to
- * stop. Answers whether it stopped.
+ * stop. `budget` is shared by every walk of one request and spent as the
+ * walk reads tree objects and visits entries.
  */
 export async function walkTreeDiff(
   reader: CatFile,
   from: string | null,
   to: string,
   onChange: (change: WalkChange) => boolean | void,
-): Promise<boolean> {
+  budget: WalkBudget = walkBudget(),
+): Promise<WalkEnd> {
   const oidBytes = to.length / 2
   let held = 0
   let stopped = false
+  let exhausted = false
+  const done = () => stopped || exhausted
 
-  const read = async (oid: string, depth: number): Promise<Entry[]> => {
+  const spend = (objects: number, entries: number) => {
+    budget.objects -= objects
+    budget.entries -= entries
+    if (budget.objects < 0 || budget.entries < 0) exhausted = true
+  }
+
+  /** A tree object's bytes, counted as held until `release`. */
+  const read = async (oid: string, depth: number): Promise<Buffer | null> => {
     if (depth > MAX_TREE_DEPTH) {
       throw new GitError(
         "exit",
@@ -102,6 +162,8 @@ export async function walkTreeDiff(
         "exceeded maximum allowed tree depth",
       )
     }
+    spend(1, 0)
+    if (exhausted) return null
     const object = await reader.read(oid)
     if (object === "too-large") {
       throw new GitError(
@@ -125,41 +187,22 @@ export async function walkTreeDiff(
         "tree object too large",
       )
     }
-    const entries = parseTree(object.content, oidBytes)
-    return Object.assign(entries, { bytes: object.content.length })
+    return object.content
+  }
+  const release = (content: Buffer | null) => {
+    if (content) held -= content.length
   }
 
   const emit = (change: WalkChange) => {
     if (onChange(change) === false) stopped = true
   }
 
-  /** Every file under a tree that is only on one side. */
-  const all = async (
-    oid: string,
-    prefix: string,
-    depth: number,
-    side: "added" | "deleted",
-  ): Promise<void> => {
-    const entries = await read(oid, depth)
-    try {
-      for (const entry of entries) {
-        if (stopped) return
-        const path = prefix + entry.name.toString("utf8")
-        if (isTree(entry)) await all(entry.oid, `${path}/`, depth + 1, side)
-        else
-          one(
-            path,
-            side === "deleted" ? entry : null,
-            side === "added" ? entry : null,
-          )
-      }
-    } finally {
-      held -= (entries as Entry[] & { bytes: number }).bytes
-    }
-  }
-
-  /** A path that is not a tree on either side it is on. */
-  const one = (path: string, old: Entry | null, now: Entry | null) => {
+  /** A path that is not a tree on whichever sides it is on. */
+  const one = (
+    path: string,
+    old: { mode: string; oid: string } | null,
+    now: { mode: string; oid: string } | null,
+  ) => {
     if (old && now) {
       emit({
         status: kind(old.mode) === kind(now.mode) ? "modified" : "type-changed",
@@ -190,6 +233,33 @@ export async function walkTreeDiff(
     }
   }
 
+  /** Every file under a tree that is only on one side. */
+  const all = async (
+    oid: string,
+    prefix: string,
+    depth: number,
+    side: "added" | "deleted",
+  ): Promise<void> => {
+    const content = await read(oid, depth)
+    if (!content) return
+    try {
+      for (
+        const c = new TreeCursor(content, oidBytes);
+        !c.done && !done();
+        c.next()
+      ) {
+        spend(0, 1)
+        if (exhausted) return
+        const path = prefix + c.name.toString("utf8")
+        if (c.isTree) await all(c.oid, `${path}/`, depth + 1, side)
+        else if (side === "deleted") one(path, entryOf(c), null)
+        else one(path, null, entryOf(c))
+      }
+    } finally {
+      release(content)
+    }
+  }
+
   const walk = async (
     oldOid: string | null,
     newOid: string,
@@ -197,46 +267,64 @@ export async function walkTreeDiff(
     depth: number,
   ): Promise<void> => {
     if (oldOid === newOid) return
-    const olds: Entry[] = oldOid === null ? [] : await read(oldOid, depth)
+    const olds = oldOid === null ? Buffer.alloc(0) : await read(oldOid, depth)
+    if (!olds) return
     try {
       const news = await read(newOid, depth)
+      if (!news) return
       try {
-        let i = 0
-        let j = 0
-        while ((i < olds.length || j < news.length) && !stopped) {
-          const old = olds[i]
-          const now = news[j]
-          const order = !old ? 1 : !now ? -1 : compare(old, now)
+        const o = new TreeCursor(olds, oidBytes)
+        const n = new TreeCursor(news, oidBytes)
+        while ((!o.done || !n.done) && !done()) {
+          spend(0, 1)
+          if (exhausted) return
+          const order = o.done ? 1 : n.done ? -1 : compare(o, n)
           if (order < 0) {
-            i++
-            const path = prefix + old!.name.toString("utf8")
-            if (isTree(old!))
-              await all(old!.oid, `${path}/`, depth + 1, "deleted")
-            else one(path, old!, null)
+            const path = prefix + o.name.toString("utf8")
+            if (o.isTree) {
+              const oid = o.oid
+              o.next()
+              await all(oid, `${path}/`, depth + 1, "deleted")
+            } else {
+              const old = entryOf(o)
+              o.next()
+              one(path, old, null)
+            }
           } else if (order > 0) {
-            j++
-            const path = prefix + now!.name.toString("utf8")
-            if (isTree(now!))
-              await all(now!.oid, `${path}/`, depth + 1, "added")
-            else one(path, null, now!)
+            const path = prefix + n.name.toString("utf8")
+            if (n.isTree) {
+              const oid = n.oid
+              n.next()
+              await all(oid, `${path}/`, depth + 1, "added")
+            } else {
+              const now = entryOf(n)
+              n.next()
+              one(path, null, now)
+            }
           } else {
-            i++
-            j++
-            if (old!.oid === now!.oid && old!.mode === now!.mode) continue
-            const path = prefix + now!.name.toString("utf8")
-            if (isTree(old!))
-              await walk(old!.oid, now!.oid, `${path}/`, depth + 1)
-            else one(path, old!, now!)
+            if (o.mode === n.mode && o.id.equals(n.id)) {
+              o.next()
+              n.next()
+              continue
+            }
+            const path = prefix + n.name.toString("utf8")
+            const old = entryOf(o)
+            const now = entryOf(n)
+            const trees = o.isTree
+            o.next()
+            n.next()
+            if (trees) await walk(old.oid, now.oid, `${path}/`, depth + 1)
+            else one(path, old, now)
           }
         }
       } finally {
-        held -= (news as Entry[] & { bytes?: number }).bytes ?? 0
+        release(news)
       }
     } finally {
-      held -= (olds as Entry[] & { bytes?: number }).bytes ?? 0
+      release(olds)
     }
   }
 
   await walk(from, to, "", 1)
-  return stopped
+  return { stopped, exhausted }
 }

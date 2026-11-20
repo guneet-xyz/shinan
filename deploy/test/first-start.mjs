@@ -459,6 +459,41 @@ function writeLongPathBranch(workspaceId, parent) {
 }
 
 /**
+ * Inside the running `git` container: two commits on a branch off `main`
+ * whose root trees each hold 500,000 entries (one blob, base-36 names,
+ * about 16 MB per tree object, every name different between the two).
+ * Answers both commits.
+ */
+function writeWideTrees(workspaceId, parent) {
+  const script = `
+    const { createGit } = await import("/app/packages/git/dist/index.js")
+    const git = createGit({ timeoutMs: 600000 })
+    const gitDir = "/var/lib/shinan/catalog/${workspaceId}.git"
+    const text = async (args, input, env) => (await git.run(args, { gitDir, input, env })).stdout.toString().trim()
+    const blob = await text(["hash-object", "-w", "--stdin"], "wide\\n")
+    const ident = { GIT_AUTHOR_NAME: "T", GIT_AUTHOR_EMAIL: "t@example.com", GIT_COMMITTER_NAME: "T", GIT_COMMITTER_EMAIL: "t@example.com" }
+    const commits = []
+    let head = "${parent}"
+    for (const prefix of ["a", "b"]) {
+      const lines = []
+      for (let i = 0; i < 500000; i++) lines.push("100644 blob " + blob + "\\t" + prefix + i.toString(36))
+      const tree = await text(["mktree"], lines.join("\\n") + "\\n")
+      head = await text(["commit-tree", "-p", head, "-m", "Wide " + prefix, tree], undefined, ident)
+      commits.push(head)
+    }
+    await git.run(["update-ref", "refs/heads/wide-trees", head], { gitDir })
+    console.log(commits.join(" "))`
+  const id = compose("ps", "--quiet", "git").trim()
+  return execFileSync(
+    "docker",
+    ["exec", id, "/nodejs/bin/node", "--input-type=module", "-e", script],
+    { encoding: "utf8" },
+  )
+    .trim()
+    .split(" ")
+}
+
+/**
  * Many requests to the Git container at once, from one container on its
  * network. Each reader waits `waitMs` after its answer starts before
  * reading it, as a slow client would. Answers a summary of each.
@@ -479,11 +514,13 @@ function askGitCrowd(requests, waitMs = 0) {
         await sleep(Number(process.env.WAIT))
         const b = await r.json()
         const list = b.entries ?? b.changes ?? []
+        const commits = b.commits?.length
         const documents = b.documents ?? []
         return {
           status: r.status,
           entries: list.length,
           truncated: b.truncated,
+          commits,
           bytes: documents.reduce((n, d) => n + (d.content ? Buffer.from(d.content, "base64").length : 0), 0),
         }
       } catch (e) {
@@ -893,6 +930,26 @@ async function run() {
         r.entries < 3200,
     ),
     `4 tree and 4 diff reads at once of 50,001 paths of 4,040 characters stop at 8 MiB of paths, truncated (${JSON.stringify(longCrowd.map((r) => r.entries))})`,
+  )
+  // Two tree objects of 500,000 entries each, every entry different: the
+  // walk reads entries from each object's bytes as it goes, so four diffs
+  // and four history pages at once fit.
+  const [wideA, wideB] = writeWideTrees(heavyId, heavyMain)
+  const wideCrowd = askGitCrowd([
+    ...Array.from({ length: 4 }, () => ({
+      path: `/repositories/${heavyId}/diff?from=${wideA}&to=${wideB}`,
+    })),
+    ...Array.from({ length: 4 }, () => ({
+      path: `/repositories/${heavyId}/history?commit=${wideB}&limit=2`,
+    })),
+  ])
+  check(
+    wideCrowd.every((r) => r.status === 200) &&
+      wideCrowd
+        .slice(0, 4)
+        .every((r) => r.entries === 50_000 && r.truncated === true) &&
+      wideCrowd.slice(4).every((r) => r.commits === 2),
+    `4 diffs and 4 history pages at once of two trees of 500,000 entries each answer (${JSON.stringify(wideCrowd.map((r) => [r.status, r.entries, r.commits]))})`,
   )
   const slow = askGitCrowd(
     Array.from({ length: 40 }, () => ({

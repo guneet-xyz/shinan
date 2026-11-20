@@ -264,6 +264,11 @@ export interface CommitInfo {
   changeCount: number
   /** Whether `changes` lists fewer than `changeCount`. */
   changesTruncated: boolean
+  /**
+   * Whether `changeCount` is a lower bound ("at least"): the request's work
+   * budget ran out before every change was found.
+   */
+  changeCountAtLeast: boolean
 }
 
 /** One journal entry: what the Git container recorded for `web` to store. */

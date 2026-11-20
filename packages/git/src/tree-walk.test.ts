@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import { openCatFile } from "./cat-file.js"
-import { diffTreesPage, listTree } from "./read.js"
+import { changedPaths, diffTreesPage, listTree } from "./read.js"
 import { createGit } from "./run.js"
 import { createFixtureRepository } from "./testing.js"
 import { walkTreeDiff } from "./tree-walk.js"
@@ -118,6 +118,117 @@ describe("the tree walk's limits", () => {
       } finally {
         await reader.close()
       }
+    } finally {
+      repository.remove()
+    }
+  })
+})
+
+describe("the tree walk's work budget", () => {
+  /**
+   * A commit a few KB in size whose tree reaches 2.5 million entries: 50
+   * entries pointing to one tree of 50,000 entries, each pointing to the
+   * same leaf (the empty tree, or a tree of one file).
+   */
+  async function repeated(gitDir: string, leaf: "empty" | "one-file") {
+    const text = async (args: string[], input?: string) =>
+      (await git.run(args, { gitDir, input })).stdout.toString("utf8").trim()
+    const leafTree =
+      leaf === "empty"
+        ? await text(["hash-object", "-t", "tree", "-w", "--stdin"], "")
+        : await text(
+            ["mktree"],
+            `100644 blob ${await text(["hash-object", "-w", "--stdin"], "x\n")}\tf.md\n`,
+          )
+    const wide = await text(
+      ["mktree", "--missing"],
+      Array.from(
+        { length: 50_000 },
+        (_, i) => `040000 tree ${leafTree}\tn${i}\n`,
+      ).join(""),
+    )
+    const root = await text(
+      ["mktree", "--missing"],
+      Array.from({ length: 50 }, (_, i) => `040000 tree ${wide}\tm${i}\n`).join(
+        "",
+      ),
+    )
+    return (
+      await git.run(["commit-tree", "-m", "Repeated", root], {
+        gitDir,
+        env: {
+          GIT_AUTHOR_NAME: "T",
+          GIT_AUTHOR_EMAIL: "t@example.com",
+          GIT_COMMITTER_NAME: "T",
+          GIT_COMMITTER_EMAIL: "t@example.com",
+        },
+      })
+    ).stdout
+      .toString("utf8")
+      .trim()
+  }
+
+  for (const leaf of ["empty", "one-file"] as const) {
+    it(`stops a diff and a history count of 50 × 50,000 repeated ${leaf} subtrees within its budget, in seconds`, async () => {
+      const repository = await createFixtureRepository(git)
+      try {
+        const commit = await repeated(repository.gitDir, leaf)
+        let started = Date.now()
+        const diff = await diffTreesPage(git, repository.gitDir, null, commit, {
+          limit: 50_000,
+        })
+        expect(diff.truncated).toBe(true)
+        // Each one-file leaf is one tree object read: the walk stops at the
+        // budget's 20,000, before the 50,000-change limit.
+        if (leaf === "empty") expect(diff.changes).toEqual([])
+        else expect(diff.changes.length).toBeGreaterThan(10_000)
+        expect(Date.now() - started).toBeLessThan(20_000)
+
+        started = Date.now()
+        const changes = (
+          await changedPaths(git, repository.gitDir, [commit])
+        ).get(commit)!
+        expect(changes).toMatchObject({ truncated: true, countAtLeast: true })
+        expect(changes.count).toBeLessThan(2_500_000)
+        if (leaf === "one-file") expect(changes.count).toBeGreaterThan(10_000)
+        expect(Date.now() - started).toBeLessThan(20_000)
+      } finally {
+        repository.remove()
+      }
+    }, 60_000)
+  }
+
+  it("is shared by the walks of one request, so later commits of a page are lower bounds too", async () => {
+    const repository = await createFixtureRepository(git)
+    try {
+      const first = await writeCommit(git, repository.gitDir, {
+        files: [{ path: "a.md", content: "a" }],
+        message: "a\n",
+        identity,
+      })
+      const second = await writeCommit(git, repository.gitDir, {
+        files: [{ path: "a.md", content: "b" }],
+        message: "b\n",
+        identity,
+        parents: [first],
+      })
+      const changes = await changedPaths(
+        git,
+        repository.gitDir,
+        [second, first],
+        {
+          budget: { objects: 2, entries: 100 },
+        },
+      )
+      expect(changes.get(second)).toMatchObject({
+        count: 1,
+        countAtLeast: false,
+      })
+      expect(changes.get(first)).toMatchObject({
+        count: 0,
+        truncated: true,
+        countAtLeast: true,
+      })
     } finally {
       repository.remove()
     }

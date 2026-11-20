@@ -584,6 +584,59 @@ describe("tree and diff answers", () => {
     expect(diff.truncated).toBe(true)
   })
 
+  it("stop within their work budget on a tree of 50 × 50,000 repeated subtrees, without failing", async () => {
+    const gitDir = join(root, `${id}.git`)
+    const text = async (args: string[], input?: string) =>
+      (await git.run(args, { gitDir, input })).stdout.toString("utf8").trim()
+    const empty = await text(["hash-object", "-t", "tree", "-w", "--stdin"], "")
+    const wide = await text(
+      ["mktree", "--missing"],
+      Array.from(
+        { length: 50_000 },
+        (_, i) => `040000 tree ${empty}\tn${i}\n`,
+      ).join(""),
+    )
+    const root50 = await text(
+      ["mktree", "--missing"],
+      Array.from({ length: 50 }, (_, i) => `040000 tree ${wide}\tm${i}\n`).join(
+        "",
+      ),
+    )
+    const repeated = (
+      await git.run(["commit-tree", "-p", first, "-m", "Repeated", root50], {
+        gitDir,
+        env: {
+          GIT_AUTHOR_NAME: "T",
+          GIT_AUTHOR_EMAIL: "t@example.com",
+          GIT_COMMITTER_NAME: "T",
+          GIT_COMMITTER_EMAIL: "t@example.com",
+        },
+      })
+    ).stdout
+      .toString("utf8")
+      .trim()
+    const started = Date.now()
+    const diff = await request(
+      `/repositories/${id}/diff?from=${first}&to=${repeated}`,
+    )
+    expect(diff.status).toBe(200)
+    expect(await diff.json()).toMatchObject({ truncated: true })
+    const history = await request(
+      `/repositories/${id}/history?commit=${repeated}&limit=2`,
+    )
+    expect(history.status).toBe(200)
+    const commits = (
+      (await history.json()) as { commits: Record<string, unknown>[] }
+    ).commits
+    expect(commits[0]).toMatchObject({
+      oid: repeated,
+      changesTruncated: true,
+      changeCountAtLeast: true,
+    })
+    expect(commits[1]).toMatchObject({ oid: first, changeCountAtLeast: true })
+    expect(Date.now() - started).toBeLessThan(30_000)
+  }, 60_000)
+
   it("answer 422 for a tree deeper than Git reads", async () => {
     // With the default limits, so each read reaches the deep part.
     for (const path of [

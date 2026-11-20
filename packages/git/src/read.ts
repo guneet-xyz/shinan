@@ -3,7 +3,8 @@ import type { CatFile } from "./cat-file.js"
 import { isObjectId, revision, treePath } from "./names.js"
 import type { Git, RunOptions } from "./run.js"
 import { GitError } from "./run.js"
-import { MAX_TREE_OBJECT_BYTES, walkTreeDiff } from "./tree-walk.js"
+import { MAX_TREE_OBJECT_BYTES, walkBudget, walkTreeDiff } from "./tree-walk.js"
+import type { WalkBudget } from "./tree-walk.js"
 
 /** Options every read takes: the repository, and a push's quarantine. */
 export type ReadOptions = Pick<
@@ -252,6 +253,8 @@ export async function diffTreesPage(
     limit?: number
     /** At most this many bytes of paths, together. */
     maxPathBytes?: number
+    /** The work budget, shared by a request's walks (`walkBudget()`). */
+    budget?: WalkBudget
   } = {},
 ): Promise<{ changes: TreeChange[]; truncated: boolean }> {
   const limit =
@@ -272,12 +275,18 @@ export async function diffTreesPage(
         ? null
         : await treeOf(git, gitDir, reader, fromName, options)
     const toTree = await treeOf(git, gitDir, reader, toName, options)
-    const truncated = await walkTreeDiff(reader, fromTree, toTree, (change) => {
-      pathBytes += Buffer.byteLength(change.path)
-      if (changes.length >= limit || pathBytes > maxPathBytes) return false
-      changes.push(change)
-    })
-    return { changes, truncated }
+    const end = await walkTreeDiff(
+      reader,
+      fromTree,
+      toTree,
+      (change) => {
+        pathBytes += Buffer.byteLength(change.path)
+        if (changes.length >= limit || pathBytes > maxPathBytes) return false
+        changes.push(change)
+      },
+      options.budget,
+    )
+    return { changes, truncated: end.stopped || end.exhausted }
   } finally {
     await reader.close()
   }
@@ -460,6 +469,11 @@ export interface CommitChanges {
   count: number
   /** Whether `changes` lists fewer than `count`. */
   truncated: boolean
+  /**
+   * Whether `count` is a lower bound: the request's work budget ran out
+   * before every change was found.
+   */
+  countAtLeast: boolean
 }
 
 /** The most changed paths {@link history} lists for one commit: 50. */
@@ -485,6 +499,8 @@ export async function changedPaths(
      * it, paths are still counted but not listed.
      */
     maxPathBytes?: number
+    /** The work budget, shared by a request's walks (`walkBudget()`). */
+    budget?: WalkBudget
   } = {},
 ): Promise<Map<string, CommitChanges>> {
   if (!commits.every(isObjectId)) {
@@ -496,6 +512,7 @@ export async function changedPaths(
   }
   const max = options.maxPerCommit ?? DEFAULT_MAX_CHANGES_PER_COMMIT
   const maxPathBytes = options.maxPathBytes ?? Infinity
+  const budget = options.budget ?? walkBudget()
   let pathBytes = 0
   const result = new Map<string, CommitChanges>()
   if (commits.length === 0) return result
@@ -526,10 +543,21 @@ export async function changedPaths(
       if (result.has(oid)) continue
       const commit = heads.get(oid)!
       const parent = commit.parents[0]
-      const current: CommitChanges = { changes: [], count: 0, truncated: false }
+      const current: CommitChanges = {
+        changes: [],
+        count: 0,
+        truncated: false,
+        countAtLeast: false,
+      }
       result.set(oid, current)
+      if (budget.objects <= 0 || budget.entries <= 0) {
+        // The request's budget is spent: this commit's changes are unknown.
+        current.truncated = true
+        current.countAtLeast = true
+        continue
+      }
       // Every change is counted; only the first, within the budgets, kept.
-      await walkTreeDiff(
+      const end = await walkTreeDiff(
         reader,
         parent ? heads.get(parent)!.tree : null,
         commit.tree,
@@ -544,7 +572,12 @@ export async function changedPaths(
             current.changes.push({ status, path })
           } else current.truncated = true
         },
+        budget,
       )
+      if (end.exhausted) {
+        current.truncated = true
+        current.countAtLeast = true
+      }
     }
     return result
   } finally {
