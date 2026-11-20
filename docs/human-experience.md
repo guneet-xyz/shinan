@@ -151,11 +151,13 @@ as built in GC-7 ([#169](https://github.com/guneet-xyz/shinan/issues/169)).**
   opens with a click. A large folder shows its first 100 pages, then "Show
   more (N more)" adds 500 at a time; the page open always shows, with five
   pages on each side, after a "…".
-- **Titles and folder names** are written by agents, so hidden,
-  bidirectional and control characters in them show as markers such as
-  `⟨U+202E⟩` wherever they appear (sidebar, search, Needs attention, a
-  page's heading): "Invoice ⟨U+202E⟩gnp.exe" cannot pass for "Invoice
-  exe.png".
+- **Titles, folder names and other one-line texts** (a page's summary,
+  search snippets, Needs attention's fact lines) are written by agents, so
+  hidden, bidirectional and control characters in them show as markers
+  such as `⟨U+202E⟩` wherever they appear (sidebar, search, Needs
+  attention, a page's heading and summary): "Invoice ⟨U+202E⟩gnp.exe"
+  cannot pass for "Invoice exe.png". A page's rendered body is left as
+  written. Long unbroken words, such as an address, wrap.
 - **Left out of the folders:** the start-here page, which is Start here;
   `README.md`; retired pages, which search finds; and files that cannot be
   read as pages, which are under Needs attention.

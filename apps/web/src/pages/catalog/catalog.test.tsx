@@ -840,23 +840,28 @@ describe("moving around the catalog", () => {
   })
 })
 
-describe("titles written by agents", () => {
+describe("titles and one-line texts written by agents", () => {
   // A right-to-left override makes "Invoice gnp.exe" read "Invoice exe.png".
   const spoof = "Invoice \u202Egnp.exe"
   const marked = "Invoice ⟨U+202E⟩gnp.exe"
 
   it("show hidden characters as markers on the page, in search and in Needs attention", async () => {
+    const summary = "Pay \u202Egnp.exe now"
+    const markedSummary = "Pay ⟨U+202E⟩gnp.exe now"
     const page = {
       id: "machine/musashi",
       type: "machine",
       title: spoof,
-      summary: null,
+      summary,
       status: "active",
       owner: null,
     }
     const fake = fakeApi({
       catalogEntity: () =>
-        Promise.resolve({ ...answer, entity: { ...musashi, title: spoof } }),
+        Promise.resolve({
+          ...answer,
+          entity: { ...musashi, title: spoof, summary },
+        }),
       catalogSearch: () =>
         Promise.resolve({
           ...answer,
@@ -867,8 +872,18 @@ describe("titles written by agents", () => {
           ...answer,
           next_offset: null,
           items:
-            list === "due-for-recheck"
-              ? [{ entity: page, fact: musashi.facts[2]! }]
+            list === "known-unknowns"
+              ? [
+                  {
+                    entity: page,
+                    fact: fact({
+                      key: "network.public_ipv6",
+                      state: "unknown",
+                      note: "Not tested \u202Eyes",
+                      check: null,
+                    }),
+                  },
+                ]
               : [],
         }),
     })
@@ -876,6 +891,7 @@ describe("titles written by agents", () => {
     expect(
       await screen.findByRole("heading", { level: 1, name: marked }),
     ).toBeTruthy()
+    expect(screen.getByText(markedSummary)).toBeTruthy()
     unmount()
 
     const search = renderApp(`/w/${workspaceId}/catalog/search?q=invoice`, fake)
@@ -883,12 +899,16 @@ describe("titles written by agents", () => {
       // The sidebar's tree is empty: the one link is in the page.
       await screen.findByRole("link", { name: marked }),
     ).toBeTruthy()
+    expect(screen.getByText(markedSummary)).toBeTruthy()
     search.unmount()
 
     renderApp(`/w/${workspaceId}/catalog/needs-attention`, fake)
     expect(
       // The sidebar's tree is empty: the one link is in the page.
       await screen.findByRole("link", { name: marked }),
+    ).toBeTruthy()
+    expect(
+      screen.getByText("Network public ipv6: Not tested ⟨U+202E⟩yes"),
     ).toBeTruthy()
   })
 })

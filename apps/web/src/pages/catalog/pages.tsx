@@ -106,7 +106,7 @@ export function SearchPage() {
       {shown.length > 0 && (
         <ol className="flex flex-col gap-5">
           {shown.map((item) => (
-            <li key={item.entity.id} className="flex flex-col gap-0.5">
+            <li key={item.entity.id} className="flex min-w-0 flex-col gap-0.5">
               <p className="flex min-w-0 flex-wrap items-baseline gap-x-2">
                 <PageLink
                   workspaceId={workspace.id}
@@ -114,13 +114,15 @@ export function SearchPage() {
                   title={item.entity.title}
                   className="min-w-0 wrap-anywhere"
                 />
-                <span className="text-xs text-muted-foreground">
-                  {folderOf(item.entity.id)}
+                <span className="min-w-0 text-xs wrap-anywhere text-muted-foreground">
+                  {visible(folderOf(item.entity.id), { oneLine: true })}
                   {item.entity.status === "retired" && " · retired"}
                 </span>
               </p>
               {snippet(item) && (
-                <p className="text-sm text-muted-foreground">{snippet(item)}</p>
+                <p className="min-w-0 text-sm wrap-anywhere text-muted-foreground">
+                  {visible(snippet(item), { oneLine: true })}
+                </p>
               )}
             </li>
           ))}
@@ -276,14 +278,16 @@ function AttentionItem(props: {
   line: string
 }) {
   return (
-    <li className="flex flex-col gap-0.5">
+    <li className="flex min-w-0 flex-col gap-0.5">
       <PageLink
         workspaceId={props.workspaceId}
         id={props.id}
         title={props.title}
         className="self-start wrap-anywhere"
       />
-      <span className="text-sm text-muted-foreground">{props.line}</span>
+      <span className="min-w-0 text-sm wrap-anywhere text-muted-foreground">
+        {visible(props.line, { oneLine: true })}
+      </span>
     </li>
   )
 }

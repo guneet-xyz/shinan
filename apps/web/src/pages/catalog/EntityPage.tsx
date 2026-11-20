@@ -24,6 +24,7 @@ import {
 } from "./format"
 import { Markdown } from "./markdown"
 import { IndexBehind, PageNotice } from "./notices"
+import { visible } from "./visible"
 
 /**
  * An entity page (human experience, an entity page), in order of
@@ -133,7 +134,9 @@ export function EntityHeader() {
           {titleText(entity.title, entity.id)}
         </h1>
         {entity.summary && (
-          <p className="text-sm text-muted-foreground">{entity.summary}</p>
+          <p className="text-sm wrap-anywhere text-muted-foreground">
+            {visible(entity.summary, { oneLine: true })}
+          </p>
         )}
       </div>
       <dl className="flex flex-wrap gap-x-6 gap-y-2 text-sm [&_dt]:text-muted-foreground [&>div]:flex [&>div]:gap-2">
