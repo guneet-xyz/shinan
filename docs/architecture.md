@@ -153,7 +153,7 @@ log.
 
 ### 3.1 Components
 
-> **Changing with the [Git-based catalog](build-plan-git-catalog.md):** the Git container joined the components in GC-1 ([D-065](decisions/D-065-git-container-and-service-token.md)); `web` reaches it in GC-2, and the catalog's text moves out of PostgreSQL into its repositories in GC-6. Until then, the rest of this section describes M2 as built (v0.3.0).
+> **Changing with the [Git-based catalog](build-plan-git-catalog.md):** the Git container joined the components in GC-1 ([D-065](decisions/D-065-git-container-and-service-token.md)); `web` reaches it in GC-2, and the catalog's text moved out of PostgreSQL into its repositories in GC-6 (`migrate` reaches it for that move). Until GC-11, the rest of this section describes M2 as built (v0.3.0).
 
 ```mermaid
 flowchart LR
@@ -463,11 +463,12 @@ needs uploads; catalog pages are text and work items are links. **Open** until
 
 ### 4.2 Kinds of data
 
-> **Changing with the [Git-based catalog](build-plan-git-catalog.md):** catalog documents become Git objects (GC-6) and the push log joins the records (GC-3). The two rows marked GC-1b are built; the rest of the table describes M2 as built (v0.3.0).
+> **Changed with the [Git-based catalog](build-plan-git-catalog.md):** catalog documents are Git objects in the workspaces' repositories since the move (GC-6), and the push log joins the records (GC-3). The rows marked GC-1b and GC-6 are built.
 
 | Data                                                                                                                                                                                                                                                                                                             | Rebuildable if lost?                                                                                                | Retention                          | Status                                                                                                        |
 | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| Catalog revisions (the Markdown text) and catalog proposals                                                                                                                                                                                                                                                      | No ([14](#14-backups-accepted-risk))                                                                                | Forever, except [purge](#44-purge) | Proposed                                                                                                      |
+| M2's catalog revisions (the Markdown text) and catalog proposals: **dropped in v0.4.0** once moved into the repositories (GC-6)                                                                                                                                                                                  | No ([14](#14-backups-accepted-risk))                                                                                | Until v0.4.0                       | As built (GC-6)                                                                                               |
+| The record of each workspace's move into Git (GC-6, `catalog_moves`): M2's revision, the documents moved, the first commit, when it was verified, the proposals left waiting (numbers and IDs) and the problems reported (codes and IDs)                                                                         | No                                                                                                                  | Forever                            | As built (GC-6)                                                                                               |
 | Agent index and all other catalog-derived data                                                                                                                                                                                                                                                                   | Yes, from `main` of the workspace's repository ([5.3](#53-how-sync-works))                                          | Replaced on each revision          | Proposed                                                                                                      |
 | Catalog repositories (GC-1b): one bare Git repository per workspace, on the Git container's volume; `catalog_repositories` in PostgreSQL records each one's first commit                                                                                                                                         | No; clones hold partial copies ([Git-based catalog plan §2.11](build-plan-git-catalog.md#211-backups-and-recovery)) | Forever, except purge              | Decided (owner, GD-1)                                                                                         |
 | The Git container's journal (GC-1b): entries for PostgreSQL, one file each, beside the repositories ; numbers never reused; a damaged entry ends a read page after the good entries before it, and the next read and any acknowledgement stop at its number (an error, never a skip); it is kept for an operator | Not needed once `web` has stored and acknowledged them                                                              | Deleted when acknowledged          | Decided with the plan ([§2.6](build-plan-git-catalog.md#26-the-push-log-and-events))                          |
@@ -1631,7 +1632,7 @@ owner's accepted risks.
 | Another service on Musashi is compromised                    | `monitoring-agent` and `mon-private-agent` have owner-approved root-equivalent access through the Docker socket; if either is compromised, Shinan's secrets and data are exposed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Residual risk of sharing the host                                                                                                                                                                                                     |
 | Abuse and floods                                             | Per-IP and per-token rate limits, counted in PostgreSQL so they hold across `web` processes; the client's IP is taken from `X-Forwarded-For` only when the connection comes from a configured trusted proxy (`SHINAN_TRUSTED_PROXIES`); request size limits; at `/git/`, a push rate per agent and a cap on Git processes ([8.5](#85-git-endpoint))                                                                                                                                                                                                                                                                                                                                                                           | Per-IP limits and size limits implemented (M1-6); per-token limits and per-address throttling of failed token use implemented (M2-5, [identity §10](identity.md#10-protections-for-a-public-installation)); the Git endpoint's (GC-2) |
 | Undetected misuse                                            | Every write is an event credited to an actor; the security log, kept forever (owner, O-47)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Log owned by identity                                                                                                                                                                                                                 |
-| Git is reached with more than it should                      | Only `web` reaches the Git container, on an internal network, with the service token ([8.5](#85-git-endpoint)). `web` forwards only the four smart HTTP requests, after the agent token, the permission and the limits, and never the agent's own `Authorization` header or cookies. `git http-backend` runs with an environment built from nothing (no service token), Shinan's settings on its command line (`core.hooksPath` first, dumb HTTP off), a cap of 4 processes and 10 minutes each                                                                                                                                                                                                                               | Implemented (GC-2)                                                                                                                                                                                                                    |
+| Git is reached with more than it should                      | Only `web`, `worker` and `migrate` reach the Git container, on an internal network, with the service token, and only `web` forwards agents' requests ([8.5](#85-git-endpoint)). `web` forwards only the four smart HTTP requests, after the agent token, the permission and the limits, and never the agent's own `Authorization` header or cookies. `git http-backend` runs with an environment built from nothing (no service token), Shinan's settings on its command line (`core.hooksPath` first, dumb HTTP off), a cap of 4 processes and 10 minutes each                                                                                                                                                               | Implemented (GC-2)                                                                                                                                                                                                                    |
 | Git, which parses what agents send, is compromised           | Git runs in its own container with only the repositories and the service token: no database address, no other secret, no internet access, no published port ([3.2](#32-process-model), [D-065](decisions/D-065-git-container-and-service-token.md))                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Implemented (GC-1b); a compromised Git still reaches every workspace's repository on the volume                                                                                                                                       |
 
 **Proposed:** a written security checklist covering this table must pass before
@@ -1876,8 +1877,6 @@ From the `workspace` repository's catalog and `infra/musashi` (read 2026-11-16):
 
 ### 11.5 Migrations and rollback
 
-> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-6](build-plan-git-catalog.md#gc-6-move-the-m2-catalog-into-git-and-drop-m2s-tables)): v0.4.0 moves the catalog into Git and drops M2's tables; rollback is by the pre-deployment dump. Until then, this section describes M2 as built (v0.3.0).
-
 - **Proposed:** migrations are forward-only and backward-compatible for one
   release ("expand, then contract"), so rolling back means pinning the previous
   image digests.
@@ -1886,6 +1885,22 @@ From the `workspace` repository's catalog and `infra/musashi` (read 2026-11-16):
   matches the owner's practice for Drawspace and Walls (a snapshot before a
   migration). This dump is a rollback point for one deployment, kept until the
   next successful one, not a backup (see [section 14](#14-backups-accepted-risk)).
+- **Decided (owner, GQ-5), as built (GC-6): v0.4.0 is such a release.** It
+  moves the catalog into Git and drops M2's tables in one release
+  ([Git-based catalog plan §4.2](build-plan-git-catalog.md#42-database-changes)).
+  `migrate` applies the migrations up to the drop, moves each workspace's
+  catalog into its repository through the Git container (so `migrate`
+  joins the `git` network and starts after `git` is healthy), verifies
+  every file by SHA-256, records the verified move (`catalog_moves`), and
+  only then applies the drop, which itself refuses to run unless every
+  workspace with M2 documents has a verified move. A failed move stops
+  `migrate` with M2's tables kept, so `web` and `worker` never start; a
+  second run changes nothing. Rolling back to v0.3.0 is by the
+  pre-deployment dump: stop the stack, restore the dump, pin v0.3.0, remove
+  the Git container and empty its volume, start v0.3.0
+  ([operator guide](operator-guide.md#upgrading-from-03-to-04-the-catalog-in-git)).
+  Pushes made after the upgrade are lost from Shinan by a rollback; agents'
+  clones still hold them.
 
 ### 11.6 What needs deployment approval
 
@@ -1939,9 +1954,11 @@ licensing (D-013); this section makes sure nothing blocks it. All **proposed**:
   file gives it the `catalog` volume (the image's empty
   `/var/lib/shinan/catalog`, owned by the image's user with mode `0700`, so a
   new named volume starts that way), one new secret
-  (`secrets/git_service_token`, also given to `worker`) and the internal
-  `git` network, which it alone of its networks joins, with no published
-  port. The first-start test checks that it runs hardened like the other
+  (`secrets/git_service_token`, also given to `migrate`, `web` and
+  `worker`, which join the `git` network too) and the internal `git`
+  network, which it alone of its networks joins, with no published port.
+  `migrate` starts after `git` is healthy: on the upgrade to v0.4.0 it has
+  `git` make the repositories the catalog moves into (GC-6). The first-start test checks that it runs hardened like the other
   roles, holds no other secret, answers `401` without the token on its own
   network and cannot be reached from outside it, and that a new workspace
   gets its repository, kept across a restart.

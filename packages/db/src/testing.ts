@@ -1,4 +1,6 @@
 import { randomBytes } from "node:crypto"
+import { readFileSync } from "node:fs"
+import { fileURLToPath } from "node:url"
 import pg from "pg"
 import { inject } from "vitest"
 
@@ -67,6 +69,33 @@ export async function createTestDatabase(
     throw error
   }
   return { url: testUrl.toString(), drop }
+}
+
+/**
+ * The database Shinan v0.3.0 (M2) leaves behind, as a plain SQL dump made
+ * by `deploy/test/v0.3.0-dataset.mjs`: three workspaces with M2's catalog
+ * documents, revisions, proposals (two waiting), a comment, a page visit
+ * and a purge. For tests of the move into Git (Git-based catalog plan §4).
+ */
+export const v030Dataset = fileURLToPath(
+  new URL("../../../deploy/test/v0.3.0-dataset.sql", import.meta.url),
+)
+
+/** Loads a plain SQL dump (`pg_dump --inserts`) into an empty database. */
+export async function loadDump(databaseUrl: string, path: string) {
+  // psql's own commands (`\restrict` and the like) are not SQL.
+  const text = readFileSync(path, "utf8")
+    .split("\n")
+    .filter((line) => !line.startsWith("\\"))
+    .join("\n")
+  // A connection of its own: the dump empties `search_path` for it.
+  const client = new pg.Client({ connectionString: databaseUrl })
+  await client.connect()
+  try {
+    await client.query(text)
+  } finally {
+    await client.end()
+  }
 }
 
 /**

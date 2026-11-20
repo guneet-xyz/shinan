@@ -36,13 +36,13 @@ not apply to anyone else's installation.
 
 ## What runs
 
-| Service    | Role                                                                                                                              | Networks                   |
-| ---------- | --------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
-| `postgres` | PostgreSQL 18; data in the `postgres` volume                                                                                      | `backend`                  |
-| `migrate`  | Applies new database migrations and prepares the job queue, then exits; runs on every `up`                                        | `backend`                  |
-| `web`      | Pages, API, sign-in and agents' Git requests (`/git/`), which it forwards to `git`; published on `127.0.0.1` only, for your proxy | `backend`, `egress`, `git` |
-| `worker`   | Background jobs: sends email through SES; has `git` make each new workspace's repository                                          | `backend`, `egress`, `git` |
-| `git`      | The catalog's Git repositories, one per workspace, in the `catalog` volume; answers only the other roles, with the service token  | `git`                      |
+| Service    | Role                                                                                                                                                                                              | Networks                   |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
+| `postgres` | PostgreSQL 18; data in the `postgres` volume                                                                                                                                                      | `backend`                  |
+| `migrate`  | Applies new database migrations and prepares the job queue, then exits; runs on every `up`, after `git` is healthy; on the upgrade to 0.4, has `git` make the repositories the catalog moves into | `backend`, `git`           |
+| `web`      | Pages, API, sign-in and agents' Git requests (`/git/`), which it forwards to `git`; published on `127.0.0.1` only, for your proxy                                                                 | `backend`, `egress`, `git` |
+| `worker`   | Background jobs: sends email through SES; has `git` make each new workspace's repository                                                                                                          | `backend`, `egress`, `git` |
+| `git`      | The catalog's Git repositories, one per workspace, in the `catalog` volume; answers only the other roles, with the service token                                                                  | `git`                      |
 
 `backend` has no internet access; `egress` gives `web` (GitHub sign-in) and
 `worker` (SES) outgoing access. `git` is internal too, and the Git container
@@ -114,15 +114,15 @@ All files go in one directory, next to `compose.yml`.
    secret key in `secrets/ses_secret_access_key`, typed or pasted into an
    editor rather than given as a command argument.
 
-   | File                    | Used by                    | What it is                                                                                                              |
-   | ----------------------- | -------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-   | `postgres_password`     | `postgres`                 | The database password; set once, when the database is first created                                                     |
-   | `database_url`          | `migrate`, `web`, `worker` | The connection string, with the same password                                                                           |
-   | `session_secret`        | `web`                      | Signs sign-in cookies; at least 32 characters. Changing it signs everyone out                                           |
-   | `ses_access_key_id`     | `worker`                   | The SES user's access key ID                                                                                            |
-   | `ses_secret_access_key` | `worker`                   | Its secret key                                                                                                          |
-   | `github_client_secret`  | `web`, only with GitHub    | The GitHub App's client secret                                                                                          |
-   | `git_service_token`     | `git`, `web`, `worker`     | Lets the other roles call the Git container; at least 32 characters, no spaces. Changing it needs all of them restarted |
+   | File                    | Used by                           | What it is                                                                                                              |
+   | ----------------------- | --------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+   | `postgres_password`     | `postgres`                        | The database password; set once, when the database is first created                                                     |
+   | `database_url`          | `migrate`, `web`, `worker`        | The connection string, with the same password                                                                           |
+   | `session_secret`        | `web`                             | Signs sign-in cookies; at least 32 characters. Changing it signs everyone out                                           |
+   | `ses_access_key_id`     | `worker`                          | The SES user's access key ID                                                                                            |
+   | `ses_secret_access_key` | `worker`                          | Its secret key                                                                                                          |
+   | `github_client_secret`  | `web`, only with GitHub           | The GitHub App's client secret                                                                                          |
+   | `git_service_token`     | `git`, `migrate`, `web`, `worker` | Lets the other roles call the Git container; at least 32 characters, no spaces. Changing it needs all of them restarted |
 
    The `catalog` volume is created on the first start, owned by the image's
    user (65532) with mode `0700`. If you mount a folder there instead, give
@@ -260,8 +260,6 @@ set `GITHUB_CLIENT_ID`; put the app's client secret in
 
 ## Upgrades
 
-> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-6](build-plan-git-catalog.md#gc-6-move-the-m2-catalog-into-git-and-drop-m2s-tables)): "Upgrading from 0.3 to 0.4", with the rollback by dump. Until then, this section describes M2 as built (v0.3.0).
-
 1. Read the release notes. They say from which version you can upgrade
    directly, and whether the release's migrations can be rolled back
    ([architecture §11.5](architecture.md#115-migrations-and-rollback)).
@@ -275,6 +273,71 @@ To roll back, set the previous digest and run `docker compose up -d`.
 Migrations are written to work with the previous release, so this needs no
 database change, unless the release notes say otherwise; then restore the dump
 you took in step 2.
+
+### Upgrading from 0.3 to 0.4 (the catalog in Git)
+
+0.4 keeps the catalog in a Git repository per workspace, in the new `git`
+container ([what runs](#what-runs)), instead of in PostgreSQL (Git-based
+catalog plan, [§4](build-plan-git-catalog.md#4-migration)). Agents change it
+by pushing; catalog proposals and their approval are gone. **This upgrade
+cannot be rolled back by setting the previous digest**: read the rollback
+below before you start. The release notes list every change; for
+operators:
+
+1. **Take a database dump** ([backups](#backups-your-responsibility)) and
+   keep it until 0.4 has run well: it is the only way back to 0.3.
+2. **Add what the `git` container needs,** as [setting up](#setting-up)
+   describes: the `secrets/git_service_token` secret (a long random value,
+   for example from `openssl rand -base64 32`), the `git` service with its
+   `catalog` volume and its network, and `SHINAN_GIT_URL` and the token for
+   `migrate`, `web` and `worker`. The reference Compose file has all of
+   them; if you copied it, copy them too. The volume must start empty.
+3. **Set `SHINAN_IMAGE` to 0.4's digest and run `docker compose up -d`.**
+   `git` starts first; then `migrate` applies the migrations, and between
+   them **moves the catalog into Git**:
+   - every workspace gets its repository with one first commit by Shinan,
+     "Import the catalog from PostgreSQL (revision N)": every document's
+     current text, byte for byte, at its ID plus `.md` (retired ones too),
+     and a `README.md`. A workspace without catalog documents gets only
+     the `README.md`;
+   - each commit is read back and every file compared with its stored text
+     by SHA-256, before anything is dropped;
+   - the catalog's existing problems are reported, not refused: for
+     example a start-here document that still lists `waiting-for-approval`
+     (gone in 0.4) is reported as `start-here-invalid`, and the first push
+     that changes `start-here.md` has to remove that list;
+   - **catalog proposals still waiting for approval are not applied**: the
+     log names each by number with the IDs it touched (never its text);
+     agents redo them by pushing;
+   - then M2's catalog tables are dropped. The drop refuses to run unless
+     every workspace with catalog documents was moved and verified.
+4. **Check `docker compose logs migrate`:** a line per workspace, "moved N
+   catalog documents at revision R into Git, verified file by file", and
+   the waiting proposals and problems. Then check `docker compose ps` as
+   for any upgrade. The worker builds the agent index from each
+   repository when it starts.
+
+**If `migrate` fails** (the Git container did not answer, a document has
+no ID usable as a path, a file read back differs), it says why, keeps
+M2's tables and exits 1, and `web` and `worker` do not start. Fix the
+cause and run `docker compose up -d` again: a repository made by the
+failed run is checked again, and running `migrate` again after it
+succeeded changes nothing.
+
+**To roll back to 0.3:** 0.4's migrations are not backward compatible
+(M2's tables are dropped and the index tables change shape), so:
+
+1. `docker compose down` (the volumes stay);
+2. restore the dump you took in step 1 into an empty database, as in
+   [backups](#backups-your-responsibility);
+3. set `SHINAN_IMAGE` to 0.3's digest;
+4. use 0.3's Compose file (without the `git` service), and remove the
+   `catalog` volume (`docker volume rm <project>_catalog`), so a later
+   upgrade starts from an empty one;
+5. `docker compose up -d`.
+
+Everything pushed after the upgrade is then lost from Shinan; agents'
+clones still hold it, and once you upgrade again they push it back.
 
 ### Upgrading from 0.2 to 0.3 (the catalog)
 
@@ -482,7 +545,7 @@ index, marked as behind.
 
 ## Catalog purge
 
-> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-8](build-plan-git-catalog.md#gc-8-purge-as-a-history-rewrite)): a purge rewrites the repository's history; cleaning clones and rotating the secret. Until then, this section describes M2 as built (v0.3.0).
+> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-8](build-plan-git-catalog.md#gc-8-purge-as-a-history-rewrite)): a purge rewrites the repository's history; cleaning clones and rotating the secret. Since the catalog moved into Git (GC-6) and until GC-8, a purge rewrites the timeline's events only: it does not reach the catalog's repositories.
 
 Workspace owners purge text from their catalog themselves, in workspace
 settings, Data ([catalog §9](catalog.md#9-history-and-purge)); operators
@@ -498,7 +561,7 @@ out. To clear the database's files too, run this at a quiet moment (it
 locks the tables while it rewrites them):
 
 ```sh
-docker compose exec -T postgres psql -U shinan -d shinan -c "vacuum full catalog_revision_documents, catalog_proposals, catalog_proposal_comments, events"
+docker compose exec -T postgres psql -U shinan -d shinan -c "vacuum full events"
 ```
 
 Every `web` and `worker` process forgets parsed catalog text within a

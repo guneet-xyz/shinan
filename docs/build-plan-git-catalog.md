@@ -1020,6 +1020,51 @@ The step is idempotent: a workspace that already has a repository is skipped.
 On `shinan.guneet.dev` the first commit holds 18 documents: the 17 seeded
 trial entities and `person/guneet`.
 
+**As built (GC-6, [#168](https://github.com/guneet-xyz/shinan/issues/168)):**
+core's `moveCatalogsIntoGit`, run by `migrate` as Shinan
+(`catalog.move`). Choices the plan left open, proposed in the PR:
+
+- **Which workspaces:** those without a `catalog_repositories` row, so
+  those that existed before v0.4.0 (a workspace made since has its request
+  row and gets its repository from the worker). The move writes that row
+  with the first commit once verified, in the same transaction as the
+  record of the move, `catalog_moves` (M2's revision, the documents moved,
+  the first commit, the proposals left waiting by number and touched IDs,
+  the problems by code and document ID). The drop requires that record.
+- **What counts as verified:** `main` is one commit with no parent, by
+  Shinan, with the message asked for; its tree holds exactly `README.md`
+  and the documents, as plain files; and every file read back has the
+  SHA-256 of its stored text. A repository that already exists (from a run
+  that stopped before recording) is verified the same way; one holding
+  anything else stops the move.
+- **What stops it:** a document with no ID usable as a path, two documents
+  with one ID, the Git container refusing or not answering, or a mismatch.
+  The message names the workspace and document IDs, never text; `migrate`
+  exits 1 with M2's tables kept.
+- **A workspace without M2 documents** gets the usual first commit
+  ("Start the catalog", `README.md` only), recorded as a move of 0
+  documents.
+- **The validation report** is core's validation of the moved catalog
+  (codes and document IDs), the `by` rule aside: the first commit is
+  first pushed by `shinan`, and the moved fact check groups are on `main`,
+  so a later push that leaves them as they are passes (the checks of `main`
+  find them unchanged against the first commit).
+- **On `shinan.guneet.dev` (checked 2026-11-20 through the MCP tools):**
+  the catalog is at revision 18 and holds 17 documents, `person/guneet` and
+  16 entities, so the first commit holds those 17 and `README.md`. No
+  start-here document was ever applied: it is in proposal #19, waiting with
+  #8 (`service/container-registry`), so there is no live start-here
+  document whose `waiting-for-approval` list parser version 5 would refuse.
+  Both proposals are left behind as GD-12 decided and reported; whoever
+  redoes #19 by pushing writes the start-here document without that list.
+- **Tests:** core `move.test.ts` and server `git/move.test.ts` on
+  `deploy/test/v0.3.0-dataset.sql`, a dump of a database seeded through
+  v0.3.0's own code (`deploy/test/v0.3.0-dataset.mjs`): a workspace shaped
+  like the trial's, one with every other M2 shape (a type schema, a
+  retired document, a changed ID, the start-here document with the old
+  list, text that is not ASCII, a purge), and an empty one;
+  `deploy/test/upgrade.mjs` runs the upgrade on the image in CI.
+
 ### 4.2 Database changes
 
 **Decided (owner, GQ-5): in one release, v0.4.0,** with no separate
@@ -1040,6 +1085,18 @@ contract release:
    their Drizzle definitions. This migration refuses to run unless every
    workspace that had M2 documents has a verified repository, so a failed
    move can never be followed by a drop.
+
+**As built (GC-6):** `0019_catalog_moves` adds the record of the moves;
+`0020_m2_dropped` drops the six tables by name (no `CASCADE`, so anything
+else that depended on them would stop it) with the proposal state type and
+`workspaces.catalog_strict`, after a check that raises an error, and so
+changes nothing, if any workspace with M2 documents has no recorded move.
+`migrate` applies the migrations before `0020`, moves the catalog, then
+applies `0020`. The expand step's index tables and `catalog_index_provenance`
+came earlier, in GC-4's `0015`. The Drizzle definitions, `revisions.ts` and
+`storeCatalogRevision` are gone; M2's purge is cut down to the timeline's
+events until GC-8 adds the history rewrite (coordinated on
+[#170](https://github.com/guneet-xyz/shinan/issues/170)).
 
 **Rollback (for the runbook):** v0.4.0's migrations are not backward
 compatible (M2's tables are gone, the index tables changed shape). Rolling
@@ -1313,7 +1370,7 @@ provenance from `index/`; GC-5 does not touch `index/`.
   store's write code, the catalog worker pool, the catalog MCP tools (keeping
   a trimmed `workspace_context`, [2.13](#213-mcp-after-this-change)), API
   routes and `api-client` methods, permissions, the scope rename. The Drizzle
-  definitions of M2's source tables stay until GC-6 has moved and dropped
+  definitions of M2's source tables stayed until GC-6 moved and dropped
   them.
 - **GC-5b, web:** the wiki's edit, review, repair, type, start-here and
   settings screens and their tests.

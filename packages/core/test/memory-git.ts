@@ -72,6 +72,8 @@ interface Repository {
   /** Each commit's parent (one: the memory client makes no merges). */
   parents: Map<string, string | null>
   messages: Map<string, string>
+  /** Who made each: "Shinan" for a repository made through the client, else "Someone". */
+  authors: Map<string, string>
   /** When each was made, in seconds since 1970: a minute apart. */
   times: Map<string, number>
 }
@@ -143,6 +145,7 @@ export function createMemoryGit(): MemoryGit {
     r: Repository,
     files: Map<string, File>,
     message = `Change ${made + 1}`,
+    author = "Someone",
   ) => {
     made++
     const id = createHash("sha1")
@@ -151,6 +154,7 @@ export function createMemoryGit(): MemoryGit {
     r.commits.set(id, files)
     r.parents.set(id, r.main === "" ? null : r.main)
     r.messages.set(id, message)
+    r.authors.set(id, author)
     r.times.set(id, 1_790_000_000 + made * 60)
     r.main = id
     return id
@@ -165,6 +169,7 @@ export function createMemoryGit(): MemoryGit {
         commits: new Map(),
         parents: new Map(),
         messages: new Map(),
+        authors: new Map(),
         times: new Map(),
       }
       repositories.set(workspaceId, r)
@@ -204,7 +209,30 @@ export function createMemoryGit(): MemoryGit {
         const r = repositories.get(workspaceId)
         return r ? { workspaceId, main: r.main } : null
       }),
-    createRepository: notHere,
+    // As the Git container's: a first commit by Shinan, once.
+    createRepository: (workspaceId, input) =>
+      later(() => {
+        notBusy()
+        const existing = repositories.get(workspaceId)
+        if (existing)
+          return { workspaceId, main: existing.main, created: false }
+        const r: Repository = {
+          main: "",
+          commits: new Map(),
+          parents: new Map(),
+          messages: new Map(),
+          authors: new Map(),
+          times: new Map(),
+        }
+        repositories.set(workspaceId, r)
+        const main = commit(
+          r,
+          new Map(input.files.map((f) => [f.path, store(f.content)])),
+          input.message,
+          "Shinan",
+        )
+        return { workspaceId, main, created: true }
+      }),
     listTree: (workspaceId, input) =>
       later(() => {
         notBusy()
@@ -342,9 +370,10 @@ export function createMemoryGit(): MemoryGit {
             skip--
             continue
           }
+          const name = r.authors.get(at) ?? "Someone"
           const who = {
-            name: "Someone",
-            email: "someone@example.com",
+            name,
+            email: `${name.toLowerCase()}@example.com`,
             time: r.times.get(at)!,
             timezone: "+0000",
           }

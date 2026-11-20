@@ -329,6 +329,17 @@ export const rules = deepFreeze({
     shinan: true,
   },
   /**
+   * Move M2's catalog into each workspace's repository during the upgrade
+   * to v0.4.0 (Git-based catalog plan §4.1): `migrate` does this as
+   * Shinan, before the drop of M2's tables.
+   */
+  "catalog.move": {
+    level: "installation",
+    access: "write",
+    people: false,
+    shinan: true,
+  },
+  /**
    * Installation operators see the agent index's health: which workspaces'
    * indexes are behind or failed the round-trip check (architecture §5.2,
    * rule 5, §13). It shows workspace IDs and counts, never catalog content.

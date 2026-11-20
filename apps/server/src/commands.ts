@@ -2,11 +2,15 @@ import { accessSync, constants } from "node:fs"
 import { serve } from "@hono/node-server"
 
 import {
+  CatalogMoveError,
+  catalogMoveLines,
   changeEmailOf,
   checkCatalogIndexes,
   createGitClient,
   endSessionsOf,
+  GitServiceError,
   indexFailureReason,
+  moveCatalogsIntoGit,
   NotFoundError,
   prepareSetupLink,
   productName,
@@ -21,7 +25,9 @@ import {
 import {
   checkDatabase,
   createDatabase,
+  m2DropMigration,
   migrateDatabase,
+  migrationsFolder,
   withMigrationLock,
 } from "@shinan/db"
 import { createSesSender, createSmtpSender } from "@shinan/email"
@@ -96,8 +102,7 @@ export async function runCommand(
       await runWorker(env)
       return 0
     case "migrate":
-      await runMigrate(env)
-      return 0
+      return runMigrate(env)
     case "git":
       await runGit(env)
       return 0
@@ -485,21 +490,63 @@ export function createEmailSender(config: EmailConfig): EmailSender {
     : createSmtpSender(config)
 }
 
-async function runMigrate(env: Env): Promise<void> {
+/**
+ * Applies the database migrations, and on the upgrade to v0.4.0 moves M2's
+ * catalog into Git between them (Git-based catalog plan §4.1, §4.2): the
+ * migrations before the drop of M2's tables, then the move of every
+ * workspace without a repository, verified file by file, then the drop,
+ * which refuses to run unless every workspace with M2 documents was moved.
+ * A move that fails stops here, M2's tables kept, so `web` and `worker`
+ * (which start after `migrate` succeeds) never start on a half-made
+ * repository. Running it again changes nothing.
+ */
+async function runMigrate(env: Env): Promise<number> {
   const databaseUrl = readDatabaseUrl(env)
+  // The Git container, which makes the workspaces' repositories (D-065).
+  const gitConfig = readGitClientConfig(env)
   console.info("Applying database migrations")
-  await withMigrationLock(databaseUrl, async () => {
-    await migrateDatabase(databaseUrl)
+  const moved = await withMigrationLock(databaseUrl, async () => {
+    await migrateDatabase(databaseUrl, migrationsFolder, {
+      before: m2DropMigration,
+    })
     await migrateJobQueue(databaseUrl)
 
     const { db, pool } = createDatabase(databaseUrl)
     try {
       await setUpInstallation({ db, actor: shinan }, { name: productName })
+      const reports = await moveCatalogsIntoGit(
+        { db, actor: shinan },
+        gitConfig
+          ? // A whole catalog in one commit may take the Git container a while.
+            createGitClient({ ...gitConfig, timeoutMs: 10 * 60 * 1000 })
+          : undefined,
+      )
+      for (const report of reports)
+        for (const line of catalogMoveLines(report)) console.info(line)
+    } catch (error) {
+      // These messages hold workspace IDs, document IDs and paths, never
+      // catalog text.
+      if (error instanceof CatalogMoveError) console.error(error.message)
+      else if (error instanceof GitServiceError)
+        console.error(
+          error.status === 0
+            ? "The Git container did not answer at SHINAN_GIT_URL"
+            : `The Git container refused the move (${error.status} ${error.code}): ${error.message}`,
+        )
+      else throw error
+      console.error(
+        "The catalog was not moved into Git and M2's tables are kept. Fix the cause and run migrate again.",
+      )
+      return false
     } finally {
       await pool.end()
     }
+    await migrateDatabase(databaseUrl)
+    return true
   })
+  if (!moved) return 1
   console.info("Database ready")
+  return 0
 }
 
 function waitForShutdown(): Promise<NodeJS.Signals> {

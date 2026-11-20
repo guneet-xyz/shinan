@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs"
+import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { readMigrationFiles } from "drizzle-orm/migrator"
 import { drizzle } from "drizzle-orm/node-postgres"
@@ -32,6 +34,8 @@ export type { Column, SQL } from "drizzle-orm"
 export { alias } from "drizzle-orm/pg-core"
 export type {
   ActorKind,
+  CatalogMoveProblem,
+  CatalogMoveWaitingProposal,
   CatalogPurgeCounts,
   Confidence,
   EmailContent,
@@ -142,15 +146,52 @@ export type Database = ReturnType<typeof createDatabase>["db"]
 /** A transaction started with `db.transaction()`. */
 export type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0]
 
-/** Applies all pending migrations from this package's migrations folder. */
+/**
+ * The migration that drops M2's catalog tables (Git-based catalog plan
+ * §4.2): `migrate` applies the ones before it, moves the catalog into Git,
+ * then applies it (`migrateDatabase` with `before`).
+ */
+export const m2DropMigration = "0020_m2_dropped"
+
+/**
+ * Applies the pending migrations from this package's migrations folder: all
+ * of them, or with `before` only those before that one (by its tag).
+ */
 export async function migrateDatabase(
   databaseUrl: string,
   /** Another migrations folder, for tests of a migration on data. */
   folder: string = migrationsFolder,
+  options: { before?: string } = {},
 ): Promise<void> {
   const { db, pool } = createDatabase(databaseUrl)
   try {
-    await migrate(db, { migrationsFolder: folder })
+    if (options.before === undefined) {
+      await migrate(db, { migrationsFolder: folder })
+      return
+    }
+    const journal = JSON.parse(
+      readFileSync(join(folder, "meta", "_journal.json"), "utf8"),
+    ) as { entries: { tag: string; when: number }[] }
+    const stop = journal.entries.find((e) => e.tag === options.before)
+    if (!stop) throw new Error(`No migration ${options.before}`)
+    // What Drizzle's `migrate` does, with the list cut short: each
+    // migration is known by its folder time, as Drizzle records it.
+    const migrations = readMigrationFiles({ migrationsFolder: folder }).filter(
+      (m) => m.folderMillis < stop.when,
+    )
+    const internal = db as unknown as {
+      dialect: {
+        migrate(
+          migrations: unknown,
+          session: unknown,
+          config: unknown,
+        ): Promise<void>
+      }
+      session: unknown
+    }
+    await internal.dialect.migrate(migrations, internal.session, {
+      migrationsFolder: folder,
+    })
   } finally {
     await pool.end()
   }

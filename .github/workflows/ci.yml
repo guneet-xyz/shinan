@@ -68,7 +68,8 @@ jobs:
       - run: pnpm test
 
   # The production image, started from nothing with the reference Compose
-  # file: first start, claim and hardening (deploy/test/first-start.mjs).
+  # file: first start, claim and hardening (deploy/test/first-start.mjs);
+  # then on the database v0.3.0 leaves, the upgrade (deploy/test/upgrade.mjs).
   # On both architectures, since the image carries Debian's Git programs
   # for each.
   image:
@@ -103,5 +104,9 @@ jobs:
           cache-from: type=gha,scope=image-ci-${{ matrix.platform }}
           cache-to: type=gha,mode=max,scope=image-ci-${{ matrix.platform }}
       - run: node deploy/test/first-start.mjs
+        env:
+          SHINAN_IMAGE: shinan:ci
+      # The upgrade from v0.3.0: the catalog moved into Git (GC-6).
+      - run: node deploy/test/upgrade.mjs
         env:
           SHINAN_IMAGE: shinan:ci

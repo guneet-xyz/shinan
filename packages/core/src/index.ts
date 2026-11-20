@@ -324,4 +324,11 @@ export {
   repositoryReadme,
   requestPendingCatalogRepositories,
 } from "./catalog/git/repositories.js"
+export {
+  CatalogMoveError,
+  catalogMoveLines,
+  catalogMoveMessage,
+  moveCatalogsIntoGit,
+} from "./catalog/git/move.js"
+export type { CatalogMoveReport } from "./catalog/git/move.js"
 export type { CatalogRepositoryJob } from "./catalog/git/repositories.js"
