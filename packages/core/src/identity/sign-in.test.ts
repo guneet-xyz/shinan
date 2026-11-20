@@ -116,6 +116,7 @@ async function log(action: string, personId?: string) {
         personId ? eq(schema.securityLog.subjectPersonId, personId) : undefined,
       ),
     )
+    .orderBy(schema.securityLog.id)
 }
 
 async function newAccount(local = "person") {
