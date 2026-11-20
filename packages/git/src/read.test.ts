@@ -430,6 +430,119 @@ describe("changedPaths", () => {
     })
   })
 
+  it("lists a merge's own changes, as Git's combined diff does, when asked", async () => {
+    const { gitDir } = repository
+    const base = { "README.md": "# Base\n", "a.md": "a\n", "b.md": "b\n" }
+    const root = await commitFiles(git, gitDir, base, { message: "Base\n" })
+    const left = await commitFiles(
+      git,
+      gitDir,
+      { ...base, "a.md": "a left\n" },
+      { parents: [root], message: "Left\n" },
+    )
+    const right = await commitFiles(
+      git,
+      gitDir,
+      // Many changes before the merge's own one, past any first 50.
+      {
+        ...base,
+        "a.md": "a right\n",
+        ...Object.fromEntries(
+          Array.from({ length: 60 }, (_, i) => [
+            `0-bulk/${String(i).padStart(2, "0")}.txt`,
+            `${i}\n`,
+          ]),
+        ),
+      },
+      { parents: [root], message: "Right\n" },
+    )
+    const third = await commitFiles(
+      git,
+      gitDir,
+      { ...base, "c.md": "c\n" },
+      { parents: [root], message: "Third\n" },
+    )
+    const rightFiles = {
+      ...base,
+      ...Object.fromEntries(
+        Array.from({ length: 60 }, (_, i) => [
+          `0-bulk/${String(i).padStart(2, "0")}.txt`,
+          `${i}\n`,
+        ]),
+      ),
+    }
+    // A clean merge, a merge resolving a conflict in a.md and editing b.md,
+    // and an octopus merge that changed nothing itself.
+    const clean = await commitFiles(
+      git,
+      gitDir,
+      { ...rightFiles, "a.md": "a left\n" },
+      { parents: [left, right], message: "Clean\n" },
+    )
+    const resolved = await commitFiles(
+      git,
+      gitDir,
+      { ...rightFiles, "a.md": "a both\n", "b.md": "b merged\n" },
+      { parents: [left, right], message: "Resolved\n" },
+    )
+    const octopus = await commitFiles(
+      git,
+      gitDir,
+      { ...rightFiles, "a.md": "a left\n", "c.md": "c\n" },
+      { parents: [left, right, third], message: "Octopus\n" },
+    )
+    const changes = await changedPaths(
+      git,
+      gitDir,
+      [clean, resolved, octopus, left],
+      { combined: true, maxPerCommit: 50 },
+    )
+    const combined = (oid: string) =>
+      git
+        .run(["diff-tree", "-c", "--name-only", "-r", "--no-commit-id", oid], {
+          gitDir,
+        })
+        .then((r) => r.stdout.toString().split("\n").filter(Boolean))
+    expect(changes.get(clean)).toEqual({
+      changes: [],
+      count: 0,
+      truncated: false,
+      countAtLeast: false,
+    })
+    expect(await combined(clean)).toEqual([])
+    expect(changes.get(resolved)).toEqual({
+      changes: [
+        { status: "modified", path: "a.md" },
+        { status: "modified", path: "b.md" },
+      ],
+      count: 2,
+      truncated: false,
+      countAtLeast: false,
+    })
+    expect(await combined(resolved)).toEqual(["a.md", "b.md"])
+    expect(changes.get(octopus)!.count).toBe(0)
+    expect(await combined(octopus)).toEqual([])
+    // An ordinary commit is as without the option.
+    expect(changes.get(left)!.changes).toEqual([
+      { status: "modified", path: "a.md" },
+    ])
+
+    // Out of budget, or past the bytes held: its own changes aren't known.
+    for (const options of [
+      { budget: { objects: 1, entries: 1_000_000 } },
+      { maxCombinedPathBytes: 5 },
+    ]) {
+      expect(
+        (
+          await changedPaths(git, gitDir, [resolved], {
+            combined: true,
+            ...options,
+          })
+        ).get(resolved),
+      ).toMatchObject({ changes: [], truncated: true, countAtLeast: true })
+    }
+  })
+
   it("takes object IDs only, and nothing for nothing", async () => {
     await expect(
       changedPaths(git, repository.gitDir, ["refs/heads/main"]),

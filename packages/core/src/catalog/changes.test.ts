@@ -6,10 +6,8 @@ import { createMemoryGit } from "../../test/memory-git.js"
 import { InvalidInputError, NotFoundError } from "../errors.js"
 import type { Person } from "../identity/people.js"
 import { createWorkspace } from "../identity/workspaces.js"
-import { listCatalogChanges, ownChanges } from "./changes.js"
+import { listCatalogChanges } from "./changes.js"
 import { readDocumentId } from "./document/parse.js"
-import type { CommitInfo } from "./git/api.js"
-import type { GitClient } from "./git/client.js"
 import { updateWorkspaceIndex } from "./index/indexer.js"
 import { historyCursors } from "./pages.js"
 
@@ -146,15 +144,19 @@ describe("recent changes", () => {
     git.setMain(workspaceId, indexed)
     for (const after of [
       branchOnly,
+      `${branchOnly}.1.forged`,
+      first.next_after!.replace(/\.\d+\./, ".3."),
       cursors.issue({
         workspaceId,
         path: "machine/musashi.md",
-        commit: branchOnly,
+        start: branchOnly,
+        position: 1,
       }),
       historyCursors("other key").issue({
         workspaceId,
         path: "\u0000recent changes",
-        commit: branchOnly,
+        start: branchOnly,
+        position: 1,
       }),
     ])
       await expect(list({ after })).rejects.toBeInstanceOf(InvalidInputError)
@@ -166,72 +168,5 @@ describe("recent changes", () => {
       (await list({}, owner, workspaceId.toUpperCase())).changes,
     ).toHaveLength(5)
     await expect(list({}, stranger)).rejects.toBeInstanceOf(NotFoundError)
-  })
-})
-
-describe("what a commit changed itself", () => {
-  const commit = (over: Partial<CommitInfo>): CommitInfo => ({
-    oid: "c".repeat(40),
-    parents: ["a".repeat(40)],
-    author: null,
-    committer: null,
-    message: "Merge",
-    truncated: false,
-    changes: [
-      { status: "modified", path: "machine/musashi.md" },
-      { status: "modified", path: "service/registry.md" },
-    ],
-    changeCount: 2,
-    changesTruncated: false,
-    changeCountAtLeast: false,
-    ...over,
-  })
-  /** A Git client whose only read is a diff with these paths. */
-  const diffing = (paths: string[], truncated = false) =>
-    ({
-      diff: (_w: string, input: { from: string | null; to: string }) =>
-        Promise.resolve({
-          from: input.from,
-          to: input.to,
-          truncated,
-          changes: paths.map((path) => ({
-            status: "modified" as const,
-            path,
-            oldMode: null,
-            oldOid: null,
-            newMode: null,
-            newOid: null,
-          })),
-        }),
-    }) as unknown as GitClient
-
-  const merge = commit({ parents: ["a".repeat(40), "b".repeat(40)] })
-
-  it("is what it changed from its parent, for an ordinary commit", async () => {
-    expect(await ownChanges(diffing([]), workspaceId, commit({}))).toEqual({
-      paths: ["machine/musashi.md", "service/registry.md"],
-      count: 2,
-      atLeast: false,
-    })
-  })
-
-  it("is nothing for a merge that only brought the merged commits", async () => {
-    expect(await ownChanges(diffing([]), workspaceId, merge)).toMatchObject({
-      count: 0,
-    })
-  })
-
-  it("is what differs from every parent for a merge that resolved a conflict", async () => {
-    expect(
-      await ownChanges(diffing(["service/registry.md"]), workspaceId, merge),
-    ).toEqual({ paths: ["service/registry.md"], count: 1, atLeast: false })
-  })
-
-  it("keeps a merge's files when a diff was cut short", async () => {
-    expect(await ownChanges(diffing([], true), workspaceId, merge)).toEqual({
-      paths: ["machine/musashi.md", "service/registry.md"],
-      count: 2,
-      atLeast: true,
-    })
   })
 })

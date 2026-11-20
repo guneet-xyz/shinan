@@ -1,9 +1,8 @@
 import { CheckIcon, CopyIcon } from "lucide-react"
-import { useId, useState } from "react"
+import { useState } from "react"
 import { Link } from "react-router"
 
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 
 import { Section } from "../../components/page"
 import { useWorkspace } from "./context"
@@ -26,7 +25,6 @@ export function CatalogSettings() {
   const { workspace } = useWorkspace()
   const address = cloneAddress(workspace.id, window.location.origin)
   const [copied, setCopied] = useState(false)
-  const field = useId()
   const copy = () => {
     void navigator.clipboard?.writeText(address).then(
       () => setCopied(true),
@@ -36,17 +34,11 @@ export function CatalogSettings() {
   return (
     <div className="flex max-w-3xl flex-col gap-6">
       <Section title="Address for agents">
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <label htmlFor={field} className="sr-only">
-            Address for agents
-          </label>
-          <Input
-            id={field}
-            readOnly
-            value={address}
-            onFocus={(e) => e.currentTarget.select()}
-            className="font-mono text-xs sm:text-sm"
-          />
+        <div className="flex flex-col gap-2">
+          {/* Wrapped, not cut off: a person can read it whole on a phone. */}
+          <code className="block rounded-md border bg-muted px-3 py-2 font-mono text-sm wrap-anywhere">
+            {address}
+          </code>
           <Button
             type="button"
             variant="outline"

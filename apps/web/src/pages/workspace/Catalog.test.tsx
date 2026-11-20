@@ -13,11 +13,8 @@ describe("Settings › Catalog", () => {
     })
     renderApp(`/w/${workspaceId}/settings/catalog`, fakeApi())
     const address = `${window.location.origin}/git/${workspaceId}.git`
-    const field = await screen.findByRole("textbox", {
-      name: "Address for agents",
-    })
-    expect((field as HTMLInputElement).value).toBe(address)
-    expect((field as HTMLInputElement).readOnly).toBe(true)
+    // Shown whole, to read; copied exactly.
+    expect(await screen.findByText(address)).toBeTruthy()
     await userEvent.click(screen.getByRole("button", { name: "Copy" }))
     expect(writeText).toHaveBeenCalledWith(address)
     expect(await screen.findByRole("button", { name: "Copied" })).toBeTruthy()

@@ -940,14 +940,19 @@ order:
   (D-064: not by types); `…/catalog/types/<type>` leads to
   `…/catalog/p/schema/<type>`.
 - **History** (`…/catalog/history/<ID>`) lists the changes of the page's
-  file on `main`, newest first, under "Today", "Yesterday" or the date.
+  file on `main`, newest first (in `git log`'s order), under "Today",
+  "Yesterday" or the date. Commit times are set by agents and can go
+  backwards in that order: a new day heading starts only on an earlier
+  day, and a change dated later than its heading shows its own date
+  ("Nov 20, 3:10 PM").
   Each is the change's message, its first line as the headline and the
   start of the rest under it (about 1,000 characters at most; hidden
   characters marked), when, and the short commit ID in muted text, so a
   person can tell an agent "revert abc1234". "Show older changes" reads the
-  next 50 from the last one shown (by a cursor naming that commit, signed by
-  Shinan, not by a count to skip). A cursor Shinan didn't give out for the
-  page is refused, so History never shows a commit off the index's `main`.
+  next 50, by a cursor Shinan signs holding where the list started and how
+  far it got, so no change is skipped around merges. A cursor Shinan didn't
+  give out for the page is refused, so History never shows a commit off the
+  index's `main`.
 - **Code blocks** in a body scroll sideways when a line is long, by
   keyboard too.
 - **Recent changes** (`…/catalog/changes`, in the sidebar under Start
@@ -959,8 +964,12 @@ order:
   shows by its name. **Merges:** a merge whose changes all came with the
   merged commits is left out, since those commits are listed themselves; a
   merge that changed a file itself (a conflict resolved) stays, with only
-  the files it changed itself. 30 changes at a time, then "Show older
-  changes" by signed cursor. It is the review after the fact, now that
+  the files it changed itself (those that differ from every parent, as
+  Git's combined diff), and one too large to work out stays with "Changed
+  files not known". 30 commits at a time, then "Show older changes" by
+  signed cursor; a page reads on past merges left out, up to 90 commits,
+  rather than come back empty ("Only merges that changed nothing
+  themselves so far." if it still does). It is the review after the fact, now that
   changes need no approval. **Who pushed each change** comes with the push
   log (GC-3a); until then no name is shown (commit authors aren't
   trusted, D-061). Start here's "recent-changes" step links here.
@@ -1248,7 +1257,7 @@ details (D-015).
 
 > **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-7](build-plan-git-catalog.md#gc-7-the-catalog-ui)): the "Catalog" screen holds the clone URL, "not a secret" values and purge (GC-5 removed the strict setting). Until then, this section describes M2 as built (v0.3.0).
 >
-> **As built in GC-7 ([#169](https://github.com/guneet-xyz/shinan/issues/169)):** a **Catalog** tab, for every member, between Agents and Security log. It holds "Address for agents": the address agents clone the catalog from (`https://<installation>/git/<workspace ID>.git`), read only, with a Copy button, and "Agents clone the catalog from here. Set up an agent →". The "not a secret" values (GC-3) and removing text from the catalog's history (GC-8) join it with their packages; until GC-8, M2's purge stays under Data.
+> **As built in GC-7 ([#169](https://github.com/guneet-xyz/shinan/issues/169)):** a **Catalog** tab, for every member, between Agents and Security log. It holds "Address for agents": the address agents clone the catalog from (`https://<installation>/git/<workspace ID>.git`), shown whole (it wraps on a phone), with a Copy button, and "Agents clone the catalog from here. Set up an agent →". The "not a secret" values (GC-3) and removing text from the catalog's history (GC-8) join it with their packages; until GC-8, M2's purge stays under Data.
 
 For workspace owners. Contributors see three of these screens read only:
 General, Members and Security log (only the entries they made or that are

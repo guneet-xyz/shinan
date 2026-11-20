@@ -66,7 +66,16 @@ function ChangedPages(props: {
   change: CatalogRecentChange
 }) {
   const { change } = props
-  if (change.pages.length === 0) return null
+  if (change.pages.length === 0) {
+    if (change.page_count === 0 && !change.page_count_at_least) return null
+    return (
+      <p className="text-sm text-muted-foreground">
+        {change.page_count === 0
+          ? "Changed files not known"
+          : `${change.page_count_at_least ? "At least " : ""}${change.page_count.toLocaleString()} files changed`}
+      </p>
+    )
+  }
   const rest = change.page_count - change.pages.length
   return (
     <p className="text-sm wrap-anywhere">

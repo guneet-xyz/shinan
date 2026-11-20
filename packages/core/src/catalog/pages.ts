@@ -230,54 +230,92 @@ export function changeJson(commit: CommitInfo): CatalogChangeJson {
 }
 
 /**
- * The cursors of a page's history: the last commit of a page, signed by
- * `web` for that workspace and file, so a cursor can only be one Shinan
- * gave out from the index's `main` (review of #192). A commit ID of the
- * browser's choosing could otherwise start the history on another branch,
+ * Where a list of changes goes on: the commit it started from (the index's
+ * commit when its first page was read) and how many commits of
+ * `git log <start>` came before. Paging by position in one fixed walk
+ * stays exact whatever merges do to Git's order (review of #194: "from the
+ * last commit shown" lost the merged branches' commits).
+ */
+export interface ChangesCursor {
+  start: string
+  position: number
+}
+
+/**
+ * The cursors of a list of changes, signed by `web` for one workspace and
+ * one list (a file's path, for its History), so a cursor can only be one
+ * Shinan gave out from the index's `main` (review of #192): a commit of the
+ * browser's choosing could otherwise start the list on another branch,
  * whose content the browser never shows (plan §2.8).
  */
 export interface HistoryCursors {
-  issue(input: { workspaceId: string; path: string; commit: string }): string
-  /** The commit a cursor names, or null if Shinan didn't issue it so. */
+  issue(input: { workspaceId: string; path: string } & ChangesCursor): string
+  /** What a cursor names, or null if Shinan didn't issue it so. */
   read(
     cursor: string,
     input: { workspaceId: string; path: string },
-  ): string | null
+  ): ChangesCursor | null
 }
 
 const objectId = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/
 
 /** History cursors signed with `key` (HMAC-SHA-256). */
 export function historyCursors(key: string | Uint8Array): HistoryCursors {
-  const sign = (workspaceId: string, path: string, commit: string) =>
+  const sign = (
+    workspaceId: string,
+    path: string,
+    start: string,
+    position: number,
+  ) =>
     createHmac("sha256", key)
-      .update(`shinan history cursor\n${workspaceId}\n${path}\n${commit}`)
+      .update(
+        `shinan changes cursor\n${workspaceId}\n${path}\n${start}\n${position}`,
+      )
       .digest("base64url")
   return {
-    issue: ({ workspaceId, path, commit }) =>
-      `${commit}.${sign(workspaceId, path, commit)}`,
+    issue: ({ workspaceId, path, start, position }) =>
+      `${start}.${position}.${sign(workspaceId, path, start, position)}`,
     read(cursor, { workspaceId, path }) {
-      const [commit, signature, ...rest] = cursor.split(".")
-      if (rest.length > 0 || !commit || !signature || !objectId.test(commit))
+      const [start, at, signature, ...rest] = cursor.split(".")
+      if (
+        rest.length > 0 ||
+        !start ||
+        !signature ||
+        !objectId.test(start) ||
+        !/^[1-9][0-9]{0,6}$/.test(at ?? "")
+      )
         return null
-      const expected = Buffer.from(sign(workspaceId, path, commit))
+      const position = Number(at)
+      const expected = Buffer.from(sign(workspaceId, path, start, position))
       const given = Buffer.from(signature)
       return given.length === expected.length &&
         timingSafeEqual(given, expected)
-        ? commit
+        ? { start, position }
         : null
     },
   }
 }
 
+/** A cursor from a request, or why it is refused. */
+export function readCursor(
+  cursors: HistoryCursors,
+  after: string | undefined,
+  input: { workspaceId: string; path: string },
+): ChangesCursor | undefined {
+  if (after === undefined) return undefined
+  const cursor = after.length > 200 ? null : cursors.read(after, input)
+  if (!cursor) throw new InvalidInputError("after", staleCursor)
+  return cursor
+}
+
 /**
  * A page's history (Git-based catalog plan §3): the commits of `main` that
- * changed its file, newest first, from the commit the index is at. Paged by
- * a cursor naming the last commit of the page before, not by a count to
- * skip, which on a long history gets slower with every page (review of
- * GC-1b). Shinan signs its cursors (`historyCursors`), so a page of
- * history only ever starts on a commit it listed from the index's `main`.
- * Each change carries its message's first line and the start of the rest.
+ * changed its file, newest first, from the commit the index is at, as
+ * `git log <start> -- <path>` orders them. Paged by a cursor Shinan signs
+ * (`historyCursors`) holding where the walk started and how far it got, so
+ * a page of history only ever comes from a commit it listed from the
+ * index's `main`, and no change is skipped around merges. Each change
+ * carries its message's first line and the start of the rest.
  */
 export async function getCatalogPageHistory(
   ctx: Context,
@@ -298,40 +336,34 @@ export async function getCatalogPageHistory(
   const located = await locate(ctx, workspaceId, id)
   const { answer, title } = located
   const path = located.path!
-  let after: string | undefined
-  if (input.after !== undefined) {
-    after =
-      cursors.read(input.after, { workspaceId: located.workspaceId, path }) ??
-      undefined
-    if (after === undefined) throw new InvalidInputError("after", staleCursor)
-  }
+  const cursor = readCursor(cursors, input.after, {
+    workspaceId: located.workspaceId,
+    path,
+  })
   const empty = { ...answer, path, title, changes: [], next_after: null }
   if (answer.catalog_commit === null) return empty
   const client = requireGit(git)
-  // One more than asked, to know whether there are older ones; and the
-  // cursor itself, which the history from it starts with.
-  const extra = after === undefined ? 1 : 2
+  const start = cursor?.start ?? answer.catalog_commit
+  const position = cursor?.position ?? 0
+  // One more than asked, to know whether there are older ones.
   const { commits } = await fromGit(() =>
     client.history(located.workspaceId, {
-      commit: after ?? answer.catalog_commit!,
+      commit: start,
       path,
-      limit: limit + extra,
+      skip: position,
+      limit: limit + 1,
     }),
   )
-  const older =
-    after !== undefined && commits[0]?.oid === after
-      ? commits.slice(1)
-      : commits.slice(0, limit + 1)
-  const page = older.slice(0, limit)
   return {
     ...empty,
-    changes: page.map(changeJson),
+    changes: commits.slice(0, limit).map(changeJson),
     next_after:
-      older.length > limit
+      commits.length > limit
         ? cursors.issue({
             workspaceId: located.workspaceId,
             path,
-            commit: page[page.length - 1]!.oid,
+            start,
+            position: position + limit,
           })
         : null,
   }

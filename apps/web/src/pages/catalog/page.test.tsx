@@ -965,6 +965,63 @@ describe("recent changes", () => {
     ).toBeNull()
   })
 
+  it("starts a day heading only on an earlier day, and dates a change that is later than its heading", async () => {
+    renderApp(
+      `${base}/changes`,
+      fakeApi({
+        catalogChanges: () =>
+          Promise.resolve({
+            ...answer,
+            changes: [
+              change("Newest", 60 * 24 * 3, "a", []),
+              // Its time went backwards in the history: later than its day.
+              change("Dated later", 1, "b", []),
+              change("Older", 60 * 24 * 5, "c", []),
+              // A merge whose own files couldn't be worked out.
+              {
+                ...change("Merge a large branch", 60 * 24 * 6, "d", []),
+                merge: true,
+                page_count: 0,
+                page_count_at_least: true,
+              },
+            ],
+            next_after: null,
+          }),
+      }),
+    )
+    await screen.findByText("Newest")
+    const headings = screen
+      .getAllByRole("heading", { level: 2 })
+      .map((h) => h.textContent)
+    expect(headings).toHaveLength(3)
+    expect(new Set(headings).size).toBe(3)
+    expect(headings).not.toContain("Today")
+    const later = screen.getByText("Dated later").closest("li")!
+    // Its own date beside its time, under the earlier day's heading.
+    expect(later.querySelector("time")!.textContent).toMatch(/[A-Z][a-z]{2} \d/)
+    expect(
+      screen.getByText("Merge a large branch").closest("li")!.textContent,
+    ).toContain("Changed files not known")
+  })
+
+  it("says so when a page held only merges that changed nothing", async () => {
+    renderApp(
+      `${base}/changes`,
+      fakeApi({
+        catalogChanges: () =>
+          Promise.resolve({ ...answer, changes: [], next_after: "cursor" }),
+      }),
+    )
+    expect(
+      await screen.findByText(
+        "Only merges that changed nothing themselves so far.",
+      ),
+    ).toBeTruthy()
+    expect(
+      screen.getByRole("button", { name: "Show older changes" }),
+    ).toBeTruthy()
+  })
+
   it("says when the repository can't be read right now", async () => {
     renderApp(`${base}/changes`, fakeApi({ catalogChanges: unavailable }))
     expect(

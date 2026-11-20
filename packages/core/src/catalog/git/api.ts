@@ -374,7 +374,9 @@ export interface CommitInfo {
   truncated: boolean
   /**
    * The paths it changed against its first parent (a root commit: against
-   * nothing), at most `maxChangesPerCommit`, in Git's order.
+   * nothing), at most `maxChangesPerCommit`, in Git's order. For a merge in
+   * a history asked for `combined`: only those that differ from every
+   * parent.
    */
   changes: { status: TreeChange["status"]; path: string }[]
   /** How many paths it changed in all. */

@@ -257,10 +257,16 @@ no shell. As built (GC-1b,
   Git endpoint), and `migrate` in GC-6. A person holds at most 2 of
   `web`'s reads for the catalog pages at once (4 per network address), so
   one browser can't take the container's 4 reads from the index updates.
-  History pages by cursors `web` signs (HMAC with the session secret, over
-  the workspace, the file and the commit), so the browser can only start a
-  page of history on a commit `web` listed from the index's `main`, never
-  on another branch.
+  History and Recent changes page by cursors `web` signs (HMAC with the
+  session secret, over the workspace, the list, the commit the list started
+  from and how many of `git log <start>`'s commits came before), so the
+  browser can only read on from a commit `web` started at on the index's
+  `main`, never another branch, and no commit is skipped however merges
+  interleave the history (review of #194). For Recent changes the Git
+  container works out each merge's own changes in the same history read
+  (`combined`: the files that differ from every parent, as Git's combined
+  diff names them, by tree walks within the request's budget; unknown when
+  the budget runs out).
 - **Its API** (JSON; the typed client is core's `createGitClient`):
   `GET`/`PUT /repositories/<workspace ID>` (`main`'s commit; create with a
   first commit by Shinan, once), `GET …/tree`, `POST …/documents`,

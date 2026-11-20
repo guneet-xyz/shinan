@@ -18,26 +18,47 @@ import { VisibleText } from "./VisibleText"
 
 const dayFormat = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" })
 const clockFormat = new Intl.DateTimeFormat(undefined, { timeStyle: "short" })
+const dateTimeFormat = new Intl.DateTimeFormat(undefined, {
+  month: "short",
+  day: "numeric",
+  hour: "numeric",
+  minute: "2-digit",
+})
 
-/** A day's heading: "Today", "Yesterday" or the date. */
-function dayLabel(iso: string, now = new Date()): string {
-  const day = new Date(iso)
-  const start = (d: Date) =>
-    new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
-  const days = Math.round((start(now) - start(day)) / 86_400_000)
-  if (days === 0) return "Today"
-  if (days === 1) return "Yesterday"
-  return dayFormat.format(day)
+/** The start of a time's day, in the browser's time zone. */
+function dayOf(iso: string): number {
+  const d = new Date(iso)
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
 }
 
-/** Changes grouped by the day they were made, newest first. */
+/** A day's heading: "Today", "Yesterday" or the date. */
+function dayLabel(day: number, now = new Date()): string {
+  const days = Math.round((dayOf(now.toISOString()) - day) / 86_400_000)
+  if (days === 0) return "Today"
+  if (days === 1) return "Yesterday"
+  return dayFormat.format(new Date(day))
+}
+
+/**
+ * Changes under day headings, in the history's order. Commit times are
+ * set by agents, so they can go backwards in the history: a new heading
+ * starts only on an earlier day (product review of #194), and a change
+ * dated later than its heading shows its own date.
+ */
 function byDay<T extends CatalogChange>(changes: readonly T[]) {
-  const days: { label: string; changes: T[] }[] = []
+  const days: {
+    day: number | null
+    changes: { change: T; ownDate: boolean }[]
+  }[] = []
   for (const change of changes) {
-    const label = change.time ? dayLabel(change.time) : "Undated"
+    const day = change.time ? dayOf(change.time) : null
     const last = days[days.length - 1]
-    if (last?.label === label) last.changes.push(change)
-    else days.push({ label, changes: [change] })
+    if (last && (day === null || (last.day !== null && day >= last.day)))
+      last.changes.push({
+        change,
+        ownDate: day !== null && last.day !== null && day > last.day,
+      })
+    else days.push({ day, changes: [{ change, ownDate: false }] })
   }
   return days
 }
@@ -86,17 +107,24 @@ export function ChangeList<T extends CatalogChange>(props: {
   }
   return (
     <>
-      {changes.length === 0 && <p className="text-sm">{props.empty}</p>}
-      {byDay(changes).map((day, i) => (
-        // Commits are in the order of the history, not of their times, so
-        // a day can come up again after another.
-        <section key={`${i}:${day.label}`} className="flex flex-col gap-3">
+      {changes.length === 0 && (
+        <p className="text-sm">
+          {next
+            ? "Only merges that changed nothing themselves so far."
+            : props.empty}
+        </p>
+      )}
+      {byDay(changes).map((day) => (
+        <section
+          key={day.changes[0]!.change.commit}
+          className="flex flex-col gap-3"
+        >
           <h2 className="text-sm font-semibold text-muted-foreground">
-            {day.label}
+            {day.day === null ? "Undated" : dayLabel(day.day)}
           </h2>
           <ol className="flex flex-col gap-5">
-            {day.changes.map((change) => (
-              <ChangeItem key={change.commit} change={change}>
+            {day.changes.map(({ change, ownDate }) => (
+              <ChangeItem key={change.commit} change={change} ownDate={ownDate}>
                 {props.after?.(change)}
               </ChangeItem>
             ))}
@@ -119,7 +147,12 @@ export function ChangeList<T extends CatalogChange>(props: {
 }
 
 /** One change: its headline, the start of the rest, when, its short ID. */
-function ChangeItem(props: { change: CatalogChange; children?: ReactNode }) {
+function ChangeItem(props: {
+  change: CatalogChange
+  /** Show its date with its time: it is later than its day's heading. */
+  ownDate?: boolean
+  children?: ReactNode
+}) {
   const { change } = props
   return (
     <li className="flex min-w-0 flex-col gap-0.5">
@@ -135,7 +168,9 @@ function ChangeItem(props: { change: CatalogChange; children?: ReactNode }) {
         {/* GC-3a: "Guneet, through OpenCode on Daedalus · ", from the push log. */}
         {change.time && (
           <time dateTime={change.time}>
-            {clockFormat.format(new Date(change.time))}
+            {(props.ownDate ? dateTimeFormat : clockFormat).format(
+              new Date(change.time),
+            )}
           </time>
         )}
         {change.time && " · "}
