@@ -164,6 +164,7 @@ describe("worker", () => {
           matched: expect.any(Number) as number,
           differs: expect.any(Number) as number,
           behind: expect.any(Number) as number,
+          failed: expect.any(Number) as number,
         })
       },
       { timeout: 10_000, interval: 200 },

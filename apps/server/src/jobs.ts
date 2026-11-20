@@ -12,6 +12,7 @@ import {
   EmailRetryError,
   expireInvitations,
   getInstallation,
+  indexFailureReason,
   jobQueues,
   pruneEmailDeliveries,
   pruneRateLimits,
@@ -248,7 +249,14 @@ export async function startWorker(options: WorkerOptions): Promise<Worker> {
           { db: options.db, actor: shinan },
           { workspaceId },
           git,
-        ),
+        ).catch((error: unknown) => {
+          // By workspace ID and a fixed reason only, never catalog text;
+          // installation health shows the same reason.
+          console.error(
+            `Catalog index of workspace ${workspaceId} not brought up to main: ${indexFailureReason(error)}`,
+          )
+          throw error
+        }),
       )
       if (update.outcome !== "unchanged")
         console.info(
@@ -313,6 +321,10 @@ async function checkIndexes(db: Database, boss: PgBoss, git: GitClient) {
     git,
   )
   for (const result of results) {
+    if (result.outcome === "failed")
+      console.error(
+        `Catalog index check: workspace ${result.workspaceId} could not be checked: ${result.reason ?? "failed"}`,
+      )
     if (result.outcome !== "differs") continue
     console.error(
       `Catalog index check: workspace ${result.workspaceId} at ${result.commit}: ${result.differenceCount} documents differ from their text (${describeDifferences(result)}); rebuild it with \`shinan catalog-index rebuild ${result.workspaceId}\``,
@@ -321,12 +333,13 @@ async function checkIndexes(db: Database, boss: PgBoss, git: GitClient) {
   const count = (outcome: WorkspaceIndexCheck["outcome"]) =>
     results.filter((r) => r.outcome === outcome).length
   console.info(
-    `Catalog index check: ${results.length} workspaces, ${count("matched")} matched, ${count("differs")} differ, ${count("behind")} behind (update asked for)`,
+    `Catalog index check: ${results.length} workspaces, ${count("matched")} matched, ${count("differs")} differ, ${count("behind")} behind (update asked for), ${count("failed")} failed`,
   )
   return {
     matched: count("matched"),
     differs: count("differs"),
     behind: count("behind"),
+    failed: count("failed"),
   }
 }
 

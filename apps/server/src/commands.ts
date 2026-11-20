@@ -6,6 +6,7 @@ import {
   checkCatalogIndexes,
   createGitClient,
   endSessionsOf,
+  indexFailureReason,
   NotFoundError,
   prepareSetupLink,
   productName,
@@ -275,15 +276,26 @@ async function runCatalogIndexCommand(
   const ctx = { db, actor: shinan }
   try {
     if (action === "rebuild") {
+      let failed = false
       for (const workspaceId of workspaceIds) {
-        const rebuilt = await rebuildCatalogIndex(ctx, { workspaceId }, git)
+        let rebuilt
+        try {
+          rebuilt = await rebuildCatalogIndex(ctx, { workspaceId }, git)
+        } catch (error) {
+          if (error instanceof NotFoundError) throw error
+          console.error(
+            `Could not rebuild the agent index of workspace ${workspaceId}: ${indexFailureReason(error)}`,
+          )
+          failed = true
+          continue
+        }
         console.info(
           rebuilt.outcome === "no-repository"
             ? `Workspace ${workspaceId} has no catalog repository yet: nothing to index`
             : `Rebuilt the agent index of workspace ${workspaceId} at ${rebuilt.commit} (${rebuilt.documents} documents)`,
         )
       }
-      return 0
+      return failed ? 1 : 0
     }
     const results = await checkCatalogIndexes(
       ctx,
@@ -296,7 +308,9 @@ async function runCatalogIndexCommand(
           ? `: ${r.differenceCount} documents differ (${r.differences
               .map((d) => `${d.path}: ${d.tables.join(", ")}`)
               .join("; ")})`
-          : ""
+          : r.outcome === "failed"
+            ? `: ${r.reason ?? "failed"}`
+            : ""
       console.info(`Workspace ${r.workspaceId}: ${r.outcome}${detail}`)
     }
     return results.some((r) => r.outcome !== "matched") ? 1 : 0

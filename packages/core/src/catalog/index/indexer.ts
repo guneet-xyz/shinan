@@ -18,6 +18,7 @@ import { GitServiceError } from "../git/client.js"
 import type { GitClient } from "../git/client.js"
 import { deriveDocumentRows, indexRulesVersion } from "./derive.js"
 import type { DocumentRows } from "./derive.js"
+import type { IndexFailureReason } from "./failure.js"
 import { pauser } from "./pause.js"
 import {
   compare,
@@ -272,6 +273,21 @@ async function updateOnce(
   if (!repository)
     return { outcome: "no-repository", commit: null, documents: 0 }
   const main = repository.main
+  // Recorded at once, so answers and installation health say the index is
+  // behind while it is built, and still do if building fails.
+  if ((state?.mainCommit ?? null) !== main)
+    await db
+      .insert(schema.catalogIndexState)
+      .values({
+        workspaceId,
+        mainCommit: main,
+        parserVersion,
+        rulesVersion: indexRulesVersion,
+      })
+      .onConflictDoUpdate({
+        target: schema.catalogIndexState.workspaceId,
+        set: { mainCommit: nextMain(state, main) },
+      })
   const full =
     options.rebuild === true ||
     !state ||
@@ -280,17 +296,7 @@ async function updateOnce(
     before.stale
 
   if (!full && state.commit === main) {
-    if (state.mainCommit !== main)
-      await db
-        .update(schema.catalogIndexState)
-        .set({ mainCommit: main })
-        .where(
-          and(
-            eq(schema.catalogIndexState.workspaceId, workspaceId),
-            eq(schema.catalogIndexState.commit, main),
-            mainCommitIs(state.mainCommit),
-          ),
-        )
+    if (state.failure !== null) await clearFailure(db, workspaceId)
     return { outcome: "unchanged", commit: main, documents: 0 }
   }
 
@@ -303,7 +309,12 @@ async function updateOnce(
         await replaceRows(tx, workspaceId, update.rows)
         await tx
           .update(schema.catalogIndexState)
-          .set({ commit: main, mainCommit: nextMain(state, main) })
+          .set({
+            commit: main,
+            mainCommit: nextMain(state, main),
+            failure: null,
+            failedAt: null,
+          })
           .where(eq(schema.catalogIndexState.workspaceId, workspaceId))
         return true
       })
@@ -341,6 +352,8 @@ async function updateOnce(
         rulesVersion: indexRulesVersion,
         rebuildRequestedAt: null,
         rebuiltAt: sql`now()`,
+        failure: null,
+        failedAt: null,
       })
       .where(eq(schema.catalogIndexState.workspaceId, workspaceId))
     return true
@@ -348,6 +361,41 @@ async function updateOnce(
   return written
     ? { outcome: "rebuilt", commit: main, documents: texts.length }
     : null
+}
+
+/** Forgets the last failure: the index was built or checked since. */
+export async function clearFailure(
+  db: Database,
+  workspaceId: string,
+): Promise<void> {
+  await db
+    .update(schema.catalogIndexState)
+    .set({ failure: null, failedAt: null })
+    .where(eq(schema.catalogIndexState.workspaceId, workspaceId))
+}
+
+/**
+ * Records why building or checking a workspace's index failed, as a fixed
+ * code (`indexFailureReason`), for installation health.
+ */
+export async function recordFailure(
+  db: Database,
+  workspaceId: string,
+  reason: IndexFailureReason,
+): Promise<void> {
+  await db
+    .insert(schema.catalogIndexState)
+    .values({
+      workspaceId,
+      parserVersion,
+      rulesVersion: indexRulesVersion,
+      failure: reason,
+      failedAt: sql`now()`,
+    })
+    .onConflictDoUpdate({
+      target: schema.catalogIndexState.workspaceId,
+      set: { failure: reason, failedAt: sql`now()` },
+    })
 }
 
 /**

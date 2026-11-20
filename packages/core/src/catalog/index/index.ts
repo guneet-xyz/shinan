@@ -67,3 +67,5 @@ export type {
   WorkspaceIndexCheck,
 } from "./maintain.js"
 export type { IndexUpdate } from "./indexer.js"
+export { indexFailureReason, indexFailureReasons } from "./failure.js"
+export type { IndexFailureReason } from "./failure.js"
