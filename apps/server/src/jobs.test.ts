@@ -211,7 +211,7 @@ describe("worker", () => {
     )
   })
 
-  it("summarises agent token use", async () => {
+  it("summarises agent token use and catalog fetches", async () => {
     worker = await startWorker({
       databaseUrl,
       db,
@@ -228,6 +228,7 @@ describe("worker", () => {
         expect(job?.state).toBe("completed")
         expect(job?.output).toEqual({
           summarized: expect.any(Number) as number,
+          fetchesSummarized: expect.any(Number) as number,
         })
       },
       { timeout: 10_000, interval: 200 },

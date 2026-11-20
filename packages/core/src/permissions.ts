@@ -20,6 +20,8 @@ export interface WorkspaceRule {
    * limited by its member's role.
    */
   agents: readonly Scope[] | "people"
+  /** Only agents take the action, never people themselves. */
+  agentsOnly?: boolean
   /** Sensitive actions need a recent sign-in (identity §3.3). */
   reauthentication: boolean
 }
@@ -228,6 +230,32 @@ export const rules = deepFreeze({
     access: "read",
     roles: ["owner", "contributor"],
     agents: ["catalog:read"],
+    reauthentication: false,
+  },
+  /**
+   * Clone and fetch the catalog's repository over HTTPS (Git-based catalog
+   * plan §2.14): agents with `catalog:read`. People read the catalog in the
+   * browser (`catalog.read`); the Git endpoint takes only agent tokens.
+   */
+  "catalog.fetch": {
+    level: "workspace",
+    access: "read",
+    roles: ["owner", "contributor"],
+    agents: ["catalog:read"],
+    agentsOnly: true,
+    reauthentication: false,
+  },
+  /**
+   * Push to the catalog's repository (plan §2.14): agents with
+   * `catalog:write`. People do not push; they use their agents. What a push
+   * may change is the push checks' (plan §2.5).
+   */
+  "catalog.push": {
+    level: "workspace",
+    access: "write",
+    roles: ["owner", "contributor"],
+    agents: ["catalog:write"],
+    agentsOnly: true,
     reauthentication: false,
   },
   /**
@@ -465,6 +493,7 @@ export function decide(rule: Rule, requester: Requester): Decision {
     return allow
   }
 
+  if (rule.agentsOnly) return refuse("actor")
   if (rule.reauthentication && !requester.reauthenticated) {
     return refuse("reauthentication")
   }

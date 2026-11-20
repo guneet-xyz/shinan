@@ -1,3 +1,7 @@
+import { request as httpRequest } from "node:http"
+import type { ClientRequest } from "node:http"
+import { request as httpsRequest } from "node:https"
+
 import type {
   CommitInfo,
   CommitRef,
@@ -41,6 +45,20 @@ export interface GitClientOptions {
  * Git container answers and calls nobody.
  */
 export interface GitClient {
+  /**
+   * Opens a request to the Git container's smart HTTP paths (`/git/…`),
+   * for `web`'s Git endpoint, with the service token: the caller streams
+   * the body and the answer, with its own time limit (a push takes longer
+   * than an API call).
+   */
+  smartHttp(
+    pathAndQuery: string,
+    input: {
+      method: string
+      headers: Record<string, string>
+      timeoutMs: number
+    },
+  ): ClientRequest
   /** The repository's `main`, or `null` if the workspace has none. */
   getRepository(workspaceId: string): Promise<RepositoryInfo | null>
   /**
@@ -143,6 +161,25 @@ export function createGitClient(options: GitClientOptions): GitClient {
     `/repositories/${encodeURIComponent(workspaceId)}${rest}`
 
   return {
+    smartHttp(pathAndQuery, input) {
+      if (!pathAndQuery.startsWith("/git/")) {
+        throw new Error("Only the Git container's /git/ paths are smart HTTP")
+      }
+      const url = new URL(pathAndQuery, base)
+      const upstream = (url.protocol === "https:" ? httpsRequest : httpRequest)(
+        url,
+        {
+          method: input.method,
+          headers: {
+            ...input.headers,
+            authorization: `Bearer ${options.serviceToken}`,
+          },
+          timeout: input.timeoutMs,
+        },
+      )
+      upstream.on("timeout", () => upstream.destroy())
+      return upstream
+    },
     async getRepository(workspaceId) {
       const body = await call("GET", repository(workspaceId), {
         notFound: true,

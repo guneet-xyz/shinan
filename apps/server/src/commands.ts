@@ -43,7 +43,7 @@ import { openJournal } from "./git/journal.js"
 import { checkGitRole, readGitRoleConfig } from "./git/startup.js"
 import { cleanTemporary, createRepositoryStore } from "./git/store.js"
 import { checkHealth } from "./health.js"
-import { listenerOptions } from "./in-flight.js"
+import { listenerOptions, pushReceiveSeconds } from "./in-flight.js"
 import { connectJobQueue, migrateJobQueue, startWorker } from "./jobs.js"
 import { createBetterAuthSignIn } from "./sign-in/better-auth.js"
 
@@ -117,7 +117,8 @@ export async function runCommand(
 async function runWeb(env: Env): Promise<void> {
   const config = readWebConfig(env)
   const databaseUrl = readDatabaseUrl(env)
-  // The Git container, for what the catalog pages read from the repository.
+  // The Git container: what the catalog pages read from the repository,
+  // and agents' fetches and pushes (`/git/`). Required in production.
   const gitConfig = readGitClientConfig(env)
   const { db, pool } = createDatabase(databaseUrl)
   const jobs = await connectJobQueue(databaseUrl)
@@ -153,7 +154,14 @@ async function runWeb(env: Env): Promise<void> {
       checkDatabase: () => checkDatabase(pool),
     })
     await serveUntilShutdown([
-      { name: "web", fetch: app.fetch, ...config },
+      {
+        name: "web",
+        fetch: app.fetch,
+        ...config,
+        // A push's body may take 120 seconds to arrive (plan §2.10); the
+        // app keeps every other request to 30 (`receiveDeadline`).
+        serverOptions: listenerOptions(pushReceiveSeconds),
+      },
       {
         name: "internal (health checks)",
         fetch: internal.fetch,
@@ -406,7 +414,7 @@ async function runGit(env: Env): Promise<void> {
         // Room for the context header (64 KiB) and the others.
         maxHeaderSize: 80 * 1024,
         // A push's body may take 120 seconds to arrive (plan §2.10).
-        ...listenerOptions(120),
+        ...listenerOptions(pushReceiveSeconds),
       },
     },
     {

@@ -29,6 +29,7 @@ const actionNames: Record<string, string> = {
   "agent-token.used": "Agent token use",
   "agent-token.failed": "Agent token refused",
   "catalog.purged": "Purged catalog text",
+  "catalog.fetched": "Catalog fetches",
 }
 
 const outcomeNames: Record<SecurityLogEntry["outcome"], string> = {

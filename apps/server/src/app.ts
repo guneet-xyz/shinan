@@ -9,7 +9,9 @@ import { errorHandler } from "./api/errors.js"
 import { createApi, requestInfoFor } from "./api/routes.js"
 import type { ApiOptions } from "./api/routes.js"
 import { noTrustedProxies } from "./client-address.js"
-import { createMcp } from "./mcp/server.js"
+import { createGitEndpoint } from "./git-endpoint.js"
+import { receiveDeadline, requestReceiveSeconds } from "./in-flight.js"
+import { agentInFlight, createMcp } from "./mcp/server.js"
 import { securityHeaders } from "./security.js"
 import { createSkills } from "./skills.js"
 
@@ -18,6 +20,12 @@ export interface AppOptions extends ApiOptions {
   webDistDir?: string
   /** The skill's files, served at `/skills/`; none when not given. */
   skills?: SkillCatalog
+  /**
+   * How long a request other than a push has to arrive, in seconds;
+   * default `requestReceiveSeconds`. The listener's own limit is the
+   * push's (`pushReceiveSeconds`).
+   */
+  receiveSeconds?: number
 }
 
 /**
@@ -35,6 +43,19 @@ export function createApp(options: AppOptions) {
     }),
   )
 
+  // Only a push's body may take the listener's longer time to arrive.
+  app.use(
+    "*",
+    receiveDeadline(
+      options.receiveSeconds ?? requestReceiveSeconds,
+      (c) =>
+        c.req.method === "POST" &&
+        /^\/git\/[^/]+\/git-receive-pack$/.test(c.req.path),
+    ),
+  )
+
+  const requestInfo = requestInfoFor(options.trustedProxies ?? noTrustedProxies)
+  const inFlight = agentInFlight()
   app.route("/api", createApi(options))
   // The MCP endpoint (architecture §8.1): an agent endpoint, so like
   // `/api/agent` it takes only an agent token and has no same-origin check.
@@ -43,8 +64,24 @@ export function createApp(options: AppOptions) {
     createMcp({
       db: options.db,
       installationUrl: options.installationUrl,
-      requestInfo: requestInfoFor(options.trustedProxies ?? noTrustedProxies),
+      requestInfo,
       rateLimit: options.rateLimit,
+      inFlight,
+    }),
+  )
+  // The Git endpoint (architecture §8.5): agents' clones, fetches and
+  // pushes, forwarded to the Git container. An agent endpoint like `/mcp`:
+  // only agent tokens, no cookies, no same-origin check.
+  app.route(
+    "/git",
+    createGitEndpoint({
+      db: options.db,
+      installationUrl: options.installationUrl,
+      requestInfo,
+      rateLimit: options.rateLimit,
+      // One client of the Git container for the catalog's reads and this.
+      git: options.gitClient,
+      inFlight,
     }),
   )
   // The skill (D-056): public, and only its own files. Every other path

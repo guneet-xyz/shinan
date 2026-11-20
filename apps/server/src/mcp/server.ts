@@ -23,7 +23,8 @@ import { createLimitedLog, errorSummary } from "@shinan/db"
 import { requireAgent } from "../api/agent-auth.js"
 import type { AgentEnv } from "../api/agent-auth.js"
 import { errorHandler } from "../api/errors.js"
-import { limitInFlight } from "../in-flight.js"
+import { inFlightCounter, limitInFlight } from "../in-flight.js"
+import type { InFlightCounter } from "../in-flight.js"
 import { rateLimited } from "../security.js"
 
 export interface McpOptions {
@@ -33,6 +34,22 @@ export interface McpOptions {
   requestInfo: (c: HonoContext) => RequestInfo
   /** Per-address rate limits (architecture §10.1); on unless turned off. */
   rateLimit?: boolean
+  /** The caps on requests in flight, shared with the Git endpoint; default `agentInFlight()`. */
+  inFlight?: AgentInFlight
+}
+
+/** The caps on agents' requests in flight, shared by `/mcp` and `/git`. */
+export interface AgentInFlight {
+  perToken: InFlightCounter
+  perAddress: InFlightCounter
+}
+
+/** New counters for `mcpInFlight`'s caps. */
+export function agentInFlight(): AgentInFlight {
+  return {
+    perToken: inFlightCounter(mcpInFlight.perToken),
+    perAddress: inFlightCounter(mcpInFlight.perAddress),
+  }
 }
 
 /**
@@ -46,8 +63,11 @@ export const mcpBodyLimit = 512 * 1024
 /**
  * How many `/mcp` requests may be in flight at once (decided by the owner,
  * M2-Q16): 8 per token, for an agent and its subagents; 16 per network
- * address, for several agents on one machine. With 512 KB bodies that is at most about 5 MiB held for one
- * token, and 10 MiB for one address, against `web`'s memory limit.
+ * address, for several agents on one machine. With 512 KB bodies that is
+ * at most about 5 MiB held for one token, and 10 MiB for one address,
+ * against `web`'s memory limit. The Git endpoint's requests count in the
+ * same caps (Git-based catalog plan §2.10); it streams their bodies
+ * rather than holding them.
  */
 export const mcpInFlight = { perToken: 8, perAddress: 16 }
 
@@ -81,6 +101,7 @@ export const protocolVersions = ["2026-07-28", "2025-11-25"] as const
  * operations, with the agent as the actor; every rule is core's.
  */
 export function createMcp(options: McpOptions) {
+  const inFlight = options.inFlight ?? agentInFlight()
   const mcp = new Hono<AgentEnv>()
   mcp.onError(errorHandler())
   // Answers carry workspace content; no proxy or client keeps them.
@@ -103,7 +124,7 @@ export function createMcp(options: McpOptions) {
   mcp.use(
     "*",
     limitInFlight<AgentEnv>({
-      max: mcpInFlight.perAddress,
+      counter: inFlight.perAddress,
       // An IPv6 address by its /64, as the rate limits count it.
       key: (c) => throttleAddress(options.requestInfo(c).networkAddress),
       refuse: tooManyInFlight,
@@ -136,7 +157,7 @@ export function createMcp(options: McpOptions) {
   mcp.use(
     "*",
     limitInFlight<AgentEnv>({
-      max: mcpInFlight.perToken,
+      counter: inFlight.perToken,
       key: (c) => c.var.agent.tokenId,
       refuse: tooManyInFlight,
     }),

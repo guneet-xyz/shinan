@@ -120,6 +120,13 @@
       "when": 1795168676564,
       "tag": "0016_catalog_index_failure",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1795171428991,
+      "tag": "0017_catalog_fetch_counts",
+      "breakpoints": true
     }
   ]
 }

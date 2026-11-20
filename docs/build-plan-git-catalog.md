@@ -687,6 +687,22 @@ security checklist:
 | Context header                      | 64 KiB; at most 100 allowed "not a secret" values per workspace                                                                                        | [2.2](#22-how-shinan-serves-git).                                                            |
 | Rate                                | 600 requests a minute per token and 300 per address (M2-Q16); 60 pushes in 10 minutes per agent (like M2's proposals)                                  | Pushes are the expensive requests.                                                           |
 
+As built (GC-2, [architecture §8.5](architecture.md#85-git-endpoint)): the
+Git process cap has a queue of 16 requests, each waiting at most 10 seconds
+(inside a fetch's 30 seconds to send its body), then `429` with
+`Retry-After: 10`; `web`'s listener allows a push's 120 seconds and the app
+keeps every other request to 30; the push rate counts each
+`POST git-receive-pack` by its agent; and the in-flight places are held
+until the answer has been sent. After the code review of GC-2: one agent
+holds or waits for at most 2 of the 4 Git processes; a request's whole body
+arrives before Git starts (a fetch's in memory, a push's in a file on the
+volume, counted after inflating gzip); and a client that takes none of an
+answer for 30 seconds has its Git ended. After its second review: the
+agents of one person hold or wait for at most 3 Git processes, one agent
+sends at most 2 push bodies at once, and Git runs with
+`core.bigFileThreshold=1m`, so a small pack of a huge file never inflates
+in memory.
+
 ### 2.11 Backups and recovery
 
 **Decided:** no built-in backups, as an accepted risk
@@ -824,6 +840,10 @@ The server's instructions point to the skill.
   fetches are summarised hourly (`catalog.fetched` with a count), like token
   use, rather than one entry per fetch, because agents fetch at the start of
   every session.
+- **As built (GC-2):** `catalog.fetch` and `catalog.push` are for agents
+  only (people read in the browser); a fetch or clone is counted when its
+  `info/refs?service=git-upload-pack` request passes the checks, and the
+  hourly `catalog.fetched` entry runs with the token use summary.
 - **Catalog approvals** leave identity §11's table; pushes are in the push
   log, not the security log, except refusals that point at a leak.
 

@@ -89,6 +89,10 @@ export function repositoryConfiguration(
     // The pre-receive hook decides per branch (plan §2.8).
     ["receive.denyNonFastForwards", "false"],
     ["receive.denyDeletes", "false"],
+    // Objects larger than the catalog's file limit are streamed to disk,
+    // never inflated whole in memory, when a push is unpacked or indexed:
+    // a 450 MiB file of zeros packs to 449 KiB (review of GC-2).
+    ["core.bigFileThreshold", "1m"],
     // Modest packing for a two-core host.
     ["pack.threads", "1"],
     ["pack.windowMemory", "64m"],
@@ -115,8 +119,14 @@ function syncFolder(path: string): void {
 
 export interface RepositoryStore {
   readonly root: string
+  /** How the store runs Git. */
+  readonly git: Git
+  /** The hooks every repository runs (`core.hooksPath`). */
+  readonly hooksDirectory: string
   /** The workspace's repository folder; refuses anything but a workspace ID. */
   pathOf(workspaceId: string): string
+  /** Whether the workspace has a repository. */
+  exists(workspaceId: string): boolean
   /** `main`'s commit, or `null` if the workspace has no repository. */
   main(workspaceId: string): Promise<string | null>
   create(
@@ -319,7 +329,10 @@ export function createRepositoryStore(options: {
 
   return {
     root,
+    git,
+    hooksDirectory: hooks,
     pathOf,
+    exists: (workspaceId) => exists(pathOf(workspaceId)),
     main,
     create(workspaceId, input) {
       pathOf(workspaceId)
