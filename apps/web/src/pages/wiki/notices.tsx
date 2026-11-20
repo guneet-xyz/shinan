@@ -28,6 +28,25 @@ export function PageNotice(props: {
   )
 }
 
+/**
+ * Shown on the catalog's home while the workspace has no repository yet
+ * (`catalog_commit` null, not `index_behind`): until GC-6 moves M2's
+ * catalog into Git, a development database with M2 data shows an empty
+ * catalog, and this says why. GC-7 replaces it with "being set up".
+ */
+export function NoRepositoryYet(props: {
+  answer: { catalog_commit: string | null; index_behind: boolean } | undefined
+}) {
+  if (!props.answer || props.answer.catalog_commit !== null) return null
+  if (props.answer.index_behind) return null
+  return (
+    <PageNotice>
+      This catalog is moving to Git. It will show again once its repository has
+      been made.
+    </PageNotice>
+  )
+}
+
 /** Shown on every page whose answer says the agent index is behind. */
 export function IndexBehind(props: { behind: boolean }) {
   if (!props.behind) return null

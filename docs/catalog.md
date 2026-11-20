@@ -1751,6 +1751,12 @@ can read without a schema at hand.
 | `catalog_commit` | The commit of `main` the index stands at (a full Git commit ID), or `null` before its first build.                                                        |
 | `index_behind`   | `true` while the index is behind `main`, has not yet been built from the workspace's repository, was built by another parser, or is being rebuilt (12.2). |
 
+For a screen, the two fields map to three states: `catalog_commit` `null`
+and `index_behind` `false` means the workspace has no repository yet (being
+set up); `null` and `true` means its repository is being indexed for the
+first time; a commit means ready, catching up with `main` while
+`index_behind` is `true`.
+
 **An entity** (`entity`):
 
 | Field                                               | Meaning                                                                                                                                                                                                                                                                                                                                                                                                                                                          |

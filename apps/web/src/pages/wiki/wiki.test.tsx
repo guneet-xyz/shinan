@@ -722,6 +722,36 @@ describe("the removed M2 screens", () => {
     ).toBeTruthy()
   })
 
+  const movingNotice =
+    "This catalog is moving to Git. It will show again once its repository has been made."
+
+  it("says on the wiki home when the catalog has no repository yet", async () => {
+    // The default answer: no commit, not behind.
+    renderApp(`/w/${workspaceId}/wiki`, fakeApi())
+    expect(await screen.findByText(movingNotice)).toBeTruthy()
+  })
+
+  it.each([
+    ["being indexed", { catalog_commit: null, index_behind: true }],
+    [
+      "ready",
+      {
+        catalog_commit: "1234567890abcdef1234567890abcdef12345678",
+        index_behind: false,
+      },
+    ],
+  ])("says nothing of moving once the catalog is %s", async (_, answer) => {
+    renderApp(
+      `/w/${workspaceId}/wiki`,
+      fakeApi({
+        catalogTypes: () => Promise.resolve({ ...answer, items: [] }),
+      }),
+    )
+    await screen.findByRole("heading", { level: 2, name: "Types" })
+    await waitFor(() => expect(screen.queryByText(/^Loading/)).toBeNull())
+    expect(screen.queryByText(movingNotice)).toBeNull()
+  })
+
   it("leaves the wiki home with no editing or review", async () => {
     renderApp(`/w/${workspaceId}/wiki`, fakeApi())
     expect(

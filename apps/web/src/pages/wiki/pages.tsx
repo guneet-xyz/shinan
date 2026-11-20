@@ -22,7 +22,7 @@ import { useWorkspace } from "../workspace/context"
 import { EntityLink, FactRow, linkClass } from "./facts"
 import { entityPath, wikiPath } from "./format"
 import { sectionElementId } from "./links"
-import { IndexBehind } from "./notices"
+import { IndexBehind, NoRepositoryYet } from "./notices"
 
 /** What each workspace-wide list is, in words (catalog §10). */
 const listNames: Record<CatalogList, { title: string; about: string }> = {
@@ -59,6 +59,7 @@ export function WikiHome() {
         sure we are.
       </PageHeader>
       <IndexBehind behind={types.data?.index_behind ?? false} />
+      <NoRepositoryYet answer={types.data} />
       <Section
         title="Start here"
         description="The path through this workspace's catalog, for people and for agents."

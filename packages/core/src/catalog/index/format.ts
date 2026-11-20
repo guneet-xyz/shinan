@@ -15,7 +15,13 @@ import type {
  * one vocabulary; fields the index adds are in the same style.
  */
 
-/** What every answer from the agent index carries (catalog §12.2). */
+/**
+ * What every answer from the agent index carries (catalog §12.2, §12.4).
+ * For a screen: `catalog_commit` null and not `index_behind` means the
+ * workspace has no repository yet (being set up); null and `index_behind`
+ * means the repository exists and is being indexed for the first time; a
+ * commit means ready, catching up while `index_behind`.
+ */
 export interface CatalogAnswer {
   /**
    * The commit of `main` the answer was built from; null until the index

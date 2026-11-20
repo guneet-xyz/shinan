@@ -8,7 +8,13 @@ export type FactState = "intended" | "observed" | "planned" | "unknown"
 export type EntityStatus = "active" | "deprecated" | "retired"
 export type ScalarValue = string | number | boolean | null
 
-/** What every catalog answer carries (catalog §12.2). */
+/**
+ * What every catalog answer carries (catalog §12.2, §12.4). For a screen:
+ * `catalog_commit` null and not `index_behind` means the workspace has no
+ * repository yet (being set up); null and `index_behind` means it is being
+ * indexed for the first time; a commit means ready, catching up while
+ * `index_behind`.
+ */
 export interface CatalogAnswer {
   /** The commit of `main` the answer was built from; null before the index's first build. */
   catalog_commit: string | null
