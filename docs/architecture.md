@@ -1484,7 +1484,18 @@ licensing (D-013); this section makes sure nothing blocks it. All **proposed**:
   [`deploy/compose.yml`](../deploy/compose.yml) with secrets as files, and the
   [operator guide](operator-guide.md). `deploy/test/first-start.mjs` starts
   the reference Compose file from nothing and claims the installation; CI runs
-  it on every pull request and against every release's images.
+  it on every pull request and against every release's images. The image also
+  holds Debian 13's `git` and `git http-backend`, the PCRE2 library they
+  need and Shinan's Git hooks (`/app/packages/git/hooks`, Node.js scripts
+  Git starts without a shell), and still no shell, Perl or Git remote helper
+  (GC-1a, [Git-based catalog plan §2.3](build-plan-git-catalog.md#23-git-in-a-distroless-image));
+  only the `git` role will run them. The `.deb` files are downloaded for the
+  target architecture and unpacked on the build machine, so one machine
+  still builds both architectures. Release and CI builds never take that step from the
+  build cache, so a release has Debian's current Git (its summary records
+  the version per architecture); a Debian security advisory for Git means
+  cutting a release. The first-start test runs Git inside the
+  image, on both architectures for every pull request.
 - **Requirements:** PostgreSQL (supported major versions listed per release), an
   HTTPS reverse proxy, an AWS SES account for email in the first version
   ([9.2](#92-how-shinan-sends)), and a public URL if webhooks are wanted.

@@ -79,6 +79,7 @@ export default defineConfig({
         test: { name: "api-client", root: "packages/api-client" },
       },
       { extends: true, test: { name: "email", root: "packages/email" } },
+      { extends: true, test: { name: "git", root: "packages/git" } },
       {
         extends: true,
         test: { name: "markdown", root: "packages/markdown" },

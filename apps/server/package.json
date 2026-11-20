@@ -21,6 +21,7 @@
     "@shinan/core": "workspace:*",
     "@shinan/db": "workspace:*",
     "@shinan/email": "workspace:*",
+    "@shinan/git": "workspace:*",
     "@shinan/skill": "workspace:*",
     "better-auth": "1.7.25",
     "drizzle-orm": "^0.45.4",
