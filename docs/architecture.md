@@ -1295,14 +1295,18 @@ service token like the rest of its API:
   header of Git's form, and a repository that exists (`404`).
 - **The whole body arrives before Git starts** (code review of GC-2), so a
   client that sends slowly holds no Git process: a fetch's in memory, a
-  push's in a file in `.tmp/` on the volume (at most 8 at once), both
+  push's in a file in `.tmp/` on the volume (at most 8 at once, 2 per
+  agent, counted before a byte is read; a full volume is answered `507`,
+  "the Git service's disk is full", and logged as the service's own
+  failure), both
   counted against their limits **after inflating** a gzip body (a 4 MiB
   gzip body can hold a gigabyte of negotiation lines; this also bounds the
   `want`, `have` and `ref-prefix` lines of a v2 request), and handed to Git
   uncompressed with their length.
 - **At most 4 Git processes at once** (`git http-backend` and what it
-  starts), and **at most 2 per agent**, running or waiting, so one token,
-  even a read-only one, cannot take them all; up to 16 more requests wait
+  starts), **at most 2 per agent** and **3 for all the agents of one
+  person**, running or waiting, so one token (even a read-only one), or one
+  member making agents, cannot take them all; up to 16 more requests wait
   their turn for at most 10 seconds, then `429` with `Retry-After: 10`,
   which `web` passes on. Git shows the text of a `429` to `info/refs`; to a
   `POST` it shows only "RPC failed; HTTP 429", which the skill explains
@@ -1312,7 +1316,11 @@ service token like the rest of its API:
   `core.hooksPath` first, then the rest of what Shinan sets when it creates
   a repository ([3.2](#32-process-model)), plus `http.getanyfile=false`
   (no dumb HTTP), `http.uploadpack=true` and `http.receivepack` from the
-  context. So a repository whose `config` lost or changed a setting still
+  context. Among them, `core.bigFileThreshold=1m` (the catalog's file
+  limit): a push's objects larger than that are streamed to disk when Git
+  unpacks or indexes them, never inflated whole in memory, so a 449 KiB
+  pack of a 450 MiB file of zeros costs about 3 MiB instead of 450 MiB
+  (four at once had the Git container killed for memory). So a repository whose `config` lost or changed a setting still
   runs Shinan's hooks. Its environment is built from nothing: Git's clean
   environment (`PATH`, an empty `HOME`, no system or global configuration)
   and the CGI variables `GIT_PROJECT_ROOT`, `PATH_INFO`, `REQUEST_METHOD`,

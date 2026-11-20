@@ -83,6 +83,12 @@ export const maxGitProcesses = 4
  * even a read-only one, cannot take them all (review of GC-2).
  */
 export const maxGitProcessesPerAgent = 2
+/**
+ * How many the agents of one person may hold or wait for at once: a
+ * person can make agents freely, so they share a cap of their own
+ * (review of GC-2).
+ */
+export const maxGitProcessesPerPerson = 3
 /** How many more requests wait for a Git process, at most `gitProcessWaitSeconds`. */
 export const maxQueuedGitProcesses = 16
 /**

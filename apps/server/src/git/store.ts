@@ -89,6 +89,10 @@ export function repositoryConfiguration(
     // The pre-receive hook decides per branch (plan §2.8).
     ["receive.denyNonFastForwards", "false"],
     ["receive.denyDeletes", "false"],
+    // Objects larger than the catalog's file limit are streamed to disk,
+    // never inflated whole in memory, when a push is unpacked or indexed:
+    // a 450 MiB file of zeros packs to 449 KiB (review of GC-2).
+    ["core.bigFileThreshold", "1m"],
     // Modest packing for a two-core host.
     ["pack.threads", "1"],
     ["pack.windowMemory", "64m"],

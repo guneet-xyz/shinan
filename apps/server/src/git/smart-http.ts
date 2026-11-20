@@ -13,6 +13,7 @@ import {
   maxFetchBodyBytes,
   maxGitProcesses,
   maxGitProcessesPerAgent,
+  maxGitProcessesPerPerson,
   maxPushBodyBytes,
   maxQueuedGitProcesses,
   smartHttpRequest,
@@ -36,6 +37,8 @@ export interface GitProcessLimits {
    * token (even a read-only one) can take them all.
    */
   perAgent: number
+  /** Git processes the agents of one person may hold or wait for at once. */
+  perPerson: number
 }
 
 export const defaultGitProcessLimits: GitProcessLimits = {
@@ -43,6 +46,7 @@ export const defaultGitProcessLimits: GitProcessLimits = {
   queued: maxQueuedGitProcesses,
   waitMs: gitProcessWaitSeconds * 1000,
   perAgent: maxGitProcessesPerAgent,
+  perPerson: maxGitProcessesPerPerson,
 }
 
 /** The longest block of CGI headers `git http-backend` may write. */
@@ -52,28 +56,35 @@ const maxCgiHeaderBytes = 64 * 1024
  * Lets `running` Git processes run at once. Up to `queued` more requests
  * wait their turn, each at most `waitMs`, and leave the queue if their
  * client goes; past that, `acquire` answers `busy`. One agent may hold or
- * wait for at most `perAgent` of them; past that, `agent`.
+ * wait for at most `perAgent` of them (past that, `agent`), and the agents
+ * of one person together at most `perPerson` (past that, `person`): a
+ * person can make agents freely.
  */
 export function gitProcessGate(limits: GitProcessLimits) {
   let running = 0
   const waiting: ((granted: boolean) => void)[] = []
   const agents = new Map<string, number>()
-  const leave = (agent: string) => {
-    const left = (agents.get(agent) ?? 1) - 1
-    if (left === 0) agents.delete(agent)
-    else agents.set(agent, left)
+  const people = new Map<string, number>()
+  const add = (counts: Map<string, number>, key: string, by: number) => {
+    const next = (counts.get(key) ?? 0) + by
+    if (next === 0) counts.delete(key)
+    else counts.set(key, next)
+  }
+  const leave = (agent: string, person: string) => {
+    add(agents, agent, -1)
+    add(people, person, -1)
   }
   const release = () => {
     const next = waiting.shift()
     if (next) next(true)
     else running--
   }
-  const place = (agent: string) => {
+  const place = (agent: string, person: string) => {
     let held = true
     return () => {
       if (!held) return
       held = false
-      leave(agent)
+      leave(agent, person)
       release()
     }
   }
@@ -81,16 +92,19 @@ export function gitProcessGate(limits: GitProcessLimits) {
     async acquire(
       outgoing: ServerResponse | undefined,
       agent: string,
-    ): Promise<(() => void) | "busy" | "agent"> {
-      const mine = agents.get(agent) ?? 0
-      if (mine >= limits.perAgent) return "agent"
+      person: string,
+    ): Promise<(() => void) | "busy" | "agent" | "person"> {
+      if ((agents.get(agent) ?? 0) >= limits.perAgent) return "agent"
+      if ((people.get(person) ?? 0) >= limits.perPerson) return "person"
       if (running < limits.running) {
         running++
-        agents.set(agent, mine + 1)
-        return place(agent)
+        add(agents, agent, 1)
+        add(people, person, 1)
+        return place(agent, person)
       }
       if (waiting.length >= limits.queued) return "busy"
-      agents.set(agent, mine + 1)
+      add(agents, agent, 1)
+      add(people, person, 1)
       const granted = await new Promise<boolean>((resolve) => {
         const settle = (value: boolean) => {
           clearTimeout(timer)
@@ -105,10 +119,10 @@ export function gitProcessGate(limits: GitProcessLimits) {
         outgoing?.once("close", gone)
       })
       if (!granted) {
-        leave(agent)
+        leave(agent, person)
         return "busy"
       }
-      return place(agent)
+      return place(agent, person)
     },
   }
 }
@@ -166,6 +180,8 @@ export function createSmartHttp(options: {
    * default `answerStallSeconds`.
    */
   answerStallSeconds?: number
+  /** Opens a push's spool file; tests give one that fails. */
+  openSpool?: (path: string) => NodeJS.WritableStream
 }) {
   const { store, log } = options
   const processLimits = options.processes ?? defaultGitProcessLimits
@@ -174,6 +190,10 @@ export function createSmartHttp(options: {
   const answerStallMs =
     (options.answerStallSeconds ?? answerStallSeconds) * 1000
   let spooling = 0
+  const openSpool =
+    options.openSpool ??
+    ((path: string) => createWriteStream(path, { flags: "wx", mode: 0o600 }))
+  const spoolingBy = new Map<string, number>()
 
   return async (c: Context<GitAppEnv>): Promise<Response> => {
     const url = new URL(c.req.url)
@@ -223,41 +243,77 @@ export function createSmartHttp(options: {
     if (target.advertisement || !c.req.raw.body) {
       body = { size: 0 }
     } else {
+      // Push bodies take places in the spool, counted per agent before a
+      // byte is read, so one agent cannot fill it.
+      const agent = context.agent.id
+      if (push && (spoolingBy.get(agent) ?? 0) >= maxSpoolingPerAgent) {
+        return gitText(
+          429,
+          gitMessages.agentSpooling(maxSpoolingPerAgent, gitProcessWaitSeconds),
+          { "retry-after": String(gitProcessWaitSeconds) },
+        )
+      }
       if (push && spooling >= maxSpooling) {
         return gitText(429, gitMessages.busy, {
           "retry-after": String(gitProcessWaitSeconds),
         })
       }
-      if (push) spooling++
+      if (push) {
+        spooling++
+        spoolingBy.set(agent, (spoolingBy.get(agent) ?? 0) + 1)
+      }
       try {
         body = await receiveBody(c.req.raw.body, {
           limit,
           gzip,
           spool: push ? join(store.root, ".tmp") : null,
+          openSpool,
         })
       } catch (error) {
         if (error instanceof BodyTooLargeError)
           return gitText(413, tooLargeMessage(push))
         if (error instanceof BadGzipError)
           return gitText(400, gitMessages.badGzip)
+        const code = (error as { code?: string }).code
+        if (code === "ENOSPC" || code === "EDQUOT") {
+          // The Git service's own failure, not the client's.
+          log(
+            `The catalog volume is full: a push could not be received (${code})`,
+          )
+          return gitText(507, gitMessages.diskFull)
+        }
         // The client went, or stopped sending: there is no one to answer.
         return gitText(400, gitMessages.bodyCutShort)
       } finally {
-        if (push) spooling--
+        if (push) {
+          spooling--
+          const left = (spoolingBy.get(agent) ?? 1) - 1
+          if (left === 0) spoolingBy.delete(agent)
+          else spoolingBy.set(agent, left)
+        }
       }
     }
     const removeSpool = () => {
       if (body.file) rmSync(body.file, { force: true })
     }
 
-    const place = await gate.acquire(outgoing, context.agent.id)
+    const place = await gate.acquire(
+      outgoing,
+      context.agent.id,
+      context.person.id,
+    )
     if (typeof place === "string") {
       removeSpool()
       return gitText(
         429,
         place === "agent"
           ? gitMessages.agentBusy(processLimits.perAgent, gitProcessWaitSeconds)
-          : gitMessages.busy,
+          : place === "person"
+            ? gitMessages.personBusy(
+                processLimits.perPerson,
+                gitProcessWaitSeconds,
+              )
+            : gitMessages.busy,
         { "retry-after": String(gitProcessWaitSeconds) },
       )
     }
@@ -368,7 +424,7 @@ export function createSmartHttp(options: {
                 done = true
                 kill()
                 outgoing?.destroy()
-                controller.error(new Error("The client stopped reading"))
+                controller.error(quietError("The client stopped reading"))
               }, answerStallMs)
             }
           })
@@ -382,7 +438,7 @@ export function createSmartHttp(options: {
                 // Cut short: the connection is closed rather than the
                 // answer ended, so the client sees it is incomplete.
                 outgoing?.destroy()
-                controller.error(new Error("Git was stopped"))
+                controller.error(quietError("Git was stopped"))
               } else {
                 controller.close()
               }
@@ -419,6 +475,8 @@ export const answerStallSeconds = 30
 
 /** Push bodies being received into files at once, at most 64 MiB each. */
 const maxSpooling = 8
+/** Of those, how many one agent may be sending (review of GC-2). */
+export const maxSpoolingPerAgent = 2
 
 class BadGzipError extends Error {
   override name = "BadGzipError"
@@ -438,7 +496,12 @@ interface ReceivedBody {
  */
 async function receiveBody(
   stream: ReadableStream<Uint8Array>,
-  options: { limit: number; gzip: boolean; spool: string | null },
+  options: {
+    limit: number
+    gzip: boolean
+    spool: string | null
+    openSpool: (path: string) => NodeJS.WritableStream
+  },
 ): Promise<ReceivedBody> {
   let size = 0
   const chunks: Buffer[] = []
@@ -461,11 +524,7 @@ async function receiveBody(
     : null
   try {
     if (file) {
-      await pipeline(
-        source,
-        ...stages,
-        createWriteStream(file, { flags: "wx", mode: 0o600 }),
-      )
+      await pipeline(source, ...stages, options.openSpool(file))
       return { size, file }
     }
     await pipeline(source, ...stages, async (input: AsyncIterable<Buffer>) => {
@@ -479,6 +538,17 @@ async function receiveBody(
       throw new BadGzipError()
     throw error
   }
+}
+
+/**
+ * An error that ends an answer on purpose: `@hono/node-server` logs any
+ * other as a failure, but takes this code as the client's going (one
+ * `info` line), which is what it is or what Shinan did to it.
+ */
+function quietError(message: string): Error {
+  return Object.assign(new Error(message), {
+    code: "ERR_STREAM_PREMATURE_CLOSE",
+  })
 }
 
 function tooLargeMessage(push: boolean): string {

@@ -697,7 +697,11 @@ until the answer has been sent. After the code review of GC-2: one agent
 holds or waits for at most 2 of the 4 Git processes; a request's whole body
 arrives before Git starts (a fetch's in memory, a push's in a file on the
 volume, counted after inflating gzip); and a client that takes none of an
-answer for 30 seconds has its Git ended.
+answer for 30 seconds has its Git ended. After its second review: the
+agents of one person hold or wait for at most 3 Git processes, one agent
+sends at most 2 push bodies at once, and Git runs with
+`core.bigFileThreshold=1m`, so a small pack of a huge file never inflates
+in memory.
 
 ### 2.11 Backups and recovery
 

@@ -257,6 +257,7 @@ export {
   maxFetchBodyBytes,
   maxGitProcesses,
   maxGitProcessesPerAgent,
+  maxGitProcessesPerPerson,
   maxQueuedGitProcesses,
   gitProcessWaitSeconds,
   gitProcessSeconds,

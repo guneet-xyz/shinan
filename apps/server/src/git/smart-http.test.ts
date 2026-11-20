@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto"
 import { mkdtempSync, readdirSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { Writable } from "node:stream"
 import { gzipSync } from "node:zlib"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 
@@ -312,7 +313,13 @@ describe("the Git processes", () => {
 
   it("start no Git process until the body has arrived, so a slow sender holds none", async () => {
     const app = appWith({
-      gitProcesses: { running: 1, queued: 0, waitMs: 0, perAgent: 1 },
+      gitProcesses: {
+        running: 1,
+        queued: 0,
+        waitMs: 0,
+        perAgent: 1,
+        perPerson: 4,
+      },
     })
     // Never finishes sending its body.
     const slow = ask(app, `${repository}/git-upload-pack`, {
@@ -332,7 +339,13 @@ describe("the Git processes", () => {
 
   it("let one agent hold at most two: others are still served", async () => {
     const app = appWith({
-      gitProcesses: { running: 4, queued: 4, waitMs: 500, perAgent: 2 },
+      gitProcesses: {
+        running: 4,
+        queued: 4,
+        waitMs: 500,
+        perAgent: 2,
+        perPerson: 4,
+      },
     })
     const agent = context.agent.id
     const held = [
@@ -360,7 +373,13 @@ describe("the Git processes", () => {
 
   it("are capped: past the running and waiting ones, 429 with Retry-After", async () => {
     const app = appWith({
-      gitProcesses: { running: 1, queued: 1, waitMs: 500, perAgent: 4 },
+      gitProcesses: {
+        running: 1,
+        queued: 1,
+        waitMs: 500,
+        perAgent: 4,
+        perPerson: 4,
+      },
     })
     const held = await stalledReader(app, context.agent.id)
     expect(held.status).toBe(200)
@@ -380,7 +399,13 @@ describe("the Git processes", () => {
 
   it("end Git when its client takes none of the answer for a while, and serve the next", async () => {
     const app = appWith({
-      gitProcesses: { running: 1, queued: 0, waitMs: 0, perAgent: 1 },
+      gitProcesses: {
+        running: 1,
+        queued: 0,
+        waitMs: 0,
+        perAgent: 1,
+        perPerson: 4,
+      },
       answerStallSeconds: 1,
     })
     const started = Date.now()
@@ -407,6 +432,137 @@ describe("the Git processes", () => {
     await new Promise((resolve) => setTimeout(resolve, 1500))
     await expect(response.arrayBuffer()).rejects.toThrow()
     expect(Date.now() - started).toBeLessThan(10_000)
+  })
+})
+
+describe("the caps per person and per agent", () => {
+  const advertisement = `${repository}/info/refs?service=git-upload-pack`
+  const as = (agent: string, person: string) => ({
+    ...context,
+    agent: { id: agent, handle: "opencode-x" },
+    person: { id: person, handle: "someone" },
+  })
+  const agents = [
+    "5b9c1a2e-3d4f-4a5b-8c6d-7e8f9a0b1c2d",
+    "6b9c1a2e-3d4f-4a5b-8c6d-7e8f9a0b1c2d",
+    "7b9c1a2e-3d4f-4a5b-8c6d-7e8f9a0b1c2d",
+  ]
+  const people = [
+    "8b9c1a2e-3d4f-4a5b-8c6d-7e8f9a0b1c2d",
+    "9b9c1a2e-3d4f-4a5b-8c6d-7e8f9a0b1c2d",
+  ]
+  const hold = (app: ReturnType<typeof createGitApp>, who: GitRequestContext) =>
+    ask(app, `${repository}/git-upload-pack`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/x-git-upload-pack-request",
+        "git-protocol": "version=2",
+      },
+      body: [
+        line("command=fetch\n"),
+        "0001",
+        line(`want ${big}\n`),
+        line("done\n"),
+        "0000",
+      ].join(""),
+      context: who,
+    })
+
+  it("let the agents of one person hold at most three Git processes: another person is still served", async () => {
+    const app = appWith({
+      gitProcesses: {
+        running: 4,
+        queued: 4,
+        waitMs: 500,
+        perAgent: 2,
+        perPerson: 3,
+      },
+    })
+    const held = [
+      await hold(app, as(agents[0]!, people[0]!)),
+      await hold(app, as(agents[0]!, people[0]!)),
+      await hold(app, as(agents[1]!, people[0]!)),
+    ]
+    expect(held.map((r) => r.status)).toEqual([200, 200, 200])
+    const fourth = await ask(app, advertisement, {
+      context: as(agents[2]!, people[0]!),
+    })
+    expect(fourth.status).toBe(429)
+    expect(await fourth.text()).toBe(`${gitMessages.personBusy(3, 10)}\n`)
+    const other = await ask(app, advertisement, {
+      context: as(agents[2]!, people[1]!),
+    })
+    expect(other.status).toBe(200)
+    await other.arrayBuffer()
+    for (const response of held) await response.body!.cancel()
+  })
+
+  it("let one agent send at most two push bodies at once: another agent's push is still received", async () => {
+    const app = appWith()
+    const bodies: ReadableStreamDefaultController<Uint8Array>[] = []
+    const trickle = (who: GitRequestContext) => {
+      const answer = ask(app, `${repository}/git-receive-pack`, {
+        method: "POST",
+        headers: { "content-type": "application/x-git-receive-pack-request" },
+        body: new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode("0098"))
+            bodies.push(controller)
+          },
+        }),
+        duplex: "half",
+        context: who,
+      })
+      void Promise.resolve(answer).catch(() => {})
+    }
+    trickle(as(agents[0]!, people[0]!))
+    trickle(as(agents[0]!, people[0]!))
+    await new Promise((resolve) => setTimeout(resolve, 200))
+    const third = await ask(app, `${repository}/git-receive-pack`, {
+      method: "POST",
+      headers: { "content-type": "application/x-git-receive-pack-request" },
+      body: "0000",
+      context: as(agents[0]!, people[0]!),
+    })
+    expect(third.status).toBe(429)
+    expect(await third.text()).toBe(`${gitMessages.agentSpooling(2, 10)}\n`)
+    const other = await ask(app, `${repository}/git-receive-pack`, {
+      method: "POST",
+      headers: { "content-type": "application/x-git-receive-pack-request" },
+      body: "0000",
+      context: as(agents[1]!, people[1]!),
+    })
+    expect(other.status).toBe(200)
+    await other.arrayBuffer()
+    // The trickling clients go; their spool files go with them.
+    for (const body of bodies) body.error(new Error("gone"))
+  })
+
+  it("answer a full disk as the Git service's own failure, once in the log", async () => {
+    const logged: string[] = []
+    const app = appWith({
+      log: (line: string) => logged.push(line),
+      openSpool: () =>
+        new Writable({
+          write(_chunk, _encoding, done) {
+            done(
+              Object.assign(new Error("no space left on device"), {
+                code: "ENOSPC",
+              }),
+            )
+          },
+        }),
+    })
+    const response = await ask(app, `${repository}/git-receive-pack`, {
+      method: "POST",
+      headers: { "content-type": "application/x-git-receive-pack-request" },
+      body: "0000",
+    })
+    expect(response.status).toBe(507)
+    expect(await response.text()).toBe(`${gitMessages.diskFull}\n`)
+    expect(logged).toEqual([
+      "The catalog volume is full: a push could not be received (ENOSPC)",
+    ])
   })
 })
 

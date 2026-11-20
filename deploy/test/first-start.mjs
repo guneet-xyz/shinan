@@ -16,13 +16,14 @@
 // Needs Docker with Compose 2.23.1 or later. Ports: TEST_HTTPS_PORT (18443),
 // TEST_MAILPIT_PORT (18025) and SHINAN_PORT (13000) on 127.0.0.1. Everything
 // it creates is removed at the end unless --keep is given.
-import { execFileSync, spawnSync } from "node:child_process"
+import { execFileSync, spawn, spawnSync } from "node:child_process"
 import { randomBytes } from "node:crypto"
 import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
+  truncateSync,
   writeFileSync,
 } from "node:fs"
 import { tmpdir } from "node:os"
@@ -180,6 +181,42 @@ function agentGit(args, { cwd = dir, token } = {}) {
   return { code: result.status, stdout: result.stdout, stderr: result.stderr }
 }
 
+/** As `agentGit`, without waiting: several agents at once, each with its own home. */
+function agentGitAsync(args, { cwd, home, token }) {
+  mkdirSync(join(home, ".config", "shinan"), { recursive: true })
+  writeFileSync(join(home, ".config", "shinan", "token"), token, {
+    mode: 0o600,
+  })
+  return new Promise((resolve) => {
+    const child = spawn(
+      "git",
+      [
+        "-c",
+        "http.sslVerify=false",
+        "-c",
+        `credential.${installationUrl}.helper=`,
+        "-c",
+        `credential.${installationUrl}.helper=!f(){ test "$1" = get && printf "username=agent\\npassword=%s\\n" "$(cat ~/.config/shinan/token)"; }; f`,
+        ...args,
+      ],
+      {
+        cwd,
+        env: {
+          PATH: process.env.PATH,
+          HOME: home,
+          GIT_CONFIG_NOSYSTEM: "1",
+          GIT_TERMINAL_PROMPT: "0",
+          LC_ALL: "C",
+        },
+      },
+    )
+    let stderr = ""
+    child.stderr.on("data", (chunk) => (stderr += chunk))
+    child.stdout.resume()
+    child.on("close", (code) => resolve({ code, stderr }))
+  })
+}
+
 let passed = 0
 function check(condition, description) {
   if (!condition) throw new Error(`Check failed: ${description}`)
@@ -190,6 +227,7 @@ function check(condition, description) {
 /** A browser: keeps cookies and sends what browsers send to the site. */
 const cookies = new Map()
 async function request(path, init = {}) {
+  const jar = init.cookies ?? cookies
   const headers = {
     origin: installationUrl,
     "sec-fetch-site": "same-origin",
@@ -197,8 +235,8 @@ async function request(path, init = {}) {
       "Mozilla/5.0 (X11; Linux x86_64) Gecko/20100101 Firefox/140.0",
     ...init.headers,
   }
-  if (cookies.size > 0) {
-    headers.cookie = [...cookies].map(([k, v]) => `${k}=${v}`).join("; ")
+  if (jar.size > 0) {
+    headers.cookie = [...jar].map(([k, v]) => `${k}=${v}`).join("; ")
   }
   if (init.body !== undefined) headers["content-type"] = "application/json"
   const response = await fetch(new URL(path, installationUrl), {
@@ -210,7 +248,7 @@ async function request(path, init = {}) {
   for (const cookie of response.headers.getSetCookie()) {
     const [pair] = cookie.split(";")
     const index = pair.indexOf("=")
-    cookies.set(pair.slice(0, index), pair.slice(index + 1))
+    jar.set(pair.slice(0, index), pair.slice(index + 1))
   }
   return response
 }
@@ -978,6 +1016,108 @@ async function run() {
   check(
     Number(psql("select sum(fetch_count) from agent_tokens")) === 5,
     "each token's fetches are counted for the security log's hourly summary",
+  )
+
+  // A second person, invited to the workspace, with an agent of their own:
+  // the agents of one person share a cap of 3 Git processes.
+  const member = "member@example.com"
+  const memberCookies = new Map()
+  const latestMail = (to, subject) =>
+    waitFor(`the email "${subject}" to ${to}`, async () => {
+      const search = await fetch(
+        `${mailpitUrl}/api/v1/search?query=${encodeURIComponent(`to:${to} subject:"${subject}"`)}`,
+      )
+      const { messages } = await search.json()
+      if (!messages?.length) return null
+      const full = await fetch(`${mailpitUrl}/api/v1/message/${messages[0].ID}`)
+      return (await full.json()).Text
+    })
+  const allowed = await request("/api/installation/allowlist", {
+    body: { email: member },
+  })
+  const invited = await request(`/api/workspaces/${workspaceId}/invitations`, {
+    body: { email: member, role: "contributor" },
+  })
+  const invitationText = await latestMail(member, "invit")
+  await request("/api/auth/sign-in/magic-link", {
+    body: { email: member, callbackURL: "/" },
+    cookies: memberCookies,
+  })
+  const memberLink = new URL(
+    (await latestMail(member, "Sign in")).match(/https:\/\/\S+/)[0],
+  )
+  const memberFragment = new URLSearchParams(memberLink.hash.slice(1))
+  await request("/api/sign-in/link", {
+    body: {
+      token: memberFragment.get("token"),
+      next: memberFragment.get("next"),
+    },
+    cookies: memberCookies,
+  })
+  const accepted = await request("/api/invitations/accept", {
+    body: { token: /\/invitation#(\S+)/.exec(invitationText)?.[1] },
+    cookies: memberCookies,
+  })
+  const memberAgent = await request(`/api/workspaces/${workspaceId}/agents`, {
+    body: { codingTool: "opencode", machine: "member", access: "full" },
+    cookies: memberCookies,
+  })
+  check(
+    allowed.status === 204 &&
+      invited.status === 201 &&
+      accepted.status === 200 &&
+      memberAgent.status === 201,
+    `the operator invites a second person, who signs in, accepts and makes an agent token (${[allowed.status, invited.status, accepted.status, memberAgent.status]})`,
+  )
+  const memberToken = (await memberAgent.json()).token
+
+  // A "zip bomb": one commit holding a 450 MiB file of zeros, which packs
+  // to under 0.5 MiB. Four pushes of it at once, by three agents of two
+  // people (the most four Git processes the caps allow): Git streams
+  // objects past core.bigFileThreshold to disk instead of inflating them in
+  // memory, so `git` stays up (review of GC-2).
+  const secondToken = await issue("first-start-b", "full")
+  const bomb = clones[0].folder
+  // Sparse: no disk is used for the zeros.
+  writeFileSync(join(bomb, "zeros.bin"), "")
+  truncateSync(join(bomb, "zeros.bin"), 450 * 1024 * 1024)
+  agentGit(["-c", "core.bigFileThreshold=1m", "add", "zeros.bin"], {
+    cwd: bomb,
+  })
+  agentGit(
+    [
+      "-c",
+      "user.name=Agent",
+      "-c",
+      "user.email=agent@example.com",
+      "commit",
+      "--quiet",
+      "-m",
+      "Zeros",
+    ],
+    { cwd: bomb },
+  )
+  rmSync(join(bomb, "zeros.bin"))
+  const gitBefore = inspect("git", "{{.RestartCount}}")
+  const bombs = await Promise.all(
+    [fullToken, secondToken, memberToken, memberToken].map((token, i) =>
+      agentGitAsync(["push", "origin", `HEAD:refs/heads/zeros-${i}`], {
+        cwd: bomb,
+        home: join(dir, `bomb-home-${i}`),
+        token,
+      }),
+    ),
+  )
+  check(
+    bombs.every(
+      (p) =>
+        p.code !== 0 &&
+        p.stderr.includes("remote: Shinan") &&
+        !/signal 9|died of signal|unpack-objects abnormal/.test(p.stderr),
+    ) &&
+      inspect("git", "{{.RestartCount}} {{.State.OOMKilled}}") ===
+        `${gitBefore} false`,
+    `4 pushes at once of a 450 MiB file of zeros (a pack of under 0.5 MiB) are refused by Shinan, and git stays up (peak ${gitMemoryPeak()}; ${JSON.stringify(bombs.map((p) => p.stderr.split("\n").filter((l) => l.startsWith("remote:"))[0] ?? p.stderr.slice(0, 120)))})`,
   )
 
   const addresses = psql(

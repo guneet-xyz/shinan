@@ -172,7 +172,13 @@ process.exitCode = 1
     journal: openJournal(join(work, "catalog")),
     log: () => {},
     // Two Git processes at once and none waiting, for the process cap.
-    gitProcesses: { running: 2, queued: 0, waitMs: 0, perAgent: 2 },
+    gitProcesses: {
+      running: 2,
+      queued: 0,
+      waitMs: 0,
+      perAgent: 2,
+      perPerson: 4,
+    },
   })
   gitServer = serve({
     fetch: (request, env) => {

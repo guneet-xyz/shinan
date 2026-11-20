@@ -199,6 +199,8 @@ export function createGitApp(options: {
   gitProcessSeconds?: number
   /** How long a client may take none of an answer, in seconds; default `answerStallSeconds`. */
   answerStallSeconds?: number
+  /** Opens a push's spool file; tests give one that fails. */
+  openSpool?: (path: string) => NodeJS.WritableStream
 }) {
   const log = options.log ?? createLimitedLog()
   const authorized = serviceTokenCheck(options.serviceToken)
@@ -425,6 +427,7 @@ export function createGitApp(options: {
       processes: options.gitProcesses,
       processSeconds: options.gitProcessSeconds,
       answerStallSeconds: options.answerStallSeconds,
+      openSpool: options.openSpool,
     }),
   )
 

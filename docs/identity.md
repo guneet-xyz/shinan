@@ -1210,7 +1210,8 @@ restriction stays possible later.
   most 60 pushes in 10 minutes per agent (`429` with `Retry-After`); the
   caps on requests in flight shared with `/mcp` (8 per token, 16 per
   address); at most 4 Git processes at once in the Git container, at most
-  2 of them per agent, with 16 waiting up to 10 seconds, then `429` with
+  2 of them per agent and 3 per person, 2 push bodies received at once per
+  agent, with 16 waiting up to 10 seconds, then `429` with
   `Retry-After`; a request's whole body received before Git starts (counted
   after inflating gzip); 10 minutes per Git process, and 30 seconds for a
   client that takes none of the answer. Another workspace's token gets the same `404` as a

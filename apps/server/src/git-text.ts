@@ -68,6 +68,12 @@ export const gitMessages = {
   gitFailed:
     "Shinan: the Git service could not answer. Try again in a few seconds.",
   busy: "Shinan: the Git service is busy with other fetches and pushes. Try again in 10 seconds.",
+  personBusy: (processes: number, seconds: number) =>
+    `Shinan: your person's agents already have ${processes} fetches or pushes running. Try again in ${count(seconds, "second")}.`,
+  agentSpooling: (pushes: number, seconds: number) =>
+    `Shinan: this agent is already sending ${pushes === 1 ? "a push" : `${pushes} pushes`}. Try again in ${count(seconds, "second")}, one at a time.`,
+  diskFull:
+    "Shinan: the Git service's disk is full, so nothing was changed. Tell its operator.",
   agentBusy: (processes: number, seconds: number) =>
     `Shinan: this agent already has ${processes} ${processes === 1 ? "fetch or push" : "fetches or pushes"} running. Try again in ${count(seconds, "second")}, one at a time.`,
   // Only a broken or unusual client, or a bug between web and the Git
