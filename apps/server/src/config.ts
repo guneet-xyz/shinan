@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 
-import { isEmailAddress } from "@shinan/core"
+import { isEmailAddress, serviceTokenMinLength } from "@shinan/core"
 import type { EmailFrom } from "@shinan/email"
 
 import { parseTrustedProxies } from "./client-address.js"
@@ -266,4 +266,76 @@ export function readEmailConfig(
         `EMAIL_TRANSPORT must be ses or smtp, got "${transport}"`,
       )
   }
+}
+
+/** How `web`, `worker` and `migrate` reach the Git container (D-065). */
+export interface GitClientConfig {
+  /** `SHINAN_GIT_URL`, such as `http://git:3000`. */
+  url: string
+  /** `SHINAN_GIT_SERVICE_TOKEN` (or `_FILE`). */
+  serviceToken: string
+}
+
+/**
+ * The Git container's address and service token, or `undefined` when
+ * neither is set, which only development allows: in production both are
+ * needed, since workspaces' repositories live there.
+ */
+export function readGitClientConfig(
+  env: Env,
+  readFile?: (path: string) => string,
+): GitClientConfig | undefined {
+  const url = env.SHINAN_GIT_URL || undefined
+  const serviceToken = readServiceToken(env, readFile)
+  if (url === undefined && serviceToken === undefined) {
+    if (env.NODE_ENV === "production") {
+      throw new SettingsError(
+        "SHINAN_GIT_URL and SHINAN_GIT_SERVICE_TOKEN are not set: they name the Git container",
+      )
+    }
+    return undefined
+  }
+  if (url === undefined || serviceToken === undefined) {
+    throw new SettingsError(
+      "Set both SHINAN_GIT_URL and SHINAN_GIT_SERVICE_TOKEN, or neither",
+    )
+  }
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    throw new SettingsError(`SHINAN_GIT_URL must be an address, got "${url}"`)
+  }
+  if (
+    (parsed.protocol !== "http:" && parsed.protocol !== "https:") ||
+    parsed.pathname !== "/" ||
+    parsed.search ||
+    parsed.hash ||
+    parsed.username ||
+    parsed.password
+  ) {
+    throw new SettingsError(
+      "SHINAN_GIT_URL must be an origin, such as http://git:3000",
+    )
+  }
+  return { url: parsed.origin, serviceToken }
+}
+
+/** `SHINAN_GIT_SERVICE_TOKEN` (or `_FILE`), at least 32 characters. */
+export function readServiceToken(
+  env: Env,
+  readFile?: (path: string) => string,
+): string | undefined {
+  const token = readSecret(env, "SHINAN_GIT_SERVICE_TOKEN", readFile)
+  if (token !== undefined && token.length < serviceTokenMinLength) {
+    throw new SettingsError(
+      `SHINAN_GIT_SERVICE_TOKEN must be at least ${serviceTokenMinLength} characters`,
+    )
+  }
+  if (token !== undefined && /\s/.test(token)) {
+    throw new SettingsError(
+      "SHINAN_GIT_SERVICE_TOKEN cannot hold spaces or line breaks",
+    )
+  }
+  return token
 }

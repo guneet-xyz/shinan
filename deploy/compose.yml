@@ -9,9 +9,10 @@
 #   docker compose logs web     the one-time setup link, on first start
 #
 # Services: PostgreSQL, `migrate` (prepares the database, then exits), `web`
-# (pages and API) and `worker` (background jobs and email). Put an HTTPS
-# reverse proxy in front of `web`; Shinan never serves plain HTTP to the
-# internet. This file starts no proxy.
+# (pages and API), `worker` (background jobs and email) and `git` (the
+# catalog's Git repositories, reachable only by the other roles). Put an
+# HTTPS reverse proxy in front of `web`; Shinan never serves plain HTTP to
+# the internet. This file starts no proxy.
 name: shinan
 
 x-shinan: &shinan
@@ -38,6 +39,10 @@ networks:
     internal: true
   # Outgoing internet access for `web` (GitHub sign-in) and `worker` (SES).
   egress: {}
+  # The Git container and the roles that call it. No internet access, and
+  # the Git container is on no other network.
+  git:
+    internal: true
 
 services:
   postgres:
@@ -136,10 +141,14 @@ services:
       SES_CONFIGURATION_SET: ${SES_CONFIGURATION_SET:-}
       SES_ACCESS_KEY_ID_FILE: /run/secrets/ses_access_key_id
       SES_SECRET_ACCESS_KEY_FILE: /run/secrets/ses_secret_access_key
+      # Makes each new workspace's repository in the Git container.
+      SHINAN_GIT_URL: http://git:3000
+      SHINAN_GIT_SERVICE_TOKEN_FILE: /run/secrets/git_service_token
     secrets:
       - database_url
       - ses_access_key_id
       - ses_secret_access_key
+      - git_service_token
     # The worker has no listener to check.
     healthcheck:
       disable: true
@@ -151,6 +160,29 @@ services:
     networks:
       - backend
       - egress
+      - git
+
+  # The catalog's Git repositories (architecture §3.2, D-065): one bare
+  # repository per workspace on the `catalog` volume, served to the other
+  # roles over the internal `git` network only, to requests carrying the
+  # service token. It holds that token and nothing else: no database
+  # address, no other secret, no internet access, no published port. Its
+  # health check is the image's own (its internal listener, inside the
+  # container).
+  git:
+    <<: *shinan
+    command: git
+    environment:
+      SHINAN_CATALOG_DIR: /var/lib/shinan/catalog
+      SHINAN_GIT_SERVICE_TOKEN_FILE: /run/secrets/git_service_token
+    secrets:
+      - git_service_token
+    volumes:
+      - catalog:/var/lib/shinan/catalog
+    mem_limit: ${SHINAN_GIT_MEMORY:-1024m}
+    stop_grace_period: 30s
+    networks:
+      - git
 
 secrets:
   postgres_password:
@@ -163,6 +195,10 @@ secrets:
     file: ./secrets/ses_access_key_id
   ses_secret_access_key:
     file: ./secrets/ses_secret_access_key
+  git_service_token:
+    file: ./secrets/git_service_token
 
 volumes:
   postgres:
+  # The catalog's repositories and the Git container's journal.
+  catalog:

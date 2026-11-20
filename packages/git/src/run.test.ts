@@ -1,9 +1,23 @@
-import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs"
+import {
+  chmodSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 
-import { commandOf, createGit, findProgram, GitError } from "./run.js"
+import {
+  commandOf,
+  createGit,
+  findProgram,
+  GitError,
+  privateHome,
+} from "./run.js"
 import { commitFiles, createFixtureRepository } from "./testing.js"
 
 const git = createGit()
@@ -106,6 +120,10 @@ describe("the environment Git starts with", () => {
     const refused = [
       // The clean environment's own, every one of them.
       ...Object.keys(git.environment()),
+      // The repository is gitDir's alone.
+      "GIT_DIR",
+      "GIT_WORK_TREE",
+      "GIT_COMMON_DIR",
       // Configuration and Git's programs.
       "GIT_CONFIG",
       "GIT_CONFIG_SYSTEM",
@@ -162,6 +180,53 @@ describe("the environment Git starts with", () => {
         () => git.spawn(["--version"], { env: { [key]: "x" } }),
         key,
       ).toThrow(GitError)
+    }
+  })
+})
+
+describe("Git's HOME", () => {
+  it("is one folder for every runner and process of this user, so none is left behind", async () => {
+    const homes = () =>
+      readdirSync(tmpdir()).filter((name) =>
+        name.startsWith("shinan-git-home-"),
+      )
+    const before = homes()
+    for (let i = 0; i < 5; i++) {
+      const runner = createGit()
+      await runner.run(["--version"])
+      await runner
+        .run(["-c", "alias.linger=!sleep 30", "linger"], { timeoutMs: 200 })
+        .catch(() => {})
+    }
+    const home = `shinan-git-home-${process.getuid!()}`
+    // Folders other runs left behind before this fix may still be there.
+    expect(
+      homes().filter((name) => !before.includes(name) && name !== home),
+    ).toEqual([])
+    expect(homes()).toContain(home)
+    expect(createGit().environment().HOME).toBe(join(tmpdir(), home))
+  })
+
+  it("is refused unless it is this user's private, empty folder", () => {
+    const folder = mkdtempSync(join(tmpdir(), "shinan-git-home-test-"))
+    try {
+      const home = join(folder, `shinan-git-home-${process.getuid!()}`)
+      expect(privateHome(folder)).toBe(home)
+      expect(statSync(home).mode & 0o777).toBe(0o700)
+      expect(privateHome(folder)).toBe(home)
+
+      writeFileSync(join(home, ".gitconfig"), "[alias]\n\tx = !id\n")
+      expect(() => privateHome(folder)).toThrow(GitError)
+      rmSync(join(home, ".gitconfig"))
+
+      chmodSync(home, 0o755)
+      expect(() => privateHome(folder)).toThrow(/mode 0700/)
+      rmSync(home, { recursive: true })
+
+      symlinkSync(folder, home)
+      expect(() => privateHome(folder)).toThrow(GitError)
+    } finally {
+      rmSync(folder, { recursive: true, force: true })
     }
   })
 })

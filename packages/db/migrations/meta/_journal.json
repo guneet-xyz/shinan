@@ -99,6 +99,13 @@
       "when": 1795088239191,
       "tag": "0013_catalog_write_scope",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1795147185099,
+      "tag": "0014_catalog_repositories",
+      "breakpoints": true
     }
   ]
 }

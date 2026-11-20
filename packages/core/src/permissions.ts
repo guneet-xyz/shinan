@@ -256,6 +256,17 @@ export const rules = deepFreeze({
     shinan: true,
   },
   /**
+   * Make a workspace's catalog repository in the Git container once the
+   * workspace exists (Git-based catalog plan §2.4). The worker does this as
+   * Shinan; the request is made when the workspace is created.
+   */
+  "catalog-repository.create": {
+    level: "installation",
+    access: "write",
+    people: false,
+    shinan: true,
+  },
+  /**
    * Installation operators see the agent index's health: which workspaces'
    * indexes are behind or failed the round-trip check (architecture §5.2,
    * rule 5, §13). It shows workspace IDs and counts, never catalog content.

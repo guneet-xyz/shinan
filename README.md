@@ -99,6 +99,17 @@ instead be read from a file: set `NAME_FILE` to its path rather than `NAME`
 | `GITHUB_CLIENT_SECRET`         | none                                                 | The GitHub App's client secret (secret)                                                                 |
 | `SIGN_IN_SESSION_IDLE_MINUTES` | `60`                                                 | A sign-in session ends after this long without activity                                                 |
 | `SIGN_IN_SESSION_MAX_HOURS`    | `24`                                                 | A sign-in session ends after this long in any case                                                      |
+| `SHINAN_GIT_URL`               | none (required in production, for `worker`)          | The Git container's internal address, such as `http://git:3000`                                         |
+| `SHINAN_GIT_SERVICE_TOKEN`     | none (required by the `git` role)                    | The service token the Git container accepts; at least 32 characters (secret)                            |
+| `SHINAN_CATALOG_DIR`           | `/var/lib/shinan/catalog`                            | The `git` role's folder of repositories and its journal; mode `0700`, owned by the role's user          |
+
+The `git` role (the Git container, [architecture 3.2](docs/architecture.md#32-process-model))
+runs from the image: its push hook starts `/nodejs/bin/node`, and the role
+refuses to start unless that hook runs. Without `SHINAN_GIT_URL` and
+`SHINAN_GIT_SERVICE_TOKEN`, a development worker leaves new workspaces'
+repositories waiting; the reference Compose file
+([operator guide](docs/operator-guide.md)) runs all roles together, and the
+tests run the `git` role's API against temporary folders.
 
 In development the worker sends email to Mailpit; open http://localhost:8025
 to read it. Email is queued as a job in the same transaction as the change

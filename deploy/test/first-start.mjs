@@ -66,6 +66,8 @@ writeSecret(
 writeSecret("session_secret", randomBytes(32).toString("base64url"))
 writeSecret("ses_access_key_id", "unused-in-this-test")
 writeSecret("ses_secret_access_key", "unused-in-this-test")
+const gitServiceToken = randomBytes(32).toString("base64url")
+writeSecret("git_service_token", gitServiceToken)
 writeFileSync(
   join(dir, ".env"),
   [
@@ -210,7 +212,9 @@ function writableAppFiles() {
     const notRunnable = programs.filter((p) => { try { fs.accessSync(p, fs.constants.X_OK); return false } catch { return true } })
     const shells = ["/bin/sh", "/bin/bash", "/bin/dash", "/usr/bin/sh", "/usr/bin/bash", "/usr/bin/dash", "/bin/busybox", "/usr/bin/perl", "/usr/bin/python3"]
       .filter((p) => { try { fs.lstatSync(p); return true } catch { return false } })
-    console.log(JSON.stringify({ uid: process.getuid(), checked, writable, loose, unreadable, libraries, notRunnable, shells }))`
+    const c = fs.statSync("/var/lib/shinan/catalog")
+    const catalog = c.uid + ":" + c.gid + " " + (c.mode & 0o7777).toString(8) + " " + fs.readdirSync("/var/lib/shinan/catalog").length
+    console.log(JSON.stringify({ uid: process.getuid(), checked, writable, loose, unreadable, libraries, notRunnable, shells, catalog }))`
   return JSON.parse(
     execFileSync(
       "docker",
@@ -271,6 +275,321 @@ async function healthy() {
   return inspect("web", "{{.State.Health.Status}}") === "healthy"
 }
 
+/**
+ * Asks the Git container from a container on `network`, as `worker` does:
+ * Node.js in the Shinan image, with the given token (or none). Answers the
+ * status and body, or the error's code when nothing answered.
+ */
+function askGit(network, path, token) {
+  const script = `
+    const headers = process.env.TOKEN ? { authorization: "Bearer " + process.env.TOKEN } : {}
+    fetch("http://git:3000" + process.env.ASK, { headers, signal: AbortSignal.timeout(5000) })
+      .then(async (r) => console.log(JSON.stringify({ status: r.status, body: await r.json() })))
+      .catch((e) => console.log(JSON.stringify({ error: e.cause?.code ?? e.name })))`
+  return JSON.parse(
+    execFileSync(
+      "docker",
+      [
+        "run",
+        "--rm",
+        "--network",
+        `${project}_${network}`,
+        "--env",
+        `ASK=${path}`,
+        "--env",
+        `TOKEN=${token ?? ""}`,
+        "--entrypoint",
+        "/nodejs/bin/node",
+        image,
+        "-e",
+        script,
+      ],
+      { encoding: "utf8" },
+    ),
+  )
+}
+
+/**
+ * A request to the Git container that answers only a summary of what came
+ * back, for answers too large to pass through a command's output.
+ */
+function askGitSummary(path, body) {
+  const script = `
+    fetch("http://git:3000" + process.env.ASK, {
+      method: process.env.BODY ? "POST" : "GET",
+      headers: { authorization: "Bearer " + process.env.TOKEN, "content-type": "application/json" },
+      body: process.env.BODY || undefined,
+      signal: AbortSignal.timeout(120000),
+    })
+      .then(async (r) => {
+        const b = await r.json()
+        const documents = b.documents ?? []
+        const commits = b.commits ?? []
+        console.log(JSON.stringify({
+          status: r.status,
+          read: documents.filter((d) => d.content).length,
+          bytes: documents.reduce((n, d) => n + (d.content ? Buffer.from(d.content, "base64").length : 0), 0),
+          deferred: documents.filter((d) => d.deferred).length,
+          commits: commits.length,
+          truncated: commits.filter((c) => c.truncated).length,
+          longest: Math.max(0, ...commits.map((c) => Buffer.byteLength(c.message))),
+          changesTruncated: commits.filter((c) => c.changesTruncated).length,
+          mostChanges: Math.max(0, ...commits.map((c) => c.changes.length)),
+          mostChanged: Math.max(0, ...commits.map((c) => c.changeCount)),
+        }))
+      })
+      .catch((e) => console.log(JSON.stringify({ error: e.cause?.code ?? e.name })))`
+  return JSON.parse(
+    execFileSync(
+      "docker",
+      [
+        "run",
+        "--rm",
+        "--network",
+        `${project}_git`,
+        "--env",
+        `ASK=${path}`,
+        "--env",
+        `TOKEN=${gitServiceToken}`,
+        "--env",
+        `BODY=${body ? JSON.stringify(body) : ""}`,
+        "--entrypoint",
+        "/nodejs/bin/node",
+        image,
+        "-e",
+        script,
+      ],
+      { encoding: "utf8" },
+    ),
+  )
+}
+
+/**
+ * Inside the running `git` container, as its own user: a repository whose
+ * commits are heavy to read but light to store, as an agent could push
+ * them from GC-3 on. Its `main` has 1,000 paths to one 1 MiB blob, on top
+ * of 70 commits with 15 MiB messages.
+ */
+function writeHeavyRepository(workspaceId) {
+  const script = `
+    const { randomBytes } = await import("node:crypto")
+    const { createGit, writeCommit } = await import("/app/packages/git/dist/index.js")
+    const git = createGit()
+    const gitDir = "/var/lib/shinan/catalog/${workspaceId}.git"
+    const identity = { name: "Test", email: "test@example.com" }
+    let head = (await git.run(["rev-parse", "refs/heads/main"], { gitDir })).stdout.toString().trim()
+    const message = "Long\\n\\n" + "x".repeat(15 * 1024 * 1024) + "\\n"
+    for (let i = 0; i < 70; i++) {
+      head = await writeCommit(git, gitDir, { files: [{ path: "README.md", content: "# Catalog\\n" }], message, identity, parents: [head], temporaryDir: gitDir })
+    }
+    const blob = (await git.run(["hash-object", "-w", "--stdin"], { gitDir, input: randomBytes(1024 * 1024) })).stdout.toString().trim()
+    const env = { GIT_INDEX_FILE: gitDir + "/heavy-index" }
+    const entries = Array.from({ length: 1000 }, (_, i) => "100644 " + blob + "\\tthing/" + i + ".md").join("\\n") + "\\n"
+    await git.run(["update-index", "--add", "--index-info"], { gitDir, env, input: entries })
+    const tree = (await git.run(["write-tree"], { gitDir, env })).stdout.toString().trim()
+    head = (await git.run(["commit-tree", "-p", head, "-m", "Many", tree], { gitDir, env: { ...env, GIT_AUTHOR_NAME: "T", GIT_AUTHOR_EMAIL: "t@example.com", GIT_COMMITTER_NAME: "T", GIT_COMMITTER_EMAIL: "t@example.com" } })).stdout.toString().trim()
+    await git.run(["update-ref", "refs/heads/main", head], { gitDir })
+    console.log(head)`
+  const id = compose("ps", "--quiet", "git").trim()
+  return execFileSync(
+    "docker",
+    ["exec", id, "/nodejs/bin/node", "--input-type=module", "-e", script],
+    { encoding: "utf8" },
+  ).trim()
+}
+
+/**
+ * Inside the running `git` container: a branch off `main` whose tree holds
+ * 250,000 paths (one blob, in 250 folders), as an agent's push could.
+ * Answers its commit.
+ */
+function writeWideBranch(workspaceId, parent) {
+  const script = `
+    const { createGit } = await import("/app/packages/git/dist/index.js")
+    const git = createGit({ timeoutMs: 600000 })
+    const gitDir = "/var/lib/shinan/catalog/${workspaceId}.git"
+    const blob = (await git.run(["hash-object", "-w", "--stdin"], { gitDir, input: "wide\\n" })).stdout.toString().trim()
+    const env = { GIT_INDEX_FILE: gitDir + "/wide-index" }
+    const lines = []
+    for (let i = 0; i < 250000; i++) lines.push("100644 " + blob + "\\tf" + (i % 250) + "/p" + i + ".md")
+    await git.run(["update-index", "--add", "--index-info"], { gitDir, env, input: lines.join("\\n") + "\\n" })
+    const tree = (await git.run(["write-tree"], { gitDir, env })).stdout.toString().trim()
+    const ident = { GIT_AUTHOR_NAME: "T", GIT_AUTHOR_EMAIL: "t@example.com", GIT_COMMITTER_NAME: "T", GIT_COMMITTER_EMAIL: "t@example.com" }
+    const commit = (await git.run(["commit-tree", "-p", "${parent}", "-m", "Wide", tree], { gitDir, env: ident })).stdout.toString().trim()
+    await git.run(["update-ref", "refs/heads/wide", commit], { gitDir })
+    console.log(commit)`
+  const id = compose("ps", "--quiet", "git").trim()
+  return execFileSync(
+    "docker",
+    ["exec", id, "/nodejs/bin/node", "--input-type=module", "-e", script],
+    { encoding: "utf8" },
+  ).trim()
+}
+
+/**
+ * Inside the running `git` container: a branch off `main` whose 50,001
+ * files each have a path of about 4,040 characters (under 16 folders of 251
+ * characters), near Git's own 4 KiB limit for a path. Built tree by tree,
+ * so it is small to write. Answers its commit.
+ */
+function writeLongPathBranch(workspaceId, parent) {
+  const script = `
+    const { createGit } = await import("/app/packages/git/dist/index.js")
+    const git = createGit({ timeoutMs: 600000 })
+    const gitDir = "/var/lib/shinan/catalog/${workspaceId}.git"
+    const text = async (args, input, env) => (await git.run(args, { gitDir, input, env })).stdout.toString().trim()
+    const blob = await text(["hash-object", "-w", "--stdin"], "long\\n")
+    const leaf = []
+    for (let i = 0; i <= 50000; i++) leaf.push("100644 blob " + blob + "\\tf" + String(i).padStart(5, "0") + ".md")
+    let tree = await text(["mktree"], leaf.join("\\n") + "\\n")
+    for (let level = 0; level < 16; level++) {
+      const name = "x".repeat(250) + String.fromCharCode(97 + level)
+      tree = await text(["mktree"], "040000 tree " + tree + "\\t" + name + "\\n")
+    }
+    const ident = { GIT_AUTHOR_NAME: "T", GIT_AUTHOR_EMAIL: "t@example.com", GIT_COMMITTER_NAME: "T", GIT_COMMITTER_EMAIL: "t@example.com" }
+    const commit = await text(["commit-tree", "-p", "${parent}", "-m", "Long paths", tree], undefined, ident)
+    await git.run(["update-ref", "refs/heads/long", commit], { gitDir })
+    console.log(commit)`
+  const id = compose("ps", "--quiet", "git").trim()
+  return execFileSync(
+    "docker",
+    ["exec", id, "/nodejs/bin/node", "--input-type=module", "-e", script],
+    { encoding: "utf8" },
+  ).trim()
+}
+
+/**
+ * Inside the running `git` container: two commits on a branch off `main`
+ * whose root trees each hold 500,000 entries (one blob, base-36 names,
+ * about 16 MB per tree object, every name different between the two).
+ * Answers both commits.
+ */
+function writeWideTrees(workspaceId, parent) {
+  const script = `
+    const { createGit } = await import("/app/packages/git/dist/index.js")
+    const git = createGit({ timeoutMs: 600000 })
+    const gitDir = "/var/lib/shinan/catalog/${workspaceId}.git"
+    const text = async (args, input, env) => (await git.run(args, { gitDir, input, env })).stdout.toString().trim()
+    const blob = await text(["hash-object", "-w", "--stdin"], "wide\\n")
+    const ident = { GIT_AUTHOR_NAME: "T", GIT_AUTHOR_EMAIL: "t@example.com", GIT_COMMITTER_NAME: "T", GIT_COMMITTER_EMAIL: "t@example.com" }
+    const commits = []
+    let head = "${parent}"
+    for (const prefix of ["a", "b"]) {
+      const lines = []
+      for (let i = 0; i < 500000; i++) lines.push("100644 blob " + blob + "\\t" + prefix + i.toString(36))
+      const tree = await text(["mktree"], lines.join("\\n") + "\\n")
+      head = await text(["commit-tree", "-p", head, "-m", "Wide " + prefix, tree], undefined, ident)
+      commits.push(head)
+    }
+    await git.run(["update-ref", "refs/heads/wide-trees", head], { gitDir })
+    console.log(commits.join(" "))`
+  const id = compose("ps", "--quiet", "git").trim()
+  return execFileSync(
+    "docker",
+    ["exec", id, "/nodejs/bin/node", "--input-type=module", "-e", script],
+    { encoding: "utf8" },
+  )
+    .trim()
+    .split(" ")
+}
+
+/**
+ * Many requests to the Git container at once, from one container on its
+ * network. Each reader waits `waitMs` after its answer starts before
+ * reading it, as a slow client would. Answers a summary of each.
+ */
+function askGitCrowd(requests, waitMs = 0) {
+  const script = `
+    const requests = JSON.parse(process.env.REQUESTS)
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+    Promise.all(requests.map(async ({ path, documents: count }) => {
+      const body = count ? { paths: Array.from({ length: count }, (_, i) => "thing/" + i + ".md") } : undefined
+      try {
+        const r = await fetch("http://git:3000" + path, {
+          method: body ? "POST" : "GET",
+          headers: { authorization: "Bearer " + process.env.TOKEN, "content-type": "application/json" },
+          body: body ? JSON.stringify(body) : undefined,
+          signal: AbortSignal.timeout(300000),
+        })
+        await sleep(Number(process.env.WAIT))
+        const b = await r.json()
+        const list = b.entries ?? b.changes ?? []
+        const commits = b.commits?.length
+        const documents = b.documents ?? []
+        return {
+          status: r.status,
+          entries: list.length,
+          truncated: b.truncated,
+          commits,
+          bytes: documents.reduce((n, d) => n + (d.content ? Buffer.from(d.content, "base64").length : 0), 0),
+        }
+      } catch (e) {
+        return { error: e.cause?.code ?? e.name }
+      }
+    })).then((all) => console.log(JSON.stringify(all)))`
+  return JSON.parse(
+    execFileSync(
+      "docker",
+      [
+        "run",
+        "--rm",
+        "--network",
+        `${project}_git`,
+        "--env",
+        `TOKEN=${gitServiceToken}`,
+        "--env",
+        `WAIT=${waitMs}`,
+        "--env",
+        `REQUESTS=${JSON.stringify(requests)}`,
+        "--entrypoint",
+        "/nodejs/bin/node",
+        image,
+        "-e",
+        script,
+      ],
+      { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 },
+    ),
+  )
+}
+
+/** The `git` container's highest memory use so far, from its cgroup. */
+function gitMemoryPeak() {
+  const id = compose("ps", "--quiet", "git").trim()
+  try {
+    const bytes = Number(
+      execFileSync(
+        "docker",
+        [
+          "exec",
+          id,
+          "/nodejs/bin/node",
+          "-e",
+          'process.stdout.write(require("fs").readFileSync("/sys/fs/cgroup/memory.peak", "utf8"))',
+        ],
+        { encoding: "utf8" },
+      ),
+    )
+    return `${Math.round(bytes / 1024 / 1024)} MiB`
+  } catch {
+    return "unknown"
+  }
+}
+
+function psql(query) {
+  return compose(
+    "exec",
+    "-T",
+    "postgres",
+    "psql",
+    "-U",
+    "shinan",
+    "-d",
+    "shinan",
+    "-Atc",
+    query,
+  ).trim()
+}
+
 async function run() {
   const files = writableAppFiles()
   check(
@@ -306,6 +625,11 @@ async function run() {
     files.shells.length === 0,
     "the image has no shell and no interpreter but Node.js" +
       (files.shells.length ? ` (found: ${files.shells.join(", ")})` : ""),
+  )
+
+  check(
+    files.catalog === "65532:65532 700 0",
+    `the git role's volume folder is empty and the image's user's alone (${files.catalog})`,
   )
 
   const git = gitInImage()
@@ -364,7 +688,16 @@ async function run() {
     "web is healthy (its internal /readyz answers inside the container)",
   )
 
-  for (const service of ["web", "worker", "migrate"]) {
+  await waitFor(
+    "git to be healthy",
+    () => inspect("git", "{{.State.Health.Status}}") === "healthy",
+  )
+  check(
+    true,
+    "git is healthy (its internal /readyz answers inside the container): its start checks passed",
+  )
+
+  for (const service of ["web", "worker", "migrate", "git"]) {
     check(
       inspect(
         service,
@@ -378,6 +711,36 @@ async function run() {
     "web publishes only port 3000, not the internal listener",
   )
   check(publishedPorts("postgres").length === 0, "PostgreSQL publishes no port")
+  check(publishedPorts("git").length === 0, "git publishes no port")
+  const gitNetworks = Object.keys(
+    JSON.parse(inspect("git", "{{json .NetworkSettings.Networks}}")),
+  )
+  const gitNetworkInternal = execFileSync(
+    "docker",
+    ["network", "inspect", "--format", "{{.Internal}}", `${project}_git`],
+    { encoding: "utf8" },
+  ).trim()
+  check(
+    gitNetworks.join(" ") === `${project}_git` && gitNetworkInternal === "true",
+    "git is only on the internal git network",
+  )
+  check(
+    inspect("git", "{{range .Config.Env}}{{println .}}{{end}}")
+      .split("\n")
+      .filter((v) => /DATABASE|SESSION|SES_|GITHUB/.test(v)).length === 0,
+    "git has no database address and no secret but its service token",
+  )
+  check(
+    askGit("git", "/journal").status === 401 &&
+      askGit("git", "/journal", "x".repeat(43)).status === 401 &&
+      askGit("git", "/journal", gitServiceToken).status === 200,
+    "on its network, git answers 401 without the service token or with a wrong one, and 200 with it",
+  )
+  const outside = askGit("egress", "/journal", gitServiceToken)
+  check(
+    outside.error !== undefined,
+    `from outside its network, git cannot be reached (${outside.error})`,
+  )
 
   const log = compose("logs", "--no-color", "web")
   const links = [...log.matchAll(/(https:\/\/\S+\/setup)#(\S+)/g)]
@@ -452,26 +815,172 @@ async function run() {
     body: { name: "First workspace" },
   })
   check(workspace.status === 201, "the operator creates a workspace")
-
-  const addresses = compose(
-    "exec",
-    "-T",
-    "postgres",
-    "psql",
-    "-U",
-    "shinan",
-    "-d",
-    "shinan",
-    "-Atc",
-    "select distinct host(network_address) from security_log where action = 'sign-in.succeeded'",
+  const { id: workspaceId } = await workspace.json()
+  const firstCommit = await waitFor("the workspace's repository", () => {
+    const commit = psql(
+      `select first_commit from catalog_repositories where workspace_id = '${workspaceId}' and first_commit is not null`,
+    )
+    return commit || null
+  })
+  const repository = askGit(
+    "git",
+    `/repositories/${workspaceId}/tree?commit=main`,
+    gitServiceToken,
   )
-    .trim()
-    .split("\n")
+  check(
+    repository.status === 200 &&
+      repository.body.commit === firstCommit &&
+      repository.body.entries.map((e) => e.path).join(",") === "README.md",
+    "the worker had git create the workspace's repository, with a first commit holding README.md",
+  )
+
+  const addresses = psql(
+    "select distinct host(network_address) from security_log where action = 'sign-in.succeeded'",
+  ).split("\n")
   check(
     addresses.length === 1 &&
       addresses[0] !== "" &&
       addresses[0] !== proxyAddress,
     `the security log has the visitor's address (${addresses[0]}), not the proxy's`,
+  )
+
+  // The read API's limits keep one request inside the Git container's
+  // memory limit (1,024 MiB here), however a repository's commits are made.
+  const heavyId = "0f9c1a2e-3d4f-4a5b-8c6d-7e8f9a0b1c2d"
+  check(
+    askGit("git", `/repositories/${heavyId}`, gitServiceToken).status === 404,
+    "a second repository does not exist yet",
+  )
+  const made = execFileSync(
+    "docker",
+    [
+      "run",
+      "--rm",
+      "--network",
+      `${project}_git`,
+      "--entrypoint",
+      "/nodejs/bin/node",
+      image,
+      "-e",
+      `fetch("http://git:3000/repositories/${heavyId}", { method: "PUT", headers: { authorization: "Bearer ${gitServiceToken}", "content-type": "application/json" }, body: JSON.stringify({ message: "Start\\n", files: [{ path: "README.md", content: "Iw==" }] }) }).then((r) => console.log(r.status))`,
+    ],
+    { encoding: "utf8" },
+  ).trim()
+  const heavyMain = writeHeavyRepository(heavyId)
+  const restartsBefore = inspect("git", "{{.RestartCount}}")
+  const documents = askGitSummary(`/repositories/${heavyId}/documents`, {
+    paths: Array.from({ length: 1000 }, (_, i) => `thing/${i}.md`),
+  })
+  check(
+    made === "201" &&
+      documents.status === 200 &&
+      documents.read === 32 &&
+      documents.bytes === 32 * 1024 * 1024 &&
+      documents.deferred === 968,
+    `a read of 1,000 documents of 1 MiB returns 32 MiB and defers the rest (${JSON.stringify(documents)})`,
+  )
+  const history = askGitSummary(`/repositories/${heavyId}/history?limit=100`)
+  check(
+    history.status === 200 &&
+      history.commits === 72 &&
+      history.truncated === 70 &&
+      history.longest <= 256 * 1024 &&
+      history.changesTruncated === 1 &&
+      history.mostChanges === 50 &&
+      history.mostChanged === 1001,
+    `a page of 70 commits with 15 MiB messages returns them truncated to 256 KiB, and a commit's 1,001 changed paths as 50 (${JSON.stringify(history)})`,
+  )
+  // Many reads at once, of a branch with 250,000 paths (tiny on disk), and
+  // of documents whose readers take their time: the reads take turns and
+  // each holds its place until its answer is sent.
+  const wide = writeWideBranch(heavyId, heavyMain)
+  const crowd = askGitCrowd([
+    ...Array.from({ length: 6 }, () => ({
+      path: `/repositories/${heavyId}/tree?commit=${wide}`,
+    })),
+    ...Array.from({ length: 6 }, () => ({
+      path: `/repositories/${heavyId}/diff?from=${heavyMain}&to=${wide}`,
+    })),
+  ])
+  check(
+    crowd.every(
+      (r) => r.status === 200 && r.entries === 50_000 && r.truncated === true,
+    ),
+    `6 tree and 6 diff reads at once of 250,000 paths each return 50,000, truncated (${JSON.stringify(crowd.slice(0, 2))})`,
+  )
+  // Paths near Git's 4 KiB limit: the answers stop at 8 MiB of paths, not
+  // at 50,000 entries (which would be about 200 MiB each).
+  const long = writeLongPathBranch(heavyId, heavyMain)
+  const longCrowd = askGitCrowd([
+    ...Array.from({ length: 4 }, () => ({
+      path: `/repositories/${heavyId}/tree?commit=${long}`,
+    })),
+    ...Array.from({ length: 4 }, () => ({
+      path: `/repositories/${heavyId}/diff?from=${heavyMain}&to=${long}`,
+    })),
+  ])
+  check(
+    longCrowd.every(
+      (r) =>
+        r.status === 200 &&
+        r.truncated === true &&
+        // 8 MiB is about 2,075 such paths; the diffs also hold the 1,000
+        // short deletions of main's files, which sort first.
+        r.entries > 2000 &&
+        r.entries < 3200,
+    ),
+    `4 tree and 4 diff reads at once of 50,001 paths of 4,040 characters stop at 8 MiB of paths, truncated (${JSON.stringify(longCrowd.map((r) => r.entries))})`,
+  )
+  // Two tree objects of 500,000 entries each, every entry different: the
+  // walk reads entries from each object's bytes as it goes, so four diffs
+  // and four history pages at once fit.
+  const [wideA, wideB] = writeWideTrees(heavyId, heavyMain)
+  const wideCrowd = askGitCrowd([
+    ...Array.from({ length: 4 }, () => ({
+      path: `/repositories/${heavyId}/diff?from=${wideA}&to=${wideB}`,
+    })),
+    ...Array.from({ length: 4 }, () => ({
+      path: `/repositories/${heavyId}/history?commit=${wideB}&limit=2`,
+    })),
+  ])
+  check(
+    wideCrowd.every((r) => r.status === 200) &&
+      wideCrowd
+        .slice(0, 4)
+        .every((r) => r.entries === 50_000 && r.truncated === true) &&
+      wideCrowd.slice(4).every((r) => r.commits === 2),
+    `4 diffs and 4 history pages at once of two trees of 500,000 entries each answer (${JSON.stringify(wideCrowd.map((r) => [r.status, r.entries, r.commits]))})`,
+  )
+  const slow = askGitCrowd(
+    Array.from({ length: 40 }, () => ({
+      path: `/repositories/${heavyId}/documents`,
+      documents: 1000,
+    })),
+    3000,
+  )
+  check(
+    slow.length === 40 &&
+      slow.every((r) => r.status === 200 && r.bytes === 32 * 1024 * 1024),
+    `40 document reads at once whose readers wait 3 s before reading each get 32 MiB (${JSON.stringify(slow.slice(0, 2))})`,
+  )
+  check(
+    inspect(
+      "git",
+      "{{.RestartCount}} {{.State.OOMKilled}} {{.State.Status}}",
+    ) === `${restartsBefore} false running`,
+    `git stayed up within its memory limit through all these reads (peak ${gitMemoryPeak()})`,
+  )
+
+  compose("restart", "git")
+  await sleep(2000)
+  await waitFor(
+    "git to be healthy again",
+    () => inspect("git", "{{.State.Health.Status}}") === "healthy",
+  )
+  const kept = askGit("git", `/repositories/${workspaceId}`, gitServiceToken)
+  check(
+    kept.status === 200 && kept.body.main === firstCommit,
+    "after a restart, git still has the repository on its volume",
   )
 
   compose("restart", "web")

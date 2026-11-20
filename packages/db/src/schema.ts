@@ -1221,6 +1221,39 @@ const bytea = customType<{ data: Buffer }>({
   dataType: () => "bytea",
 })
 
+/**
+ * Each workspace's catalog repository in the Git container (Git-based
+ * catalog plan §2.4): asked for when the workspace is created, in the same
+ * transaction, and marked created once the Git container has made it with
+ * its first commit. The repository itself lives on the Git container's
+ * volume; this records only that it exists and its first commit.
+ */
+export const catalogRepositories = pgTable(
+  "catalog_repositories",
+  {
+    workspaceId: uuid("workspace_id")
+      .primaryKey()
+      .references(() => workspaces.id),
+    requestedAt: timestamp("requested_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    /** When the Git container confirmed the repository; null until then. */
+    createdAt: timestamp("created_at", { withTimezone: true }),
+    /** The repository's first commit, once created. */
+    firstCommit: text("first_commit"),
+  },
+  (t) => [
+    check(
+      "catalog_repositories_created_with_commit",
+      sql`(${t.createdAt} is null) = (${t.firstCommit} is null)`,
+    ),
+    check(
+      "catalog_repositories_commit_format",
+      sql`${t.firstCommit} is null or ${t.firstCommit} ~ '^([0-9a-f]{40}|[0-9a-f]{64})$'`,
+    ),
+  ],
+)
+
 const parserVersionColumn = () => integer("parser_version").notNull()
 
 /** Where a workspace's index stands, and the last round-trip check. */
