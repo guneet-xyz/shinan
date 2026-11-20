@@ -8,7 +8,7 @@ evidence: "https://github.com/guneet-xyz/shinan/issues/161#issuecomment-70073376
 supersedes: []
 superseded_by: []
 amends: []
-amended_by: []
+amended_by: [D-066]
 ---
 
 # D-061: Pushes are authenticated by the agent token; commit authors are not trusted; a push log records who pushed; fact checks name the pusher
@@ -16,6 +16,7 @@ amended_by: []
 Status: **Accepted** by the owner on 2026-11-19, in conversation, with the
 [Git-based catalog plan](../build-plan-git-catalog.md) ("Approve and start";
 recorded on [issue #161](https://github.com/guneet-xyz/shinan/issues/161#issuecomment-7007337638)).
+Amended by [D-066](D-066-by-names-the-first-pusher.md).
 
 ## Context
 
@@ -48,6 +49,11 @@ pusher.
 
 ## Consequences
 
+- **Decided (owner, 2026-11-20, [D-066](D-066-by-names-the-first-pusher.md)):**
+  the `by` rule's last sentence is refined: a new or changed fact check's
+  `by` must name the agent (and its person) that first pushed the commit
+  introducing it, not whoever pushes to `main`. Agent B may merge agent A's
+  already-pushed branch into `main`; A's fact checks must still name A.
 - The push log's records, events and the security log's refusals are proposed
   in the [plan §2.6 and §2.14](../build-plan-git-catalog.md#26-the-push-log-and-events).
 - `/git/` accepts the agent token as the password of HTTP Basic
@@ -56,8 +62,9 @@ pusher.
   owned afterwards by [identity](../identity.md) §7.4.
 - The `by` rule, what counts as a new or changed fact check, and its tests
   are in the [plan §2.5](../build-plan-git-catalog.md#25-checks-on-push),
-  check 6. An agent cannot land another agent's new fact checks by merging
-  its branch into `main`; each agent pushes its own. The `by` written form is
+  check 6, as refined by D-066 (until 2026-11-20 this said that an agent
+  could not land another agent's new fact checks by merging its branch). The
+  `by` written form is
   [identity §8.7](../identity.md#87-how-an-actor-is-written-in-text)'s.
 - `web` passes the authenticated agent and person to the Git container,
   which trusts them because of the service token
@@ -87,3 +94,6 @@ None.
   the Git-based catalog plan ([issue #161](https://github.com/guneet-xyz/shinan/issues/161)).
 - 2026-11-19: accepted by the owner with the plan ([PR #162](https://github.com/guneet-xyz/shinan/pull/162),
   answers GQ-1 to GQ-6 [on issue #161](https://github.com/guneet-xyz/shinan/issues/161#issuecomment-7007337638)).
+- 2026-11-20: amended by [D-066](D-066-by-names-the-first-pusher.md) (the
+  owner's refinement of GQ-3, [recorded on issue #161](https://github.com/guneet-xyz/shinan/issues/161#issuecomment-7028895313)). Decision and
+  Reasons unchanged; maintained sections updated.

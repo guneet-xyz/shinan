@@ -5,6 +5,9 @@ Status: **approved by the owner on 2026-11-19** ("Approve and start",
 recorded on [issue #161](https://github.com/guneet-xyz/shinan/issues/161#issuecomment-7007337638).
 The owner's decisions are in [section 10.1](#101-owner-decisions) and the
 answers to the plan's questions in [section 10.2](#102-owner-answers-to-the-questions).
+The owner refined the answer GQ-3 on 2026-11-20
+([recorded on #161](https://github.com/guneet-xyz/shinan/issues/161#issuecomment-7028895313),
+[D-066](decisions/D-066-by-names-the-first-pusher.md)).
 
 M2, the catalog, is built and deployed as v0.3.0 at `shinan.guneet.dev`
 ([M2 build plan](build-plan-m2.md)). On 2026-11-19 the owner decided that it
@@ -23,7 +26,7 @@ for the owner's answers to this plan's questions ([10.2](#102-owner-answers-to-t
 **Proposed** for this plan's own choices, each with a reason, which the
 owner's approval of the plan accepts and the packages may refine in their
 pull requests. Work packages are numbered GC-0 to GC-12
-([section 5](#5-work-packages)). The decision records D-059 to D-065 are
+([section 5](#5-work-packages)). The decision records D-059 to D-066 are
 accepted ([section 6](#6-decision-records)).
 
 The trial is **paused** until this lands (owner, GD-13).
@@ -182,8 +185,9 @@ authenticate our web container right, what's so complicated?" Recorded as
 - **Identity is passed, not proven:** `web` sends the authenticated context
   in one header, `Shinan-Git-Context` (JSON, base64url): request ID,
   workspace, agent ID and handle, member and person ID and handle, the
-  written form the `by` rule expects (`<person handle> via <agent handle>`,
-  [identity §8.7](identity.md#87-how-an-actor-is-written-in-text)), whether
+  pushing agent's written form (`<person handle> via <agent handle>`,
+  [identity §8.7](identity.md#87-how-an-actor-is-written-in-text), recorded
+  as the first pusher of the commits the push brings), whether
   the token may push, the workspace's member handles (for validation's owner
   warnings) and the hashes of the values the owners allowed as "not a secret"
   ([2.5](#25-checks-on-push)). The Git container trusts it only because the
@@ -343,11 +347,15 @@ as `remote:` lines. One refusal refuses every ref of the push.
   Parsed documents are cached by Git blob ID, which never changes for the
   same text, so a push parses only the documents it changes. Reason: blob
   IDs make M2's cache invalidation rules unnecessary.
-- **One check of `main` at a time per workspace,** under a lock the Git role
-  holds; a second push to `main` waits up to 30 seconds, then is refused as
-  busy. Git's own compare-and-swap on the ref update still decides a race: a
-  push checked against an old `main` fails to update it, and the agent
-  fetches and pushes again.
+- **One push at a time per repository,** to any branch, under a lock the
+  Git role holds from `pre-receive` until `post-receive` has recorded the
+  push (or Git has ended without updating a ref); another push waits up to
+  30 seconds, then is refused as busy. Reason: the first pusher of each
+  commit ([2.6](#26-the-push-log-and-events)) must be decided in one order;
+  branch pushes run only the cheap checks, so the wait is short. Git's own
+  compare-and-swap on the ref update still decides a race with anything
+  else: a push checked against an old `main` fails to update it, and the
+  agent fetches and pushes again.
 
 **Checks on every push (any branch):**
 
@@ -388,21 +396,59 @@ the tree of the old one:
    elsewhere (a reference it broke). Old problems in documents it does not
    touch do not block it. The catalog limits (20,000 documents, 50 MiB of
    text) apply.
-6. **The pusher's own fact checks.** **Decided (owner, GQ-3):** a new or
-   changed fact check's `by` must name the pusher, in the written form for
-   the pushing agent and its person ([identity §8.7](identity.md#87-how-an-actor-is-written-in-text),
-   `guneet via opencode-daedalus`); otherwise the push is refused, naming the
-   file, the line, the `by` found and the `by` expected. A fact check group
-   in a pushed document counts as unchanged only when the old version of
-   that document has a group with the same `checked`, `by`, `scope`,
-   `source` and `limits`, and every fact the group now covers was covered by
-   that group there with the same value; removing facts from a group, or
-   moving the whole document unchanged, does not change it. Any other group
-   is new or changed. Reason (as for M2's repair, [catalog §8.3](catalog.md#83-validation)):
-   no push can make a fact look checked by another member or agent. Only the
-   first commit made by the migration and a purge's rewrite are exempt.
-   Consequence: an agent cannot land another agent's new fact checks by
-   merging its branch into `main`; each agent pushes its own.
+6. **Fact checks name the agent that first pushed them.** **Decided (owner,
+   GQ-3 as refined on 2026-11-20, [D-066](decisions/D-066-by-names-the-first-pusher.md)):**
+   a new or changed fact check's `by` must name the agent (and its person)
+   that first pushed the commit introducing it, in the written form of
+   [identity §8.7](identity.md#87-how-an-actor-is-written-in-text)
+   (`guneet via opencode-daedalus`); otherwise the push is refused, naming
+   the file, the line, the commit, the `by` found and the `by` expected.
+   Shinan knows each commit's first pusher from the push log
+   ([2.6](#26-the-push-log-and-events)); a commit new in this push is first
+   pushed by this push's agent. So agent B may merge agent A's
+   already-pushed branch into `main` (A's fact checks still name A), and
+   nobody can write another agent's name on a fact check in a commit they
+   push first. How it is decided (accepted with the refinement):
+   - **New or changed.** A fact check group in the new `main` counts as
+     unchanged when the old `main`'s version of that document has a group
+     with the same `checked`, `by`, `scope`, `source` and `limits`, and every
+     fact the group now covers was covered by that group there with the same
+     value; removing facts from a group, or moving the whole document
+     unchanged (its old ID kept in `aliases`), does not change it. Any other
+     group is new or changed.
+   - **The commit introducing it.** Among the commits the push adds to
+     `main`'s history (reachable from the new `main`, not from the old one),
+     a commit introduces a group when its version of the document holds the
+     group and none of its parents' versions does (the document found by its
+     ID, or by an ID in its `aliases`). A merge commit introduces a group
+     that none of its parents has, for example one written while resolving a
+     conflict. Every commit that introduces the group must have been first
+     pushed by the agent the group names; a group that two branches
+     introduced independently must name both first pushers, so it is
+     refused unless they are the same agent.
+   - **Restoring is not introducing.** A group exactly as it was on `main`
+     before (same five fields, covering facts it covered there with the same
+     values) was introduced by the commit that first put it on `main`, not
+     by a revert that restores it, so `git revert` of a removal keeps
+     working whoever pushes it. The Git container keeps, per document, the
+     fact check groups that have ever been on `main` with the commit that
+     introduced each, updated on every accepted update of `main` and
+     rebuildable from `main`'s history and the first pushers.
+   - **Consequences for agents.** Merging (including a fast-forward) keeps
+     the other agent's commits, so it passes. Rebasing, cherry-picking or
+     squashing another agent's commits makes new commits that the agent
+     doing it pushes first, so fact checks they introduce must then name
+     that agent: rebase or squash only your own work.
+   - **Commits Shinan makes** are first pushed by `shinan`: a repository's
+     first commit, the migration's first commit
+     ([4.1](#41-the-current-catalog-becomes-the-first-commit)) and commits a
+     purge rewrites ([2.9](#29-undo-and-purge)) never pass through these
+     checks, and every fact check group they put on `main` is recorded as on
+     `main`, introduced by that commit; later pushes leave such groups
+     unchanged unless they change them.
+   - Reason: no push can make a fact look checked by another member or
+     agent, as for M2's repair ([catalog §8.3](catalog.md#83-validation)),
+     while agents can still land each other's pushed work.
 7. **Warnings** (keys outside the schema, a fact check older than the one it
    replaces, weaker secret signs, start-here steps to retired entities, task
    statuses as facts, an owner with no current member) are printed and do not
@@ -419,7 +465,7 @@ remote: Shinan refused this push. Nothing was changed.
 remote: main: 3 blocking problems
 remote:   machine/musashi.md:14  broken-reference  "service/ingres" is not a catalog ID or alias
 remote:   service/email.md:31    secret            looks like an AWS secret access key (value not shown; fingerprint sha256:3f9a…)
-remote:   service/email.md:12    by-not-pusher     "by: guneet" but this push is by "guneet via opencode-daedalus"
+remote:   service/email.md:12    by-not-first-pusher "by: guneet" but commit 1a2b3c4 was first pushed by "guneet via opencode-daedalus"
 remote: main: 1 warning (does not block)
 remote:   project/mon.md:9       key-not-in-schema "backup.window" is not a key of type project
 remote: Fix them in new commits and push again. The shinan skill explains each code.
@@ -451,14 +497,42 @@ each push, with the commits, the ref and the commits before and after.
   (`accepted`, `refused`, `check-only`), refusal codes (codes only, no text),
   number of warnings, bytes and objects received.
 - **`catalog_push_refs`**, one row per ref in it: the ref, the commit before
-  and after, the kind (create, update, delete, forced update), and the new
-  commits it brought to Shinan (up to 1,000 IDs, so each commit is recorded
-  with the push that first brought it, even when another agent later merges
-  it into `main`), and whether the update was confirmed.
+  and after, the kind (create, update, delete, forced update), and whether
+  the update was confirmed.
+- **`catalog_commit_first_pushes`**, one row per commit Shinan has ever
+  received: the commit, the push that first brought it (and through it the
+  agent, its person and the written form of the `by` rule at that time),
+  the first of that push's refs that carried it, the time, and, for commits
+  a purge rewrote, the commit it replaces (GQ-3 as refined, D-066). Rules
+  (accepted with the refinement):
+  - **Pushes to any branch count.** A commit first pushed on a branch keeps
+    that first pusher when another agent later merges it into `main`.
+  - **First means first applied.** A commit is recorded only by a push whose
+    ref update Git applied; a refused push, or one whose ref update failed,
+    records nothing, so its commits are new again the next time. Pushes to
+    one repository are serialized ([2.5](#25-checks-on-push)), so there is
+    no tie between two pushes.
+  - **One push, several branches.** A push is one agent's, so a commit that
+    arrives in the same push on two branches has that push as its first
+    pusher; the row names the first ref, in the order Git lists them, that
+    carried it.
+  - **Never changed.** A row is inserted once and never updated; a commit
+    deleted with its branch and pushed again later keeps its first pusher.
+  - **Commits Shinan makes:** a repository's first commit and the
+    migration's first commit are recorded with `shinan` as the first pusher
+    and no push; a commit a purge rewrites gets the first pusher of the
+    commit it replaces ([2.9](#29-undo-and-purge)).
+  - **Where it lives.** The Git container keeps the authoritative copy on
+    its volume, beside the repository (outside it, so a purge's swap keeps
+    it), because its checks need it and it has no database; `web` copies
+    each new row from the journal into PostgreSQL, where the history page
+    reads it. The two cannot disagree: rows come only from the journal, and
+    are inserted once.
 - **How they reach PostgreSQL: a journal.** The Git container has no
   database access ([2.2](#22-how-shinan-serves-git)). Its `pre-receive`
   appends the verdict (accepted or refused, with the context `web` sent) and
-  its `post-receive` the confirmed ref updates to an append-only journal on
+  its `post-receive` the confirmed ref updates and the commits they first
+  brought to an append-only journal on
   its volume, each entry numbered. `web` reads the entries after each
   forwarded `git-receive-pack` request, and every minute, writes them to
   these tables, the events and the security log in one transaction, and then
@@ -542,7 +616,11 @@ operator's to clean, and the secret is rotated.
      expire). Reason: Git has no in-place rewrite tool in the image
      (`git filter-repo` needs Python), and a fresh repository leaves nothing
      behind.
-  3. **Records:** the Git container keeps the list of commits that no
+  3. **Records:** each rewritten commit inherits the first pusher of the
+     commit it replaces (from `git fast-import`'s marks, which map original
+     to new commit IDs), and the record of fact check groups ever on `main`
+     is rebuilt from the new history; the rewrite itself passes no push
+     check. The Git container keeps the list of commits that no
      longer exist beside the repository, so a later push carrying one of
      them back (from a clone that still has it) is refused with "this commit
      was removed by a purge: fetch, then reset your branch onto the new
@@ -568,21 +646,22 @@ Starting values (accepted with the plan), reviewed at the security review
 [identity §10](identity.md#10-protections-for-a-public-installation) and the
 security checklist:
 
-| Limit                       | Value                                                                                                                                                  | Reason                                                                                       |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------- |
-| Push body                   | 64 MiB (`git-receive-pack`, and `receive.maxInputSize`)                                                                                                | A catalog at its 50 MiB text limit pushed at once, compressed, with room to spare.           |
-| Fetch request body          | 4 MiB (`git-upload-pack`)                                                                                                                              | Negotiation lines only; long histories send many `have` lines.                               |
-| Time to send a request body | 120 seconds for `git-receive-pack`; 30 seconds elsewhere (as today)                                                                                    | A large push on a slow link.                                                                 |
-| One Git process             | 10 minutes                                                                                                                                             | A full clone on a slow link; then the process is killed.                                     |
-| Checks                      | 60 s for `main`, 30 s otherwise ([2.5](#25-checks-on-push))                                                                                            | Bounds the work of one push.                                                                 |
-| New commits per push        | 1,000                                                                                                                                                  | Bounds the push log row and the scan.                                                        |
-| New file size, any branch   | 1 MiB (documents on `main` stay at 64 KiB)                                                                                                             | Bounds the secret check; nothing in a catalog needs more.                                    |
-| Branches                    | 100 per repository                                                                                                                                     | [2.8](#28-branches).                                                                         |
-| Repository size on disk     | 1 GiB; above it every push is refused except branch deletions, and the operator guide says how to clean up                                             | The volume is on Musashi's shared data disk.                                                 |
-| Catalog                     | 20,000 documents, 50 MiB of text on `main` (M2-Q16)                                                                                                    | Unchanged; bounds the checker and the index. M2's memory estimate goes with the worker pool. |
-| Requests in flight          | 8 per token, 16 per address (an IPv6 address by its /64), shared with `/mcp` (M2-Q16), in `web`; at most 4 Git processes at once, in the Git container | Musashi has two cores; a full queue answers `429` with `Retry-After`, which Git reports.     |
-| Context header              | 64 KiB; at most 100 allowed "not a secret" values per workspace                                                                                        | [2.2](#22-how-shinan-serves-git).                                                            |
-| Rate                        | 600 requests a minute per token and 300 per address (M2-Q16); 60 pushes in 10 minutes per agent (like M2's proposals)                                  | Pushes are the expensive requests.                                                           |
+| Limit                               | Value                                                                                                                                                  | Reason                                                                                       |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------- |
+| Push body                           | 64 MiB (`git-receive-pack`, and `receive.maxInputSize`)                                                                                                | A catalog at its 50 MiB text limit pushed at once, compressed, with room to spare.           |
+| Fetch request body                  | 4 MiB (`git-upload-pack`)                                                                                                                              | Negotiation lines only; long histories send many `have` lines.                               |
+| Time to send a request body         | 120 seconds for `git-receive-pack`; 30 seconds elsewhere (as today)                                                                                    | A large push on a slow link.                                                                 |
+| One Git process                     | 10 minutes                                                                                                                                             | A full clone on a slow link; then the process is killed.                                     |
+| Checks                              | 60 s for `main`, 30 s otherwise ([2.5](#25-checks-on-push))                                                                                            | Bounds the work of one push.                                                                 |
+| New commits per push                | 1,000                                                                                                                                                  | Bounds the push log and the scan.                                                            |
+| Commits added to `main` by one push | 2,000 (counting commits first pushed earlier on branches)                                                                                              | Bounds the walk of the `by` rule ([2.5](#25-checks-on-push), check 6).                       |
+| New file size, any branch           | 1 MiB (documents on `main` stay at 64 KiB)                                                                                                             | Bounds the secret check; nothing in a catalog needs more.                                    |
+| Branches                            | 100 per repository                                                                                                                                     | [2.8](#28-branches).                                                                         |
+| Repository size on disk             | 1 GiB; above it every push is refused except branch deletions, and the operator guide says how to clean up                                             | The volume is on Musashi's shared data disk.                                                 |
+| Catalog                             | 20,000 documents, 50 MiB of text on `main` (M2-Q16)                                                                                                    | Unchanged; bounds the checker and the index. M2's memory estimate goes with the worker pool. |
+| Requests in flight                  | 8 per token, 16 per address (an IPv6 address by its /64), shared with `/mcp` (M2-Q16), in `web`; at most 4 Git processes at once, in the Git container | Musashi has two cores; a full queue answers `429` with `Retry-After`, which Git reports.     |
+| Context header                      | 64 KiB; at most 100 allowed "not a secret" values per workspace                                                                                        | [2.2](#22-how-shinan-serves-git).                                                            |
+| Rate                                | 600 requests a minute per token and 300 per address (M2-Q16); 60 pushes in 10 minutes per agent (like M2's proposals)                                  | Pushes are the expensive requests.                                                           |
 
 ### 2.11 Backups and recovery
 
@@ -673,12 +752,15 @@ and:
   share unfinished work.
 - **Writing facts by hand:** the fact check fields (`checked` as the real
   time of the check, not rounded, [#158](https://github.com/guneet-xyz/shinan/issues/158);
-  `by` exactly the pushing agent's written form, `guneet via
-opencode-daedalus`, or the push is refused (GQ-3); `scope`, `source`,
-  `limits`), retire rather than delete, keep old IDs in `aliases`. Never
-  merge another agent's branch that adds fact checks into `main`: its fact
-  checks name that agent, so the push is refused; ask that agent to push its
-  own work, or check the facts yourself and record your own fact check.
+  `by` your own written form, `guneet via opencode-daedalus`, on every fact
+  check you write: a fact check must name the agent that first pushed the
+  commit introducing it (GQ-3 as refined, D-066); `scope`, `source`,
+  `limits`), retire rather than delete, keep old IDs in `aliases`. You may
+  merge another agent's branch once that agent has pushed it: its fact
+  checks keep naming it. Do not rebase, cherry-pick or squash another
+  agent's commits that add fact checks: the new commits would be first
+  pushed by you, and the push is refused. Never write another agent's name
+  in a fact check.
 - **Freshness without the index:** a fact is due when `checked` plus its key's
   recheck interval has passed. Built-in types have no schema document in the
   repository, so a new reference file lists the built-in types' keys and
@@ -814,7 +896,10 @@ one that drops M2's ([4.2](#42-database-changes)):
    "Shinan", message "Import the catalog from PostgreSQL (revision N)".
 2. **Verify** by reading the commit back: every file equals its stored text
    (by SHA-256), the document count matches, and the tree validates with the
-   rules of [2.5](#25-checks-on-push) (the `by` rule aside); problems are
+   rules of [2.5](#25-checks-on-push) (the `by` rule aside: the commit is
+   recorded as first pushed by `shinan`, and its fact check groups as on
+   `main`, so the migrated documents' fact checks, which name the agents
+   that checked them in M2, stay valid until a push changes them); problems are
    logged as a report, not refused, since this is the existing catalog. Any
    mismatch stops `migrate` before M2's tables are dropped, so `web` does not
    start on a half-made repository and nothing is lost.
@@ -1058,33 +1143,48 @@ provenance from `index/`; GC-5 does not touch `index/`.
   messages and ref names (check 3, with
   [#157](https://github.com/guneet-xyz/shinan/issues/157) fixed), the
   workspace's allowed "not a secret" values from the context (GQ-2), the
-  output format and the journal entries. In `web`: draining the journal into
-  `catalog_pushes` and `catalog_push_refs`, events and the security log, the
+  output format and the journal entries; the serialized push lock and the
+  commit first-pusher record on the volume (D-066). In `web`: draining the
+  journal into `catalog_pushes`, `catalog_push_refs` and
+  `catalog_commit_first_pushes`, events and the security log, the
   minute check against the refs, the push rate limit, queueing the index
   job; the allowed values' table, their permission (workspace owners, after
   re-authentication) and API, with security-log entries.
 - **GC-3b:** checks 4 to 7 for `main` (layout, path and ID, IDs never
-  disappearing, validation charged to the push, the `by` rule of GQ-3,
-  warnings), the checker in a worker thread with the blob-ID cache, the
-  check-only push option.
+  disappearing, validation charged to the push, the `by` rule of GQ-3 as
+  refined: each new or changed fact check names the first pusher of every
+  commit introducing it, with the record of groups ever on `main` so
+  restoring is not introducing; warnings), the checker in a worker thread
+  with the blob-ID cache, the check-only push option, the limit of 2,000
+  commits added to `main` per push.
 - **Tests:** a real client pushing through `web` to a test Git container:
   every refusal code, warnings that do not block, a race on `main`,
   quarantined objects removed after a refusal, a merge commit, a forced
   branch, branch deletion, oversized and too-many-commit pushes, the time
   limit, an allowed value passing and the same value with one character
   changed refused, the journal drained after a lost connection, the push
-  log's rows and their confirmation. For the `by` rule: a new fact check
-  naming the pusher passes; one naming another agent, the person alone or
-  another member is refused with file, line, found and expected; an
-  unchanged fact check of another agent passes; a fact added under another
-  agent's unchanged fact check is refused; facts removed from another
-  agent's fact check pass; a merge of another agent's branch that adds its
-  fact checks is refused; a document moved with its fact checks unchanged
-  passes.
+  log's rows and their confirmation. For the first-pusher record: a commit
+  pushed on a branch and later merged keeps its first pusher; a commit that
+  arrives on two branches in one push names that push and its first ref; a
+  refused push, or one whose ref update failed, records nothing; two pushes
+  are serialized; a deleted and re-pushed commit keeps its first pusher.
+  For the `by` rule: a new fact check naming the pusher in a commit the
+  pusher first pushes passes; one naming another agent, the person alone or
+  another member is refused with file, line, commit, found and expected;
+  agent B merging agent A's already-pushed branch (fast-forward and merge
+  commit) whose fact checks name A passes; B rebasing, cherry-picking or
+  squashing A's commits that add fact checks naming A is refused; a fact
+  check written by B in a merge commit B pushes passes only if it names B;
+  a group introduced on two branches by two agents is refused; an unchanged
+  fact check of another agent passes; a fact added under another agent's
+  unchanged fact check is refused; facts removed from another agent's fact
+  check pass; B reverting the removal of A's fact check passes; a document
+  moved with its fact checks unchanged passes; fact checks of the
+  migration's first commit and of a repository's first commit stay valid.
 - **Docs:** catalog §8 rewritten as "Changing the catalog" (§8.1 pushes,
   §8.2 replaced by "No catalog approval", §8.3 validation on push, §8.5
   conflicts as Git merges, §8.6 and §8.7 rewritten), §4.5 (`by` names the
-  pusher), §7.3 (allowed values); architecture §5.1 to §5.3; identity §8.7,
+  agent that first pushed the commit introducing it), §7.3 (allowed values); architecture §5.1 to §5.3; identity §8.7,
   §11 (push log, refusals, allowed values).
 
 ### GC-4: The index from `main`
@@ -1123,10 +1223,12 @@ provenance from `index/`; GC-5 does not touch `index/`.
   through the Git container's API with its verification and report, then the
   drop migration, which refuses to run unless the move verified for every
   workspace with M2 documents. Removes the remaining Drizzle definitions and
-  the code that read M2's tables.
+  the code that read M2's tables. The first commit is recorded as first
+  pushed by `shinan`, and its fact check groups as on `main` (D-066).
 - **Tests:** on a database holding M2 data (documents, retired documents,
   schema documents, start-here, waiting proposals): the first commit byte for
-  byte; a failed verification leaves M2's tables in place and stops
+  byte; the 18 migrated documents' fact checks stay valid for later pushes
+  that leave them unchanged; a failed verification leaves M2's tables in place and stops
   `migrate`; running `migrate` twice changes nothing.
 - **Docs:** operator guide "Upgrading from 0.3 to 0.4" (with the rollback by
   dump of [4.2](#42-database-changes)); architecture §11.5.
@@ -1147,13 +1249,16 @@ provenance from `index/`; GC-5 does not touch `index/`.
 
 - [2.9](#29-undo-and-purge): in the Git container, the preview, the rewrite
   and swap, the removed-commits list checked by pre-receive and the journal's
-  text; in `web`, the screen and its warnings, purging the push log's ref
+  text, rewritten commits inheriting the first pusher of the commits they
+  replace and the record of groups on `main` rebuilt (D-066); in `web`, the
+  screen and its warnings, the new first-pusher rows, purging the push log's ref
   names and events, the records, the index rebuild, and finishing a purge
   whose database part failed.
 - **Tests:** the text gone from every object of the new repository
   (`git cat-file --batch-all-objects`), from the journal, the index and the
   database; a push of an old commit refused; whitespace and line-break
-  matching as in M2.
+  matching as in M2; after a purge, a merge of an agent's pushed branch still
+  passes the `by` rule.
 - **Docs:** catalog §9; architecture §4.4; identity §11; operator guide
   "Catalog purge" (cleaning clones, rotating the secret).
 
@@ -1161,8 +1266,10 @@ provenance from `index/`; GC-5 does not touch `index/`.
 
 - [2.12](#212-agents-setup-on-a-machine-and-the-skill): `SKILL.md` and its
   references rewritten (`reading.md`, `facts.md`, `changing.md` becoming the
-  Git workflow and the refusal codes, including `by` naming the pusher and
-  not merging other agents' fact checks; a generated built-in types file);
+  Git workflow and the refusal codes, including `by` naming the agent that
+  first pushed the commit (merging another agent's pushed branch is fine;
+  rebasing, cherry-picking or squashing its fact checks is not); a generated
+  built-in types file);
   the setup page's text; checking the credential helper line on Daedalus
   (helpers asked, trace redaction).
 - **Docs:** agent integrations "The skill", "Setting up OpenCode with a
@@ -1197,7 +1304,7 @@ provenance from `index/`; GC-5 does not touch `index/`.
 - The [trial guide](trial.md) rewritten for Git ([4.4](#44-restarting-the-trial)):
   §3 (steps), §4 (machine configuration: credential helper, clone location,
   OpenCode files without MCP), §5.3 (recording facts by hand, `by` naming the
-  pusher), §5.4 (limits: push refusals), §6 (keeping both in step by pushing;
+  agent that first pushes the commit), §5.4 (limits: push refusals), §6 (keeping both in step by pushing;
   the weekly comparison reads the clone).
 - Drafts for the `workspace` repository: the trial note and the Daedalus
   entry's paths (a change in that repository, through its workflow).
@@ -1214,6 +1321,7 @@ the records they supersede or amend were updated in the same pull request
 | [D-059](decisions/D-059-catalog-in-git-hosted-by-shinan.md)  | The catalog is stored in Git, one repository per workspace hosted by Shinan over HTTPS; branches allowed, `main` is the catalog                           | Supersedes D-022, D-043; amends D-006 |
 | [D-060](decisions/D-060-no-catalog-approval.md)              | Catalog changes need no approval; checks on push are the only gate; undo is a revert; owners may allow a value as "not a secret"                          | Supersedes D-024                      |
 | [D-061](decisions/D-061-push-authentication-and-push-log.md) | A push is authenticated by the agent token; commit authors are not trusted; a push log records the agent and person; new fact checks must name the pusher | —                                     |
+| [D-066](decisions/D-066-by-names-the-first-pusher.md)        | A new or changed fact check's `by` names the agent that first pushed the commit introducing it (refines GQ-3, 2026-11-20)                                 | Amends D-061                          |
 | [D-062](decisions/D-062-no-catalog-trust-labels.md)          | No trust labels on catalog content; it is information, never instructions (tasks are M3's to decide)                                                      | —                                     |
 | [D-063](decisions/D-063-no-mcp-for-the-catalog.md)           | Agents read and change the catalog through Git and the skill, not MCP; MCP stays for tasks                                                                | Amends D-014, D-006                   |
 | [D-064](decisions/D-064-catalog-not-wiki.md)                 | "Wiki" becomes "catalog"; people browse `main` as a file tree, pages, search and commit history; no browser editing for now                               | Amends D-006                          |
@@ -1225,7 +1333,10 @@ the records they supersede or amend were updated in the same pull request
 only), by D-059; [D-024](decisions/D-024-gated-catalog-approval.md) (gated
 catalog approval, strict as the remedy, self-approval), by D-060.
 
-**Amended:** [D-006](decisions/D-006-document-first-catalog.md) (its decision
+**Amended:** [D-061](decisions/D-061-push-authentication-and-push-log.md)
+(its `by` rule: the agent that first pushed the commit introducing a fact
+check, not the pusher to `main`, by D-066, accepted on 2026-11-20,
+[evidence](https://github.com/guneet-xyz/shinan/issues/161#issuecomment-7028895313)); [D-006](decisions/D-006-document-first-catalog.md) (its decision
 stands; its consequences on storage, the wiki and the agent index change, by
 D-059, D-063 and D-064) and [D-014](decisions/D-014-three-connection-levels.md)
 (level 1 becomes "Git and the skill for the catalog, MCP and the skill for
@@ -1233,7 +1344,7 @@ tasks", by D-063).
 
 **Maintained sections only** (History lines and consequences, no change of
 decision): [D-007](decisions/D-007-fact-provenance.md) (`by` is written by
-the agent and must name the pusher), [D-012](decisions/D-012-self-hostable.md)
+the agent and must name the agent that first pushed the commit introducing it), [D-012](decisions/D-012-self-hostable.md)
 (operators run a Git container and keep its volume as well as PostgreSQL),
 [D-017](decisions/D-017-shared-git-host-accounts.md) (Shinan's own records,
 the push log, credit the agent, not commit authors),
@@ -1293,22 +1404,22 @@ is unchanged).
 
 ## 8. Risks
 
-| Risk                                                                                                                                                                                    | Mitigation                                                                                                                                                                                                                                                                                                                          |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Git parsing pushed data.** A memory-safety bug in Git's handling of pushed or negotiated data.                                                                                        | Git runs only in its own container (GQ-1, D-065), which holds the repositories and the service token and nothing else, on an internal network with no internet; only authenticated agents reach it, through `web`; `fsckObjects`; limits in both containers; a clean environment; Debian's security updates through image rebuilds. |
-| **No approval.** A wrong but valid change reaches `main` at once, and agents rely on it.                                                                                                | Validation refuses broken documents; IDs cannot disappear; fact checks must name the pusher (GQ-3); the push log names who; `git revert`; the commit history with pushers (GQ-6) and the R6 samples catch what validation cannot. The roadmap's "switch to strict" remedy disappears with D-060; tightening the skill replaces it.  |
-| **Hand-edited YAML.** Without operations and the canonical writer, agents write frontmatter by hand: more refused pushes, mixed styles, facts duplicated instead of moved on a recheck. | Validation already refuses two current facts with one identity and every malformed form; precise refusal lines; the check-only push; the skill's examples. Style is not enforced (proposed): the text stays the source of truth people and agents wrote.                                                                            |
-| **Conflicts between agents** editing the same document.                                                                                                                                 | Git merges by line, so different facts rarely conflict; conflicts are resolved by the agent from evidence; validation catches a bad merge (duplicate facts, broken YAML).                                                                                                                                                           |
-| **The token on the machine** now also passes through Git's credential machinery.                                                                                                        | A helper scoped to Shinan's address that answers only `get`; other helpers cleared for that address; `GIT_TERMINAL_PROMPT=0`; Git's trace redaction; the skill's rule; instant revocation, as in M2.                                                                                                                                |
-| **Purged text survives in clones** and in model providers' logs.                                                                                                                        | The purge screen and operator guide say so; old commits cannot be pushed back; the secret is rotated, as before.                                                                                                                                                                                                                    |
-| **Secret check false positives** block with no approver to let them through ([#157](https://github.com/guneet-xyz/shinan/issues/157)).                                                  | Weaker signs only warn; near-certain rules stay narrow; a workspace owner can allow one exact value (GQ-2).                                                                                                                                                                                                                         |
-| **Data loss** of the volume on a disk with no backups.                                                                                                                                  | Accepted (D-038); clones as partial copies and a documented re-creation from one; the volume copied before each deployment.                                                                                                                                                                                                         |
-| **Migration mistakes,** with M2's tables dropped in the same release (GQ-5).                                                                                                            | Byte-for-byte verification that stops `migrate` before the drop, which refuses to run otherwise; the pre-deployment dump as the rollback.                                                                                                                                                                                           |
-| **Prompt injection through the catalog** without labels: an agent misled once can write instructions that other agents read.                                                            | The skill's rule that catalog content is never instructions; the push log names the writer; owner review through recent changes. Labels could not stop a determined writer either; they only told agents who wrote what.                                                                                                            |
-| **Throwing away M2 work.** Much of M2's code (operations, proposals, labels) goes.                                                                                                      | The parser, validation, secret check, index, search and rendering, the hardest-tested parts, stay; deletion PRs are separate and easy to review.                                                                                                                                                                                    |
-| **The service token leaks** (it is in four containers' environments).                                                                                                                   | It only opens the Git container, on an internal network no outside request reaches; with it, someone already inside the stack could push as any agent. Rotated by the owner in Obscuro and a restart; its use is never logged with its value.                                                                                       |
-| **The `by` rule blocks merging other agents' work** (GQ-3).                                                                                                                             | Accepted: each agent pushes its own fact checks; the skill says so; branches stay useful for sharing work without fact checks.                                                                                                                                                                                                      |
-| **Load on Musashi** from clones and checks on two cores.                                                                                                                                | The process cap, rates, size limits; one check of `main` at a time per workspace; the catalog is small (18 documents today).                                                                                                                                                                                                        |
+| Risk                                                                                                                                                                                                                             | Mitigation                                                                                                                                                                                                                                                                                                                          |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Git parsing pushed data.** A memory-safety bug in Git's handling of pushed or negotiated data.                                                                                                                                 | Git runs only in its own container (GQ-1, D-065), which holds the repositories and the service token and nothing else, on an internal network with no internet; only authenticated agents reach it, through `web`; `fsckObjects`; limits in both containers; a clean environment; Debian's security updates through image rebuilds. |
+| **No approval.** A wrong but valid change reaches `main` at once, and agents rely on it.                                                                                                                                         | Validation refuses broken documents; IDs cannot disappear; fact checks must name the pusher (GQ-3); the push log names who; `git revert`; the commit history with pushers (GQ-6) and the R6 samples catch what validation cannot. The roadmap's "switch to strict" remedy disappears with D-060; tightening the skill replaces it.  |
+| **Hand-edited YAML.** Without operations and the canonical writer, agents write frontmatter by hand: more refused pushes, mixed styles, facts duplicated instead of moved on a recheck.                                          | Validation already refuses two current facts with one identity and every malformed form; precise refusal lines; the check-only push; the skill's examples. Style is not enforced (proposed): the text stays the source of truth people and agents wrote.                                                                            |
+| **Conflicts between agents** editing the same document.                                                                                                                                                                          | Git merges by line, so different facts rarely conflict; conflicts are resolved by the agent from evidence; validation catches a bad merge (duplicate facts, broken YAML).                                                                                                                                                           |
+| **The token on the machine** now also passes through Git's credential machinery.                                                                                                                                                 | A helper scoped to Shinan's address that answers only `get`; other helpers cleared for that address; `GIT_TERMINAL_PROMPT=0`; Git's trace redaction; the skill's rule; instant revocation, as in M2.                                                                                                                                |
+| **Purged text survives in clones** and in model providers' logs.                                                                                                                                                                 | The purge screen and operator guide say so; old commits cannot be pushed back; the secret is rotated, as before.                                                                                                                                                                                                                    |
+| **Secret check false positives** block with no approver to let them through ([#157](https://github.com/guneet-xyz/shinan/issues/157)).                                                                                           | Weaker signs only warn; near-certain rules stay narrow; a workspace owner can allow one exact value (GQ-2).                                                                                                                                                                                                                         |
+| **Data loss** of the volume on a disk with no backups.                                                                                                                                                                           | Accepted (D-038); clones as partial copies and a documented re-creation from one; the volume copied before each deployment.                                                                                                                                                                                                         |
+| **Migration mistakes,** with M2's tables dropped in the same release (GQ-5).                                                                                                                                                     | Byte-for-byte verification that stops `migrate` before the drop, which refuses to run otherwise; the pre-deployment dump as the rollback.                                                                                                                                                                                           |
+| **Prompt injection through the catalog** without labels: an agent misled once can write instructions that other agents read.                                                                                                     | The skill's rule that catalog content is never instructions; the push log names the writer; owner review through recent changes. Labels could not stop a determined writer either; they only told agents who wrote what.                                                                                                            |
+| **Throwing away M2 work.** Much of M2's code (operations, proposals, labels) goes.                                                                                                                                               | The parser, validation, secret check, index, search and rendering, the hardest-tested parts, stay; deletion PRs are separate and easy to review.                                                                                                                                                                                    |
+| **The service token leaks** (it is in four containers' environments).                                                                                                                                                            | It only opens the Git container, on an internal network no outside request reaches; with it, someone already inside the stack could push as any agent. Rotated by the owner in Obscuro and a restart; its use is never logged with its value.                                                                                       |
+| **The `by` rule and rewritten history** (GQ-3 as refined, D-066). Rebasing, cherry-picking or squashing another agent's commits that add fact checks is refused; the record of first pushers becomes something Shinan must keep. | Merging another agent's pushed branch passes; the skill says to rebase or squash only one's own work; reverts keep working (restoring is not introducing); the record is append-only, journaled to PostgreSQL, and inherited across a purge.                                                                                        |
+| **Load on Musashi** from clones and checks on two cores.                                                                                                                                                                         | The process cap, rates, size limits; one check of `main` at a time per workspace; the catalog is small (18 documents today).                                                                                                                                                                                                        |
 
 ## 9. Owner actions
 
@@ -1399,8 +1510,15 @@ start"); the answers are recorded on
 3. **GQ-3, `by` and the pusher: a new or changed fact check's `by` must name
    the pusher** (the written form for the pushing agent and its person,
    identity §8.7), or the push is refused with the reason (the plan
-   recommended not matching). [2.5](#25-checks-on-push), check 6;
-   [D-061](decisions/D-061-push-authentication-and-push-log.md).
+   recommended not matching). [D-061](decisions/D-061-push-authentication-and-push-log.md).
+   **Refined by the owner on 2026-11-20** ([recorded on #161](https://github.com/guneet-xyz/shinan/issues/161#issuecomment-7028895313)): the
+   `by` must name the agent (and its person) that **first pushed the commit
+   introducing it**, not whoever pushes to `main`; Shinan knows each
+   commit's first pusher from the push log. Agent B may merge agent A's
+   already-pushed branch into `main`; A's fact checks must still name A, and
+   nobody can write another agent's name on a fact check in a commit they
+   push first. [2.5](#25-checks-on-push), check 6;
+   [2.6](#26-the-push-log-and-events); [D-066](decisions/D-066-by-names-the-first-pusher.md).
 4. **GQ-4, trust labels:** dropped for the catalog only; the M3 plan decides
    for tasks, outside issues and nudges. As recommended
    ([D-062](decisions/D-062-no-catalog-trust-labels.md)).
