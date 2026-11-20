@@ -1069,6 +1069,9 @@ describe("recent changes", () => {
     ).toContain("Changed files not known")
   })
 
+  const datedNote =
+    "“dated” marks a date the agent wrote into the change; Shinan has no record of when it reached the catalog."
+
   it("marks a commit's own date as such, and makes no day of it", async () => {
     const dated = (iso: string) => ({
       ...change("Dated by the agent", 0, "f", []),
@@ -1103,6 +1106,55 @@ describe("recent changes", () => {
     )
     // Under today's heading, but marked as the commit's date.
     expect(past!.querySelector("time")!.textContent).toBe("dated Jan 1, 2010")
+    // Said once in words, under "Date not recorded", which comes first.
+    const notes = screen.getAllByText(datedNote)
+    expect(notes).toHaveLength(1)
+    expect(notes[0]!.previousElementSibling!.textContent).toBe(
+      "Date not recorded",
+    )
+  })
+
+  it("says what dated means once, above the list, when recorded changes come first", async () => {
+    renderApp(
+      `${base}/changes`,
+      fakeApi({
+        catalogChanges: () =>
+          Promise.resolve({
+            ...answer,
+            changes: [
+              change("Recorded", 60, "a", []),
+              {
+                ...change("Dated by the agent", 0, "f", []),
+                time: "2010-01-01T12:00:00.000Z",
+                time_source: "commit" as const,
+              },
+            ],
+            next_after: null,
+          }),
+      }),
+    )
+    await screen.findByText("Recorded")
+    const notes = screen.getAllByText(datedNote)
+    expect(notes).toHaveLength(1)
+    expect(notes[0]!.nextElementSibling!.querySelector("h2")!.textContent).toBe(
+      "Today",
+    )
+  })
+
+  it("says nothing of dated when every change has its recorded time", async () => {
+    renderApp(
+      `${base}/changes`,
+      fakeApi({
+        catalogChanges: () =>
+          Promise.resolve({
+            ...answer,
+            changes: [change("Recorded", 60, "a", [])],
+            next_after: null,
+          }),
+      }),
+    )
+    await screen.findByText("Recorded")
+    expect(screen.queryByText(datedNote)).toBeNull()
   })
 
   it("says so when a page held only merges that changed nothing", async () => {

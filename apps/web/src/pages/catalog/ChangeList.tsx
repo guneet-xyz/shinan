@@ -98,6 +98,14 @@ export function ChangeList<T extends CatalogChange>(props: {
   const pages = more.key === key ? more.pages : []
   const changes = [props.first, ...pages].flatMap((p) => p.changes)
   const next = (pages[pages.length - 1] ?? props.first).next_after
+  const days = byDay(changes)
+  // Said once, in words, for a phone or keyboard user who never sees
+  // `CommitDate`'s title (product review of #196): under "Date not
+  // recorded" when those changes come first, else above the list.
+  const dated = changes.some(
+    (c) => c.time !== null && c.time_source === "commit",
+  )
+  const undatedFirst = days[0]?.day === null
   const showOlder = async () => {
     if (!next) return
     setLoading(true)
@@ -120,7 +128,8 @@ export function ChangeList<T extends CatalogChange>(props: {
             : props.empty}
         </p>
       )}
-      {byDay(changes).map((day) => (
+      {dated && !undatedFirst && <DatedNote />}
+      {days.map((day, i) => (
         <section
           key={day.changes[0]!.change.commit}
           className="flex flex-col gap-3"
@@ -128,6 +137,7 @@ export function ChangeList<T extends CatalogChange>(props: {
           <h2 className="text-sm font-semibold text-muted-foreground">
             {day.day === null ? "Date not recorded" : dayLabel(day.day)}
           </h2>
+          {dated && i === 0 && undatedFirst && <DatedNote />}
           <ol className="flex flex-col gap-5">
             {day.changes.map(({ change, ownDate }) => (
               <ChangeItem key={change.commit} change={change} ownDate={ownDate}>
@@ -149,6 +159,16 @@ export function ChangeList<T extends CatalogChange>(props: {
         </Button>
       )}
     </>
+  )
+}
+
+/** What "dated" means, in words. */
+function DatedNote() {
+  return (
+    <p className="text-sm text-muted-foreground">
+      “dated” marks a date the agent wrote into the change; Shinan has no record
+      of when it reached the catalog.
+    </p>
   )
 }
 

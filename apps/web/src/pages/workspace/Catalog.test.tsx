@@ -151,6 +151,11 @@ describe("Settings › Catalog", () => {
     renderApp(`/w/${workspaceId}/settings/catalog`, fake)
     const field = await screen.findByLabelText("The value, or its fingerprint")
     expect(field.getAttribute("type")).toBe("password")
+    // Show unmasks it, to check what was pasted; Hide masks it again.
+    await userEvent.click(screen.getByRole("button", { name: "Show" }))
+    expect(field.getAttribute("type")).toBe("text")
+    await userEvent.click(screen.getByRole("button", { name: "Hide" }))
+    expect(field.getAttribute("type")).toBe("password")
     expect(field.getAttribute("placeholder")).toBe(
       "The value, or sha256:… from the refusal",
     )
@@ -173,7 +178,7 @@ describe("Settings › Catalog", () => {
     )
     await userEvent.click(screen.getByRole("button", { name: "Allow" }))
     expect((await screen.findByRole("alert")).textContent).toBe(
-      "That isn't a whole fingerprint: it is sha256: and 64 letters and digits, as the refusal shows it.",
+      "That isn't a whole fingerprint: it is sha256: and 64 hexadecimal characters (0–9, a–f), as the refusal shows it.",
     )
     expect(fake.allowCatalogValue).not.toHaveBeenCalled()
   })

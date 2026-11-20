@@ -85,7 +85,7 @@ async function fingerprintOf(text: string): Promise<string> {
   if (/^sha256:/i.test(trimmed)) {
     if (!/^sha256:[0-9a-f]{64}$/i.test(trimmed))
       throw new InputError(
-        "That isn't a whole fingerprint: it is sha256: and 64 letters and digits, as the refusal shows it.",
+        "That isn't a whole fingerprint: it is sha256: and 64 hexadecimal characters (0–9, a–f), as the refusal shows it.",
       )
     return trimmed.toLowerCase()
   }
@@ -125,6 +125,7 @@ function AllowedValues() {
   )
   const [text, setText] = useState("")
   const [inputError, setInputError] = useState<string | null>(null)
+  const [shown, setShown] = useState(false)
   const add = useAction()
   const remove = useAction()
   const field = useId()
@@ -147,6 +148,7 @@ function AllowedValues() {
       }
       await api.allowCatalogValue(workspace.id, { fingerprint })
       setText("")
+      setShown(false)
       values.reload()
     })
   }
@@ -160,10 +162,11 @@ function AllowedValues() {
         <Field>
           <FieldLabel htmlFor={field}>The value, or its fingerprint</FieldLabel>
           <div className="flex flex-col gap-2 sm:flex-row">
-            {/* Masked as it is typed: it may look like a secret. */}
+            {/* Masked as it is typed: it may look like a secret. Show lets
+                an owner check what they pasted (review of #196). */}
             <Input
               id={field}
-              type="password"
+              type={shown ? "text" : "password"}
               value={text}
               autoComplete="off"
               spellCheck={false}
@@ -177,13 +180,24 @@ function AllowedValues() {
               }}
               className="font-mono"
             />
-            <Button
-              type="submit"
-              disabled={add.pending || text.trim() === ""}
-              className="self-start"
-            >
-              Allow
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                aria-controls={field}
+                onClick={() => setShown(!shown)}
+                className="self-start"
+              >
+                {shown ? "Hide" : "Show"}
+              </Button>
+              <Button
+                type="submit"
+                disabled={add.pending || text.trim() === ""}
+                className="self-start"
+              >
+                Allow
+              </Button>
+            </div>
           </div>
           <FieldDescription id={`${field}-help`}>
             Shinan works out its fingerprint on this page and keeps only that,
