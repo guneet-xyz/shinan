@@ -174,15 +174,15 @@ export async function createWorkspaceAsOwner(
  * acts in a workspace, and only for that action. The caller has found the
  * invitations in that workspace.
  */
-export function shinanInWorkspace(
-  installation: InstallationScope<"invitation.expire">,
-  workspaceId: string,
-): WorkspaceScope<"invitation.expire"> {
+export function shinanInWorkspace<
+  A extends "invitation.expire" | "catalog-push.record",
+>(installation: InstallationScope<A>, workspaceId: string): WorkspaceScope<A> {
   if (
-    installation.action !== "invitation.expire" ||
+    (installation.action !== "invitation.expire" &&
+      installation.action !== "catalog-push.record") ||
     installation.actor.kind !== "shinan"
   )
-    throw new Error("Only Shinan's expiry job can use this")
+    throw new Error("Only Shinan's expiry job and push log can use this")
   return {
     action: installation.action,
     tx: installation.tx,
@@ -192,7 +192,7 @@ export function shinanInWorkspace(
     request: installation.request,
     jobs: installation.jobs,
     installationUrl: installation.installationUrl,
-  } as WorkspaceScope<"invitation.expire">
+  } as WorkspaceScope<A>
 }
 
 /**

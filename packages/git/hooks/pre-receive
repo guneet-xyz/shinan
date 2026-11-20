@@ -1,7 +1,60 @@
 #!/nodejs/bin/node
-// Git runs this before it accepts a push (core.hooksPath, build plan §2.5).
-// Until Shinan's push checks exist (GC-3a), it refuses every push, so
-// nothing unchecked can land. Plain JavaScript that runs as a CommonJS or
-// an ES module: Node.js starts it directly, without a shell.
-process.stderr.write("Shinan: pushes are not open yet. Nothing was changed.\n")
-process.exitCode = 1
+// Git runs this before it accepts a push (core.hooksPath; Git-based catalog
+// plan §2.5). A thin client: it sends the ref lines, the quarantine
+// variables and the push options to the git role on loopback, with the
+// one-time nonce the git role gave this push, and prints the answer. The
+// git role runs the checks. Without a nonce, or if the git role does not
+// answer, it refuses the push. It starts no other process.
+//
+// Plain JavaScript that runs as a CommonJS or an ES module: Node.js starts
+// it directly, without a shell.
+const refuse = () => {
+  process.stderr.write(
+    "Shinan: this push could not be checked. Nothing was changed. Try again; tell your person if it happens again.\n",
+  )
+  process.exitCode = 1
+}
+
+const nonce = process.env.SHINAN_PUSH_NONCE
+const url = process.env.SHINAN_HOOK_URL
+if (!nonce || !url || !/^http:\/\/127\.0\.0\.1:\d{1,5}$/.test(url)) {
+  refuse()
+} else {
+  const chunks = []
+  process.stdin.on("data", (chunk) => chunks.push(chunk))
+  process.stdin.on("end", () => {
+    const count = Number(process.env.GIT_PUSH_OPTION_COUNT ?? "")
+    const options = Number.isSafeInteger(count)
+      ? Array.from(
+          { length: Math.min(count, 100) },
+          (_, i) => process.env[`GIT_PUSH_OPTION_${i}`] ?? "",
+        )
+      : null
+    fetch(`${url}/pre-receive`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "shinan-push-nonce": nonce,
+      },
+      body: JSON.stringify({
+        updates: Buffer.concat(chunks).toString("utf8"),
+        quarantine: {
+          GIT_QUARANTINE_PATH: process.env.GIT_QUARANTINE_PATH,
+          GIT_OBJECT_DIRECTORY: process.env.GIT_OBJECT_DIRECTORY,
+          GIT_ALTERNATE_OBJECT_DIRECTORIES:
+            process.env.GIT_ALTERNATE_OBJECT_DIRECTORIES,
+        },
+        options,
+      }),
+      signal: AbortSignal.timeout(180_000),
+    })
+      .then((response) => response.json())
+      .then((answer) => {
+        const lines = Array.isArray(answer.lines) ? answer.lines : []
+        for (const line of lines) process.stderr.write(`${String(line)}\n`)
+        process.exitCode = answer.exitCode === 0 ? 0 : 1
+        if (process.exitCode !== 0 && lines.length === 0) refuse()
+      })
+      .catch(refuse)
+  })
+}

@@ -284,6 +284,40 @@ export const rules = deepFreeze({
     shinan: true,
   },
   /**
+   * Store what the Git container's journal records (Git-based catalog plan
+   * §2.6): the push log, first pushers, `catalog.pushed` events and the
+   * security log, and compare the log with the repositories' refs. `web`
+   * and the worker do this as Shinan.
+   */
+  "catalog-push.record": {
+    level: "installation",
+    access: "write",
+    people: false,
+    shinan: true,
+  },
+  /**
+   * See the values a workspace's owners allowed as "not a secret" (plan
+   * §2.5, GQ-2): fingerprints only. Workspace owners.
+   */
+  "catalog-allowed-value.read": {
+    level: "workspace",
+    access: "read",
+    roles: ["owner"],
+    agents: "people",
+    reauthentication: false,
+  },
+  /**
+   * Allow a value as "not a secret", or remove one (GQ-2): workspace
+   * owners, after signing in again; never agents.
+   */
+  "catalog-allowed-value.change": {
+    level: "workspace",
+    access: "write",
+    roles: ["owner"],
+    agents: "people",
+    reauthentication: true,
+  },
+  /**
    * Make a workspace's catalog repository in the Git container once the
    * workspace exists (Git-based catalog plan §2.4). The worker does this as
    * Shinan; the request is made when the workspace is created.

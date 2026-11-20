@@ -193,7 +193,9 @@ const report = pushed.body.toString("latin1")
 results.push = {
   unpacked: report.includes("unpack ok\n"),
   declined: report.includes("ng refs/heads/main pre-receive hook declined\n"),
-  hookMessage: pushed.stderr.includes("Shinan: pushes are not open yet."),
+  hookMessage: pushed.stderr.includes(
+    "Shinan: this push could not be checked. Nothing was changed.",
+  ),
   mainUnchanged:
     (await text(["rev-parse", "refs/heads/main"], { gitDir: server })) ===
     first,

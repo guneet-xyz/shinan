@@ -30,6 +30,10 @@ const actionNames: Record<string, string> = {
   "agent-token.failed": "Agent token refused",
   "catalog.purged": "Purged catalog text",
   "catalog.fetched": "Catalog fetches",
+  "catalog.push-refused": "Push refused: it held a secret",
+  "catalog.secret-allowed": "Allowed a value as not a secret",
+  "catalog.secret-allow-removed": "Stopped allowing a value",
+  "catalog.unlogged-update": "Catalog branch changed outside a push",
 }
 
 const outcomeNames: Record<SecurityLogEntry["outcome"], string> = {

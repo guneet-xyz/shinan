@@ -40,6 +40,7 @@ export type WorkspaceScopeAction =
   | "workspace.create"
   | "invitation.respond"
   | "invitation.expire"
+  | "catalog-push.record"
 
 /**
  * Proof that the permission check passed for one action in one workspace.

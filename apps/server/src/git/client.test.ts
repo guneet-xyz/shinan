@@ -106,13 +106,24 @@ describe("the Git container's client", () => {
   it("reads and acknowledges the journal", async () => {
     await journal.append("push.test", { a: 1 })
     await journal.append("push.test", { a: 2 })
-    expect((await client.readJournal({ after: 0 })).map((e) => e.data)).toEqual(
-      [{ a: 1 }, { a: 2 }],
-    )
-    expect(await client.acknowledgeJournal(1)).toEqual({ deleted: 1 })
-    expect(await client.acknowledgeJournal(1)).toEqual({ deleted: 0 })
+    const read = await client.readJournal({ after: 0 })
+    expect(read.entries.map((e) => e.data)).toEqual([{ a: 1 }, { a: 2 }])
+    expect(read).toMatchObject({ journalId: journal.id, last: 2 })
+    const journalId = read.journalId
+    expect(await client.acknowledgeJournal({ journalId, through: 1 })).toEqual({
+      deleted: 1,
+    })
+    expect(await client.acknowledgeJournal({ journalId, through: 1 })).toEqual({
+      deleted: 0,
+    })
+    await expect(
+      client.acknowledgeJournal({
+        journalId: "9b9c1a2e-3d4f-4a5b-8c6d-7e8f9a0b1c2d",
+        through: 2,
+      }),
+    ).rejects.toMatchObject({ status: 409, code: "other-journal" })
     expect(
-      (await client.readJournal({ after: 0 })).map((e) => e.number),
+      (await client.readJournal({ after: 0 })).entries.map((e) => e.number),
     ).toEqual([2])
   })
 

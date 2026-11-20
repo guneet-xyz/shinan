@@ -277,6 +277,7 @@ export type {
   SmartHttpRequest,
   RepositoryFile,
   RepositoryInfo,
+  RepositoryRefs,
   TreeChange as GitTreeChange,
   TreeEntry as GitTreeEntry,
 } from "./catalog/git/api.js"
@@ -287,6 +288,25 @@ export {
   summarizeCatalogFetches,
 } from "./catalog/git/access.js"
 export type { GitRequestAccess, GitRequestInput } from "./catalog/git/access.js"
+export { pushCheckCodes, pushLimits } from "./catalog/git/push-codes.js"
+export type { PushCheckCode } from "./catalog/git/push-codes.js"
+export {
+  allowCatalogValue,
+  listCatalogAllowedValues,
+  removeCatalogAllowedValue,
+} from "./catalog/git/allowed-values.js"
+export type { CatalogAllowedValue } from "./catalog/git/allowed-values.js"
+export {
+  checkCatalogRefs,
+  setAsideMessage,
+  storeCatalogJournal,
+} from "./catalog/git/push-log.js"
+export type {
+  JournalPushRef,
+  PushCheckedData,
+  PushConfirmedData,
+  RepositoryCreatedData,
+} from "./catalog/git/push-log.js"
 export {
   catalogRepositoryQueue,
   createCatalogRepository,

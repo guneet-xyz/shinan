@@ -729,8 +729,8 @@ async function run() {
   check(
     git.hook.exitCode === 1 &&
       git.hook.stderr ===
-        "Shinan: pushes are not open yet. Nothing was changed.",
-    "Git starts the Node.js hook without a shell, and it refuses pushes",
+        "Shinan: this push could not be checked. Nothing was changed. Try again; tell your person if it happens again.",
+    "Git starts the Node.js hook without a shell, and it refuses a push it cannot have checked",
   )
   check(
     git.advertisement.contentType ===
@@ -970,15 +970,45 @@ async function run() {
     ],
     { cwd: clones[1].folder },
   )
+  // Pushes run the image's hooks, which call the git role's checks on
+  // loopback (GC-3a): a branch push is accepted and logged; a secret is
+  // refused with its place and fingerprint, never its value; `main` opens
+  // with its own checks (GC-3b).
   const pushed = agentGit(["push", "origin", "HEAD:refs/heads/a-note"], {
     cwd: clones[1].folder,
   })
+  const toMain = agentGit(["push", "origin", "HEAD:refs/heads/main"], {
+    cwd: clones[1].folder,
+  })
+  const token = `ghp_${"0123456789abcdefghij"}ABCDEFGHIJ012345`
+  writeFileSync(join(clones[1].folder, "leak.md"), `token: ${token}\n`)
+  agentGit(["add", "leak.md"], { cwd: clones[1].folder })
+  agentGit(
+    [
+      "-c",
+      "user.name=Agent",
+      "-c",
+      "user.email=agent@example.com",
+      "commit",
+      "--quiet",
+      "-m",
+      "A leak",
+    ],
+    { cwd: clones[1].folder },
+  )
+  const leaked = agentGit(["push", "origin", "HEAD:refs/heads/a-leak"], {
+    cwd: clones[1].folder,
+  })
   check(
-    pushed.code !== 0 &&
-      pushed.stderr.includes(
-        "remote: Shinan: pushes are not open yet. Nothing was changed.",
-      ),
-    `the image's pre-receive hook refuses every push until the push checks exist (${pushed.stderr.trim().split("\n").slice(0, 3).join(" | ")})`,
+    pushed.code === 0 &&
+      toMain.code !== 0 &&
+      toMain.stderr.includes("main-not-open") &&
+      leaked.code !== 0 &&
+      /remote: +leak\.md:1 +secret +.*fingerprint sha256:[0-9a-f]{64}/.test(
+        leaked.stderr,
+      ) &&
+      !leaked.stderr.includes(token.slice(4)),
+    `the image's hooks have the git role check each push: a branch accepted, main not open yet, a secret refused without its value (${[pushed, toMain, leaked].map((p) => `${p.code}: ${p.stderr.trim().split("\n").slice(-3).join(" | ")}`).join(" / ")})`,
   )
   const readOnlyClone = join(dir, "clone-read-only")
   const readOnlyCloned = agentGit(
@@ -1012,6 +1042,25 @@ async function run() {
         "remote: Shinan: no catalog here for this agent's token.",
       ),
     "without a token Git is asked for credentials; an unknown workspace is not found",
+  )
+  const pushLog = await waitFor("the push log", () => {
+    const rows = psql(
+      "select outcome || ':' || array_to_string(codes, ',') from catalog_pushes order by journal_entry",
+    )
+    return rows.split("\n").length >= 3 ? rows : null
+  })
+  check(
+    pushLog === "accepted:\nrefused:main-not-open\nrefused:secret" &&
+      psql(
+        "select count(*) from catalog_push_refs where ref = 'refs/heads/a-note' and confirmed",
+      ) === "1" &&
+      psql(
+        "select pusher_kind || ':' || coalesce(ref, '') from catalog_commit_first_pushes order by first_pushed_at",
+      ) === "shinan:\nagent:refs/heads/a-note" &&
+      psql(
+        "select count(*) from security_log where action = 'catalog.push-refused'",
+      ) === "1",
+    `web stored the push log from the git role's journal: pushes, confirmed refs, first pushers, the refused secret in the security log (${JSON.stringify(pushLog)})`,
   )
   check(
     Number(psql("select sum(fetch_count) from agent_tokens")) === 5,
@@ -1288,6 +1337,34 @@ async function run() {
   check(
     inspect("migrate", "{{.State.ExitCode}}") === "0",
     "migrate runs again on the next up and exits 0",
+  )
+
+  // The journal drains: the entry about the heavy repository, which has no
+  // workspace in PostgreSQL, is set aside rather than holding back the
+  // entries after it, such as this refused push's (review of GC-3a).
+  const pushesBefore = Number(psql("select count(*) from catalog_pushes"))
+  const late = agentGit(["push", "origin", "HEAD:refs/heads/after-heavy"], {
+    cwd: clones[1].folder,
+  })
+  const drained = await waitFor(
+    "the worker to store the whole Git journal",
+    () => {
+      const journal = askGit("git", "/journal?after=0", gitServiceToken)
+      return journal.status === 200 && journal.body.entries.length === 0
+        ? journal
+        : null
+    },
+    150,
+  )
+  check(
+    late.code !== 0 &&
+      drained.body.entries.length === 0 &&
+      Number(psql("select count(*) from catalog_pushes")) ===
+        pushesBefore + 1 &&
+      psql(
+        `select details->>'reason' from security_log where action = 'catalog.journal-set-aside' and details->>'workspaceId' = '${heavyId}'`,
+      ) === "workspace-unknown",
+    "the Git journal drains: an entry for a workspace PostgreSQL does not have is set aside once, and later pushes are stored",
   )
 
   console.info(`All ${passed} checks passed`)

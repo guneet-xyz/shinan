@@ -5,8 +5,8 @@ import { atInstallation, inWorkspace, snapshotRead } from "../../authorize.js"
 import type { Context, WorkspaceScope } from "../../context.js"
 import { NotFoundError } from "../../errors.js"
 import { takeRateLimit } from "../../rate-limits.js"
-import { recordSecurityEntry } from "../../security-log.js"
-import { maxContextMemberHandles } from "./api.js"
+import { networkAddress, recordSecurityEntry } from "../../security-log.js"
+import { maxAllowedValues, maxContextMemberHandles } from "./api.js"
 import type { GitRequestContext, GitService } from "./api.js"
 
 export interface GitRequestInput {
@@ -80,9 +80,25 @@ export async function authorizeGitRequest(
       by: scope.actor.label,
       mayPush: actor.scopes.includes("catalog:write"),
       memberHandles: members.map((m) => m.handle),
-      // The workspace's "not a secret" values arrive with the push checks
-      // (GC-3a, GQ-2).
-      allowedValues: [],
+      // The values the owners allowed as "not a secret" (GQ-2), for the
+      // secret check of a push.
+      allowedValues: push
+        ? (
+            await scope.tx
+              .select({ fingerprint: schema.catalogAllowedValues.fingerprint })
+              .from(schema.catalogAllowedValues)
+              .where(
+                eq(schema.catalogAllowedValues.workspaceId, scope.workspaceId),
+              )
+              .orderBy(asc(schema.catalogAllowedValues.fingerprint))
+              .limit(maxAllowedValues)
+          ).map((v) => v.fingerprint)
+        : [],
+      // For the push log (plan §2.6).
+      tokenId: actor.tokenId,
+      ...(validAddress(ctx.request?.networkAddress)
+        ? { networkAddress: ctx.request!.networkAddress! }
+        : {}),
     }
     return context
   }
@@ -175,4 +191,8 @@ export async function summarizeCatalogFetches(ctx: Context): Promise<number> {
     }
     return rows.length
   })
+}
+
+function validAddress(value: string | undefined): boolean {
+  return networkAddress(value) === value && value !== undefined
 }

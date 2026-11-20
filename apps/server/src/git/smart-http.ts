@@ -22,6 +22,8 @@ import type { LimitedLog } from "@shinan/db"
 
 import { gitMessages, gitText } from "../git-text.js"
 import type { GitAppEnv } from "./app.js"
+import { hookUrlVariable, nonceVariable } from "./push/service.js"
+import type { PushService } from "./push/service.js"
 import type { RepositoryStore } from "./store.js"
 import { repositoryConfiguration } from "./store.js"
 
@@ -182,6 +184,8 @@ export function createSmartHttp(options: {
   answerStallSeconds?: number
   /** Opens a push's spool file; tests give one that fails. */
   openSpool?: (path: string) => NodeJS.WritableStream
+  /** The push checks; without them, the hooks refuse every push. */
+  push?: PushService
 }) {
   const { store, log } = options
   const processLimits = options.processes ?? defaultGitProcessLimits
@@ -338,6 +342,15 @@ export function createSmartHttp(options: {
     // Git gets the body as it was received, inflated: its length is known.
     if (!target.advertisement) env.CONTENT_LENGTH = String(body.size)
     if (protocol !== undefined) env.GIT_PROTOCOL = protocol
+    // The push's one-time nonce, by which the hooks reach the checks.
+    const session =
+      push && !target.advertisement && options.push?.hookUrl
+        ? options.push.begin(context)
+        : undefined
+    if (session) {
+      env[nonceVariable] = session.nonce
+      env[hookUrlVariable] = options.push!.hookUrl!
+    }
 
     let spawned: ReturnType<RepositoryStore["git"]["spawn"]>
     try {
@@ -351,10 +364,13 @@ export function createSmartHttp(options: {
     } catch (error) {
       release()
       removeSpool()
+      void session?.end()
       throw error
     }
     const { child, kill } = spawned
-    const ended = spawned.ended.then((end) => {
+    const ended = spawned.ended.then(async (end) => {
+      // The push is recorded before the next Git process may start.
+      await session?.end()
       release()
       removeSpool()
       return end

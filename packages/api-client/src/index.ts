@@ -281,6 +281,7 @@ export interface Event extends ActorFields {
     | "reconciliation"
     | "plugin_report"
     | "mcp_call"
+    | "git_push"
   subjects: { type: string; id: string }[]
   summary: string
   data: Record<string, unknown>
@@ -355,6 +356,16 @@ export interface CatalogPurge {
 
 export type InvitationState =
   "pending" | "accepted" | "declined" | "expired" | "withdrawn"
+
+/**
+ * A value a workspace's owners allowed as "not a secret" in pushes (GQ-2):
+ * its SHA-256 fingerprint only, never the value.
+ */
+export interface CatalogAllowedValue {
+  fingerprint: string
+  allowedByPersonId: string
+  createdAt: string
+}
 
 /** An invitation to join a workspace, as its owners see it (§5.2). */
 export interface Invitation {

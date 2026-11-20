@@ -1236,7 +1236,7 @@ The residual risks of the owner's choices are listed with the
 
 ## 11. Audit
 
-> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-3](build-plan-git-catalog.md#gc-3-push-checks-and-the-push-log), [GC-8](build-plan-git-catalog.md#gc-8-purge-as-a-history-rewrite)): the push log, refused pushes, "not a secret" values and history rewrites. Until then, this section describes M2 as built (v0.3.0).
+> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-8](build-plan-git-catalog.md#gc-8-purge-as-a-history-rewrite)): history rewrites. The push log, refused pushes and "not a secret" values are built (GC-3a; the last bullets of this section). The rest describes M2 as built (v0.3.0).
 
 The **security log** records, as [events](domain-model.md#event) of security
 kinds (**proposed**):
@@ -1271,7 +1271,22 @@ kinds (**proposed**):
   `agent-token.revoked` and `agent-token.failed`. M2's `catalog.bulk-read` entries for the catalog MCP tools and its
   `catalog-proposal.*` entries for catalog approvals and repairs are no
   longer written: those tools and approvals are gone (GC-5); entries already
-  written stay. Fetches and pushes are recorded as the
+  written stay. **As built (GC-3a, Git-based catalog plan §2.6, §2.14):**
+  pushes are in the **push log** (`catalog_pushes`, `catalog_push_refs`,
+  `catalog_commit_first_pushes`), not the security log: who pushed (agent,
+  token, member, person, network address), when, the outcome and its
+  codes, the refs before and after and whether Git applied each, and each
+  commit's first pusher. It is append-only and purgeable like events. The
+  security log gets what points at a leak or tampering:
+  `catalog.push-refused` for a refused push that held a secret (its codes
+  and how many secrets, never text), `catalog.secret-allowed` and
+  `catalog.secret-allow-removed` when a workspace owner allows a value as
+  "not a secret" or stops allowing it (its fingerprint only), and
+  `catalog.unlogged-update` when a repository's branch is not where the
+  push log says it should be (the ref, the commit found and the one
+  logged), and, at the installation's level, `catalog.journal-set-aside`
+  for a Git journal entry that could not be stored (its number, kind,
+  workspace and reason, never its data). Fetches and pushes are recorded as the
   [Git-based catalog plan §2.14](build-plan-git-catalog.md#214-permissions-scopes-and-the-security-log)
   says (GC-2, GC-3). **As built (GC-2):** each token's fetches and clones
   are counted, and every hour each token that fetched gets one
