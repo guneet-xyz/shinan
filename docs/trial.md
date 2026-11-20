@@ -113,7 +113,7 @@ and the deployment request M2-12 prepared is ready in `infra/musashi`.
    permissions do not stop an agent reading it; only the rule does
    ([4.1](#41-where-the-files-go)).
 4. **Owner approves: `person/guneet`.** An agent proposes it (or the owner
-   writes it in the wiki): the person entity that owns every trial entity,
+   writes it in the catalog): the person entity that owns every trial entity,
    linked to the owner's member record, with responsibilities as prose and no
    contact details ([catalog, person](catalog.md#person)). It is gated
    ([catalog §8.2](catalog.md#82-when-catalog-approval-is-needed)), so it
@@ -122,14 +122,14 @@ and the deployment request M2-12 prepared is ready in `infra/musashi`.
 5. **Agents: seed the 17 trial entities** ([section 5](#5-seeding-the-trial-entities)).
    These apply on their own (new entities and observed facts are not gated).
 6. **Owner: check the seeded entities, right after seeding** and before the
-   start-here document: read a few entities in the wiki and the **recent
+   start-here document: read a few entities in the catalog and the **recent
    changes** list, where every seeding proposal is listed with **Revert**.
    This is the only review the seeded facts get before agents rely on them
    (the strict setting is off, see below); it is part of the M2 milestone
    review. The first accuracy sample is taken from the seeded entities too
    ([6.4](#64-what-to-record)).
 7. **Owner approves: the start-here document.** An agent proposes it after
-   seeding (see below); the owner reads both paths in the wiki and approves
+   seeding (see below); the owner reads both paths in the catalog and approves
    it. It has two paths
    ([catalog §11](catalog.md#11-start-here)):
    - **For agents:** the `workspace` repository's policies by URL, because
@@ -166,7 +166,7 @@ proposal that is more than a recheck for catalog approval
 decided that only gated changes need approval from the start of the trial,
 switching to strict if accuracy slips (O-3, R6), so the trial starts with it
 off. The seeded entities are still reviewed: in step 6, right after seeding,
-the owner reads them in the wiki, where **recent changes** lists every proposal that applied on its
+the owner reads them in the catalog, where **recent changes** lists every proposal that applied on its
 own, with **Revert**. Leaving it off also keeps seeding moving without the
 owner. Turning it on just for seeding would be the other choice: each seeding
 session's proposals would then wait, and the owner would clear them with bulk

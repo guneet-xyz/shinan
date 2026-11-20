@@ -4,7 +4,7 @@ Status: **approved by the owner on 2026-11-16** ([issue #5](https://github.com/g
 The owner's answers in [#25] and the integration review findings in [#26] are applied.
 
 This document owns the catalog: entity types and type schemas, facts and fact
-states, provenance, editing and approval, and what the wiki and the agent index
+states, provenance, editing and approval, and what the catalog pages and the agent index
 must contain. It uses the terms of the [domain model and glossary](domain-model.md)
 exactly. It does not choose technology ([architecture](architecture.md),
 D-020), design screens ([human experience](human-experience.md)), name MCP
@@ -36,9 +36,11 @@ reason says so. A full mapping is in
 
 ## Summary
 
+> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-10](build-plan-git-catalog.md#gc-10-documents-catalog-everywhere-and-what-no-package-owns)): the catalog is stored in Git, on `main` of one repository per workspace, and changed by pushes with no catalog approval (D-059, D-060). Until then, this section describes M2 as built (v0.3.0).
+
 - A workspace's catalog is a set of Markdown documents, one per catalog entity,
   each with structured fields at the top (frontmatter) and prose below. Every
-  applied catalog revision **is** a set of Markdown documents; the wiki, the
+  applied catalog revision **is** a set of Markdown documents; the catalog pages, the
   agent index and every query table are derived from them and can be rebuilt
   from them alone. Revisions are stored in PostgreSQL only; there is no Git
   mirror for now. A workspace's catalog can be exported as a folder of these
@@ -60,9 +62,11 @@ reason says so. A full mapping is in
 
 ## 1. Principles
 
+> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-10](build-plan-git-catalog.md#gc-10-documents-catalog-everywhere-and-what-no-package-owns)): P1 reads "the files on `main`" instead of "every applied catalog revision" (D-059). Until then, this section describes M2 as built (v0.3.0).
+
 | #   | Principle                                                                                                                                                                                                                                                         | Status and reason                                                                                                                                                                                                                                                                                                                                          |
 | --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| P1  | The Markdown documents are the source of truth. Every applied catalog revision is a set of Markdown documents; the wiki, the agent index, exports and all query tables are derived and rebuildable from them alone, and never edited directly.                    | **Decided** (D-006: people must be able to read it), and the "rebuildable from Markdown alone" reading confirmed (owner, O-11, [#25]).                                                                                                                                                                                                                     |
+| P1  | The Markdown documents are the source of truth. Every applied catalog revision is a set of Markdown documents; the catalog pages, the agent index, exports and all query tables are derived and rebuildable from them alone, and never edited directly.           | **Decided** (D-006: people must be able to read it), and the "rebuildable from Markdown alone" reading confirmed (owner, O-11, [#25]).                                                                                                                                                                                                                     |
 | P2  | Every fact records its state, source and last-checked time.                                                                                                                                                                                                       | **Decided** (D-007: trust is the main differentiator).                                                                                                                                                                                                                                                                                                     |
 | P3  | Link, don't copy. A fact owned by another system is linked, not copied.                                                                                                                                                                                           | **Decided** (plan, "What Shinan does not do").                                                                                                                                                                                                                                                                                                             |
 | P4  | `unknown` is a valid answer. Missing, unreachable and not checked are recorded, never filled with guesses.                                                                                                                                                        | **Proposed**. Reason: the `workspace` repository's rule; a guessed fact is worse than a known gap because nobody rechecks it.                                                                                                                                                                                                                              |
@@ -74,6 +78,8 @@ reason says so. A full mapping is in
 ## 2. Entity documents
 
 ### 2.1 One document per entity, and what "source of truth" means
+
+> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-10](build-plan-git-catalog.md#gc-10-documents-catalog-everywhere-and-what-no-package-owns)): the documents are files on `main` of the catalog repository, a document's path being its ID plus `.md`, instead of revisions in PostgreSQL (D-059). Until then, this section describes M2 as built (v0.3.0).
 
 Each catalog entity is one Markdown document: frontmatter in YAML between `---`
 lines, then a Markdown body.
@@ -88,7 +94,7 @@ lines, then a Markdown body.
   2. Changes are applied by producing new Markdown from the latest revision.
      Validation runs on the resulting Markdown, not on the operations that
      produced it.
-  3. The wiki, the agent index, search, exports and every list or table used
+  3. The catalog pages, the agent index, search, exports and every list or table used
      for queries are derived. Deleting them all and re-parsing the
      Markdown rebuilds them exactly.
 
@@ -172,27 +178,27 @@ lines, then a Markdown body.
 
 - **Decided (owner, 2026-11-19, M2-Q17; M2-1b, [#102](https://github.com/guneet-xyz/shinan/issues/102)):**
   the body is read with markdown-it, in one shared configuration
-  (`@shinan/markdown`) that the wiki renders with too, so the server and the
-  wiki agree on what is a heading and what is a link: CommonMark plus
+  (`@shinan/markdown`) that the catalog pages render with too, so the server
+  and the catalog pages agree on what is a heading and what is a link: CommonMark plus
   GitHub-style tables and strikethrough, raw HTML shown as text, no
   automatic links from bare addresses, no typographic replacements, and a
   nesting limit of 100 levels. markdown-it reads every hostile shape above
   in about linear time (the slowest, 64 KiB of `[`, in about 0.15 s), so the
   count limits are no longer needed for speed; they are kept as a cheap
   guard. Reason: the parser that showed the quadratic cases is replaced
-  rather than fenced in, and the reader in the wiki is protected the same
+  rather than fenced in, and the reader of the catalog pages is protected the same
   way as the server.
   - **Nesting the reader cannot follow is refused.** markdown-it stops
     reading, without an error, where blocks nest more than 100 levels deep
     (about 50 lists nested by indentation; the per-line depth limit does not
     see nesting built up across lines). A body that reaches that point is
     refused (`body-invalid`), so nothing after it is silently lost from the
-    index, validation or the wiki.
+    index, validation or the catalog pages.
   - **Links are listed as written.** A link's address is kept as written
     (Markdown escapes and character references decoded, nothing
     percent-encoded or decoded), and every link is listed, `javascript:`,
-    `file:` and `data:` ones included, so validation sees them; the wiki
-    never makes those clickable.
+    `file:` and `data:` ones included, so validation sees them; the catalog
+    pages never make those clickable.
   - **Rendering fits the Content Security Policy.** The shared configuration
     writes table alignment as a class, not a `style` attribute; shows an
     image as a link to it (with its alternative text), since the policy
@@ -200,6 +206,8 @@ lines, then a Markdown body.
     `vbscript:`, `file:` and `data:` destinations as text.
 
 ### 2.2 Export: the exit path
+
+> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-10](build-plan-git-catalog.md#gc-10-documents-catalog-everywhere-and-what-no-package-owns)): the catalog's exit path is its repository (a clone or a bundle); `history.jsonl` is no longer needed. Until then, this section describes M2 as built (v0.3.0).
 
 Without a Git mirror, the way to get the catalog out of Shinan, as plain files
 to read, keep or move elsewhere, is the **workspace export**: one full export
@@ -257,7 +265,7 @@ are not facts about the world, so they carry no fact state.
 | `facts`         | no                    | Facts grouped by fact check, see [section 4](#4-facts).                                                                                                                                                                         |
 
 - **Proposed.** Reason: these are the `workspace` repository's required fields
-  (`id`, `status`, `owner`) plus what the wiki and index need (`type`, `title`,
+  (`id`, `status`, `owner`) plus what the catalog pages and index need (`type`, `title`,
   `summary`). Entity status values come from the glossary. Treating `status`
   and `owner` as catalog bookkeeping rather than facts keeps every fact
   checkable against something outside the catalog; who changed them and when
@@ -271,7 +279,7 @@ are not facts about the world, so they carry no fact state.
   someone leaves). Reason: a readable, stable reference in the Markdown, while
   membership itself stays in the identity records.
 - **Proposed:** there is no hand-written page-level "last checked" date. Where
-  the wiki or index shows one for a whole entity, it is calculated from the
+  the catalog pages or index show one for a whole entity, it is calculated from the
   entity's facts (for example oldest and newest fact check). Reason: the
   glossary's rule; a page date written by hand claims more than was checked.
 
@@ -295,7 +303,7 @@ are not facts about the world, so they carry no fact state.
   when its destination has no scheme (such as `https:`) and does not start
   with `/`, `.`, `#` or `?`; a `#section` part is ignored, so
   `[cautions](machine/musashi#cautions)` refers to `machine/musashi`. Reason:
-  such a link can only mean an entity inside the wiki, so it must resolve
+  such a link can only mean an entity inside the catalog, so it must resolve
   like any other reference; other relative links would be broken there.
 - Links to owning sources are ordinary URLs. Where the source is versioned,
   prefer a link pinned to a revision (a commit) in fact checks.
@@ -322,7 +330,7 @@ section conventions.
   prevents, because the fact check pins the source revision it came from, so
   the copy can be compared with its source at any time.
 - Generated sections (relations in both directions, unknowns, discrepancies,
-  pending catalog proposals, related tasks) are added by the wiki and are not
+  pending catalog proposals, related tasks) are added by the catalog pages and are not
   written in the body. **Proposed.** Reason: the `workspace` repository writes
   "Known unknowns" and location tables by hand; generating them from facts
   removes a second copy.
@@ -893,6 +901,8 @@ Rules:
 
 ### 4.5 Fact checks
 
+> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-3](build-plan-git-catalog.md#gc-3-push-checks-and-the-push-log)): a new or changed fact check's `by` must name whoever first pushed the commit introducing it to Shinan, as the push log records it (D-066, amending D-061). Until then, this section describes M2 as built (v0.3.0).
+
 A **fact check** records one act of checking. Several facts can share one
 check when they were checked together.
 
@@ -1009,7 +1019,7 @@ Rules (**proposed**; reason: P5 and the `workspace` repository's practice):
 
 - Both facts are kept with their fact checks. Neither wins by default, by
   state, or by which was written last.
-- Discrepancies are detected automatically, shown prominently in the wiki and
+- Discrepancies are detected automatically, shown prominently in the catalog pages and
   returned with the entity in the agent index.
 - A discrepancy is resolved by one of: changing the world (a task, then a new
   check); changing the owning source (then a new `intended` check); removing
@@ -1107,8 +1117,8 @@ Reason: a small fixed set keeps generated inverses readable and queryable;
 the [glossary](domain-model.md) asks this document to settle how
 relationships are expressed (plan question 5).
 
-- `owner` and `replaced_by` are entity fields, not relations, but the wiki
-  shows their inverses too ("owns", "replaces"). **Proposed.**
+- `owner` and `replaced_by` are entity fields, not relations, but the catalog
+  pages show their inverses too ("owns", "replaces"). **Proposed.**
 - Links between catalog entities and tasks ("this task touched this entity")
   are owned by [tasks](tasks.md); the catalog shows them, generated, on the
   entity page. **Proposed.** Reason: task links change with the work and must
@@ -1186,6 +1196,8 @@ catalog records **where a secret lives**, not the secret.
 
 ### 7.3 A check for secret-looking values
 
+> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-3](build-plan-git-catalog.md#gc-3-push-checks-and-the-push-log)): the check runs on every push, near-certain credentials refuse it, and owners can allow a value as "not a secret" (D-060). Until then, this section describes M2 as built (v0.3.0).
+
 Even with no secrets allowed, a value can slip in by mistake. Once applied,
 it is shown to every member of the workspace, sent to the model provider of
 every agent that reads it (which cannot be recalled), kept in revision history
@@ -1244,6 +1256,8 @@ leaked secret would have to be purged, rotated at its source, and chased
 through any exports (see [section 9](#9-history-and-purge)).
 
 ## 8. Editing and approval
+
+> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-3](build-plan-git-catalog.md#gc-3-push-checks-and-the-push-log), [GC-9](build-plan-git-catalog.md#gc-9-the-skill-and-agent-setup)): this section becomes "Changing the catalog": pushes, checks on push and no catalog approval (D-060). GC-5 has removed proposals, approval classes, the strict setting and comments; the rest of this section still describes M2 as built (v0.3.0).
 
 ### 8.1 Catalog proposals
 
@@ -1469,6 +1483,8 @@ approval and history mean nothing.
 
 ## 9. History and purge
 
+> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-8](build-plan-git-catalog.md#gc-8-purge-as-a-history-rewrite)): history is Git's, undo is `git revert`, and purge rewrites the repository's history on the server. Until then, this section describes M2 as built (v0.3.0).
+
 - Every applied proposal creates a new **catalog revision**, the full Markdown
   of the documents it changed, an event credited to its author (and approver),
   which appears on the entity's timeline.
@@ -1546,9 +1562,12 @@ approval and history mean nothing.
     - Mechanism: [architecture §4.4](architecture.md#44-purge).
 - How revisions are stored: [architecture](architecture.md).
 
-## 10. The wiki
+## 10. The catalog pages
 
-The wiki is the catalog shown to people. Its layout, navigation and editing
+> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-7](build-plan-git-catalog.md#gc-7-the-catalog-ui), [GC-10](build-plan-git-catalog.md#gc-10-documents-catalog-everywhere-and-what-no-package-owns)): people browse `main` as a file tree, rendered pages, search, "needs attention" and commit history; type index pages, pending proposals and the approval lists go (D-064). Until then, this section describes M2 as built (v0.3.0).
+
+The catalog pages are the catalog shown to people (called "the wiki" until
+the owner renamed it, [D-064](decisions/D-064-catalog-not-wiki.md)). Its layout, navigation and editing
 screens are owned by [human experience](human-experience.md). The catalog
 requires it to show (**proposed**; reason: these are what make the catalog
 trustworthy at a glance, per D-007):
@@ -1571,8 +1590,11 @@ trustworthy at a glance, per D-007):
 
 ## 11. Start here
 
+> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-10](build-plan-git-catalog.md#gc-10-documents-catalog-everywhere-and-what-no-package-owns)): the start-here document is `start-here.md` and changes by a push like any document; "changed only with catalog approval" lapsed (D-060). Until then, this section describes M2 as built (v0.3.0).
+
 A new person or a new agent needs a short path through the catalog. The plan
-names a "start here" path (Wiki and onboarding pillar, owned by
+names a "start here" path (the "Wiki and onboarding" pillar, now the catalog
+pages, owned by
 [human experience](human-experience.md)); this section defines its content.
 
 **Decided (owner, O-18, [#25]):** each workspace has one **start-here
@@ -1620,11 +1642,11 @@ same catalog pages and changed only with catalog approval. Details
 
   `to` is an entity reference; `list` one of `discrepancies`,
   `due-for-recheck`, `known-unknowns`, `recent-changes` or
-  `waiting-for-approval` ([section 10](#10-the-wiki)); `url` an `http` or
+  `waiting-for-approval` ([section 10](#10-the-catalog-pages)); `url` an `http` or
   `https` address. Reason for `url`: during the trial, policies stay in the
   `workspace` repository ([M2 build plan §4](build-plan-m2.md#4-starting-the-catalog-part-of-the-trial)),
   so the agents' path must be able to point at them. The body is free
-  Markdown for the wiki page.
+  Markdown for its page in the catalog.
 
 - Generic rules that every Shinan agent follows in every workspace (how to use
   the MCP tools, how to report presence) are not in this document; they ship
@@ -1637,6 +1659,8 @@ same catalog pages and changed only with catalog approval. Details
   per role).
 
 ## 12. The agent index
+
+> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-4](build-plan-git-catalog.md#gc-4-the-index-from-main)): the index is built from `main` after each push and serves search and the catalog pages; agents read their clone, not the index (D-063); labels, credits and pending proposals leave the format. Until then, this section describes M2 as built (v0.3.0).
 
 The agent index is a machine-readable form of the catalog, generated from the
 documents (D-006, **decided**). Agents read it through MCP and the CLI; the
@@ -1707,7 +1731,7 @@ machines to check facts (P6).
 
 **Decided (owner, 2026-11-19, M2-Q17; M2-3, [#85](https://github.com/guneet-xyz/shinan/issues/85));
 this settles open question 7.** The JSON the index answers with. MCP tools
-(M2-6) and the wiki's REST routes (M2-7) return these shapes; tool names and
+(M2-6) and the catalog pages' REST routes (M2-7) return these shapes; tool names and
 parameters stay with [agent integrations](agent-integrations.md). Field names
 are the documents' own (`replaced_by`, `checked`, `via`, `to`); fields the
 index adds use the same lower-case, underscore style. Times are ISO 8601.
@@ -2050,7 +2074,7 @@ What this document still needs from other documents:
 | [Architecture and operations](architecture.md)  | Revisions stored as Markdown text and the index built from it (the D-006 invariant); per-operation conflicts; purge; the check for secret-looking values; type schema documents in the parser and index. Its workspace export ([§5.5](architecture.md#55-export-and-import)) writes the catalog in the layout of [2.2](#22-export-the-exit-path), including `history.jsonl`. |
 | [Identity, agents and permissions](identity.md) | Who may approve and switch the strict setting; workspace owners only for export and purge; the written form of an actor in a fact check's `by` ([identity §8.7](identity.md#87-how-an-actor-is-written-in-text)); Shinan's token prefixes for the secret check.                                                                                                              |
 | [Agent integrations](agent-integrations.md)     | MCP and CLI tools to read the index and type schemas, send catalog proposals and rechecks, and comment on proposals; delivering the agents' start-here path; the recheck-before-acting and documentation-impact conventions.                                                                                                                                                 |
-| [Human experience](human-experience.md)         | Wiki pages, freshness, discrepancies, the editor, review list and recent changes feed, start-here presentation, pages for custom types and their schema documents, and the workspace export link for owners.                                                                                                                                                                 |
+| [Human experience](human-experience.md)         | Catalog pages, freshness, discrepancies, the editor, review list and recent changes feed, start-here presentation, pages for custom types and their schema documents, and the workspace export link for owners.                                                                                                                                                              |
 | [Tasks and work](tasks.md)                      | Links between tasks and catalog entities; promoting task decisions to `decision` entities; telling the catalog when a task behind a `planned` fact is cancelled ([4.4](#44-fact-states)); whether the documentation-impact obligation is part of "done" ([8.4](#84-agents-documentation-impact-obligation)).                                                                 |
 | [Git host integrations](git-hosts.md)           | Repository identity for `project` facts; which facts Shinan can check automatically, by reading only (owner, N-4, [#25]).                                                                                                                                                                                                                                                    |
 | [Roadmap and migration](roadmap.md)             | The rollback process, which uses the converter in [13.3](#133-mapping-back-for-a-rollback), and the rehearsal run of it (R14).                                                                                                                                                                                                                                               |
@@ -2085,7 +2109,7 @@ What this document still needs from other documents:
     for agents.
 13. [History](#9-history-and-purge): revisions, reverts, retired entities, and
     purge warnings about copies outside Shinan.
-14. [Wiki requirements](#10-the-wiki), [start-here](#11-start-here) details and
+14. [Catalog page requirements](#10-the-catalog-pages), [start-here](#11-start-here) details and
     the [agent index](#12-the-agent-index) content, rules and
     [format](#124-the-index-format).
 15. [Import provenance details](#131-provenance-of-imported-facts), the

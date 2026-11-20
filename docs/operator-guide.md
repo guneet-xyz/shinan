@@ -19,6 +19,8 @@ not apply to anyone else's installation.
 
 ## What you need
 
+> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-1](build-plan-git-catalog.md#gc-1-git-in-the-image-and-the-git-container)): the Git container and its volume. Until then, this section describes M2 as built (v0.3.0).
+
 - Docker with Compose v2.
 - A host name for the installation and an **HTTPS reverse proxy** in front of
   it (Caddy, nginx, Traefik). Shinan refuses an `http:` address in
@@ -33,6 +35,8 @@ not apply to anyone else's installation.
   runs at each start.
 
 ## What runs
+
+> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-1](build-plan-git-catalog.md#gc-1-git-in-the-image-and-the-git-container)): the `shinan-git` service. Until then, this section describes M2 as built (v0.3.0).
 
 | Service    | Role                                                                                       | Networks            |
 | ---------- | ------------------------------------------------------------------------------------------ | ------------------- |
@@ -49,6 +53,8 @@ a separate listener inside the container (port 3001), which is never
 published; Docker runs it with `shinan health`.
 
 ## Setting up
+
+> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-1](build-plan-git-catalog.md#gc-1-git-in-the-image-and-the-git-container)): the Git container, its volume and the service token. Until then, this section describes M2 as built (v0.3.0).
 
 All files go in one directory, next to `compose.yml`.
 
@@ -219,6 +225,8 @@ set `GITHUB_CLIENT_ID`; put the app's client secret in
 
 ## Upgrades
 
+> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-6](build-plan-git-catalog.md#gc-6-move-the-m2-catalog-into-git-and-drop-m2s-tables)): "Upgrading from 0.3 to 0.4", with the rollback by dump. Until then, this section describes M2 as built (v0.3.0).
+
 1. Read the release notes. They say from which version you can upgrade
    directly, and whether the release's migrations can be rolled back
    ([architecture §11.5](architecture.md#115-migrations-and-rollback)).
@@ -290,6 +298,8 @@ you upgrade:
 
 ## Agents: the MCP endpoint, tokens and the skill
 
+> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-9](build-plan-git-catalog.md#gc-9-the-skill-and-agent-setup), [GC-11](build-plan-git-catalog.md#gc-11-security-review-and-deployment-preparation)): agents push to `/git/`; the MCP endpoint stays for tasks. Until then, this section describes M2 as built (v0.3.0).
+
 Coding agents reach Shinan at `https://<your host>/mcp`, with an agent token
 in the `Authorization` header, and load the agent skill from
 `https://<your host>/skills/`
@@ -326,6 +336,8 @@ in the `Authorization` header, and load the agent skill from
   ([D-056](decisions/D-056-public-skill-path.md)).
 
 ## Backups: your responsibility
+
+> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-11](build-plan-git-catalog.md#gc-11-security-review-and-deployment-preparation)): back up the Git volume as well as PostgreSQL; clones are partial copies. Until then, this section describes M2 as built (v0.3.0).
 
 Shinan has **no built-in backups**. The owner's own installation accepts that
 risk for now ([D-038](decisions/D-038-no-built-in-backups.md),
@@ -394,6 +406,8 @@ own addresses are changed only in `SHINAN_OPERATORS` and with the command.
 
 ## The agent index
 
+> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-4](build-plan-git-catalog.md#gc-4-the-index-from-main)): the index is rebuilt from `main` after each push. Until then, this section describes M2 as built (v0.3.0).
+
 The catalog's agent index is built from the stored catalog text and can be
 rebuilt from it at any time
 ([architecture §5.2, §5.3](architecture.md#52-the-invariant)). The worker
@@ -409,10 +423,12 @@ docker compose run --rm --no-deps web catalog-index rebuild <workspace-id>
 docker compose run --rm --no-deps web catalog-index check [<workspace-id>]
 ```
 
-While a rebuild runs, agents and the wiki keep reading the old index, marked
+While a rebuild runs, agents and the catalog pages keep reading the old index, marked
 as behind.
 
 ## Catalog purge
+
+> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-8](build-plan-git-catalog.md#gc-8-purge-as-a-history-rewrite)): a purge rewrites the repository's history; cleaning clones and rotating the secret. Until then, this section describes M2 as built (v0.3.0).
 
 Workspace owners purge text from their catalog themselves, in workspace
 settings, Data ([catalog §9](catalog.md#9-history-and-purge)); operators

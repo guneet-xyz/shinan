@@ -153,6 +153,8 @@ log.
 
 ### 3.1 Components
 
+> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-1](build-plan-git-catalog.md#gc-1-git-in-the-image-and-the-git-container)): a Git container joins the components (D-065). Until then, this section describes M2 as built (v0.3.0).
+
 ```mermaid
 flowchart LR
   subgraph OUT[Outside]
@@ -193,16 +195,16 @@ flowchart LR
   WK -->|magic links, invitations| SES
 ```
 
-| Component      | Role                                                                                          | Status                                                                |
-| -------------- | --------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| Pages          | The wiki, task pages, timeline, board and settings ([human experience](human-experience.md)). | Proposed                                                              |
-| REST API       | JSON over HTTPS for the CLI, plugins and the pages.                                           | Proposed. Reason: one API for every client keeps behavior consistent. |
-| MCP endpoint   | Agent actions over MCP ([8.1](#81-mcp-server)).                                               | Decided that it exists (D-014); location proposed.                    |
-| Sign-in        | GitHub sign-in and email magic links; agent registration ([identity](identity.md)).           | Methods decided (owner, N-7); design owned by identity                |
-| Webhook intake | Receives git host webhooks ([section 6](#6-git-host-intake-webhooks-and-reconciliation)).     | Decided that webhooks are used (plan, Integration points).            |
-| Live streams   | SSE for browsers (timeline updates) and plugins (nudge offers).                               | Proposed                                                              |
-| Worker         | Background jobs, including email ([section 7](#7-background-jobs)).                           | Proposed                                                              |
-| PostgreSQL     | All data ([section 4](#4-storage)).                                                           | Proposed                                                              |
+| Component      | Role                                                                                                   | Status                                                                |
+| -------------- | ------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------- |
+| Pages          | The catalog pages, task pages, timeline, board and settings ([human experience](human-experience.md)). | Proposed                                                              |
+| REST API       | JSON over HTTPS for the CLI, plugins and the pages.                                                    | Proposed. Reason: one API for every client keeps behavior consistent. |
+| MCP endpoint   | Agent actions over MCP ([8.1](#81-mcp-server)).                                                        | Decided that it exists (D-014); location proposed.                    |
+| Sign-in        | GitHub sign-in and email magic links; agent registration ([identity](identity.md)).                    | Methods decided (owner, N-7); design owned by identity                |
+| Webhook intake | Receives git host webhooks ([section 6](#6-git-host-intake-webhooks-and-reconciliation)).              | Decided that webhooks are used (plan, Integration points).            |
+| Live streams   | SSE for browsers (timeline updates) and plugins (nudge offers).                                        | Proposed                                                              |
+| Worker         | Background jobs, including email ([section 7](#7-background-jobs)).                                    | Proposed                                                              |
+| PostgreSQL     | All data ([section 4](#4-storage)).                                                                    | Proposed                                                              |
 
 **Proposed:** pages, REST API and MCP endpoint all call one shared application
 layer, which enforces permissions, applies the rules other documents set (for
@@ -211,6 +213,8 @@ must behave and be credited the same through every path, and a rule enforced in
 one place cannot be bypassed through another.
 
 ### 3.2 Process model
+
+> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-1](build-plan-git-catalog.md#gc-1-git-in-the-image-and-the-git-container)): a fourth process role, the Git container. Until then, this section describes M2 as built (v0.3.0).
 
 **Proposed:** a "modular monolith". Modules (catalog, tasks, git hosts, agents,
 identity, events, email) live in one codebase with clear boundaries, deployed
@@ -334,6 +338,8 @@ its shape to this document and [human experience](human-experience.md).
 
 ### 4.1 PostgreSQL holds everything
 
+> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-1](build-plan-git-catalog.md#gc-1-git-in-the-image-and-the-git-container)): the catalog moves to Git repositories on the Git container's volume (D-059). Until then, this section describes M2 as built (v0.3.0).
+
 **Proposed.** Search uses PostgreSQL full-text search
 ([docs](https://www.postgresql.org/docs/current/textsearch.html)) at first.
 Reason: catalog and tasks are small text collections; a search engine would be a
@@ -348,6 +354,8 @@ needs uploads; catalog pages are text and work items are links. **Open** until
 [human experience](human-experience.md) and [catalog](catalog.md) confirm.
 
 ### 4.2 Kinds of data
+
+> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-1](build-plan-git-catalog.md#gc-1-git-in-the-image-and-the-git-container)): catalog documents are Git objects; the push log joins the records. Until then, this section describes M2 as built (v0.3.0).
 
 | Data                                                                              | Rebuildable if lost?                                                                         | Retention                          | Status                                                                                                        |
 | --------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------- |
@@ -377,6 +385,8 @@ by the worker and stored as ordinary rows for fast reads (**Proposed**). Reason:
 recalculating on every page view would be slow.
 
 ### 4.4 Purge
+
+> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-8](build-plan-git-catalog.md#gc-8-purge-as-a-history-rewrite)): a catalog purge rewrites the repository's history on the server. Until then, this section describes M2 as built (v0.3.0).
 
 The glossary and the [catalog](catalog.md) call this operation **purge**.
 
@@ -480,6 +490,8 @@ How:
 
 ## 5. Catalog Markdown and agent index
 
+> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-3](build-plan-git-catalog.md#gc-3-push-checks-and-the-push-log), [GC-4](build-plan-git-catalog.md#gc-4-the-index-from-main)): the invariant holds for `main`'s files; the index is rebuilt from `main` after a push, and checks run on push instead of in a proposal. Until then, this section describes M2 as built (v0.3.0).
+
 The [catalog document](catalog.md) owns the schema, fact format, catalog
 proposals and their operations, conflict rules, approval classes (owner, O-3)
 and the index format. This section owns how the text and the index are kept in
@@ -503,7 +515,7 @@ as operations.
 1. **The stored Markdown text of each revision is the source of truth. Nothing
    else is authoritative.** Every applied catalog revision is a set of Markdown
    documents. The agent index, search text, relation lists, freshness queries,
-   the wiki's rendering and workspace exports are derived from that text.
+   the catalog pages' rendering and workspace exports are derived from that text.
 2. **Operations are applied as text edits.** Applying a catalog proposal's
    operation edits the previous revision's text, changing only the bytes it
    targets and leaving every other byte as it was. Shinan never renders a
@@ -866,6 +878,8 @@ slow, and a click or an MCP call should not fail because of them.
 
 ## 7. Background jobs
 
+> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-4](build-plan-git-catalog.md#gc-4-the-index-from-main)): index jobs after each push to `main`, and reading the Git container's journal. Until then, this section describes M2 as built (v0.3.0).
+
 **Proposed:** a PostgreSQL-backed job queue with these properties:
 
 - Jobs are added in the same transaction as the change that needs them.
@@ -892,6 +906,8 @@ slow, and a click or an MCP call should not fail because of them.
 | Prune raw webhooks, old job records and old notification records                        | Daily                                                                    | This document ([4.2](#42-kinds-of-data))                                                                  |
 
 ## 8. How agents, the MCP server and plugins reach Shinan
+
+> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-2](build-plan-git-catalog.md#gc-2-serving-git-over-https-through-web), [GC-5](build-plan-git-catalog.md#gc-5-remove-the-m2-write-path)): a new Git endpoint, `/git/`, forwarded by `web` to the Git container; the catalog MCP tools and trust labels on catalog content are removed (D-062, D-063). Until then, this section describes M2 as built (v0.3.0).
 
 The [agent integrations](agent-integrations.md) document owns tools, the skill,
 presence and nudge semantics; [identity](identity.md) owns agent registration,
@@ -1162,6 +1178,8 @@ owner's accepted risks.
 
 ### 10.1 Threats and controls
 
+> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-2](build-plan-git-catalog.md#gc-2-serving-git-over-https-through-web)): controls for serving Git and the Git container. Until then, this section describes M2 as built (v0.3.0).
+
 | Threat                                                       | Controls                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Status                                                                                                                                                                                                     |
 | ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | A person's account is taken over                             | Sign-in by GitHub or email magic link only, with no second factor and no passwords (**Decided**, owner, N-7, [#25](https://github.com/guneet-xyz/shinan/issues/25)). Controls here: an email allowlist (O-48); throttling of magic-link requests; short-lived single-use links (identity); sign-in session cookies `HttpOnly`, `Secure`, `SameSite`; uniform answers                                                                                                                                                                                                                                                                                                                                                          | **Accepted risk:** one compromised mailbox or GitHub account opens the account                                                                                                                             |
@@ -1173,7 +1191,7 @@ owner's accepted risks.
 | A Forgejo token with broad rights leaks                      | Shinan accepts any Forgejo token (**Decided**, owner, O-54) and only reads with it (**Decided**, owner, N-4, [#25](https://github.com/guneet-xyz/shinan/issues/25)). A token is not limited by how Shinan uses it: a site administrator's broad token can act as any user on that Forgejo, and the owner is a site administrator of `git.guneet.dev`. Controls: encrypted at rest, usable only by the worker ([10.3](#103-secrets-and-credentials)), never shown again, never logged, never given to agents; the connect screen suggests a read-only token                                                                                                                                                                    | **Accepted risk:** whoever gets the database and the worker's key gets whatever the token allows                                                                                                           |
 | A workspace export leaks                                     | Only workspace owners can export; recorded in the security log; no credentials in the export; no secrets in the catalog (O-2)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Proposed; a downloaded file is outside Shinan's control                                                                                                                                                    |
 | Email is abused                                              | Magic links only to allowlisted addresses; messages only to verified account addresses; throttling; uniform answers ([9.2](#92-how-shinan-sends))                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | Proposed                                                                                                                                                                                                   |
-| Malicious Markdown or HTML in the wiki                       | Raw HTML stripped or sanitized; strict Content Security Policy                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Proposed                                                                                                                                                                                                   |
+| Malicious Markdown or HTML in the catalog pages              | Raw HTML stripped or sanitized; strict Content Security Policy                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Proposed                                                                                                                                                                                                   |
 | Shinan tricked into calling internal addresses               | Anyone can enter any Forgejo address to connect (owner, N-7). The rule is **decided**: Shinan contacts only the address entered, over HTTPS, refuses addresses that resolve to private, loopback or link-local ranges, re-checks on every request, and an installation operator may allow specific hosts (owner, N-12; [identity](identity.md) §3.5). **Mechanism (Proposed):** every outgoing request resolves the host name, checks every resolved address, and connects to the address it checked, so a DNS answer cannot change between the check and the connection; redirects are checked the same way before they are followed; the operator's exceptions are an installation setting ([3.5](#35-shinan-installation)) | Rule decided (owner, N-12); mechanism proposed. Reason: on Musashi, private addresses reach other services                                                                                                 |
 | Cross-site request forgery                                   | Same-site (`Lax`) sign-in cookies plus an origin check on every state-changing request: its `Origin` must be the installation's and its `Sec-Fetch-Site`, if sent, `same-origin` (M1-6). Reason: the web app's `fetch` always sends these headers, so the check needs no token state; same-site cookies alone would trust other sites under the same domain                                                                                                                                                                                                                                                                                                                                                                   | Implemented ([checklist](security-checklist.md) §2)                                                                                                                                                        |
 | Vulnerable dependencies                                      | Lockfiles; automated update PRs; critical advisories patched within 7 days; images rebuilt on base image updates                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Proposed                                                                                                                                                                                                   |
@@ -1190,6 +1208,8 @@ checklist is [security-checklist.md](security-checklist.md), with each item's
 current result.
 
 ### 10.2 Web hardening
+
+> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-2](build-plan-git-catalog.md#gc-2-serving-git-over-https-through-web)): the `/git/` routes and their limits. Until then, this section describes M2 as built (v0.3.0).
 
 **Proposed:** HTTPS only with HSTS; a Content Security Policy without inline
 scripts; `frame-ancestors 'none'`; a strict `Referrer-Policy`; no sensitive data
@@ -1298,6 +1318,8 @@ From the `workspace` repository's catalog and `infra/musashi` (read 2026-11-16):
 - Fleet metrics run on Musashi, tailnet-only, with no alerting yet.
 
 ### 11.2 Shinan stack
+
+> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-1](build-plan-git-catalog.md#gc-1-git-in-the-image-and-the-git-container), [GC-11](build-plan-git-catalog.md#gc-11-security-review-and-deployment-preparation)): the `shinan-git` service, its volume and network. Until then, this section describes M2 as built (v0.3.0).
 
 | Service          | Role                                                           | Networks                                                 |
 | ---------------- | -------------------------------------------------------------- | -------------------------------------------------------- |
@@ -1414,6 +1436,8 @@ From the `workspace` repository's catalog and `infra/musashi` (read 2026-11-16):
 
 ### 11.5 Migrations and rollback
 
+> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-6](build-plan-git-catalog.md#gc-6-move-the-m2-catalog-into-git-and-drop-m2s-tables)): v0.4.0 moves the catalog into Git and drops M2's tables; rollback is by the pre-deployment dump. Until then, this section describes M2 as built (v0.3.0).
+
 - **Proposed:** migrations are forward-only and backward-compatible for one
   release ("expand, then contract"), so rolling back means pinning the previous
   image digests.
@@ -1424,6 +1448,8 @@ From the `workspace` repository's catalog and `infra/musashi` (read 2026-11-16):
   next successful one, not a backup (see [section 14](#14-backups-accepted-risk)).
 
 ### 11.6 What needs deployment approval
+
+> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-11](build-plan-git-catalog.md#gc-11-security-review-and-deployment-preparation)): the Git container's deployment. Until then, this section describes M2 as built (v0.3.0).
 
 Each item changes a real deployment or a live credential and needs the owner's
 approval before it happens (**Decided** for deployments, D-016, O-83; the list
@@ -1444,6 +1470,8 @@ is **Proposed**). None of it is done by this document.
 | Metrics scraping by Musashi's monitoring agent (O-69)                      | Deployment of the monitoring stack          |
 
 ## 12. Self-hosting
+
+> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-1](build-plan-git-catalog.md#gc-1-git-in-the-image-and-the-git-container)): operators run the Git container and keep its volume as well as PostgreSQL. Until then, this section describes M2 as built (v0.3.0).
 
 Shinan is self-hostable by design (**Decided**, D-012). Distribution waits on
 licensing (D-013); this section makes sure nothing blocks it. All **proposed**:
@@ -1501,6 +1529,8 @@ licensing (D-013); this section makes sure nothing blocks it. All **proposed**:
 
 ## 13. Observability
 
+> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-10](build-plan-git-catalog.md#gc-10-documents-catalog-everywhere-and-what-no-package-owns)): pushes, refusals and the Git container's health. Until then, this section describes M2 as built (v0.3.0).
+
 **Proposed:**
 
 - **Logs:** structured JSON to standard output, with a request ID on every line,
@@ -1545,6 +1575,8 @@ licensing (D-013); this section makes sure nothing blocks it. All **proposed**:
   metrics.
 
 ## 14. Backups: accepted risk
+
+> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-11](build-plan-git-catalog.md#gc-11-security-review-and-deployment-preparation)): the Git volume joins PostgreSQL, and clones are partial copies. Until then, this section describes M2 as built (v0.3.0).
 
 **Decided (owner, O-62, O-63, O-64):** no built-in backups, no backup target and
 no recovery objectives for now. Shinan relies on host-level backups, which are

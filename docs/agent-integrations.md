@@ -496,6 +496,8 @@ All **proposed**:
 
 ## The skill
 
+> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-9](build-plan-git-catalog.md#gc-9-the-skill-and-agent-setup)): rewritten for the Git workflow. Until then, this section describes M2 as built (v0.3.0).
+
 All **proposed**:
 
 - One skill, `shinan`, with a short main file and supporting files. Reason:
@@ -566,6 +568,8 @@ as built:**
 - **Serving** is in [architecture §10.2](architecture.md#102-web-hardening).
 
 ### Setting up OpenCode with a hand-made token
+
+> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-9](build-plan-git-catalog.md#gc-9-the-skill-and-agent-setup)): becomes "Set up an agent": the token file, a Git credential helper, a clone and the skill, without the MCP entry. Until then, this section describes M2 as built (v0.3.0).
 
 **Decided (owner, 2026-11-19, M2-Q17; M2-9), as built:** a signed-in page, **Set up OpenCode**
 (`/account/agents/setup`), linked from Your agents and from the token shown
@@ -1102,6 +1106,8 @@ phase 3):
    tokens and the launcher token, then uninstall the launcher.
 
 ## Authentication requirements
+
+> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-9](build-plan-git-catalog.md#gc-9-the-skill-and-agent-setup)): the token also authenticates pushes at `/git/`, supplied by a credential helper. Until then, this section describes M2 as built (v0.3.0).
 
 The [identity document](identity.md) owns registration, tokens, scopes,
 machines, revocation and attribution. The [architecture document](architecture.md)

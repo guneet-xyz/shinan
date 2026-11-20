@@ -152,6 +152,21 @@ the linked records and documents are current:
 
 - §1: during the trial, cross-project coordination for trial projects moves into
   Shinan ([D-040](decisions/D-040-trial-coordination-in-shinan.md)).
+- §1, §4, §5, §8 and §10, the catalog (2026-11-19): the catalog is stored in Git,
+  one repository per workspace hosted by Shinan, which agents clone, change
+  and push to ([D-059](decisions/D-059-catalog-in-git-hosted-by-shinan.md)).
+  Catalog changes need no approval: checks on push are the only gate, so the
+  Catalog pillar's "Agents propose changes; people approve where needed"
+  becomes "agents push changes, which Shinan checks"
+  ([D-060](decisions/D-060-no-catalog-approval.md)). Agents read and change
+  the catalog through Git and the skill, not MCP, so §5's "read the catalog,
+  propose catalog changes" through MCP is replaced; MCP stays for tasks
+  ([D-063](decisions/D-063-no-mcp-for-the-catalog.md)). "Wiki" becomes
+  "catalog": the "Wiki and onboarding" pillar is the catalog's pages for
+  people (`main` as a file tree, rendered pages, search and commit history,
+  with the "start here" path), §1's "read it like a wiki", §8's "Wiki"
+  and §10's "Catalog (wiki and agent index)" read the same way
+  ([D-064](decisions/D-064-catalog-not-wiki.md)).
 - §4: the fact state `proposed` is now `planned`
   ([D-025](decisions/D-025-fact-state-planned.md)); agents may set `needs a person`
   and task flags are managed per workspace
@@ -166,7 +181,8 @@ the linked records and documents are current:
   still later.
 - §7: questions 1, 3 and 7 are answered
   ([D-037](decisions/D-037-typescript-node-react.md),
-  [D-043](decisions/D-043-no-git-mirror-for-now.md),
+  [D-043](decisions/D-043-no-git-mirror-for-now.md), since superseded by
+  [D-059](decisions/D-059-catalog-in-git-hosted-by-shinan.md),
   [D-023](decisions/D-023-workspace-wide-visibility-no-secrets.md),
   [D-044](decisions/D-044-sign-in-magic-link-or-github.md)); question 8 is
   answered in the [roadmap](roadmap.md).

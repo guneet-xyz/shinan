@@ -5,8 +5,8 @@ The owner's answers in [#25] (O-1 to O-98 and follow-ups N-1 to N-13) and on
 the integration review [#26] (NO-1 to NO-4) are applied.
 
 This document describes what people see and do in Shinan's web app: the screens,
-what each shows, and the flows between them. It covers the wiki and the start
-here path, task pages, timelines, the board, nudges as a person sees them, the
+what each shows, and the flows between them. It covers the catalog pages and
+the start here path, task pages, timelines, the board, nudges as a person sees them, the
 agent presence view, notifications, and workspace and member management.
 
 It describes screens and flows in words: what is shown, in what order of
@@ -39,7 +39,7 @@ This document owns (plan, section 8):
 
 | Area                            | Covered in                                                          |
 | ------------------------------- | ------------------------------------------------------------------- |
-| Wiki                            | [The wiki](#the-wiki)                                               |
+| Catalog (formerly "wiki")       | [The catalog](#the-catalog)                                         |
 | Onboarding path                 | [Start here and onboarding](#start-here-and-onboarding)             |
 | Task pages                      | [Task page](#task-page)                                             |
 | Timeline                        | [Timelines](#timelines)                                             |
@@ -105,7 +105,7 @@ It does not cover:
    build before the second member": owner, O-49, [#25]).
 8. **Usable from a phone for steering.** The Now screen, task pages,
    commenting and approving work on a phone from the first version. Browsing
-   large wiki pages and settings may be desktop-first. **Decided** (owner,
+   large catalog pages and settings may be desktop-first. **Decided** (owner,
    O-92, [#25]). Reason: the app is public so the owner can steer from
    anywhere (D-015).
 9. **Small and legible over configurable.** Where the owner allows
@@ -130,6 +130,8 @@ happen yet.
 
 ## Map of the app
 
+> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-7](build-plan-git-catalog.md#gc-7-the-catalog-ui)): the catalog's screens follow the plan's §3; catalog review goes. Until then, this section describes M2 as built (v0.3.0).
+
 The app is organised per workspace. A person who belongs to several workspaces
 switches between them; nothing from one workspace appears in another.
 **Proposed**, following the glossary. Reason: workspaces hold infrastructure
@@ -143,7 +145,7 @@ repositories. **Decided** (owner, O-43, [#25]).
 | [Tasks](#task-list-and-board)                          | Task list (phase 1) and board (phase 2)                                                                                      | 1 and 2 |
 | [Task page](#task-page)                                | The story of one task, and steering it                                                                                       | 1       |
 | [Timeline](#timelines)                                 | Everything that happened in the workspace                                                                                    | 1       |
-| [Wiki](#the-wiki)                                      | The catalog for people, including [start here](#start-here-and-onboarding)                                                   | 1       |
+| [Catalog](#the-catalog)                                | The catalog for people, including [start here](#start-here-and-onboarding)                                                   | 1       |
 | [Catalog review](#reviewing-catalog-changes)           | Removed (GC-5, [D-060](decisions/D-060-no-catalog-approval.md)): no catalog approval; GC-7 rewrites the map                  | 1       |
 | [Agents](#agents-view)                                 | Agent sessions and their presence                                                                                            | 1       |
 | [Triage](#triage)                                      | A filtered task list in phase 1; the full triage inbox in phase 2                                                            | 1 and 2 |
@@ -823,9 +825,12 @@ box promise delivery that may never happen.
 Registering agents and revoking their tokens is under
 [workspace settings](#workspace-settings) and [your agents](#your-agents).
 
-## The wiki
+## The catalog
 
-The wiki is the catalog shown to people as readable pages. **Decided** (D-006).
+> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-7](build-plan-git-catalog.md#gc-7-the-catalog-ui)): people browse `main` as a file tree, rendered pages, search, "needs attention" and commit history, with no editing (D-064). Until then, this section describes M2 as built (v0.3.0).
+
+The catalog pages show the catalog to people as readable pages (called "the
+wiki" until the owner renamed it, [D-064](decisions/D-064-catalog-not-wiki.md)). **Decided** (D-006).
 Each catalog revision's Markdown text is the source of truth and is stored in
 Shinan's database only; there is no Git mirror for now. Catalog proposals and
 review happen inside Shinan. **Decided** (owner, O-11, O-12, N-5, [#25]). The entity types, facts and rules are owned by the
@@ -863,7 +868,7 @@ An entity page shows, in order of importance:
    machine without searching.
 10. **History.** The entity's timeline. Any earlier catalog revision can be
     opened and compared with the current one. **Proposed.** Reason: with no
-    Git mirror (N-5), the wiki is where people read a page's history.
+    Git mirror (N-5), the catalog pages are where people read a page's history.
 
 **Decided (owner, 2026-11-19, M2-Q17; M2-7, [#88](https://github.com/guneet-xyz/shinan/issues/88)):**
 details of the page as built.
@@ -911,7 +916,7 @@ details of the page as built.
 
 **Secrets.** Secrets never go in the catalog; the catalog records only where a
 secret lives, for example a path in a secrets manager such as Obscuro or
-Infisical. **Decided** (owner, O-2, [#25]). The wiki shows such a fact as a
+Infisical. **Decided** (owner, O-2, [#25]). The catalog shows such a fact as a
 pointer to the secrets manager, never a value. There is no restricted content:
 every member sees every page. **Decided** (owner, O-2, O-43, [#25]).
 
@@ -944,7 +949,7 @@ where a recheck interval is set for its key in the type's schema. **Decided**
   the type index: facts, the oldest check, how many are due, never checked
   and unknown.
 
-### Moving around the wiki
+### Moving around the catalog
 
 - An index per entity type, each a sortable list with entity status, entity
   owner and the freshness summary, opening with a link to the type's schema
@@ -961,7 +966,7 @@ where a recheck interval is set for its key in the type's schema. **Decided**
   for recheck, known unknowns, [recent changes](#reviewing-catalog-changes),
   and catalog proposals waiting for approval. **Proposed.**
 - Search, and links between pages.
-- A **Start here** link from the wiki's first page.
+- A **Start here** link from the catalog's first page.
 - For workspace owners, a link to the [workspace export](#workspace-settings).
   **Proposed.** Reason: the full workspace export (Architecture, section 5.5)
   is the way to take the catalog off the machine; there is no separate
@@ -971,12 +976,12 @@ where a recheck interval is set for its key in the type's schema. **Decided**
 same way (per-type indexes and links) and that works.
 
 **Decided (owner, 2026-11-19, M2-Q17; M2-7):** until the Now screen exists (M3), opening a workspace
-opens its wiki home: Start here, search, the types, the workspace-wide
+opens its catalog home: Start here, search, the types, the workspace-wide
 lists and recent changes. A type's index lists at most 1,000 entities, the
 first by ID, and says when there are more and that sorting then orders only
 those. Search leaves retired entities out unless asked.
 
-### Changing the catalog from the wiki
+### Changing the catalog from the browser
 
 **Removed** (owner, GD-7, [D-064](decisions/D-064-catalog-not-wiki.md); GC-5):
 there is no editing in the browser for now. Agents change the catalog by
@@ -993,6 +998,8 @@ approval or revert by proposal. `main`'s commit history in the catalog
 UI shows what changed (GC-7); undo is `git revert`.
 
 ## Start here and onboarding
+
+> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-7](build-plan-git-catalog.md#gc-7-the-catalog-ui)): `start-here.md` is rendered as a page; "preview as agent" is removed. Until then, this section describes M2 as built (v0.3.0).
 
 "Start here" is one special catalog document with two ordered paths, one for
 people and one for agents, built from the same catalog pages and changed only
@@ -1145,6 +1152,8 @@ details (D-015).
 
 ### Workspace settings
 
+> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-7](build-plan-git-catalog.md#gc-7-the-catalog-ui)): the "Catalog" screen holds the clone URL, "not a secret" values and purge (GC-5 removed the strict setting). Until then, this section describes M2 as built (v0.3.0).
+
 For workspace owners. Contributors see three of these screens read only:
 General, Members and Security log (only the entries they made or that are
 about them, as [Identity](identity.md) section 11 allows), with no actions.
@@ -1173,7 +1182,7 @@ D-049); only workspace owners can purge, and installation operators cannot
 the "turn new issues into tasks" setting (owner, NO-2, [#26]); the
 deployment approval setting ([Tasks and work](tasks.md) section 8.4). Custom entity
 types are not a setting: they are type schema documents in the catalog, changed
-through catalog proposals ([moving around the wiki](#moving-around-the-wiki)).
+through catalog proposals ([moving around the catalog](#moving-around-the-catalog)).
 Reason: one screen per thing the workspace owns.
 
 **As built (M2-10, [#91](https://github.com/guneet-xyz/shinan/issues/91)), decided (owner, 2026-11-19, M2-Q17):**
@@ -1312,6 +1321,8 @@ The rules are [Identity](identity.md) §3.4's.
 
 ### Your agents
 
+> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-7](build-plan-git-catalog.md#gc-7-the-catalog-ui), [GC-9](build-plan-git-catalog.md#gc-9-the-skill-and-agent-setup)): "Set up OpenCode" becomes "Set up an agent". Until then, this section describes M2 as built (v0.3.0).
+
 An agent is per person, coding tool and machine, for example "Guneet's
 OpenCode on Daedalus". **Decided** (owner, O-40, [#25]). Agents belong to one
 workspace.
@@ -1414,12 +1425,12 @@ How this document's screens map to the plan's phases (plan, section 10). The
 [Roadmap](roadmap.md) decides the exact first release; it splits phase 2 into
 2a (collaboration) and 2b (migration).
 
-| Phase                        | Screens                                                                                                                                                                                                                                                                                                                                                                                          | Status                                                                                                                                            |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1                            | Now screen; task list with ranking and the `triage` filter; task page with comments, panels, subtasks and steering actions (changes are events agents see when they next read the task); timelines; agents view; wiki with start here; catalog review and recent changes; unlinked work; workspace settings for one owner, including export and import; security emails; your account and agents | Decided that the wiki, tasks, timeline and presence are phase 1 (plan, section 10), and export and import (owner, O-75, [#25]); the rest proposed |
-| Before a second member joins | Invitations, the contributor role in screens, member removal                                                                                                                                                                                                                                                                                                                                     | Decided (owner, O-49, [#25]: D-019 read as "design now, build before the second member")                                                          |
-| 2                            | Board; nudges (recipients, delivery states, waiting comments, "nudge not received", asking your agent to act on a git host); task notices; triage inbox; notifications                                                                                                                                                                                                                           | Decided (plan, section 10). Board and triage inbox are required before migration (owner, O-78, [#25])                                             |
-| 3                            | Your machines; starting agent sessions from the task page through a launcher                                                                                                                                                                                                                                                                                                                     | Decided (plan, section 10; D-014; owner, O-1, [#25])                                                                                              |
+| Phase                        | Screens                                                                                                                                                                                                                                                                                                                                                                                                   | Status                                                                                                                                                                         |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1                            | Now screen; task list with ranking and the `triage` filter; task page with comments, panels, subtasks and steering actions (changes are events agents see when they next read the task); timelines; agents view; catalog pages with start here; catalog review and recent changes; unlinked work; workspace settings for one owner, including export and import; security emails; your account and agents | Decided that the catalog pages (the plan's "wiki"), tasks, timeline and presence are phase 1 (plan, section 10), and export and import (owner, O-75, [#25]); the rest proposed |
+| Before a second member joins | Invitations, the contributor role in screens, member removal                                                                                                                                                                                                                                                                                                                                              | Decided (owner, O-49, [#25]: D-019 read as "design now, build before the second member")                                                                                       |
+| 2                            | Board; nudges (recipients, delivery states, waiting comments, "nudge not received", asking your agent to act on a git host); task notices; triage inbox; notifications                                                                                                                                                                                                                                    | Decided (plan, section 10). Board and triage inbox are required before migration (owner, O-78, [#25])                                                                          |
+| 3                            | Your machines; starting agent sessions from the task page through a launcher                                                                                                                                                                                                                                                                                                                              | Decided (plan, section 10; D-014; owner, O-1, [#25])                                                                                                                           |
 
 ## How today's practice maps to these screens
 

@@ -28,10 +28,11 @@ Proposals that remain carry local labels (RM-1, RM-3, ...). The
   gate with a recorded decision against stated criteria (proposed, RM-1).
 - The first version is the plan's phase 1 feature set plus export, uptime
   monitoring and a weekly readiness report, with a cut line for what can slip
-  (decided, owner, O-75, N-11). **There are no built-in backups and no Git
-  mirror** (decided, owner, O-62 to O-64, N-5), so nothing in Shinan has a copy
-  off Musashi. This is an accepted risk that is reviewed again before
-  migration.
+  (decided, owner, O-75, N-11). **There are no built-in backups** (decided,
+  owner, O-62 to O-64), so nothing in Shinan has a copy off Musashi except
+  agents' clones of the catalog repository, which are partial copies
+  ([D-059](decisions/D-059-catalog-in-git-hosted-by-shinan.md)). This is an
+  accepted risk that is reviewed again before migration.
 - The proof of concept uses **Shinan**, **mon** and **easyshell** (decided,
   owner, O-70).
 - During the trial the `workspace` repository stays the source of truth for
@@ -170,24 +171,24 @@ Not on the roadmap:
 
 ### 3.1 In scope
 
-| Capability                                                                                                             | Status                                                                                                                                              | Reason                                                                                                                                                |
-| ---------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Catalog, wiki and agent index                                                                                          | Decided (plan, phase 1; D-006, D-007)                                                                                                               | Core pillar.                                                                                                                                          |
-| Tasks with task IDs, subtasks (nesting to any depth), work links, calculated task status, task flags and manual states | Decided (plan, phase 1; D-002, D-005; owner, O-21 and N-1 for subtasks, O-8 for flags)                                                              | Core pillar.                                                                                                                                          |
-| GitHub and Forgejo git host connections: webhooks, API reads, reconciliation                                           | Decided (plan, phase 1; D-009). On GitHub Shinan writes only as its app; Forgejo connections are read-only (decided, owner, N-4, [#25][o])          | The trial projects live on both.                                                                                                                      |
-| Outside issues become tasks                                                                                            | Decided (D-003)                                                                                                                                     | A simple list of `triage` tasks is enough; the full triage inbox is phase 2 (plan).                                                                   |
-| Timeline                                                                                                               | Decided (plan, phase 1)                                                                                                                             | Core pillar.                                                                                                                                          |
-| MCP server and skill                                                                                                   | Decided (plan, phase 1; D-014 level 1)                                                                                                              | How agents act.                                                                                                                                       |
-| CLI                                                                                                                    | Decided as part of level 1 (plan, integration points)                                                                                               | On the cut line ([3.2](#32-cut-line)).                                                                                                                |
-| OpenCode plugin for presence                                                                                           | Decided (plan, phase 1; D-014 level 2)                                                                                                              | How Shinan knows which agent sessions run. Installing it also sets up MCP and the skill (decided, owner, O-36).                                       |
-| Sign-in, one workspace, members and roles                                                                              | Decided (D-015, D-019). Sign-in by email magic link or GitHub only; roles are workspace owner and contributor (decided, owner, N-7, N-11, [#25][o]) | Magic links mean Shinan sends email from the first version, through the AWS SES API (decided, owner, N-6).                                            |
-| Deployment at `shinan.guneet.dev` on Musashi                                                                           | Decided (D-011, D-016)                                                                                                                              | First deployment target.                                                                                                                              |
-| Full export of a workspace (catalog, tasks and their records) and import back                                          | Decided (owner, O-75, [#25][o])                                                                                                                     | Needed for the rollback (R15). With no Git mirror (N-5), it is the only way to get data out of Shinan.                                                |
-| Uptime monitoring of `shinan.guneet.dev`                                                                               | Decided (owner, O-75)                                                                                                                               | R10 needs a measurement. [Architecture](architecture.md) proposes a tile on the private mon board.                                                    |
-| Weekly readiness report                                                                                                | Decided (owner, O-75)                                                                                                                               | Readiness is judged on evidence gathered during the trial. A script is enough.                                                                        |
-| Built-in backups                                                                                                       | **Not included.** Decided (owner, O-62 to O-64, [#25][o])                                                                                           | Shinan relies on host-level backups, which are currently paused on Musashi. Accepted risk; see [backups before migration](#backups-before-migration). |
-| Git mirror of the catalog                                                                                              | **Not included for now; later.** Decided (owner, N-5, [#25][o])                                                                                     | Catalog revisions live in PostgreSQL only.                                                                                                            |
-| A viewer test account                                                                                                  | **Not included.** Decided (owner, N-11, [#25][o])                                                                                                   | There is no viewer role.                                                                                                                              |
+| Capability                                                                                                             | Status                                                                                                                                                                                             | Reason                                                                                                                                                                                                                                                      |
+| ---------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Catalog, stored in Git, with its pages for people, search and index                                                    | Decided (plan, phase 1; D-006, D-007); stored in Git with no catalog approval and no catalog MCP tools (D-059, D-060, D-063); "wiki" renamed "catalog" (D-064)                                     | Core pillar.                                                                                                                                                                                                                                                |
+| Tasks with task IDs, subtasks (nesting to any depth), work links, calculated task status, task flags and manual states | Decided (plan, phase 1; D-002, D-005; owner, O-21 and N-1 for subtasks, O-8 for flags)                                                                                                             | Core pillar.                                                                                                                                                                                                                                                |
+| GitHub and Forgejo git host connections: webhooks, API reads, reconciliation                                           | Decided (plan, phase 1; D-009). On GitHub Shinan writes only as its app; Forgejo connections are read-only (decided, owner, N-4, [#25][o])                                                         | The trial projects live on both.                                                                                                                                                                                                                            |
+| Outside issues become tasks                                                                                            | Decided (D-003)                                                                                                                                                                                    | A simple list of `triage` tasks is enough; the full triage inbox is phase 2 (plan).                                                                                                                                                                         |
+| Timeline                                                                                                               | Decided (plan, phase 1)                                                                                                                                                                            | Core pillar.                                                                                                                                                                                                                                                |
+| MCP server and skill                                                                                                   | Decided (plan, phase 1; D-014 level 1)                                                                                                                                                             | How agents act: MCP for tasks, Git and the skill for the catalog (D-063).                                                                                                                                                                                   |
+| CLI                                                                                                                    | Decided as part of level 1 (plan, integration points)                                                                                                                                              | On the cut line ([3.2](#32-cut-line)).                                                                                                                                                                                                                      |
+| OpenCode plugin for presence                                                                                           | Decided (plan, phase 1; D-014 level 2)                                                                                                                                                             | How Shinan knows which agent sessions run. Installing it also sets up MCP and the skill (decided, owner, O-36).                                                                                                                                             |
+| Sign-in, one workspace, members and roles                                                                              | Decided (D-015, D-019). Sign-in by email magic link or GitHub only; roles are workspace owner and contributor (decided, owner, N-7, N-11, [#25][o])                                                | Magic links mean Shinan sends email from the first version, through the AWS SES API (decided, owner, N-6).                                                                                                                                                  |
+| Deployment at `shinan.guneet.dev` on Musashi                                                                           | Decided (D-011, D-016)                                                                                                                                                                             | First deployment target.                                                                                                                                                                                                                                    |
+| Full export of a workspace (catalog, tasks and their records) and import back                                          | Decided (owner, O-75, [#25][o])                                                                                                                                                                    | Needed for the rollback (R15). Its catalog part is the catalog repository itself, which any clone or bundle copies ([D-059](decisions/D-059-catalog-in-git-hosted-by-shinan.md)); for tasks and their records it is the only way to get data out of Shinan. |
+| Uptime monitoring of `shinan.guneet.dev`                                                                               | Decided (owner, O-75)                                                                                                                                                                              | R10 needs a measurement. [Architecture](architecture.md) proposes a tile on the private mon board.                                                                                                                                                          |
+| Weekly readiness report                                                                                                | Decided (owner, O-75)                                                                                                                                                                              | Readiness is judged on evidence gathered during the trial. A script is enough.                                                                                                                                                                              |
+| Built-in backups                                                                                                       | **Not included.** Decided (owner, O-62 to O-64, [#25][o])                                                                                                                                          | Shinan relies on host-level backups, which are currently paused on Musashi. Accepted risk; see [backups before migration](#backups-before-migration).                                                                                                       |
+| Git mirror of the catalog to an outside host                                                                           | **Not planned.** The catalog is itself a Git repository hosted by Shinan; outside hosting is excluded (decided, owner, [D-059](decisions/D-059-catalog-in-git-hosted-by-shinan.md), replacing N-5) | Agents' clones are partial copies, not backups ([backups before migration](#backups-before-migration)).                                                                                                                                                     |
+| A viewer test account                                                                                                  | **Not included.** Decided (owner, N-11, [#25][o])                                                                                                                                                  | There is no viewer role.                                                                                                                                                                                                                                    |
 
 ### 3.2 Cut line
 
@@ -197,7 +198,7 @@ should start as soon as the core is usable.
 
 | Can slip                                           | Until    | Why it can wait                                                                                                    |
 | -------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------ |
-| CLI                                                | G2       | MCP and the skill cover the trial's agent actions.                                                                 |
+| CLI                                                | G2       | Git and the skill cover the catalog; MCP and the skill the trial's task actions.                                   |
 | Export                                             | G2       | Needed for the rollback (R15), not for the trial. Until it exists, Shinan's records cannot be taken out of Shinan. |
 | Automatic fact checks through git host connections | Phase 2a | Asked by the [catalog](catalog.md) (12.3). Useful but not needed to test whether agents keep the catalog current.  |
 
@@ -213,26 +214,39 @@ agents review scope against the cut line. Reason: catalog feedback can start
 early, the risk is low because the `workspace` repository stays the source of
 truth for the catalog, and a review at each milestone stops scope creep.
 
-| Milestone               | Contents                                                                                                                                                            | Trial use it unlocks                                         |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
-| M1. Empty installation  | Sign-in, email sending, one workspace, members and roles, deployment on Musashi, uptime monitoring                                                                  | None; security checks                                        |
-| M2. Catalog             | Catalog entities, facts with provenance, catalog proposals and catalog approval, wiki, agent index, MCP read and propose, skill                                     | Catalog part of the trial                                    |
-| M3. Tasks and git hosts | Tasks and subtasks, work links, calculated status, GitHub and Forgejo git host connections, reconciliation, outside issues become tasks, timeline, readiness report | Task part of the trial, including cross-project coordination |
-| M4. Presence            | OpenCode plugin: agent sessions, presence, attaching an agent session to a task                                                                                     | Presence part of the trial; trial fully running              |
+| Milestone               | Contents                                                                                                                                                                                | Trial use it unlocks                                         |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| M1. Empty installation  | Sign-in, email sending, one workspace, members and roles, deployment on Musashi, uptime monitoring                                                                                      | None; security checks                                        |
+| M2. Catalog             | Catalog entities, facts with provenance, the catalog stored in Git and changed by pushes with checks on push, the catalog pages for people, search and index, skill (as revised, below) | Catalog part of the trial                                    |
+| M3. Tasks and git hosts | Tasks and subtasks, work links, calculated status, GitHub and Forgejo git host connections, reconciliation, outside issues become tasks, timeline, readiness report                     | Task part of the trial, including cross-project coordination |
+| M4. Presence            | OpenCode plugin: agent sessions, presence, attaching an agent session to a task                                                                                                         | Presence part of the trial; trial fully running              |
 
-**M2 revised (owner, 2026-11-19):** M2's catalog storage, proposals and
-approval, the wiki's editing and the catalog MCP tools are being replaced by a
-catalog stored in Git, hosted by Shinan, which agents push to without catalog
-approval, and shown to people as the "catalog" (no longer "wiki"). The
-[Git-based catalog plan](build-plan-git-catalog.md) (approved by
-the owner on 2026-11-19, [#161](https://github.com/guneet-xyz/shinan/issues/161)) is built and deployed
-before M3. Its package GC-10 updates this section and §4.3, §4.5 and §5.
+**M2 revised (owner, 2026-11-19):** M2 was built and deployed as v0.3.0 with
+the catalog in PostgreSQL, catalog proposals and approval, the wiki's editing
+and review, and catalog MCP tools. The owner then decided to replace them:
+the catalog is stored in Git, one repository per workspace hosted by Shinan,
+which agents clone, change and push to
+([D-059](decisions/D-059-catalog-in-git-hosted-by-shinan.md)); every push
+that passes Shinan's checks applies, with no catalog approval
+([D-060](decisions/D-060-no-catalog-approval.md)); agents use Git and the
+skill rather than MCP for the catalog
+([D-063](decisions/D-063-no-mcp-for-the-catalog.md)); and people browse it as
+the "catalog" (no longer "wiki"): `main` as a file tree, rendered pages,
+search and commit history, without editing
+([D-064](decisions/D-064-catalog-not-wiki.md)). The
+[Git-based catalog plan](build-plan-git-catalog.md) (approved by the owner on
+2026-11-19, [#161](https://github.com/guneet-xyz/shinan/issues/161)) builds
+this as v0.4.0, deployed before M3 starts.
 
 **Screens (proposed):** each phase 1 screen in [human experience](human-experience.md)
 ships with the milestone that delivers its feature. M1: your account and
-workspace settings. M2: wiki, start here, catalog review and recent changes,
-and registering agents; until the plugin arrives in M4, agents use a hand-made
-token (the fallback in NO-1). M3: the Now screen, task list, task page,
+workspace settings. M2 as revised: the catalog pages (file tree, rendered
+pages, start here, search, "needs attention" and commit history), workspace
+settings for the catalog (clone URL, "not a secret" values, purge) and
+registering agents with "Set up an agent"
+([Git-based catalog plan §3](build-plan-git-catalog.md#3-the-catalog-ui)); until the plugin arrives in M4, agents use a hand-made
+token (the fallback in NO-1). M2 as first built (v0.3.0) also had catalog
+review, recent changes and editing in the wiki; they are removed. M3: the Now screen, task list, task page,
 timelines and unlinked work. M4: the agents view. Reason: it answers human
 experience's "when each screen ships" without a separate screen schedule.
 
@@ -320,9 +334,9 @@ would not show anything real).
 **Paused (owner, 2026-11-19):** the catalog part of the trial is paused until
 the [Git-based catalog](build-plan-git-catalog.md) is deployed, and then
 restarts on it ([plan §4.4](build-plan-git-catalog.md#44-restarting-the-trial)).
-Below, "catalog proposal" becomes a push to the catalog, and the catalog
-approval paragraph has lapsed: catalog changes need no approval
-([D-060](decisions/D-060-no-catalog-approval.md), accepted 2026-11-19).
+Catalog changes need no approval
+([D-060](decisions/D-060-no-catalog-approval.md), accepted 2026-11-19); O-72's
+"catalog proposal" is read as a push to the catalog.
 
 **Decided (D-018):** Shinan starts empty, and the `workspace` repository
 stays the source of truth for the catalog until Shinan is judged ready.
@@ -350,8 +364,10 @@ stays the source of truth for the catalog until Shinan is judged ready.
   would create two copies of the same facts, against D-018's reason; checking
   follows D-007 and tests what R6 measures.
 - **Keeping it current.** When a trial entity's facts change, the agent doing
-  the work updates the `workspace` repository as today and also makes a
-  catalog proposal in Shinan. A weekly comparison reports differences.
+  the work updates the `workspace` repository as today and also pushes the
+  same change to the catalog in Shinan (O-72, which said "makes a catalog
+  proposal", read as a push since D-060). A weekly comparison reports
+  differences.
 
 **Proposed:**
 
@@ -366,10 +382,14 @@ stays the source of truth for the catalog until Shinan is judged ready.
   O-43). The trial catalog therefore holds only what the `workspace`
   repository already holds, which by its policy contains no secrets.
 
-**Catalog approval.** Only high-risk (gated) changes need catalog approval,
-from the start of the trial; if accuracy (R6) slips, the workspace switches
-to approving everything (decided, owner, O-3, [#25][o]). The owner may approve
-their own agents' catalog proposals (decided, owner, O-46).
+**No catalog approval.** Every push to `main` that passes Shinan's checks
+applies at once; nothing waits for a person
+([D-060](decisions/D-060-no-catalog-approval.md), replacing O-3 and O-46 in
+[D-024](decisions/D-024-gated-catalog-approval.md)). People review the
+catalog after the fact in `main`'s commit history, which shows who pushed
+each commit. If accuracy (R6) slips there is no strict setting to switch on;
+the remedy is tightening the skill and the checks on push
+([Git-based catalog plan §8](build-plan-git-catalog.md#8-risks)).
 
 ### 4.4 Tasks during the trial
 
@@ -450,12 +470,14 @@ trial start. For trial projects only, it tells agents:
 
 - to connect to Shinan (plugin, which sets up the MCP server and skill) and
   check in; the skill and MCP server are enabled for trial projects only
-  (O-38);
+  (O-38). For the catalog, agents use a clone of the catalog repository and
+  the skill, not MCP ([D-063](decisions/D-063-no-mcp-for-the-catalog.md));
+  the clone and Git's credential helper are set up for trial projects only;
 - that cross-project coordination for trial projects is a task in Shinan, not
   an issue in the `workspace` repository (O-73), and how to put its task ID in
   branch names and PR descriptions;
-- to make a catalog proposal in Shinan whenever they update a trial entity in
-  the `workspace` repository (O-72);
+- to push the same change to the catalog in Shinan whenever they update a
+  trial entity in the `workspace` repository (O-72);
 - to fall back to the git-host-only workflow if Shinan is down.
 
 **Proposed:** the global OpenCode instructions are not changed during the
@@ -489,14 +511,14 @@ N-2) belong to
 owner, O-77). Estimates; the report tracks the real time so it can be cut if
 it grows.
 
-| Task                                            | How often                       | Estimated time       | Notes                                                                                                                     |
-| ----------------------------------------------- | ------------------------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| Deployment approvals                            | As deployments are ready (O-83) | 10–15 minutes a week | A few deployments a week during active building, a few minutes each.                                                      |
-| Catalog approval of gated catalog proposals     | As they come, or in one batch   | 5 minutes            | Only high-risk classes need approval (O-3), such as rules, lifecycle and people. Routine fact changes apply on their own. |
-| Spot-check 10 items from agent-prepared samples | Weekly                          | 15 minutes           | Covers R3, R4, R6 and R13.                                                                                                |
-| The R12 questions                               | Weekly                          | 10 minutes           |                                                                                                                           |
-| Reading the readiness report                    | Weekly                          | 5 minutes            |                                                                                                                           |
-| Accepting `triage` tasks                        | As they come                    | Near zero            | Issues from the owner's account start in `to do` ([4.2](#42-trial-projects)).                                             |
+| Task                                            | How often                       | Estimated time       | Notes                                                                                                                                     |
+| ----------------------------------------------- | ------------------------------- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Deployment approvals                            | As deployments are ready (O-83) | 10–15 minutes a week | A few deployments a week during active building, a few minutes each.                                                                      |
+| Reading `main`'s commit history                 | Weekly, or as needed            | 5 minutes            | No catalog approval (D-060): every push applies, and the history shows who pushed each commit. The R6 sample is where errors are counted. |
+| Spot-check 10 items from agent-prepared samples | Weekly                          | 15 minutes           | Covers R3, R4, R6 and R13.                                                                                                                |
+| The R12 questions                               | Weekly                          | 10 minutes           |                                                                                                                                           |
+| Reading the readiness report                    | Weekly                          | 5 minutes            |                                                                                                                                           |
+| Accepting `triage` tasks                        | As they come                    | Near zero            | Issues from the owner's account start in `to do` ([4.2](#42-trial-projects)).                                                             |
 
 Working on coordination tasks in Shinan instead of issues replaces existing
 work rather than adding to it. One-off owner work: the actions in 3.4, gates
@@ -549,16 +571,16 @@ Two scopes are used:
 | R3  | Must-pass | Work link coverage                    | At least 95% of merged PRs among trial work items have a `delivers` work link; no wrong link in an agent-prepared sample of 30                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Tasks are only useful if work reaches them (D-002).                                                                                                                                                                       |
 | R4  | Judged    | Calculated status                     | In weekly agent-prepared samples of 20 tasks, task status matches reality at least 95% of the time; no task status needed a hand edit outside manual states                                                                                                                                                                                                                                                                                                                                                                                                                                                             | Tests D-005 on real work.                                                                                                                                                                                                 |
 | R5  | Must-pass | Provenance                            | 100% of facts in the trial workspace have a fact state, a source and a last-checked time (or an explicit `unknown`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | D-007; should be enforced, so anything less is a defect.                                                                                                                                                                  |
-| R6  | Judged    | Catalog accuracy                      | In an agent-prepared sample of 30 facts rechecked against owning sources, at least 95% are correct or correctly shown as stale or `unknown`; every error explained                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Trust is the main differentiator (D-007). It also decides whether catalog approval switches to strict (O-3).                                                                                                              |
-| R7  | Judged    | Catalog kept current                  | At least 90% of `workspace` repository changes to trial entities have a matching catalog proposal in Shinan, made within two days. Also counted: stale or `unknown` facts that agents fixed as a side effect of task work                                                                                                                                                                                                                                                                                                                                                                                               | Measures whether agents maintain the catalog. The side-effect count matches the [product overview](product-overview.md)'s second sign of success.                                                                         |
+| R6  | Judged    | Catalog accuracy                      | In an agent-prepared sample of 30 facts rechecked against owning sources, at least 95% are correct or correctly shown as stale or `unknown`; every error explained                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Trust is the main differentiator (D-007). With no catalog approval (D-060) there is no strict setting to switch to; a slip means tightening the skill and the checks on push.                                             |
+| R7  | Judged    | Catalog kept current                  | At least 90% of `workspace` repository changes to trial entities have a matching push to the catalog in Shinan, made within two days. Also counted: stale or `unknown` facts that agents fixed as a side effect of task work                                                                                                                                                                                                                                                                                                                                                                                            | Measures whether agents maintain the catalog. The side-effect count matches the [product overview](product-overview.md)'s second sign of success.                                                                         |
 | R8  | Judged    | Presence                              | At least 90% of OpenCode agent sessions working on trial tasks (top-level sessions, and subagents that claimed a task, N-2) are `plugin-reported` and attached to the right task; presence states follow the rules in [agent integrations](agent-integrations.md)                                                                                                                                                                                                                                                                                                                                                       | Tests D-014 level 2.                                                                                                                                                                                                      |
 | R9  | Judged    | Attribution                           | At least 90% of agent-made events on trial work items have attribution confidence `recorded` or `marked`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | D-017 is a known limitation; this measures how well Shinan designs around it.                                                                                                                                             |
 | R10 | Must-pass | Reliability                           | Availability of at least 99% over the last four trial weeks; no data loss incident                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Shinan will hold the runbooks used to recover everything else. See the note on measuring uptime below. Restore tests are not a gate (no backups, O-62).                                                                   |
-| R11 | Must-pass | Security                              | Sign-in protections from [identity](identity.md) and the security checklist from [architecture](architecture.md) in place, with no open high-severity finding; only allowlisted emails can create accounts (O-48); a person without an invitation sees no workspace; a secret scan of all catalog content and events finds nothing                                                                                                                                                                                                                                                                                      | D-015: a public app holding infrastructure details.                                                                                                                                                                       |
+| R11 | Must-pass | Security                              | Sign-in protections from [identity](identity.md) and the security checklist from [architecture](architecture.md) in place, with no open high-severity finding; only allowlisted emails can create accounts (O-48); a person without an invitation sees no workspace; a secret scan of all catalog content, over the catalog repository's whole history (every branch and commit), and of events finds nothing                                                                                                                                                                                                           | D-015: a public app holding infrastructure details.                                                                                                                                                                       |
 | R12 | Judged    | Useful to the owner                   | For the last three weekly checks, the owner answers from Shinan alone: what is in progress across the trial projects; which tasks need a person; which agent sessions are running and on what; where and how a trial project is deployed; what happened on a given task this week. Zero recorded fall-backs in the last two weeks                                                                                                                                                                                                                                                                                       | The point of Shinan is that people can follow the work.                                                                                                                                                                   |
-| R13 | Judged    | Useful to agents                      | In an agent-prepared sample of 20 agent sessions on trial projects, at least 18 took their project-specific context (locations, deployment, owning sources) from Shinan's MCP server or skill rather than from `workspace` repository entries                                                                                                                                                                                                                                                                                                                                                                           | Agents still read the `workspace` repository's general instructions, because the bootstrap is unchanged during the trial.                                                                                                 |
+| R13 | Judged    | Useful to agents                      | In an agent-prepared sample of 20 agent sessions on trial projects, at least 18 took their project-specific context (locations, deployment, owning sources) from their clone of the Shinan catalog or the skill rather than from `workspace` repository entries                                                                                                                                                                                                                                                                                                                                                         | Agents still read the `workspace` repository's general instructions, because the bootstrap is unchanged during the trial.                                                                                                 |
 | R14 | Must-pass | Migration rehearsal                   | A full import of the `workspace` repository into a rehearsal workspace ([section 6.3](#63-cutover-steps)) succeeds: every entry imported, no broken links, all verification fields preserved, owner spot-checks 10 entities. The rehearsal runs on a temporary local-only installation on Daedalus, set up from Shinan's own documentation. **Proposed addition:** converting the rehearsal workspace back, as a rollback would ([6.7](#67-rollback-and-emergency-access), [catalog §13.3](catalog.md#133-mapping-back-for-a-rollback)), gives files that pass the `workspace` repository's checks (`scripts/check.py`) | The migration, and a rollback, must be boring by the time they are real. Setting up from the documentation also proves self-hosting (D-012). Daedalus follows the owner's choice for temporary test installations (O-65). |
-| R15 | Must-pass | Exit path                             | A full export of the trial workspace, imported into an empty workspace, produces the same catalog content and tasks                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Leaving Shinan, and the rollback, depend on the export being complete.                                                                                                                                                    |
+| R15 | Must-pass | Exit path                             | A full export of the trial workspace, imported into an empty workspace, produces the same tasks, and the catalog repository (a clone or a bundle) carries the same catalog content and history into the new workspace through the import that export and import design, not through an ordinary push                                                                                                                                                                                                                                                                                                                    | Leaving Shinan, and the rollback, depend on the export being complete. The catalog's exit path is its repository ([D-059](decisions/D-059-catalog-in-git-hosted-by-shinan.md)).                                           |
 | R16 | Must-pass | Phase 2 features needed for migration | The board and the triage inbox are deployed and used during the trial (decided, owner, O-78)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | They replace the Forgejo Project board and the manual sorting of incoming issues. Nudges and notifications are new abilities, not replacements, so they are not prerequisites.                                            |
 
 **Measuring uptime (R10).** Both mon boards run on Musashi, like Shinan, so an
@@ -568,11 +590,19 @@ on the safe side and needs no new service. An off-Musashi probe is **open**.
 
 ### Backups before migration
 
-**Decided (owner, O-62 to O-64, N-5, [#25][o]):** Shinan has no built-in
-backups, backup target or recovery objectives for now, and no Git mirror of
-the catalog (the mirror is left for later). Catalog revisions and everything
-else live only in Shinan's PostgreSQL database on Musashi. Shinan relies on
-host-level backups, which are paused on Musashi. This is an accepted risk.
+**Decided (owner, O-62 to O-64, [#25][o]):** Shinan has no built-in
+backups, backup target or recovery objectives for now. The catalog lives in
+its Git repository on Shinan's volume, and everything else in Shinan's
+PostgreSQL database, both on Musashi
+([D-059](decisions/D-059-catalog-in-git-hosted-by-shinan.md), which replaced
+N-5's "no Git mirror, PostgreSQL only"). Shinan relies on host-level
+backups, which are paused on Musashi. This is an accepted risk.
+
+**Clones are partial copies, not backups.** Every agent's clone holds `main`
+up to its last fetch. Nothing checks them, they may be behind, and a purge
+leaves them holding the purged text; but a lost catalog repository can be
+recreated from the freshest clone, and the push log shows what that clone
+missed ([Git-based catalog plan §2.11](build-plan-git-catalog.md#211-backups-and-recovery)).
 
 **During the trial** the risk is limited but real. The `workspace` repository
 holds the catalog, and mon and easyshell keep their repository issues, so
@@ -580,28 +610,32 @@ losing Shinan's data would not lose the catalog or their project work. It
 would lose the trial's own records and the open coordination tasks (O-73),
 which have no copy anywhere else (N-10).
 
-**At migration Shinan becomes the only copy of everything:** the catalog,
-runbooks and policies, tasks, events, agent session history and catalog
-proposals, all on one disk on Musashi, with no copy off it. Two things then
-depend on that one disk:
+**At migration Shinan becomes the only server copy of everything:** the
+catalog, runbooks and policies (in the catalog repository), tasks, events,
+agent session history and the push log, all on one disk on Musashi; the only
+copies off it are agents' clones of the catalog. Two things then depend on
+that one disk:
 
-- **Recovery.** A disk failure or a lost database would be unrecoverable.
+- **Recovery.** A disk failure or a lost database would be unrecoverable,
+  except the catalog, as far as the freshest clone goes.
 - **Emergency access.** Shinan, Forgejo and mon all run on Musashi. Today, if
   Musashi is down, agents still read the runbooks to fix it from a local
-  `workspace` repository checkout. After migration, with no mirror, the only
-  local copy is the archived `workspace` repository, frozen at the cutover
-  revision, plus any workspace export someone has downloaded.
+  `workspace` repository checkout. After migration, agents read the catalog,
+  runbooks included, from their own clones of the catalog repository, up to
+  their last fetch; the archived `workspace` repository, frozen at the
+  cutover revision, is a second, older copy. Task records have no local copy
+  beyond any workspace export someone has downloaded.
 
 **Proposed:** before G2 the owner reviews both again with the readiness
 report, and before the cutover either confirms the risk or chooses a remedy:
-host-level backups, built-in backups, the Git mirror (N-5 leaves it for
-later), or workspace exports taken regularly and kept off Musashi, which the
-[catalog](catalog.md) (2.2) leaves to this review. The last two would also
-give a readable copy for emergency access. It is a
-review item at G2, not a must-pass criterion, because the owner has already
-accepted the risk for now. Reason: the owner asked for it to be noted as a
-consideration before migration, and the missing mirror makes the emergency
-access gap new.
+host-level backups, built-in backups, or workspace exports (for tasks) and
+clones or bundles of the catalog repository taken regularly and kept off
+Musashi, which the [catalog](catalog.md) (2.2) leaves to this review. It is
+a review item at G2, not a must-pass criterion, because the owner has
+already accepted the risk for now. Reason: the owner asked for it to be
+noted as a consideration before migration. Clones close most of the
+emergency-access gap for the catalog that the PostgreSQL-only design had
+opened; tasks still have it.
 
 ## 6. Migrating the `workspace` repository
 
@@ -751,32 +785,34 @@ PRs as the record of how work was done before Shinan.
   rollback path would exist only on paper. The mapping rules belong to the
   [catalog](catalog.md), not to this document.
 
-  This needs Shinan to be readable: with no Git mirror (N-5) and no backups
-  (O-62), if Musashi's data is lost during the window, the rollback can only
-  start from the frozen cutover revision of the `workspace` repository, and
-  work recorded only in Shinan since cutover is lost.
+  This needs Shinan to be readable: with no backups (O-62), if Musashi's data
+  is lost during the window, the rollback can only start from the freshest
+  clone of the catalog repository, or else from the frozen cutover revision
+  of the `workspace` repository, and task work recorded only in Shinan since
+  cutover is lost.
 
 - **Emergency copy.** Keep the archived `workspace` repository's checkout on
   each development machine, marked as frozen at the cutover revision. Reason:
   Shinan, Forgejo and mon all run on Musashi; if Musashi is down, the
-  runbooks to fix it must still be reachable, and with no Git mirror this
-  stale checkout is the only copy off Musashi. Whether something better is
+  runbooks to fix it must still be reachable. Agents' clones of the catalog
+  repository are the current copy, up to their last fetch; this checkout is
+  an older one that does not depend on any agent having fetched. Whether something better is
   needed is part of the [review before migration](#backups-before-migration).
 
 ## 7. Risks
 
-| Risk                                                                              | Effect                                                                                                   | Mitigation                                                                                                                                                                     | Status                                   |
-| --------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------- |
-| No built-in backups, no Git mirror, and host backups on Musashi are paused        | Data loss in Shinan is unrecoverable; after migration it would lose the catalog, tasks and their history | Accepted risk (owner, O-62 to O-64, N-5). During the trial the `workspace` repository still holds the catalog. Before migration: the [review](#backups-before-migration) at G2 | Decided (accepted risk); review proposed |
-| Coordination for trial projects lives only in Shinan (O-73, N-10)                 | A data loss loses open coordination tasks                                                                | Accepted with O-73 and N-10. Code work and PR descriptions stay on the git hosts; on a pause, open tasks are recreated as issues if Shinan is readable (4.6)                   | Decided (accepted); recreation proposed  |
-| Musashi is a single point of failure for Forgejo, mon and Shinan                  | Recovery information unreachable during an outage; uptime unmeasured                                     | Before migration: local `workspace` repository checkouts. After: the frozen archived checkout (6.7) and the G2 review. Gaps count as downtime (R10)                            | Proposed                                 |
-| Trial work overloads the owner                                                    | The owner stops judging; the trial stalls                                                                | Under one hour a week (O-77); agents prepare samples; only gated catalog changes need approval (O-3)                                                                           | Decided                                  |
-| Double maintenance tires agents                                                   | Shinan's trial catalog falls behind; R7 fails for the wrong reason                                       | Small trial catalog (O-71)                                                                                                                                                     | Decided                                  |
-| Infrastructure details on a public web app, with no restricted level (D-015, O-2) | Exposure of sensitive context                                                                            | No secrets in the catalog (O-2); email allowlist (O-48); R11 must pass                                                                                                         | Decided; R11 proposed                    |
-| Agents do not follow conventions                                                  | Missing work links, poor attribution                                                                     | Measured by R3 and R9; the trial note; skill and plugin enforce what they can                                                                                                  | Proposed                                 |
-| No real outside issues during the trial                                           | The `triage` path is barely tested before migration                                                      | Known gap ([4.2](#42-trial-projects))                                                                                                                                          | Proposed                                 |
-| Phase 2 features creep into phase 1                                               | Trial starts late                                                                                        | Cut line (3.2); review at each milestone                                                                                                                                       | Decided (O-75); review proposed          |
-| Shinan tracks its own development                                                 | A broken Shinan hides its own bugs                                                                       | Trial findings are GitHub issues, readable without Shinan (4.4)                                                                                                                | Proposed                                 |
+| Risk                                                                              | Effect                                                                                                   | Mitigation                                                                                                                                                                                                                                     | Status                                   |
+| --------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| No built-in backups, and host backups on Musashi are paused                       | Data loss in Shinan is unrecoverable; after migration it would lose the catalog, tasks and their history | Accepted risk (owner, O-62 to O-64). During the trial the `workspace` repository still holds the catalog; agents' clones of the catalog repository are partial copies (D-059). Before migration: the [review](#backups-before-migration) at G2 | Decided (accepted risk); review proposed |
+| Coordination for trial projects lives only in Shinan (O-73, N-10)                 | A data loss loses open coordination tasks                                                                | Accepted with O-73 and N-10. Code work and PR descriptions stay on the git hosts; on a pause, open tasks are recreated as issues if Shinan is readable (4.6)                                                                                   | Decided (accepted); recreation proposed  |
+| Musashi is a single point of failure for Forgejo, mon and Shinan                  | Recovery information unreachable during an outage; uptime unmeasured                                     | Before migration: local `workspace` repository checkouts. After: the frozen archived checkout (6.7) and the G2 review. Gaps count as downtime (R10)                                                                                            | Proposed                                 |
+| Trial work overloads the owner                                                    | The owner stops judging; the trial stalls                                                                | Under one hour a week (O-77); agents prepare samples; no catalog approval at all (D-060)                                                                                                                                                       | Decided                                  |
+| Double maintenance tires agents                                                   | Shinan's trial catalog falls behind; R7 fails for the wrong reason                                       | Small trial catalog (O-71)                                                                                                                                                                                                                     | Decided                                  |
+| Infrastructure details on a public web app, with no restricted level (D-015, O-2) | Exposure of sensitive context                                                                            | No secrets in the catalog (O-2); email allowlist (O-48); R11 must pass                                                                                                                                                                         | Decided; R11 proposed                    |
+| Agents do not follow conventions                                                  | Missing work links, poor attribution                                                                     | Measured by R3 and R9; the trial note; skill and plugin enforce what they can                                                                                                                                                                  | Proposed                                 |
+| No real outside issues during the trial                                           | The `triage` path is barely tested before migration                                                      | Known gap ([4.2](#42-trial-projects))                                                                                                                                                                                                          | Proposed                                 |
+| Phase 2 features creep into phase 1                                               | Trial starts late                                                                                        | Cut line (3.2); review at each milestone                                                                                                                                                                                                       | Decided (O-75); review proposed          |
+| Shinan tracks its own development                                                 | A broken Shinan hides its own bugs                                                                       | Trial findings are GitHub issues, readable without Shinan (4.4)                                                                                                                                                                                | Proposed                                 |
 
 ## Dependencies on other documents
 
@@ -795,25 +831,25 @@ PRs as the record of how work was done before Shinan.
 
 ## Decisions in this document
 
-| Label | Decision                                                                                                                                           | Status                                                         | Section                                                            |
-| ----- | -------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------ |
-| RM-1  | Every phase gate is a recorded owner decision against stated criteria                                                                              | Proposed                                                       | [2](#2-phases)                                                     |
-| —     | First-version additions (export, uptime monitoring, readiness report) and the cut line; no built-in backups, no Git mirror, no viewer test account | Decided (owner, O-75, O-62 to O-64, N-5, N-11)                 | [3.1](#31-in-scope), [3.2](#32-cut-line)                           |
-| RM-3  | Four milestones with a scope review at each; the trial starts at M2                                                                                | Proposed                                                       | [3.3](#33-build-milestones)                                        |
-| —     | Deploy to Musashi as needed, each deployment approved                                                                                              | Decided (owner, O-83)                                          | [3.4](#34-owner-actions-needed-in-phase-1)                         |
-| —     | Trial projects Shinan, mon, easyshell; reserves Walls, guneet.dev plus Resume                                                                      | Decided (owner, O-70)                                          | [4.2](#42-trial-projects)                                          |
-| —     | Trial catalog of 17 entities, all checked at owning sources; extra catalog proposals                                                               | Decided (owner, O-71, O-72; amended 2026-11-18, M2-Q9, M2-Q10) | [4.3](#43-the-catalog-during-the-trial)                            |
-| —     | Trial coordination as Shinan tasks, with no safety record outside Shinan; mon and easyshell keep repository issues                                 | Decided (owner, O-73, O-74, N-10)                              | [4.4](#44-tasks-during-the-trial)                                  |
-| —     | Readiness: must-pass and judged criteria; owner work under one hour a week; board and triage inbox required                                        | Decided (owner, O-76 to O-78)                                  | [5](#5-readiness-criteria), [4.6](#46-running-the-trial)           |
-| RM-10 | Conditions that pause the trial, and recreating coordination issues on a pause                                                                     | Proposed                                                       | [4.6](#46-running-the-trial)                                       |
-| RM-11 | Migration principles                                                                                                                               | Proposed                                                       | [6.1](#61-principles)                                              |
-| —     | One rehearsed cutover; freeze of at most two working days; 30-day rollback window; archive after G3                                                | Decided (owner, O-79 to O-81)                                  | [6.3](#63-cutover-steps), [6.7](#67-rollback-and-emergency-access) |
-| RM-13 | The trial workspace becomes the production workspace, with listed clean-up                                                                         | Proposed                                                       | [6.3](#63-cutover-steps)                                           |
-| —     | Backup and emergency-access review before migration                                                                                                | Proposed                                                       | [5](#backups-before-migration)                                     |
-| —     | The `workspace` repository connected at trial start; "turn new issues into tasks" off for shared repositories                                      | Decided (owner, NO-2); its use for the trial proposed          | [4.4](#44-tasks-during-the-trial)                                  |
-| —     | Screens shipped with their milestone                                                                                                               | Proposed                                                       | [3.3](#33-build-milestones)                                        |
-| —     | Rollback process, using the catalog's reverse conversion and tested in the rehearsal                                                               | Proposed                                                       | [6.7](#67-rollback-and-emergency-access)                           |
-| —     | Claude Code plugin in phase 2a                                                                                                                     | Decided (owner, O-82)                                          | [2](#2-phases)                                                     |
+| Label | Decision                                                                                                                                                                  | Status                                                         | Section                                                            |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------ |
+| RM-1  | Every phase gate is a recorded owner decision against stated criteria                                                                                                     | Proposed                                                       | [2](#2-phases)                                                     |
+| —     | First-version additions (export, uptime monitoring, readiness report) and the cut line; no built-in backups, no viewer test account; the catalog in Git, hosted by Shinan | Decided (owner, O-75, O-62 to O-64, N-11; D-059 replacing N-5) | [3.1](#31-in-scope), [3.2](#32-cut-line)                           |
+| RM-3  | Four milestones with a scope review at each; the trial starts at M2                                                                                                       | Proposed                                                       | [3.3](#33-build-milestones)                                        |
+| —     | Deploy to Musashi as needed, each deployment approved                                                                                                                     | Decided (owner, O-83)                                          | [3.4](#34-owner-actions-needed-in-phase-1)                         |
+| —     | Trial projects Shinan, mon, easyshell; reserves Walls, guneet.dev plus Resume                                                                                             | Decided (owner, O-70)                                          | [4.2](#42-trial-projects)                                          |
+| —     | Trial catalog of 17 entities, all checked at owning sources; kept in step by pushes (formerly catalog proposals)                                                          | Decided (owner, O-71, O-72; amended 2026-11-18, M2-Q9, M2-Q10) | [4.3](#43-the-catalog-during-the-trial)                            |
+| —     | Trial coordination as Shinan tasks, with no safety record outside Shinan; mon and easyshell keep repository issues                                                        | Decided (owner, O-73, O-74, N-10)                              | [4.4](#44-tasks-during-the-trial)                                  |
+| —     | Readiness: must-pass and judged criteria; owner work under one hour a week; board and triage inbox required                                                               | Decided (owner, O-76 to O-78)                                  | [5](#5-readiness-criteria), [4.6](#46-running-the-trial)           |
+| RM-10 | Conditions that pause the trial, and recreating coordination issues on a pause                                                                                            | Proposed                                                       | [4.6](#46-running-the-trial)                                       |
+| RM-11 | Migration principles                                                                                                                                                      | Proposed                                                       | [6.1](#61-principles)                                              |
+| —     | One rehearsed cutover; freeze of at most two working days; 30-day rollback window; archive after G3                                                                       | Decided (owner, O-79 to O-81)                                  | [6.3](#63-cutover-steps), [6.7](#67-rollback-and-emergency-access) |
+| RM-13 | The trial workspace becomes the production workspace, with listed clean-up                                                                                                | Proposed                                                       | [6.3](#63-cutover-steps)                                           |
+| —     | Backup and emergency-access review before migration                                                                                                                       | Proposed                                                       | [5](#backups-before-migration)                                     |
+| —     | The `workspace` repository connected at trial start; "turn new issues into tasks" off for shared repositories                                                             | Decided (owner, NO-2); its use for the trial proposed          | [4.4](#44-tasks-during-the-trial)                                  |
+| —     | Screens shipped with their milestone                                                                                                                                      | Proposed                                                       | [3.3](#33-build-milestones)                                        |
+| —     | Rollback process, using the catalog's reverse conversion and tested in the rehearsal                                                                                      | Proposed                                                       | [6.7](#67-rollback-and-emergency-access)                           |
+| —     | Claude Code plugin in phase 2a                                                                                                                                            | Decided (owner, O-82)                                          | [2](#2-phases)                                                     |
 
 ## Open questions
 

@@ -1214,6 +1214,7 @@ provenance from `index/`; GC-5 does not touch `index/`.
 - **GC-5b, web:** the wiki's edit, review, repair, type, start-here and
   settings screens and their tests.
 - **Docs:** agent integrations (design rules 3 and 6, trust labels, tool set);
+  architecture §8.1 (the catalog tools and trust labels on catalog content);
   identity §5.1, §6.3, §7.2; catalog §8.1, §8.2, §8.6 removals; human
   experience "Changing the catalog from the wiki", "Reviewing catalog
   changes", workspace settings "Catalog settings"; operator guide "Catalog
@@ -1281,7 +1282,7 @@ provenance from `index/`; GC-5 does not touch `index/`.
 ### GC-10: Documents: "catalog" everywhere, and what no package owns
 
 - The rename of "wiki" in every document (owner, GD-8), the glossary
-  ([domain model](domain-model.md#wiki-and-agent-index), "Catalog proposal
+  ([domain model](domain-model.md#catalog-pages-and-index), "Catalog proposal
   and approval", "Words to avoid"), plan.md "Later changes", roadmap §3.3,
   §4.3, §4.5, §5 and "Backups before migration", product overview's catalog
   passages.

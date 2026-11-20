@@ -49,7 +49,7 @@ repository already works well.
   path ([plan, section 4](../plan.md#4-product-pillars)).
 - Proposed refinements: see the domain model's
   [catalog](../domain-model.md#catalog) and
-  [wiki and agent index](../domain-model.md#wiki-and-agent-index) entries.
+  [catalog pages and index](../domain-model.md#catalog-pages-and-index) entries.
 - **Decided (owner, [D-022](D-022-catalog-storage-and-git-mirror.md)):**
   revisions are stored in PostgreSQL and review happens in Shinan. There is
   no Git mirror for now ([D-043](D-043-no-git-mirror-for-now.md)). How the agent index is rebuilt: see
@@ -83,3 +83,4 @@ repository already works well.
 - 2026-11-16: amended by [D-022](D-022-catalog-storage-and-git-mirror.md) (owner answers on [issue #25](https://github.com/guneet-xyz/shinan/issues/25)). Decision and Reasons unchanged; maintained sections updated.
 - 2026-11-16: related decision [D-043](D-043-no-git-mirror-for-now.md) recorded from batch 12 on [issue #25](https://github.com/guneet-xyz/shinan/issues/25#issuecomment-6913152214); maintained sections updated.
 - 2026-11-19: amended by D-059, D-063 and D-064 ([Git-based catalog plan](../build-plan-git-catalog.md), accepted by the owner, [issue #161](https://github.com/guneet-xyz/shinan/issues/161#issuecomment-7007337638)). Decision and Reasons unchanged; maintained sections updated.
+- 2026-11-19: the link to the glossary entry follows its rename to "Catalog pages and index" (GC-10, [#172](https://github.com/guneet-xyz/shinan/issues/172)). Decision and Reasons unchanged.

@@ -140,6 +140,8 @@ remaining risk in one place.
 
 ## 2. Identities and credentials at a glance
 
+> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-2](build-plan-git-catalog.md#gc-2-serving-git-over-https-through-web)): the agent token is also accepted at `/git/`. Until then, this section describes M2 as built (v0.3.0).
+
 **Proposed.** Reason: one table shows how each kind of identity proves itself.
 
 | Identity (glossary term)                                   | Proves itself with                                                                                    | Section                               |
@@ -431,7 +433,7 @@ member's role ([6.3](#63-what-an-agent-may-do)).
 
 | Action                                                                                                                        | Workspace owner          | Contributor                                                                                        | Agent                                                                     |
 | ----------------------------------------------------------------------------------------------------------------------------- | ------------------------ | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| Read everything in the workspace: catalog (wiki, agent index), tasks, timelines, presence                                     | ✓                        | ✓                                                                                                  | ✓                                                                         |
+| Read everything in the workspace: catalog (its pages, agent index), tasks, timelines, presence                                | ✓                        | ✓                                                                                                  | ✓                                                                         |
 | Create, claim, update tasks and subtasks; add work links; record verification                                                 | ✓                        | ✓                                                                                                  | ✓                                                                         |
 | Add or remove dependencies; move a subtask under another parent or make it top-level                                          | ✓                        | ✓                                                                                                  | ✓                                                                         |
 | Rank `to do` tasks                                                                                                            | ✓                        | ✓                                                                                                  | ✗ (agents read the order)                                                 |
@@ -832,6 +834,8 @@ no forced re-approval.
 
 ### 7.4 Handling
 
+> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-2](build-plan-git-catalog.md#gc-2-serving-git-over-https-through-web)): at `/git/` the token is the password of HTTP Basic authentication. Until then, this section describes M2 as built (v0.3.0).
+
 **Proposed:**
 
 - A token is shown once, if at all, and Shinan stores only a one-way hash of
@@ -1034,6 +1038,8 @@ host account and by their agents. Known limits (D-017):
 
 ### 8.7 How an actor is written in text
 
+> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-3](build-plan-git-catalog.md#gc-3-push-checks-and-the-push-log)): a new or changed fact check's `by` must name, in this written form, whoever first pushed the commit introducing it to Shinan, as the push log records it (D-066). Until then, this section describes M2 as built (v0.3.0).
+
 Some records name an actor in plain text, such as the `by` field of a
 [fact check](catalog.md) (`by: guneet via opencode-daedalus`). **Proposed**
 written forms:
@@ -1149,6 +1155,8 @@ are credited.
 
 ## 10. Protections for a public installation
 
+> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-2](build-plan-git-catalog.md#gc-2-serving-git-over-https-through-web)): limits for the Git endpoint. Until then, this section describes M2 as built (v0.3.0).
+
 **Decided (D-015):** security for a public sign-in app gets extra attention in
 this document and the [architecture](architecture.md) document. This section
 lists what Shinan must do; the architecture document decides how, along with
@@ -1166,7 +1174,7 @@ restriction stays possible later.
   `/skills/` (decided, owner, [D-056](decisions/D-056-public-skill-path.md):
   OpenCode loads HTTP skill catalogs without credentials, and the skill holds
   only product conventions, never workspace content; how it is served:
-  [architecture §10.2](architecture.md#102-web-hardening)). The wiki and agent
+  [architecture §10.2](architecture.md#102-web-hardening)). The catalog pages and agent
   index are behind sign-in too. The public health check is `/api/status`, a constant
   answer that touches no database; the liveness and readiness checks are served only inside the
   container network ([architecture §13](architecture.md#13-observability)).
@@ -1204,6 +1212,8 @@ The residual risks of the owner's choices are listed with the
 [threats](#threats-and-residual-risks).
 
 ## 11. Audit
+
+> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-3](build-plan-git-catalog.md#gc-3-push-checks-and-the-push-log), [GC-8](build-plan-git-catalog.md#gc-8-purge-as-a-history-rewrite)): the push log, refused pushes, "not a secret" values and history rewrites. Until then, this section describes M2 as built (v0.3.0).
 
 The **security log** records, as [events](domain-model.md#event) of security
 kinds (**proposed**):
