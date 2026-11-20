@@ -110,7 +110,7 @@ export function ChangeList<T extends CatalogChange>(props: {
       {changes.length === 0 && (
         <p className="text-sm">
           {next
-            ? "Only merges that changed nothing themselves so far."
+            ? "These latest commits only merged work listed further back. Show older changes to see it."
             : props.empty}
         </p>
       )}

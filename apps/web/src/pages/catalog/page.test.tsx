@@ -1014,7 +1014,7 @@ describe("recent changes", () => {
     )
     expect(
       await screen.findByText(
-        "Only merges that changed nothing themselves so far.",
+        "These latest commits only merged work listed further back. Show older changes to see it.",
       ),
     ).toBeTruthy()
     expect(

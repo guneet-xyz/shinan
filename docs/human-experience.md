@@ -966,10 +966,10 @@ order:
   merge that changed a file itself (a conflict resolved) stays, with only
   the files it changed itself (those that differ from every parent, as
   Git's combined diff), and one too large to work out stays with "Changed
-  files not known". 30 commits at a time, then "Show older changes" by
+  files not known". Each commit of a page gets a fair share of the Git container's work budget, so one very large commit can't leave the others on its page "not known". 30 commits at a time, then "Show older changes" by
   signed cursor; a page reads on past merges left out, up to 90 commits,
-  rather than come back empty ("Only merges that changed nothing
-  themselves so far." if it still does). It is the review after the fact, now that
+  rather than come back empty ("These latest commits only merged work
+  listed further back. Show older changes to see it." if it still does). It is the review after the fact, now that
   changes need no approval. **Who pushed each change** comes with the push
   log (GC-3a); until then no name is shown (commit authors aren't
   trusted, D-061). Start here's "recent-changes" step links here.

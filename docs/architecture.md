@@ -266,7 +266,9 @@ no shell. As built (GC-1b,
   container works out each merge's own changes in the same history read
   (`combined`: the files that differ from every parent, as Git's combined
   diff names them, by tree walks within the request's budget; unknown when
-  the budget runs out).
+  the budget runs out). Each commit of a page gets a fair share of what is
+  left of that budget (with a small floor) and gives back what it didn't
+  use, so one heavy commit can't leave the rest of its page unknown.
 - **Its API** (JSON; the typed client is core's `createGitClient`):
   `GET`/`PUT /repositories/<workspace ID>` (`main`'s commit; create with a
   first commit by Shinan, once), `GET …/tree`, `POST …/documents`,

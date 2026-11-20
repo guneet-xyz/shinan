@@ -543,6 +543,51 @@ describe("changedPaths", () => {
     }
   })
 
+  it("gives each commit a fair share of the budget, so one heavy commit doesn't blank the others", async () => {
+    const { gitDir } = repository
+    const base = { "README.md": "# Base\n" }
+    const root = await commitFiles(git, gitDir, base, { message: "Base\n" })
+    const small = (name: string) =>
+      commitFiles(
+        git,
+        gitDir,
+        { ...base, [`small/${name}.md`]: `${name}\n` },
+        { parents: [root], message: `${name}\n` },
+      )
+    const before = await small("before")
+    // 300 folders: 300 tree objects to walk, far more than its share.
+    const heavy = await commitFiles(
+      git,
+      gitDir,
+      {
+        ...base,
+        ...Object.fromEntries(
+          Array.from({ length: 300 }, (_, i) => [`heavy/f${i}/x.md`, `${i}\n`]),
+        ),
+      },
+      { parents: [root], message: "Heavy\n" },
+    )
+    const after = await small("after")
+    const budget = { objects: 60, entries: 1_000_000 }
+    const changes = await changedPaths(git, gitDir, [heavy, before, after], {
+      budget,
+    })
+    expect(changes.get(heavy)).toMatchObject({ countAtLeast: true })
+    for (const [oid, name] of [
+      [before, "before"],
+      [after, "after"],
+    ] as const)
+      expect(changes.get(oid), name).toEqual({
+        changes: [{ status: "added", path: `small/${name}.md` }],
+        count: 1,
+        truncated: false,
+        countAtLeast: false,
+      })
+    // What a commit didn't use goes back: the budget is spent, not lost.
+    expect(budget.objects).toBeLessThan(60)
+    expect(budget.objects).toBeGreaterThanOrEqual(-1)
+  })
+
   it("takes object IDs only, and nothing for nothing", async () => {
     await expect(
       changedPaths(git, repository.gitDir, ["refs/heads/main"]),
