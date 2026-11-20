@@ -1,3 +1,4 @@
+import { checkObjectName } from "./names.js"
 import type { Git, GitProcess, RunOptions } from "./run.js"
 import { GitError } from "./run.js"
 
@@ -27,8 +28,9 @@ export interface CatFileOptions extends Pick<RunOptions, "env" | "timeoutMs"> {
 /**
  * One `git cat-file --batch-command` process for reading many objects of one
  * repository, one request at a time in the order asked. Object names are
- * object IDs or revisions such as `main:README.md`; one with a line break is
- * refused, since it would be two requests.
+ * full object IDs or `<revision>:<path>` (`objectName`), such as
+ * `refs/heads/main:README.md`; anything else, a line break included, is
+ * refused.
  */
 export interface CatFile {
   /** The object's ID, type and size, or `null` if it does not exist. */
@@ -171,14 +173,10 @@ export function openCatFile(
   const request = (command: "info" | "contents", name: string) =>
     new Promise<GitObject | ObjectInfo | ReadMiss>((resolve, reject) => {
       if (failure) return reject(failure)
-      if (name === "" || /[\n\r\0]/.test(name)) {
-        return reject(
-          new GitError(
-            "start",
-            "cat-file",
-            "An object name cannot be empty or hold a line break",
-          ),
-        )
+      try {
+        checkObjectName(name)
+      } catch (error) {
+        return reject(error instanceof Error ? error : new Error(String(error)))
       }
       queue.push({ withContent: command === "contents", resolve, reject })
       proc.child.stdin.write(`${command} ${name}\n`)

@@ -28,7 +28,7 @@ describe("cat-file --batch-command", () => {
   it("reads objects with their type, size and exact content", async () => {
     const reader = openCatFile(git, repository.gitDir)
     try {
-      const readme = await reader.read("main:README.md")
+      const readme = await reader.read("refs/heads/main:README.md")
       expect(readme).toMatchObject({ type: "blob", size: 10 })
       expect(typeof readme !== "string" && readme.content.toString()).toBe(
         "# Catalog\n",
@@ -37,7 +37,7 @@ describe("cat-file --batch-command", () => {
       expect(typeof binary !== "string" && [...binary.content]).toEqual([
         0, 10, 10, 255, 10, 0,
       ])
-      const spaced = await reader.read("main:name with spaces.md")
+      const spaced = await reader.read("refs/heads/main:name with spaces.md")
       expect(typeof spaced !== "string" && spaced.content.toString()).toBe(
         "spaces\n",
       )
@@ -52,11 +52,11 @@ describe("cat-file --batch-command", () => {
     const reader = openCatFile(git, repository.gitDir)
     try {
       const names = [
-        "main:README.md",
-        "main:nothing",
-        "main:large.txt",
-        "main",
-        "main:binary.bin",
+        "refs/heads/main:README.md",
+        "refs/heads/main:nothing",
+        "refs/heads/main:large.txt",
+        "refs/heads/main",
+        "refs/heads/main:binary.bin",
       ]
       const answers = await Promise.all(
         Array.from({ length: 20 }, (_, i) =>
@@ -65,7 +65,7 @@ describe("cat-file --batch-command", () => {
       )
       answers.forEach((answer, i) => {
         const name = names[i % names.length]!
-        if (name === "main:nothing") expect(answer).toBe("missing")
+        if (name === "refs/heads/main:nothing") expect(answer).toBe("missing")
         else expect(typeof answer).toBe("object")
       })
       expect(typeof answers[2] !== "string" && answers[2]!.content.length).toBe(
@@ -79,7 +79,7 @@ describe("cat-file --batch-command", () => {
   it("gives information without content, and null for a missing object", async () => {
     const reader = openCatFile(git, repository.gitDir)
     try {
-      expect(await reader.info("main:large.txt")).toMatchObject({
+      expect(await reader.info("refs/heads/main:large.txt")).toMatchObject({
         type: "blob",
         size: 5000,
       })
@@ -93,8 +93,8 @@ describe("cat-file --batch-command", () => {
   it("reads past an object above its limit and goes on", async () => {
     const reader = openCatFile(git, repository.gitDir, { maxObjectBytes: 1000 })
     try {
-      expect(await reader.read("main:large.txt")).toBe("too-large")
-      const after = await reader.read("main:README.md")
+      expect(await reader.read("refs/heads/main:large.txt")).toBe("too-large")
+      const after = await reader.read("refs/heads/main:README.md")
       expect(typeof after !== "string" && after.content.toString()).toBe(
         "# Catalog\n",
       )
@@ -103,16 +103,32 @@ describe("cat-file --batch-command", () => {
     }
   })
 
-  it("refuses a name that would be two requests", async () => {
+  it("refuses a name that would be two requests, a search or a relative form", async () => {
     const reader = openCatFile(git, repository.gitDir)
     try {
       await expect(
-        reader.read("main:README.md\ninfo main"),
+        reader.read("refs/heads/main:README.md\ninfo main"),
       ).rejects.toMatchObject({
         kind: "start",
       })
-      await expect(reader.read("")).rejects.toMatchObject({ kind: "start" })
-      expect(await reader.info("main")).toMatchObject({ type: "commit" })
+      for (const name of [
+        "",
+        ":/Catalog",
+        "main:README.md",
+        "HEAD",
+        "refs/heads/main:../README.md",
+        "refs/heads/main~0:README.md",
+      ]) {
+        await expect(reader.read(name), name).rejects.toMatchObject({
+          kind: "start",
+        })
+        await expect(reader.info(name), name).rejects.toMatchObject({
+          kind: "start",
+        })
+      }
+      expect(await reader.info("refs/heads/main")).toMatchObject({
+        type: "commit",
+      })
     } finally {
       await reader.close()
     }
@@ -120,7 +136,11 @@ describe("cat-file --batch-command", () => {
 
   it("fails waiting requests when Git ends", async () => {
     const reader = openCatFile(git, "/nonexistent/repository.git")
-    await expect(reader.read("main")).rejects.toMatchObject({ kind: "exit" })
-    await expect(reader.read("main")).rejects.toMatchObject({ kind: "exit" })
+    await expect(reader.read("refs/heads/main")).rejects.toMatchObject({
+      kind: "exit",
+    })
+    await expect(reader.read("refs/heads/main")).rejects.toMatchObject({
+      kind: "exit",
+    })
   })
 })

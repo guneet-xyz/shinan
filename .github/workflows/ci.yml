@@ -98,6 +98,8 @@ jobs:
           file: deploy/Dockerfile
           tags: shinan:ci
           load: true
+          # As in a release: Debian's current Git, never a cached one.
+          no-cache-filters: git
           cache-from: type=gha,scope=image-ci-${{ matrix.platform }}
           cache-to: type=gha,mode=max,scope=image-ci-${{ matrix.platform }}
       - run: node deploy/test/first-start.mjs

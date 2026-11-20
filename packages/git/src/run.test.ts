@@ -3,7 +3,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 
-import { createGit, findProgram, GitError } from "./run.js"
+import { commandOf, createGit, findProgram, GitError } from "./run.js"
 import { commitFiles, createFixtureRepository } from "./testing.js"
 
 const git = createGit()
@@ -82,22 +82,112 @@ describe("the environment Git starts with", () => {
     expect(readdirSync(env.HOME!)).toEqual([])
   })
 
-  it("takes a caller's variables, but not in place of its own", async () => {
-    const run = createGit({ binary: findProgram("env")! })
-    const { stdout } = await run.run([], { env: { GIT_QUARANTINE_PATH: "/q" } })
-    expect(stdout.toString()).toContain("GIT_QUARANTINE_PATH=/q")
-    for (const key of [
-      "HOME",
-      "PATH",
-      "GIT_CONFIG_GLOBAL",
-      "GIT_CONFIG_PARAMETERS",
-    ]) {
-      await expect(
-        git.run(["--version"], { env: { [key]: "x" } }),
-      ).rejects.toMatchObject({
-        kind: "start",
-      })
+  it("takes the variables a push or a commit needs", async () => {
+    const allowed = {
+      GIT_QUARANTINE_PATH: "/q",
+      GIT_OBJECT_DIRECTORY: "/q/objects",
+      GIT_ALTERNATE_OBJECT_DIRECTORIES: "/r/objects",
+      GIT_PROTOCOL: "version=2",
+      GIT_PROJECT_ROOT: "/r",
+      GIT_HTTP_EXPORT_ALL: "1",
+      REMOTE_USER: "agent",
+      GIT_INDEX_FILE: "/tmp/index",
+      GIT_AUTHOR_NAME: "Someone",
+      SHINAN_PUSH_NONCE: "n",
     }
+    const run = createGit({ binary: findProgram("env")! })
+    const listed = (await run.run([], { env: allowed })).stdout.toString()
+    for (const [key, value] of Object.entries(allowed)) {
+      expect(listed).toContain(`${key}=${value}\n`)
+    }
+  })
+
+  it("refuses variables that would replace its own, run a command, or change how Git or Node.js start", async () => {
+    const refused = [
+      // The clean environment's own, every one of them.
+      ...Object.keys(git.environment()),
+      // Configuration and Git's programs.
+      "GIT_CONFIG",
+      "GIT_CONFIG_SYSTEM",
+      "GIT_CONFIG_PARAMETERS",
+      "GIT_CONFIG_COUNT",
+      "GIT_CONFIG_KEY_0",
+      "GIT_CONFIG_VALUE_0",
+      "GIT_EXEC_PATH",
+      "GIT_TEMPLATE_DIR",
+      "GIT_ATTR_SOURCE",
+      // Commands Git would run.
+      "GIT_EXTERNAL_DIFF",
+      "GIT_SSH",
+      "GIT_SSH_COMMAND",
+      "GIT_SSH_VARIANT",
+      "GIT_PROXY_COMMAND",
+      "GIT_ASKPASS",
+      "SSH_ASKPASS",
+      "GIT_PAGER",
+      "PAGER",
+      "GIT_EDITOR",
+      "GIT_SEQUENCE_EDITOR",
+      "EDITOR",
+      "VISUAL",
+      "SHELL",
+      // Files Git would write.
+      "GIT_TRACE",
+      "GIT_TRACE2_EVENT",
+      "GIT_TRACE_PACKET",
+      // Node.js (Shinan's hooks inherit Git's environment) and the loader.
+      "NODE_OPTIONS",
+      "NODE_PATH",
+      "NODE_EXTRA_CA_CERTS",
+      "LD_PRELOAD",
+      "LD_LIBRARY_PATH",
+      // Not a variable name.
+      "",
+      "A=B",
+      "A\0B",
+    ]
+    expect(refused).toEqual(
+      expect.arrayContaining([
+        "GIT_NO_LAZY_FETCH",
+        "GIT_NO_REPLACE_OBJECTS",
+        "LC_ALL",
+      ]),
+    )
+    for (const key of refused) {
+      const error = await git
+        .run(["--version"], { env: { [key]: "x" } })
+        .catch((e: unknown) => e)
+      expect(error, key).toMatchObject({ kind: "start" })
+      expect(
+        () => git.spawn(["--version"], { env: { [key]: "x" } }),
+        key,
+      ).toThrow(GitError)
+    }
+  })
+})
+
+describe("commandOf", () => {
+  it("names the Git command, past options and the values of -c and -C", () => {
+    expect(commandOf(["--version"])).toBe("git")
+    expect(commandOf(["cat-file", "-p", "x"])).toBe("cat-file")
+    expect(commandOf(["-c", "pack.threads=1", "pack-objects"])).toBe(
+      "pack-objects",
+    )
+    expect(commandOf(["-c", "alias.x=!id", "-C", "/tmp", "x"])).toBe("x")
+    expect(commandOf(["--git-dir=/r", "--no-pager", "log"])).toBe("log")
+    expect(commandOf(["-c", "a=b"])).toBe("git")
+  })
+
+  it("is what a failure names", async () => {
+    const error = await git
+      .run(
+        ["-c", "core.bare=true", "rev-parse", "--verify", "refs/heads/nothing"],
+        {
+          gitDir: repository.gitDir,
+        },
+      )
+      .catch((e: unknown) => e)
+    expect(error).toMatchObject({ command: "rev-parse" })
   })
 })
 

@@ -3,7 +3,7 @@
 // starts it): Git through @shinan/git, the hook, and `git http-backend`
 // answering a fetch and refusing a push. Prints one JSON object of results;
 // first-start.mjs checks them.
-import { mkdtempSync } from "node:fs"
+import { mkdtempSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 
 import {
@@ -30,6 +30,9 @@ const text = async (args, options) =>
   (await git.run(args, options)).stdout.toString("utf8").trim()
 
 results.version = await text(["--version"])
+results.debianVersion = /^Version: (.*)$/m.exec(
+  readFileSync("/var/lib/dpkg/status.d/git", "utf8"),
+)?.[1]
 
 const root = mkdtempSync("/tmp/git-")
 const init = async (name) => {
@@ -105,17 +108,17 @@ await git.run(["index-pack", "--stdin", "--fix-thin"], {
 await git.run(["update-ref", "refs/heads/main", first], { gitDir: server })
 
 // @shinan/git's reads.
-results.tree = (await listTree(git, client, "main")).map(
+results.tree = (await listTree(git, client, "refs/heads/main")).map(
   (e) => `${e.mode} ${e.path}`,
 )
 results.diff = (await diffTrees(git, client, first, second)).map(
   (c) => `${c.status} ${c.path}`,
 )
-results.history = (await history(git, client, "main", { limit: 10 })).map((c) =>
-  c.message.trim(),
-)
+results.history = (
+  await history(git, client, "refs/heads/main", { limit: 10 })
+).map((c) => c.message.trim())
 const reader = openCatFile(git, client)
-const object = await reader.read("main:machine/musashi.md")
+const object = await reader.read("refs/heads/main:machine/musashi.md")
 await reader.close()
 results.catFile =
   typeof object === "string" ? object : object.content.toString("utf8")

@@ -8,11 +8,11 @@ export type {
   ReadMiss,
 } from "./cat-file.js"
 export { hooksDirectory } from "./hooks.js"
+export { isBranchRef, isObjectId, objectName } from "./names.js"
 export {
   diffTrees,
   emptyTree,
   history,
-  isObjectId,
   listTree,
   newCommits,
   parseCommit,
@@ -27,6 +27,7 @@ export type {
   TreeEntry,
 } from "./read.js"
 export {
+  commandOf,
   createGit,
   DEFAULT_MAX_OUTPUT_BYTES,
   DEFAULT_TIMEOUT_MS,

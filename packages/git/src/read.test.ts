@@ -70,7 +70,7 @@ afterAll(() => repository.remove())
 
 describe("listTree", () => {
   it("lists every file of a commit's tree, with modes, types and sizes", async () => {
-    const entries = await listTree(git, repository.gitDir, "main")
+    const entries = await listTree(git, repository.gitDir, "refs/heads/main")
     expect(entries.map((e) => [e.path, e.mode, e.type, e.size])).toEqual([
       ["README.md", "100644", "blob", 19],
       ["link.md", "120000", "blob", 9],
@@ -106,7 +106,16 @@ describe("listTree", () => {
   })
 
   it("refuses revisions and paths that are not plain ones", async () => {
-    for (const treeish of ["--output=/tmp/x", "-r", "", "main\n"]) {
+    for (const treeish of [
+      "--output=/tmp/x",
+      "-r",
+      "",
+      "main",
+      "refs/heads/main\n",
+      ":/Change",
+      "refs/heads/main~1",
+      "refs/heads/main@{0}",
+    ]) {
       await expect(
         listTree(git, repository.gitDir, treeish),
       ).rejects.toMatchObject({
@@ -115,7 +124,7 @@ describe("listTree", () => {
     }
     for (const path of ["../x", "/etc", "a//b", "a/./b", "a\nb"]) {
       await expect(
-        listTree(git, repository.gitDir, "main", { path }),
+        listTree(git, repository.gitDir, "refs/heads/main", { path }),
       ).rejects.toMatchObject({
         kind: "start",
       })
@@ -189,7 +198,9 @@ describe("newCommits", () => {
 
 describe("history", () => {
   it("lists commits newest first, with parents, people and messages", async () => {
-    const commits = await history(git, repository.gitDir, "main", { limit: 10 })
+    const commits = await history(git, repository.gitDir, "refs/heads/main", {
+      limit: 10,
+    })
     expect(commits.map((c) => c.oid)).toEqual([third, second, first])
     expect(commits[1]).toMatchObject({
       parents: [first],
@@ -206,7 +217,7 @@ describe("history", () => {
   })
 
   it("pages with a limit and a skip", async () => {
-    const page = await history(git, repository.gitDir, "main", {
+    const page = await history(git, repository.gitDir, "refs/heads/main", {
       limit: 1,
       skip: 1,
     })
@@ -214,25 +225,36 @@ describe("history", () => {
   })
 
   it("follows one path", async () => {
-    const commits = await history(git, repository.gitDir, "main", {
+    const commits = await history(git, repository.gitDir, "refs/heads/main", {
       limit: 10,
       path: "machine/musashi.md",
     })
     expect(commits.map((c) => c.oid)).toEqual([second])
     expect(
-      await history(git, repository.gitDir, "main", {
+      await history(git, repository.gitDir, "refs/heads/main", {
         limit: 10,
         path: "nothing.md",
       }),
     ).toEqual([])
   })
 
+  it("starts only from a full object ID or a branch, never a search", async () => {
+    for (const rev of [":/Change", "main", "refs/heads/main^", "HEAD"]) {
+      await expect(
+        history(git, repository.gitDir, rev, { limit: 10 }),
+      ).rejects.toMatchObject({ kind: "start" })
+    }
+    expect(
+      (await history(git, repository.gitDir, third, { limit: 1 }))[0]!.oid,
+    ).toBe(third)
+  })
+
   it("refuses counts that are not whole numbers", async () => {
     await expect(
-      history(git, repository.gitDir, "main", { limit: -1 }),
+      history(git, repository.gitDir, "refs/heads/main", { limit: -1 }),
     ).rejects.toMatchObject({ kind: "start" })
     await expect(
-      history(git, repository.gitDir, "main", { limit: 1.5 }),
+      history(git, repository.gitDir, "refs/heads/main", { limit: 1.5 }),
     ).rejects.toMatchObject({ kind: "start" })
   })
 })

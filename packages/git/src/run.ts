@@ -35,24 +35,58 @@ export const DEFAULT_MAX_OUTPUT_BYTES = 32 * 1024 * 1024
 export const MAX_STDERR_BYTES = 64 * 1024
 
 /**
- * Variables Git gets from Shinan and never from the caller's `env`: with
- * them, no configuration but the repository's own and the command line's
- * applies.
+ * Variables a caller's `env` may not set, besides those of the clean
+ * environment itself ({@link Git.environment}): Git's configuration and
+ * exec path, the variables that make Git run a command or write a trace
+ * file, and the ones that change how Node.js (Shinan's hooks) or the
+ * dynamic loader start.
  */
-const FIXED = [
-  "PATH",
-  "HOME",
-  "XDG_CONFIG_HOME",
-  "GIT_CONFIG_NOSYSTEM",
-  "GIT_CONFIG_GLOBAL",
-  "GIT_CONFIG_SYSTEM",
-  "GIT_CONFIG_PARAMETERS",
-  "GIT_CONFIG_COUNT",
-  "GIT_ATTR_NOSYSTEM",
+const REFUSED = new Set([
+  "GIT_CONFIG",
   "GIT_EXEC_PATH",
   "GIT_TEMPLATE_DIR",
-  "GIT_LITERAL_PATHSPECS",
-] as const
+  "GIT_EXTERNAL_DIFF",
+  "GIT_SSH",
+  "GIT_SSH_COMMAND",
+  "GIT_SSH_VARIANT",
+  "GIT_PROXY_COMMAND",
+  "GIT_ASKPASS",
+  "SSH_ASKPASS",
+  "GIT_PAGER",
+  "PAGER",
+  "GIT_EDITOR",
+  "GIT_SEQUENCE_EDITOR",
+  "EDITOR",
+  "VISUAL",
+  "GIT_ATTR_SOURCE",
+  "SHELL",
+])
+const REFUSED_PREFIXES = ["GIT_CONFIG_", "GIT_TRACE", "NODE_", "LD_"]
+
+/** Whether a caller may set `key` in a Git process's environment. */
+function refusedVariable(key: string, clean: Record<string, string>): boolean {
+  return (
+    key === "" ||
+    key.includes("=") ||
+    key.includes("\0") ||
+    Object.hasOwn(clean, key) ||
+    REFUSED.has(key) ||
+    REFUSED_PREFIXES.some((prefix) => key.startsWith(prefix))
+  )
+}
+
+/**
+ * The Git command in `args`, for messages: the first argument that is not
+ * an option or the value of `-c` or `-C`.
+ */
+export function commandOf(args: readonly string[]): string {
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]!
+    if (arg === "-c" || arg === "-C") i++
+    else if (!arg.startsWith("-")) return arg
+  }
+  return "git"
+}
 
 export interface RunOptions {
   /** The repository: passed as `--git-dir`. */
@@ -109,8 +143,8 @@ export interface GitProcess {
     signal: NodeJS.Signals | null
     timedOut: boolean
   }>
-  /** Ends the process at once. */
-  kill(): void
+  /** Ends the process and every process it started, at once. */
+  kill: () => void
 }
 
 export interface Git {
@@ -185,17 +219,15 @@ export function createGit(options: GitOptions = {}): Git {
     LANG: "C",
   })
 
-  const commandOf = (args: readonly string[]) =>
-    args.find((arg) => !arg.startsWith("-")) ?? "git"
-
   const spawnGit: Git["spawn"] = (args, runOptions = {}) => {
-    const env = { ...environment() }
+    const env = environment()
+    const clean = { ...env }
     for (const [key, value] of Object.entries(runOptions.env ?? {})) {
-      if ((FIXED as readonly string[]).includes(key)) {
+      if (refusedVariable(key, clean)) {
         throw new GitError(
           "start",
           commandOf(args),
-          `${key} is set by Shinan and cannot be changed`,
+          `${key} cannot be set for Git`,
         )
       }
       env[key] = value
@@ -203,25 +235,54 @@ export function createGit(options: GitOptions = {}): Git {
     const fullArgs = runOptions.gitDir
       ? [`--git-dir=${runOptions.gitDir}`, ...args]
       : [...args]
+    // In a process group of its own, so that a limit ends the processes Git
+    // starts too (`http-backend` starts `upload-pack`, which starts
+    // `pack-objects`); they would otherwise go on and keep its output open.
     const child = spawn(binary, fullArgs, {
       cwd: runOptions.cwd ?? runOptions.gitDir ?? process.cwd(),
       env,
       stdio: ["pipe", "pipe", "pipe"],
       shell: false,
+      detached: true,
       windowsHide: true,
     })
+    let exited = false
+    let closed = false
+    let killed = false
+    const kill = () => {
+      killed = true
+      // After `close` the group's ID may belong to another process.
+      if (child.pid === undefined || closed) return
+      try {
+        process.kill(-child.pid, "SIGKILL")
+      } catch {
+        // The group is gone already.
+      }
+      // Whatever the group left behind cannot hold the pipes open.
+      if (exited) {
+        child.stdout.destroy()
+        child.stderr.destroy()
+      }
+    }
     let timedOut = false
     const limit = runOptions.timeoutMs ?? timeoutMs
     const timer = setTimeout(() => {
       timedOut = true
-      child.kill("SIGKILL")
+      kill()
     }, limit)
+    child.once("exit", () => {
+      exited = true
+      // Once Git is killed, nothing it started may outlive it or keep its
+      // output open.
+      if (killed) kill()
+    })
     const ended = new Promise<{
       code: number | null
       signal: NodeJS.Signals | null
       timedOut: boolean
     }>((resolve) => {
       child.once("close", (code, signal) => {
+        closed = true
         clearTimeout(timer)
         resolve({ code, signal, timedOut })
       })
@@ -232,12 +293,12 @@ export function createGit(options: GitOptions = {}): Git {
     })
     // A process that is gone cannot take its input; that shows as its exit.
     child.stdin.on("error", () => {})
-    return { child, ended, kill: () => child.kill("SIGKILL") }
+    return { child, ended, kill }
   }
 
   const run: Git["run"] = async (args, runOptions = {}) => {
     const command = commandOf(args)
-    const { child, ended } = spawnGit(args, runOptions)
+    const { child, ended, kill } = spawnGit(args, runOptions)
     const limit = runOptions.maxOutputBytes ?? maxOutputBytes
     const chunks: Buffer[] = []
     let size = 0
@@ -247,7 +308,7 @@ export function createGit(options: GitOptions = {}): Git {
       size += chunk.length
       if (size > limit) {
         overflow = true
-        child.kill("SIGKILL")
+        kill()
         return
       }
       chunks.push(chunk)

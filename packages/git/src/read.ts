@@ -1,4 +1,5 @@
 import { openCatFile } from "./cat-file.js"
+import { isObjectId, revision, treePath } from "./names.js"
 import type { Git, RunOptions } from "./run.js"
 import { GitError } from "./run.js"
 
@@ -7,51 +8,6 @@ export type ReadOptions = Pick<
   RunOptions,
   "env" | "timeoutMs" | "maxOutputBytes"
 >
-
-/** A full object ID: SHA-1 or SHA-256. */
-const OBJECT_ID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/
-
-export function isObjectId(value: string): boolean {
-  return OBJECT_ID.test(value)
-}
-
-/** Whether `value` holds a control character (a line break, NUL and the like). */
-function hasControl(value: string): boolean {
-  for (let i = 0; i < value.length; i++) {
-    const code = value.charCodeAt(i)
-    if (code < 0x20 || code === 0x7f) return true
-  }
-  return false
-}
-
-/**
- * A revision from a caller, such as `main`, an object ID or `main~2`. It
- * cannot start with `-` (Git would read it as an option) or hold control
- * characters; every command also puts `--end-of-options` before it.
- */
-function revision(value: string): string {
-  if (value === "" || value.startsWith("-") || hasControl(value)) {
-    throw new GitError("start", "git", "Not a revision Shinan passes to Git")
-  }
-  return value
-}
-
-/**
- * A path in a tree, for limiting a listing or a history to it; a folder may
- * end with `/`. Git reads it literally (`GIT_LITERAL_PATHSPECS`), never as
- * a pattern.
- */
-function treePath(value: string): string {
-  const parts = value.replace(/\/$/, "").split("/")
-  if (
-    value.startsWith("/") ||
-    parts.some((part) => part === "" || part === "." || part === "..") ||
-    hasControl(value)
-  ) {
-    throw new GitError("start", "git", "Not a path in a repository")
-  }
-  return value
-}
 
 /** A count Shinan passes to Git. */
 function count(value: number, what: string): number {
@@ -320,7 +276,7 @@ export function parseCommit(oid: string, content: Buffer): Commit {
 }
 
 /**
- * Commits from `rev` back, newest first, as `git log` orders them; with
+ * Commits from `rev` (a full object ID or `refs/heads/<name>`) back, newest first, as `git log` orders them; with
  * `path`, only those that changed it (Git's default history simplification).
  */
 export async function history(

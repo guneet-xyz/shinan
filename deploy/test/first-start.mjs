@@ -310,8 +310,10 @@ async function run() {
 
   const git = gitInImage()
   check(
-    git.binary === "/usr/bin/git" && /^git version 2\./.test(git.version),
-    `@shinan/git runs the image's Git (${git.version})`,
+    git.binary === "/usr/bin/git" &&
+      /^git version 2\./.test(git.version) &&
+      /^1:2\.[0-9.]+-/.test(git.debianVersion ?? ""),
+    `@shinan/git runs the image's Git (${git.version}, Debian ${git.debianVersion})`,
   )
   check(
     git.tree.join(",") === "100644 README.md,100644 machine/musashi.md" &&

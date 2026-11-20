@@ -274,7 +274,11 @@ Option A needs `git`. **Options:**
 
 **Decided: 1** (with the plan). Reason: it keeps the image shell-free and
 lets Debian carry Git's security fixes; Dependabot already proposes base
-image updates. The hooks are Node.js scripts started directly
+image updates. As built (GC-1a): the release workflow and CI never take
+the `git` stage from the build cache (`no-cache-filters: git`), so every
+release image has Debian's Git as of its build, and the release summary
+records the version for each architecture. A Debian security advisory for
+Git therefore means cutting a release; nothing rebuilds by itself. The hooks are Node.js scripts started directly
 (`#!/nodejs/bin/node`), so Git never needs a shell; the first-start test
 proves a push, a refusal and a fetch inside the built image.
 

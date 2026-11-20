@@ -1463,7 +1463,10 @@ licensing (D-013); this section makes sure nothing blocks it. All **proposed**:
   (GC-1a, [Git-based catalog plan §2.3](build-plan-git-catalog.md#23-git-in-a-distroless-image));
   only the `git` role will run them. The `.deb` files are downloaded for the
   target architecture and unpacked on the build machine, so one machine
-  still builds both architectures. The first-start test runs Git inside the
+  still builds both architectures. Release and CI builds never take that step from the
+  build cache, so a release has Debian's current Git (its summary records
+  the version per architecture); a Debian security advisory for Git means
+  cutting a release. The first-start test runs Git inside the
   image, on both architectures for every pull request.
 - **Requirements:** PostgreSQL (supported major versions listed per release), an
   HTTPS reverse proxy, an AWS SES account for email in the first version
