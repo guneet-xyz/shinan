@@ -77,7 +77,6 @@ const listTitles: Record<string, string> = {
   "due-for-recheck": "Due for recheck",
   "known-unknowns": "Known unknowns",
   "recent-changes": "Recent changes",
-  "waiting-for-approval": "Waiting for approval",
 }
 
 function StepTarget(props: { workspaceId: string; step: StartHereStep }) {
@@ -93,16 +92,13 @@ function StepTarget(props: { workspaceId: string; step: StartHereStep }) {
     )
   if ("url" in step) return <MaybeLink text={step.url} />
   const title = listTitles[step.list] ?? step.list
-  // Catalog approval is gone (D-060): nothing waits for it, so that list
-  // has no page to open.
-  if (step.list === "waiting-for-approval")
+  // Recent changes, from `main`'s commits, come with the catalog UI (GC-7):
+  // until then that list has no page to open.
+  if (step.list === "recent-changes")
     return <span className="font-medium">{title}</span>
   return (
     <Link
-      to={wikiPath(
-        workspaceId,
-        step.list === "recent-changes" ? "/changes" : `/lists/${step.list}`,
-      )}
+      to={wikiPath(workspaceId, `/lists/${step.list}`)}
       className={linkClass}
     >
       {title}

@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 
 import type * as Api from "@shinan/api-client"
-import { addMember, createWorkspace, purgeMarker } from "@shinan/core"
+import { addMember, createWorkspace } from "@shinan/core"
 import type { JobQueue, Person } from "@shinan/core"
 import { storeCatalogRevision } from "@shinan/core/testing"
 import type { RevisionActor } from "@shinan/core/testing"
@@ -131,7 +131,7 @@ describe("catalog purge over the API", () => {
     expect(blank.text).not.toContain(secret)
   })
 
-  it("previews and purges, and earlier text then shows the marker", async () => {
+  it("previews and purges, never repeating the text", async () => {
     const preview = await call<Api.CatalogPurgePreview>(
       "POST",
       ws("/purge/preview"),
@@ -146,7 +146,6 @@ describe("catalog purge over the API", () => {
       waitingProposals: 0,
       events: 0,
       comments: 0,
-      writtenDifferently: [],
       acrossLines: { revisionTexts: 0, latestDocuments: [] },
       alsoWrittenAs: [],
       structure: [],
@@ -164,15 +163,6 @@ describe("catalog purge over the API", () => {
       revision: null,
       counts: { revisionTexts: 1, documents: 1, latestDocuments: 0 },
     })
-
-    // The wiki's history comparison reads the earlier text: it has the
-    // marker, not the purged text.
-    const earlier = await call<Api.CatalogDocumentTextAnswer>(
-      "GET",
-      ws("/text?id=machine/musashi&revision=1"),
-    )
-    expect(earlier.body.text).toContain(`The passphrase is ${purgeMarker}.`)
-    expect(earlier.text).not.toContain(secret)
 
     const purges = await call<Api.CatalogPurge[]>("GET", ws("/purges"), {
       who: contributor,

@@ -137,7 +137,7 @@ export function fakeApi(overrides: Partial<ApiClient> = {}): Fake {
     members: () => Promise.resolve([ownerMember, contributorMember]),
     // A workspace opens on the wiki's home page.
     catalogTypes: () =>
-      Promise.resolve({ catalog_revision: 0, index_behind: false, items: [] }),
+      Promise.resolve({ catalog_commit: null, index_behind: false, items: [] }),
   }
   const names: (keyof ApiClient)[] = [
     "status",
@@ -193,10 +193,7 @@ export function fakeApi(overrides: Partial<ApiClient> = {}): Fake {
     "catalogTypeIndex",
     "catalogSearch",
     "catalogList",
-    "catalogChanges",
     "catalogStartHere",
-    "catalogHistory",
-    "catalogText",
     "previewCatalogPurge",
     "purgeCatalogText",
     "catalogPurges",

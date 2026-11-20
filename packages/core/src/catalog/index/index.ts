@@ -1,7 +1,7 @@
-// The agent index (catalog §12): its JSON format, the queries agents and the
-// wiki read it with, and its upkeep. The indexer itself, which alone writes
-// the index, stays inside core: catalog proposals (M2-4) call it through
-// `appendCatalogRevision` in the transaction that applies them.
+// The agent index (catalog §12): its JSON format, the queries the catalog
+// pages read it with, and its upkeep. The indexer itself, which alone writes
+// the index, stays inside core: the worker's index job runs it after each
+// update of `main` (Git-based catalog plan §2.7).
 export type {
   AppliesJson,
   CatalogAnswer,
@@ -13,7 +13,6 @@ export type {
   FreshnessJson,
   IncomingRelationJson,
   OutgoingRelationJson,
-  PendingProposalJson,
   ProblemJson,
   ResolvedStepJson,
   SectionJson,
@@ -24,7 +23,6 @@ export type {
 } from "./format.js"
 export {
   catalogLists,
-  getCatalogChanges,
   getCatalogEntity,
   getCatalogList,
   getCatalogNeighbours,
@@ -37,8 +35,6 @@ export {
 } from "./queries.js"
 export type {
   CatalogAppliesAnswer,
-  CatalogChangeJson,
-  CatalogChangesAnswer,
   CatalogEntityAnswer,
   CatalogList,
   CatalogListInput,
@@ -56,32 +52,18 @@ export type {
   StartHereJson,
 } from "./queries.js"
 export {
-  catalogIndexRebuildQueue,
+  catalogIndexQueue,
+  catchUpCatalogIndexes,
   checkCatalogIndexes,
   getCatalogIndexHealth,
   rebuildCatalogIndex,
   requestCatalogIndexRebuilds,
+  updateCatalogIndex,
 } from "./maintain.js"
 export type {
   CatalogIndexHealth,
-  CatalogIndexRebuildJob,
+  CatalogIndexJob,
   CatalogIndexWorkspaceHealth,
   WorkspaceIndexCheck,
 } from "./maintain.js"
-export {
-  agentAnswerText,
-  agentCatalogList,
-  agentCatalogLists,
-  agentGetEntity,
-  agentSearchCatalog,
-  agentWorkspaceContext,
-} from "./agent.js"
-export type {
-  AgentCatalogList,
-  AgentCatalogListInput,
-  AgentGetEntityInput,
-  AgentSearchInput,
-  AgentWorkspaceContext,
-} from "./agent.js"
-export { outsideLabel, shinanLabel } from "./labels.js"
-export type { TrustLabel } from "./labels.js"
+export type { IndexUpdate } from "./indexer.js"

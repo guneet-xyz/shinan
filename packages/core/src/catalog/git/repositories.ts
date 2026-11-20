@@ -7,6 +7,7 @@ import { NotFoundError } from "../../errors.js"
 import { addJob } from "../../jobs.js"
 import type { JobQueue, QueueDefinition } from "../../jobs.js"
 import { isId } from "../../validation.js"
+import { recordCatalogMain } from "../index/maintain.js"
 import type { GitClient } from "./client.js"
 
 /**
@@ -118,12 +119,20 @@ export async function createCatalogRepository(
     ],
     message: repositoryFirstCommitMessage,
   })
-  await atInstallation(ctx, "catalog-repository.create", (scope) =>
-    scope.tx
+  await atInstallation(ctx, "catalog-repository.create", async (scope) => {
+    await scope.tx
       .update(r)
       .set({ createdAt: sql`now()`, firstCommit: made.main })
-      .where(and(eq(r.workspaceId, workspaceId), isNull(r.firstCommit))),
-  )
+      .where(and(eq(r.workspaceId, workspaceId), isNull(r.firstCommit)))
+    // The agent index is built from the new `main` (GC-4).
+    if (ctx.jobs)
+      await recordCatalogMain({
+        tx: scope.tx,
+        jobs: ctx.jobs,
+        workspaceId,
+        commit: made.main,
+      })
+  })
   return { created: made.created, firstCommit: made.main }
 }
 

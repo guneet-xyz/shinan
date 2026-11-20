@@ -1,9 +1,8 @@
-import { and, asc, desc, eq, lt, schema, sql } from "@shinan/db"
-import type { ActorKind, Confidence, Transaction } from "@shinan/db"
+import { and, asc, eq, schema, sql } from "@shinan/db"
 
 import { inWorkspace, snapshotRead } from "../authorize.js"
 import type { Context } from "../context.js"
-import { InvalidInputError, NotFoundError } from "../errors.js"
+import { InvalidInputError } from "../errors.js"
 import { entityStatuses } from "./document/index.js"
 import type { EntityStatus } from "./document/index.js"
 import { summaryJson } from "./index/format.js"
@@ -11,21 +10,16 @@ import type { CatalogAnswer, EntitySummaryJson } from "./index/format.js"
 import { answerFor } from "./index/queries.js"
 
 /**
- * What the wiki reads besides the agent index's own queries (human
- * experience, the wiki): a page's history from the stored revisions, a
- * document's text at a revision for comparing, each type's entities with
- * their freshness summaries. Each read is one snapshot.
+ * What the catalog pages read besides the agent index's own queries: each
+ * type's entities with their freshness summaries. Each read is one
+ * snapshot. A page's history comes from `main`'s commits and the push log
+ * (Git-based catalog plan §3, GC-7), not from the index.
  */
 
 const documents = schema.catalogIndexDocuments
 const facts = schema.catalogIndexFacts
-const revisions = schema.catalogRevisions
-const revisionDocuments = schema.catalogRevisionDocuments
-const proposals = schema.catalogProposals
 
-type DocumentRecord = typeof documents.$inferSelect
-
-function idText(value: unknown, name = "id"): string {
+function idText(value: unknown, name: string): string {
   if (
     typeof value !== "string" ||
     value.trim() === "" ||
@@ -38,254 +32,6 @@ function idText(value: unknown, name = "id"): string {
       `The ${name} is a catalog ID such as machine/musashi`,
     )
   return value
-}
-
-/**
- * Any catalog document by its ID: an entity (also by an alias), a type
- * schema document (`schema/<type>`) or the start-here document.
- */
-async function findDocument(
-  tx: Transaction,
-  workspaceId: string,
-  id: string,
-): Promise<DocumentRecord | null> {
-  const [row] = await tx
-    .select()
-    .from(documents)
-    .where(
-      and(
-        eq(documents.workspaceId, workspaceId),
-        sql`(${documents.catalogId} = ${id} or ${documents.aliases} @> array[${id}]::text[])`,
-      ),
-    )
-    .orderBy(
-      sql`${documents.catalogId} = ${id} desc`,
-      asc(documents.documentId),
-    )
-    .limit(1)
-  return row ?? null
-}
-
-async function requireDocument(
-  tx: Transaction,
-  workspaceId: string,
-  id: unknown,
-): Promise<DocumentRecord> {
-  const row = await findDocument(tx, workspaceId, idText(id))
-  if (!row) throw new NotFoundError()
-  return row
-}
-
-/** One catalog revision of a document: when, and who it is credited to. */
-export interface CatalogHistoryItemJson {
-  revision: number
-  /** When it was applied (ISO 8601). */
-  at: string
-  /** The author's written form (identity §8.7). */
-  changed_by: string
-  changed_by_kind: ActorKind
-  confidence: Confidence
-  /**
-   * The number of the purge that stored this revision (catalog §9): the
-   * latest text with purged text replaced by a marker. Null for a change.
-   */
-  purge: number | null
-  /** Who gave catalog approval, when it needed one (a person's own gated edit is their approval). */
-  approved_by: string | null
-  /** The catalog proposal it applied; null for revisions stored without one. */
-  proposal: { id: string; number: number } | null
-}
-
-export interface CatalogHistoryAnswer extends CatalogAnswer {
-  /** The document's current ID (an alias asked for leads here). */
-  id: string
-  kind: string
-  /** Newest first. */
-  items: CatalogHistoryItemJson[]
-  /** Ask again with this `before` for older revisions, or null when there are none. */
-  next_before: number | null
-}
-
-/**
- * The catalog revisions that changed a document, newest first (human
- * experience, an entity page: History). From the stored revisions, so it
- * holds every change, including those to a former ID.
- */
-export async function listCatalogHistory(
-  ctx: Context,
-  workspaceId: string,
-  input: { id: string; before?: number; limit?: number },
-): Promise<CatalogHistoryAnswer> {
-  return inWorkspace(
-    ctx,
-    workspaceId,
-    "catalog.read",
-    async (scope) => {
-      const limit = input.limit ?? 50
-      if (!Number.isInteger(limit) || limit < 1 || limit > 200)
-        throw new InvalidInputError(
-          "limit",
-          "The limit is a whole number from 1 to 200",
-        )
-      if (
-        input.before !== undefined &&
-        (!Number.isInteger(input.before) || input.before < 1)
-      )
-        throw new InvalidInputError(
-          "before",
-          "A catalog revision is a whole number from 1",
-        )
-      const answer = await answerFor(scope.tx, scope.workspaceId)
-      const row = await requireDocument(scope.tx, scope.workspaceId, input.id)
-      const rows = await scope.tx
-        .select({
-          revision: revisions.number,
-          at: revisions.createdAt,
-          changedBy: revisions.actorLabel,
-          kind: revisions.actorKind,
-          confidence: revisions.confidence,
-          purge: schema.catalogPurges.number,
-          approvedBy: revisions.approvedByLabel,
-          proposalId: proposals.id,
-          proposalNumber: proposals.number,
-        })
-        .from(revisionDocuments)
-        .innerJoin(
-          revisions,
-          and(
-            eq(revisions.workspaceId, revisionDocuments.workspaceId),
-            eq(revisions.number, revisionDocuments.revision),
-          ),
-        )
-        .leftJoin(
-          schema.catalogPurges,
-          and(
-            eq(schema.catalogPurges.workspaceId, revisions.workspaceId),
-            eq(schema.catalogPurges.id, revisions.purgeId),
-          ),
-        )
-        .leftJoin(
-          proposals,
-          and(
-            eq(proposals.workspaceId, revisions.workspaceId),
-            eq(proposals.id, revisions.proposalId),
-          ),
-        )
-        .where(
-          and(
-            eq(revisionDocuments.workspaceId, scope.workspaceId),
-            eq(revisionDocuments.documentId, row.documentId),
-            input.before === undefined
-              ? undefined
-              : lt(revisionDocuments.revision, input.before),
-          ),
-        )
-        .orderBy(desc(revisionDocuments.revision))
-        .limit(limit + 1)
-      const shown = rows.slice(0, limit)
-      return {
-        ...answer,
-        id: row.catalogId ?? "",
-        kind: row.kind,
-        items: shown.map((r) => ({
-          revision: r.revision,
-          at: r.at.toISOString(),
-          changed_by: r.changedBy,
-          changed_by_kind: r.kind,
-          confidence: r.confidence,
-          purge: r.purge,
-          approved_by: r.approvedBy,
-          proposal:
-            r.proposalId === null || r.proposalNumber === null
-              ? null
-              : { id: r.proposalId, number: r.proposalNumber },
-        })),
-        next_before:
-          rows.length > limit ? shown[shown.length - 1]!.revision : null,
-      }
-    },
-    snapshotRead,
-  )
-}
-
-export interface CatalogDocumentTextAnswer extends CatalogAnswer {
-  id: string
-  kind: string
-  /** The revision that wrote this text: the last one at or before the revision asked for. */
-  revision: number
-  at: string
-  changed_by: string
-  changed_by_kind: ActorKind
-  /** The document's full Markdown text, exactly as stored. */
-  text: string
-}
-
-/**
- * A document's full text as it stood at a catalog revision (the latest
- * when none is given), for reading and comparing earlier revisions (human
- * experience, an entity page: History).
- */
-export async function getCatalogDocumentText(
-  ctx: Context,
-  workspaceId: string,
-  input: { id: string; revision?: number },
-): Promise<CatalogDocumentTextAnswer> {
-  return inWorkspace(
-    ctx,
-    workspaceId,
-    "catalog.read",
-    async (scope) => {
-      if (
-        input.revision !== undefined &&
-        (!Number.isInteger(input.revision) || input.revision < 1)
-      )
-        throw new InvalidInputError(
-          "revision",
-          "A catalog revision is a whole number from 1",
-        )
-      const answer = await answerFor(scope.tx, scope.workspaceId)
-      const row = await requireDocument(scope.tx, scope.workspaceId, input.id)
-      const [found] = await scope.tx
-        .select({
-          revision: revisionDocuments.revision,
-          text: revisionDocuments.text,
-          at: revisions.createdAt,
-          changedBy: revisions.actorLabel,
-          kind: revisions.actorKind,
-        })
-        .from(revisionDocuments)
-        .innerJoin(
-          revisions,
-          and(
-            eq(revisions.workspaceId, revisionDocuments.workspaceId),
-            eq(revisions.number, revisionDocuments.revision),
-          ),
-        )
-        .where(
-          and(
-            eq(revisionDocuments.workspaceId, scope.workspaceId),
-            eq(revisionDocuments.documentId, row.documentId),
-            input.revision === undefined
-              ? undefined
-              : sql`${revisionDocuments.revision} <= ${input.revision}`,
-          ),
-        )
-        .orderBy(desc(revisionDocuments.revision))
-        .limit(1)
-      if (!found) throw new NotFoundError()
-      return {
-        ...answer,
-        id: row.catalogId ?? "",
-        kind: row.kind,
-        revision: found.revision,
-        at: found.at.toISOString(),
-        changed_by: found.changedBy,
-        changed_by_kind: found.kind,
-        text: found.text,
-      }
-    },
-    snapshotRead,
-  )
 }
 
 /**
@@ -354,7 +100,13 @@ export async function listCatalogTypeIndex(
           unknown: counted(sql`${facts.state} = 'unknown'`),
         })
         .from(documents)
-        .leftJoin(facts, eq(facts.documentId, documents.documentId))
+        .leftJoin(
+          facts,
+          and(
+            eq(facts.workspaceId, documents.workspaceId),
+            eq(facts.path, documents.path),
+          ),
+        )
         .where(
           and(
             eq(documents.workspaceId, scope.workspaceId),
@@ -368,8 +120,8 @@ export async function listCatalogTypeIndex(
                 : sql`${documents.status} is distinct from 'retired'`,
           ),
         )
-        .groupBy(documents.documentId)
-        .orderBy(asc(documents.catalogId), asc(documents.documentId))
+        .groupBy(documents.workspaceId, documents.path)
+        .orderBy(asc(documents.catalogId), asc(documents.path))
         .limit(typeIndexLimit + 1)
       return {
         ...answer,

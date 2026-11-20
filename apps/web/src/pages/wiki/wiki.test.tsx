@@ -2,15 +2,14 @@ import { screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { describe, expect, it } from "vitest"
 
-import type {
-  CatalogEntity,
-  CatalogFact,
-  CatalogHistoryAnswer,
-} from "@shinan/api-client"
+import type { CatalogEntity, CatalogFact } from "@shinan/api-client"
 
 import { currentPath, fakeApi, renderApp, workspaceId } from "../../test/render"
 
-const answer = { catalog_revision: 7, index_behind: false }
+const answer = {
+  catalog_commit: "1234567890abcdef1234567890abcdef12345678",
+  index_behind: false,
+}
 
 const check = {
   checked: "2026-11-14",
@@ -43,7 +42,8 @@ const musashi: CatalogEntity = {
   replaced_by: null,
   aliases: ["machine/old-musashi"],
   imported_from: null,
-  revision: 7,
+  path: "machine/musashi.md",
+  blob: "abcdef1234567890abcdef1234567890abcdef12",
   facts: [
     fact({
       key: "disk.data.size",
@@ -170,55 +170,15 @@ const musashi: CatalogEntity = {
       level: 1,
       anchor: "musashi",
       text: "# Musashi\n\nRuns the [registry](service/registry).\n\n",
-      changed_in: 7,
-      changed_by: "guneet",
-      changed_by_kind: "person",
-      written_by: "guneet",
-      written_by_kind: "person",
     },
     {
       heading: "Cautions",
       level: 2,
       anchor: "cautions",
       text: "## Cautions\n\n<script>alert(1)</script> Never reboot on Fridays.\n",
-      changed_in: 7,
-      changed_by: "guneet",
-      changed_by_kind: "person",
-      written_by: "guneet",
-      written_by_kind: "person",
     },
   ],
   problems: [],
-  pending_proposals: [],
-}
-
-const history: CatalogHistoryAnswer = {
-  ...answer,
-  id: "machine/musashi",
-  kind: "entity",
-  items: [
-    {
-      revision: 7,
-      at: "2026-11-16T10:00:00.000Z",
-      changed_by: "guneet",
-      changed_by_kind: "person",
-      confidence: "recorded",
-      purge: 2,
-      approved_by: null,
-      proposal: { id: "44444444-4444-4444-8444-444444444444", number: 12 },
-    },
-    {
-      revision: 3,
-      at: "2026-11-14T10:00:00.000Z",
-      changed_by: "guneet via opencode-daedalus",
-      changed_by_kind: "agent",
-      confidence: "recorded",
-      purge: null,
-      approved_by: "ana",
-      proposal: { id: "55555555-5555-4555-8555-555555555555", number: 4 },
-    },
-  ],
-  next_before: null,
 }
 
 const entityPath = `/w/${workspaceId}/wiki/e/machine/musashi`
@@ -226,7 +186,6 @@ const entityPath = `/w/${workspaceId}/wiki/e/machine/musashi`
 function api(entity: CatalogEntity = musashi) {
   return fakeApi({
     catalogEntity: () => Promise.resolve({ ...answer, entity }),
-    catalogHistory: () => Promise.resolve(history),
   })
 }
 
@@ -245,7 +204,6 @@ describe("an entity page", () => {
       "Facts",
       "Description",
       "Links",
-      "History",
     ])
     // Nothing to change it with: agents change the catalog in Git.
     expect(screen.queryByRole("link", { name: "Suggest a change" })).toBeNull()
@@ -365,7 +323,6 @@ describe("an entity page", () => {
                 20,
               ),
             ),
-          catalogHistory: () => Promise.resolve(history),
         }),
       )
       await userEvent.click(
@@ -399,30 +356,6 @@ describe("an entity page", () => {
     expect(screen.queryByRole("link", { name: /Repair/ })).toBeNull()
   })
 
-  it("no longer shows catalog proposals that waited on it", async () => {
-    renderApp(
-      entityPath,
-      api({
-        ...musashi,
-        pending_proposals: [
-          {
-            proposal_id: "66666666-6666-4666-8666-666666666666",
-            number: 9,
-            author: "guneet via opencode-daedalus",
-            author_kind: "agent",
-            created_at: "2026-11-18T10:00:00.000Z",
-            approval_classes: ["lifecycle"],
-            related_task: "SHN-12",
-          },
-        ],
-      }),
-    )
-    await screen.findByRole("heading", { level: 1, name: "Musashi" })
-    expect(
-      screen.queryByRole("heading", { name: "Waiting for approval" }),
-    ).toBeNull()
-  })
-
   it("says first when an entity is retired, with its replacement", async () => {
     renderApp(
       entityPath,
@@ -436,47 +369,6 @@ describe("an entity page", () => {
     renderApp(`/w/${workspaceId}/wiki/e/machine/old-musashi`, api())
     await waitFor(() => expect(currentPath()).toBe(entityPath))
     expect(await screen.findByText(/is now/)).toBeTruthy()
-  })
-
-  it("lists its history and compares an earlier revision with now", async () => {
-    const fake = fakeApi({
-      catalogEntity: () => Promise.resolve({ ...answer, entity: musashi }),
-      catalogHistory: () => Promise.resolve(history),
-      catalogText: (_w, _id, revision) =>
-        Promise.resolve({
-          ...answer,
-          id: "machine/musashi",
-          kind: "entity",
-          revision: revision ?? 7,
-          at: "2026-11-14T10:00:00.000Z",
-          changed_by: "guneet",
-          changed_by_kind: "person",
-          text:
-            revision === 3
-              ? "---\nid: machine/musashi\ndisk: 64\n---\n"
-              : "---\nid: machine/musashi\ndisk: 128\n---\n",
-        }),
-    })
-    renderApp(entityPath, fake)
-    const historySection = (
-      await screen.findByRole("heading", { name: "History" })
-    ).closest("section")!
-    await within(historySection).findByText("Revision 3")
-    expect(historySection.textContent).toContain("current")
-    // Who approved it, as M2 recorded it.
-    expect(historySection.textContent).toContain(
-      "guneet via opencode-daedalus · approved by ana",
-    )
-    await userEvent.click(
-      within(historySection).getByRole("link", { name: "Compare with now" }),
-    )
-    await waitFor(() => expect(currentPath()).toBe(`${entityPath}?revision=3`))
-    const comparison = await screen.findByRole("heading", {
-      name: "Revision 3 compared with revision 7",
-    })
-    const text = comparison.closest("section")!.textContent
-    expect(text).toContain("Removed: disk: 64")
-    expect(text).toContain("Added: disk: 128")
   })
 
   it("answers not found for an unknown entity", async () => {
@@ -514,7 +406,10 @@ describe("start here", () => {
             path,
             title: "Start here",
             summary: "The paths through the catalog.",
-            revision: 2,
+            document: {
+              path: "start-here.md",
+              blob: "abcdef1234567890abcdef1234567890abcdef12",
+            },
             steps:
               path === "people"
                 ? [
@@ -525,7 +420,6 @@ describe("start here", () => {
                     },
                     { list: "discrepancies", note: "What disagrees." },
                     { list: "recent-changes", note: "What changed." },
-                    { list: "waiting-for-approval", note: "Look here." },
                   ]
                 : [
                     {
@@ -545,21 +439,16 @@ describe("start here", () => {
       "1Musashi(machine/musashi)The production host.",
       "2DiscrepanciesWhat disagrees.",
       "3Recent changesWhat changed.",
-      "4Waiting for approvalLook here.",
     ])
     expect(
       within(people)
         .getByRole("link", { name: "Discrepancies" })
         .getAttribute("href"),
     ).toBe(`/w/${workspaceId}/wiki/lists/discrepancies`)
+    // Recent changes come from `main`'s commits with the catalog UI (GC-7):
+    // until then the step is not a link.
     expect(
-      within(people)
-        .getByRole("link", { name: "Recent changes" })
-        .getAttribute("href"),
-    ).toBe(`/w/${workspaceId}/wiki/changes`)
-    // Catalog review is gone, so the list of what waited for it is not a link.
-    expect(
-      within(people).queryByRole("link", { name: "Waiting for approval" }),
+      within(people).queryByRole("link", { name: "Recent changes" }),
     ).toBeNull()
     const agents = screen
       .getByRole("heading", { name: "For agents" })
@@ -812,39 +701,6 @@ describe("moving around the wiki", () => {
     expect(await screen.findByText("due for recheck")).toBeTruthy()
     expect(screen.getByText("checked 40 days ago")).toBeTruthy()
   })
-
-  it("shows recent changes newest first", async () => {
-    renderApp(
-      `/w/${workspaceId}/wiki/changes`,
-      fakeApi({
-        catalogChanges: (_w, options) =>
-          Promise.resolve({
-            ...answer,
-            catalog_revision: 2,
-            since: options?.since ?? 0,
-            next_since: null,
-            items:
-              options?.limit === 1
-                ? []
-                : [1, 2].map((revision) => ({
-                    revision,
-                    at: "2026-11-16T10:00:00.000Z",
-                    changed_by: "guneet",
-                    changed_by_kind: "person",
-                    approved_by: revision === 2 ? "ana" : null,
-                    documents: [{ id: "machine/musashi", kind: "entity" }],
-                  })),
-          }),
-      }),
-    )
-    const items = await screen.findAllByText(/^Revision \d$/)
-    expect(items.map((i) => i.textContent)).toEqual([
-      "Revision 2",
-      "Revision 1",
-    ])
-    expect(items[0]!.closest("li")!.textContent).toContain("approved by ana")
-    expect(items[1]!.closest("li")!.textContent).not.toContain("approved by")
-  })
 })
 
 describe("the removed M2 screens", () => {
@@ -857,6 +713,7 @@ describe("the removed M2 screens", () => {
     "wiki/new",
     "wiki/new-type",
     "wiki/repair/machine/musashi",
+    "wiki/changes",
     "settings/catalog",
   ])("/w/…/%s is not found", async (path) => {
     renderApp(`/w/${workspaceId}/${path}`, fakeApi())

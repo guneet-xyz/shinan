@@ -2,7 +2,6 @@ import { render } from "@testing-library/react"
 import { MemoryRouter } from "react-router"
 import { describe, expect, it } from "vitest"
 
-import { diffLines } from "./diff"
 import { ageText, entityPath, freshnessSummary, summaryParts } from "./format"
 import { linkTarget } from "./links"
 import { Markdown } from "./markdown"
@@ -153,21 +152,6 @@ describe("the Markdown renderer", () => {
     expect(links).toHaveLength(1)
     expect(links[0]!.textContent).toBe("logo")
     expect(links[0]!.querySelector("a")).toBeNull()
-  })
-})
-
-describe("comparing revisions", () => {
-  it("marks removed and added lines, keeping the rest", () => {
-    expect(diffLines("a\nb\nc\n", "a\nB\nc\nd\n")).toEqual([
-      { kind: "same", text: "a" },
-      { kind: "removed", text: "b" },
-      { kind: "added", text: "B" },
-      { kind: "same", text: "c" },
-      { kind: "added", text: "d" },
-    ])
-    expect(diffLines("same\r\n", "same\n")).toEqual([
-      { kind: "same", text: "same" },
-    ])
   })
 })
 

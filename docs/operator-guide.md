@@ -416,25 +416,28 @@ own addresses are changed only in `SHINAN_OPERATORS` and with the command.
 
 ## The agent index
 
-> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-4](build-plan-git-catalog.md#gc-4-the-index-from-main)): the index is rebuilt from `main` after each push. Until then, this section describes M2 as built (v0.3.0).
-
-The catalog's agent index is built from the stored catalog text and can be
-rebuilt from it at any time
-([architecture §5.2, §5.3](architecture.md#52-the-invariant)). The worker
-rebuilds it by itself after a release that changes how catalog text is read,
-and checks every night (03:40 UTC) that the stored index still matches the
-text. A mismatch is logged by the worker (`Catalog index check: workspace …`)
-by workspace and document IDs only. Operators see each workspace's index
-state at `/api/installation/catalog-index`. To rebuild a workspace's index,
-or to run the check now:
+The catalog's agent index serves search and the catalog pages. It is built
+from `main` of each workspace's catalog repository, read through the Git
+container, and can be rebuilt from it at any time
+([architecture §5.3](architecture.md#53-how-sync-works)). The worker brings it
+up to `main` after each update of `main` and when it starts, rebuilds it by
+itself after a release that changes how catalog text is read, and checks every
+night (03:40 UTC) that the stored index still matches the text on `main`. A
+mismatch is logged by the worker (`Catalog index check: workspace …`) by
+workspace ID and document path only. Operators see each workspace's index
+state at `/api/installation/catalog-index`: the commit of `main` the index
+stands at, the latest `main` Shinan knows of, and the last check. Without the
+Git container (`SHINAN_GIT_URL` and its token, which the reference file gives
+`worker`), indexes wait. To rebuild a workspace's index, or to run the check
+now, use the `worker` service, which reaches the Git container:
 
 ```sh
-docker compose run --rm --no-deps web catalog-index rebuild <workspace-id>
-docker compose run --rm --no-deps web catalog-index check [<workspace-id>]
+docker compose run --rm --no-deps worker catalog-index rebuild <workspace-id>
+docker compose run --rm --no-deps worker catalog-index check [<workspace-id>]
 ```
 
-While a rebuild runs, agents and the catalog pages keep reading the old index, marked
-as behind.
+While an update or a rebuild runs, the catalog pages keep reading the old
+index, marked as behind.
 
 ## Catalog purge
 
@@ -454,7 +457,7 @@ out. To clear the database's files too, run this at a quiet moment (it
 locks the tables while it rewrites them):
 
 ```sh
-docker compose exec -T postgres psql -U shinan -d shinan -c "vacuum full catalog_revision_documents, catalog_proposals, events, catalog_index_documents, catalog_index_facts, catalog_index_relations, catalog_index_discrepancies, catalog_index_sections, catalog_index_provenance"
+docker compose exec -T postgres psql -U shinan -d shinan -c "vacuum full catalog_revision_documents, catalog_proposals, catalog_proposal_comments, events"
 ```
 
 Every `web` and `worker` process forgets parsed catalog text within a

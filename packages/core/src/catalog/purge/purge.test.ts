@@ -3,7 +3,6 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest"
 
 import { and, asc, eq, schema, sql } from "@shinan/db"
 
-import * as fixtures from "../../../test/catalog-index-fixtures.js"
 import {
   asAgent,
   asPerson,
@@ -21,15 +20,8 @@ import { addMember } from "../../identity/members.js"
 import type { Person } from "../../identity/people.js"
 import { createWorkspace } from "../../identity/workspaces.js"
 import { storeCatalogRevision } from "../../testing.js"
-import { compareWorkspaceIndex } from "../index/indexer.js"
-import {
-  getCatalogChanges,
-  getCatalogEntity,
-  searchCatalog,
-} from "../index/queries.js"
-import { findCatalogDocument } from "../revisions.js"
+import { findCatalogDocument, latestTexts } from "../revisions.js"
 import type { RevisionActor } from "../revisions.js"
-import { getCatalogDocumentText, listCatalogHistory } from "../wiki.js"
 import { PurgeMatcher } from "./matcher.js"
 import {
   listCatalogPurges,
@@ -395,7 +387,7 @@ async function securityLog() {
     .orderBy(asc(schema.securityLog.id))
 }
 
-// Each test stores and indexes several revisions, slowly on a busy machine.
+// Each test stores several revisions, slowly on a busy machine.
 describe("purging catalog text", { timeout: 60_000 }, () => {
   it("removes a leaked secret from everything the database stores, keeping the security log", async () => {
     const { waiting, rejected } = await plant()
@@ -404,9 +396,6 @@ describe("purging catalog text", { timeout: 60_000 }, () => {
         "public.catalog_revision_documents",
         "public.catalog_proposals",
         "public.events",
-        "public.catalog_index_documents",
-        "public.catalog_index_facts",
-        "public.catalog_index_sections",
       ]),
     )
     const logBefore = await securityLog()
@@ -421,7 +410,6 @@ describe("purging catalog text", { timeout: 60_000 }, () => {
       waitingProposals: 1,
       events: 1,
       comments: 1,
-      writtenDifferently: [],
       acrossLines: { revisionTexts: 0, latestDocuments: [] },
       alsoWrittenAs: [],
       structure: [],
@@ -448,7 +436,7 @@ describe("purging catalog text", { timeout: 60_000 }, () => {
     })
 
     // Nothing in the database holds it any more, not even the earlier
-    // versions of index rows or the job queue.
+    // versions of rows or the job queue.
     expect(await tablesHolding(secret)).toEqual([])
 
     // The security log keeps every entry as it was, and records the purge
@@ -496,42 +484,29 @@ describe("purging catalog text", { timeout: 60_000 }, () => {
       id: waiting.id,
     })
 
-    // Earlier text, as the wiki's history comparison reads it, shows the
-    // marker; the document keeps its shape.
-    const first = await getCatalogDocumentText(asOwner, workspaceId, {
-      id: "machine/musashi",
-      revision: 1,
-    })
-    expect(first.revision).toBe(1)
-    expect(first.text).toContain(
+    // Earlier text shows the marker; the document keeps its shape.
+    const [first] = await db
+      .select({ text: schema.catalogRevisionDocuments.text })
+      .from(schema.catalogRevisionDocuments)
+      .where(
+        and(
+          eq(schema.catalogRevisionDocuments.workspaceId, workspaceId),
+          eq(schema.catalogRevisionDocuments.revision, 1),
+          sql`${schema.catalogRevisionDocuments.text} like '%id: machine/musashi%'`,
+        ),
+      )
+    expect(first!.text).toContain(
       `The console passphrase is ${purgeMarker} for now.`,
     )
-    const entity = await getCatalogEntity(asOwner, workspaceId, {
-      id: "machine/daedalus",
+    const latest = await db.transaction((tx) => latestTexts(tx, workspaceId))
+    expect(
+      latest.find((t) => t.text.includes("id: machine/daedalus")),
+    ).toMatchObject({
+      revision: 4,
+      text: expect.stringContaining(
+        `summary: The build host; its old passphrase was ${purgeMarker}.`,
+      ) as string,
     })
-    expect(entity).toMatchObject({
-      catalog_revision: 4,
-      entity: {
-        summary: `The build host; its old passphrase was ${purgeMarker}.`,
-      },
-    })
-    const history = await listCatalogHistory(asOwner, workspaceId, {
-      id: "machine/daedalus",
-    })
-    expect(history.items.map((i) => [i.revision, i.purge])).toEqual([
-      [4, 1],
-      [3, null],
-    ])
-    const changes = await getCatalogChanges(asOwnersAgent, workspaceId, {
-      since: 3,
-    })
-    expect(changes.items).toMatchObject([
-      { revision: 4, documents: [{ id: "machine/daedalus" }] },
-    ])
-    const found = await searchCatalog(asOwnersAgent, workspaceId, {
-      text: secret.split("-")[2]!,
-    })
-    expect(found.items).toEqual([])
 
     // Proposals keep their shape; the waiting one was rejected.
     expect(await proposalRow(waiting)).toMatchObject({
@@ -556,19 +531,11 @@ describe("purging catalog text", { timeout: 60_000 }, () => {
       rejectionReason: `Not before ${purgeMarker} is rotated.`,
     })
 
-    // D-006: the index is what the purged text gives, and stays so as
-    // proposals apply on top.
-    const compare = () =>
-      db.transaction((tx) => compareWorkspaceIndex(tx, workspaceId), {
-        isolationLevel: "repeatable read",
-      })
-    expect((await compare()).differences).toEqual([])
     // A later revision on top of the purged text.
     const after = await store(asOwnersAgent, [
       daedalus("The build host.", purgeMarker),
     ])
     expect(after).toBe(5)
-    expect((await compare()).differences).toEqual([])
     expect(await tablesHolding(secret)).toEqual([])
 
     const { newProblems, ...listed } = purge
@@ -645,41 +612,6 @@ describe("purging catalog text", { timeout: 60_000 }, () => {
     expect(await listCatalogPurges(asOwner, workspaceId)).toEqual([])
   })
 
-  it("says when the index holds a text that the stored text writes differently", async () => {
-    await storeCatalogRevision(
-      db,
-      workspaceId,
-      {
-        kind: "person",
-        personId: owner.id,
-        agentId: null,
-        agentSessionId: null,
-        label: owner.handle,
-        confidence: "recorded",
-      },
-      [
-        {
-          text: `---\nid: machine/escaped\ntype: machine\ntitle: Escaped\nsummary: "Key \\x41${secret}"\nowner: ${person}\n---\n`,
-        },
-      ],
-    )
-    const text = `A${secret}`
-    expect(
-      await previewCatalogPurge(asOwner, workspaceId, { text }),
-    ).toMatchObject({
-      revisionTexts: 0,
-      writtenDifferently: ["machine/escaped"],
-    })
-    const refusal: unknown = await purgeCatalogText(asOwner, workspaceId, {
-      text,
-      reason: "Leaked.",
-    }).catch((e: unknown) => e)
-    expect(refusal).toMatchObject({ rule: "written-differently" })
-    expect((refusal as Error).message).toContain("machine/escaped")
-    expect((refusal as Error).message).not.toContain(secret)
-    expect(await listCatalogPurges(asOwner, workspaceId)).toEqual([])
-  })
-
   it("matches any run of whitespace, so wrapped text and split secrets go too", async () => {
     const address = "Jane Q Example, 12 Baker Street, Springfield"
     const split = secret.replace("-lantern", "-\nlantern")
@@ -725,15 +657,6 @@ ${body}`,
     })
     for (const word of [...words, "-\nlantern", secret.split("-")[2]!])
       expect([word, await tablesHolding(word)]).toEqual([word, []])
-    const found = await searchCatalog(asOwnersAgent, workspaceId, {
-      text: "Baker Street Springfield",
-    })
-    expect(found.items).toEqual([])
-    const compared = await db.transaction(
-      (tx) => compareWorkspaceIndex(tx, workspaceId),
-      { isolationLevel: "repeatable read" },
-    )
-    expect(compared.differences).toEqual([])
   })
 
   it("purges a comment's idempotency key that holds the text", async () => {
@@ -839,7 +762,7 @@ ${body}`,
     try {
       expect(
         await previewCatalogPurge(asOwner, workspaceId, { text }),
-      ).toMatchObject({ revisionTexts: 0, writtenDifferently: [] })
+      ).toMatchObject({ revisionTexts: 0 })
     } finally {
       clearInterval(probe)
     }
@@ -912,39 +835,6 @@ ${body}`,
       },
     ])
     expect(JSON.stringify(purge)).not.toContain(word)
-  })
-
-  it("rebuilds the whole index when a type schema document held the text", async () => {
-    const as = {
-      kind: "person" as const,
-      personId: owner.id,
-      agentId: null,
-      agentSessionId: null,
-      label: owner.handle,
-      confidence: "recorded" as const,
-    }
-    const leaked = fixtures.domainSchema.replace(
-      "One entity per registered domain.",
-      `One entity per registered domain. The registrar login is ${secret}.`,
-    )
-    const { documentIds } = await storeCatalogRevision(db, workspaceId, as, [
-      { text: leaked },
-      { text: fixtures.guneetDev },
-    ])
-    await storeCatalogRevision(db, workspaceId, as, [
-      { documentId: documentIds[0]!, text: fixtures.domainSchema },
-    ])
-    const purge = await purgeCatalogText(asOwner, workspaceId, {
-      text: secret,
-      reason: "A login in a schema's body.",
-    })
-    expect(purge.counts).toMatchObject({ revisionTexts: 1, latestDocuments: 0 })
-    expect(await tablesHolding(secret)).toEqual([])
-    const compared = await db.transaction(
-      (tx) => compareWorkspaceIndex(tx, workspaceId),
-      { isolationLevel: "repeatable read" },
-    )
-    expect(compared).toMatchObject({ documents: 2, differences: [] })
   })
 })
 

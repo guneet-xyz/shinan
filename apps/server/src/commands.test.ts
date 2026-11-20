@@ -76,28 +76,16 @@ describe("runCommand", () => {
     }
   })
 
-  it("rebuilds and checks an agent index on an operator's command", async () => {
-    const { db, pool } = connectTestDatabase()
-    try {
-      const [workspace] = await db
-        .insert(schema.workspaces)
-        .values({ name: "Indexed" })
-        .returning()
-      const info = vi.spyOn(console, "info").mockImplementation(() => {})
-      const env = { DATABASE_URL: inject("databaseUrl") }
-      await expect(
-        runCommand(["catalog-index", "rebuild", workspace!.id], env),
-      ).resolves.toBe(0)
-      expect(info).toHaveBeenCalledWith(
-        `Rebuilt the agent index of workspace ${workspace!.id} at revision 0 (0 documents)`,
-      )
-      vi.spyOn(console, "error").mockImplementation(() => {})
-      await expect(
-        runCommand(["catalog-index", "rebuild", crypto.randomUUID()], env),
-      ).resolves.toBe(1)
-    } finally {
-      await pool.end()
-    }
+  it("needs the Git container to rebuild or check an agent index", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {})
+    const env = { DATABASE_URL: inject("databaseUrl") }
+    await expect(
+      runCommand(["catalog-index", "rebuild", crypto.randomUUID()], env),
+    ).resolves.toBe(1)
+    expect(error).toHaveBeenCalledWith(
+      expect.stringContaining("SHINAN_GIT_URL"),
+    )
+    // The command against a real Git container: src/git/index.test.ts.
   })
 
   it("requires DATABASE_URL to run the worker", async () => {

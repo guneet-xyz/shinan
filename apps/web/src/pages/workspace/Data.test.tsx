@@ -23,7 +23,6 @@ const preview: CatalogPurgePreview = {
   waitingProposals: 1,
   events: 1,
   comments: 0,
-  writtenDifferently: [],
   acrossLines: { revisionTexts: 1, latestDocuments: ["machine/daedalus"] },
   alsoWrittenAs: [],
   structure: [{ id: "machine/daedalus", where: "alias" }],
@@ -129,7 +128,7 @@ describe("the data screen", () => {
     ).toBeTruthy()
   })
 
-  it("says when nothing holds the text, or the stored text writes it differently", async () => {
+  it("says when nothing holds the text, and offers its other forms", async () => {
     const api = fakeApi({
       catalogPurges: () => Promise.resolve([]),
       previewCatalogPurge: () =>
@@ -141,7 +140,6 @@ describe("the data screen", () => {
           proposals: 0,
           waitingProposals: 0,
           events: 0,
-          writtenDifferently: ["machine/escaped"],
           alsoWrittenAs: [
             {
               form: "percent",
@@ -158,7 +156,9 @@ describe("the data screen", () => {
     await userEvent.type(await screen.findByLabelText("Text to purge"), secret)
     await userEvent.click(screen.getByRole("button", { name: "Find it" }))
     expect(
-      await screen.findByText(/holds this text for machine\/escaped/),
+      await screen.findByText(
+        "This text is not in the catalog, its proposals or the timeline.",
+      ),
     ).toBeTruthy()
     expect(
       screen.queryByRole("button", { name: "Purge everywhere" }),

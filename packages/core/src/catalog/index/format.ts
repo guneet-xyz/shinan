@@ -1,4 +1,4 @@
-import type { ActorKind, schema } from "@shinan/db"
+import type { schema } from "@shinan/db"
 
 import { dayMillis } from "../document/dates.js"
 import type {
@@ -17,12 +17,14 @@ import type {
 
 /** What every answer from the agent index carries (catalog §12.2). */
 export interface CatalogAnswer {
-  /** The catalog revision the answer was built from. */
-  catalog_revision: number
   /**
-   * The index is behind the latest applied revision, or is being rebuilt
-   * (for example after a release changed the parser), so the answer may be
-   * out of date.
+   * The commit of `main` the answer was built from; null until the index
+   * has first been built from the workspace's repository.
+   */
+  catalog_commit: string | null
+  /**
+   * The index is behind `main`, or is being rebuilt (for example after a
+   * release changed the parser), so the answer may be out of date.
    */
   index_behind: boolean
 }
@@ -135,12 +137,7 @@ export interface AppliesJson {
   identity: string | null
 }
 
-/**
- * One section of a body, split by heading (catalog §2.5, §12.1), with
- * credits from Shinan's records, never from the text: the catalog revision
- * that last changed it and that revision's author, and the least-trusted
- * author who wrote any of it. Trust labels are built from the latter.
- */
+/** One section of a body, split by heading (catalog §2.5, §12.1). */
 export interface SectionJson {
   /** Null for the text before the first heading. */
   heading: string | null
@@ -148,18 +145,6 @@ export interface SectionJson {
   anchor: string | null
   /** The section's exact Markdown, heading line included. */
   text: string
-  changed_in: number
-  /** The author's written form (identity §8.7). */
-  changed_by: string
-  changed_by_kind: ActorKind
-  /**
-   * The least-trusted author whose words may be in the section, from the
-   * document's word provenance (outside, then unknown, agent, Shinan,
-   * person; catalog §12.4). A person lifts it only by writing the words
-   * themselves; mechanical edits, moves and reverts do not.
-   */
-  written_by: string
-  written_by_kind: ActorKind
 }
 
 export interface ProblemJson {
@@ -176,8 +161,10 @@ export interface EntityJson extends EntitySummaryJson {
   decision_state?: string | null
   decided_on?: string | null
   decided_by?: string | null
-  /** The catalog revision that last changed this document. */
-  revision: number
+  /** The document's path on `main`, such as `machine/musashi.md`. */
+  path: string
+  /** The Git blob ID of the document's text on `main`. */
+  blob: string
   facts: FactJson[]
   relations: {
     outgoing: OutgoingRelationJson[]
@@ -200,25 +187,6 @@ export interface EntityJson extends EntitySummaryJson {
   body: SectionJson[]
   /** What kept the text from being read as catalog §2 describes; normally empty. */
   problems: ProblemJson[]
-  /**
-   * Catalog proposals waiting for approval that change this entity
-   * (catalog §8.6, §12.4), oldest first, so agents do not duplicate them.
-   * No free text: a proposal's explanation and operations are on the
-   * proposal itself.
-   */
-  pending_proposals: PendingProposalJson[]
-}
-
-/** A catalog proposal waiting for approval, on an entity it changes. */
-export interface PendingProposalJson {
-  proposal_id: string
-  number: number
-  /** The author's written form (identity §8.7). */
-  author: string
-  author_kind: "person" | "agent"
-  created_at: string
-  approval_classes: string[]
-  related_task: string | null
 }
 
 /** One key of a type schema (catalog §3, §3.9). */
@@ -391,10 +359,5 @@ export function sectionJson(section: SectionRecord): SectionJson {
     level: section.level,
     anchor: section.anchor,
     text: section.text,
-    changed_in: section.changedRevision,
-    changed_by: section.author,
-    changed_by_kind: section.authorKind,
-    written_by: section.leastTrusted,
-    written_by_kind: section.leastTrustedKind,
   }
 }

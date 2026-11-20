@@ -197,6 +197,5 @@ export const workspaceLists = [
   "due-for-recheck",
   "known-unknowns",
   "recent-changes",
-  "waiting-for-approval",
 ] as const
 export type WorkspaceList = (typeof workspaceLists)[number]

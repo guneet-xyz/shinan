@@ -4,7 +4,6 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router"
 
 import { catalogLists } from "@shinan/api-client"
 import type {
-  CatalogChange,
   CatalogDiscrepancyItem,
   CatalogFactItem,
   CatalogList,
@@ -19,7 +18,6 @@ import { cn } from "@/lib/utils"
 import { useApi, useResource } from "../../api"
 import { PageHeader, Rows, Section } from "../../components/page"
 import { ErrorMessage, Loading } from "../../components/status"
-import { formatTime } from "../../format"
 import { useWorkspace } from "../workspace/context"
 import { EntityLink, FactRow, linkClass } from "./facts"
 import { entityPath, wikiPath } from "./format"
@@ -115,17 +113,6 @@ export function WikiHome() {
               </p>
             </li>
           ))}
-          <li>
-            <Link
-              to={wikiPath(workspace.id, "/changes")}
-              className={cn(linkClass, "self-start")}
-            >
-              Recent changes
-            </Link>
-            <p className="text-sm text-muted-foreground">
-              Every change to the catalog, newest first.
-            </p>
-          </li>
         </Rows>
       </Section>
     </div>
@@ -384,104 +371,6 @@ function ListItem(props: {
     <>
       {entity}
       <FactRow workspaceId={workspaceId} fact={item.fact} />
-    </>
-  )
-}
-
-/** Recent changes: catalog revisions, newest first (catalog §10). */
-export function ChangesPage() {
-  const api = useApi()
-  const { workspace } = useWorkspace()
-  const [params, setParams] = useSearchParams()
-  const pageSize = 50
-  const upTo = Number(params.get("upto")) || null
-  const changes = useResource(
-    `catalog-changes:${workspace.id}:${upTo}`,
-    async () => {
-      const latest =
-        upTo ??
-        (await api.catalogChanges(workspace.id, { limit: 1 })).catalog_revision
-      const since = Math.max(0, latest - pageSize)
-      const answer = await api.catalogChanges(workspace.id, {
-        since,
-        limit: pageSize,
-      })
-      return {
-        ...answer,
-        since,
-        items: answer.items.filter((i) => i.revision <= latest).reverse(),
-      }
-    },
-  )
-  return (
-    <div className="flex flex-col gap-6">
-      <PageHeader title="Recent changes">
-        Every change to the catalog, newest first.
-      </PageHeader>
-      {changes.error ? <ErrorMessage error={changes.error} /> : null}
-      {changes.loading && <Loading />}
-      {changes.data && <IndexBehind behind={changes.data.index_behind} />}
-      {changes.data && changes.data.items.length === 0 && (
-        <p className="text-sm text-muted-foreground">No changes yet.</p>
-      )}
-      {changes.data && changes.data.items.length > 0 && (
-        <Rows>
-          {changes.data.items.map((change) => (
-            <li key={change.revision}>
-              <ChangeItem workspaceId={workspace.id} change={change} />
-            </li>
-          ))}
-        </Rows>
-      )}
-      {changes.data && changes.data.since > 0 && (
-        <Button
-          variant="outline"
-          className="self-start"
-          onClick={() => setParams({ upto: String(changes.data!.since) })}
-        >
-          Older changes
-        </Button>
-      )}
-    </div>
-  )
-}
-
-function ChangeItem(props: { workspaceId: string; change: CatalogChange }) {
-  const { change } = props
-  return (
-    <>
-      <p className="text-sm">
-        <span className="font-medium">Revision {change.revision}</span>{" "}
-        <span className="text-muted-foreground">
-          · {formatTime(change.at)} · {change.changed_by}
-          {change.approved_by && ` · approved by ${change.approved_by}`}
-        </span>
-      </p>
-      <ul className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
-        {change.documents.map((d, i) => (
-          <li key={`${d.id ?? "?"}:${i}`}>
-            {d.id && d.kind === "entity" ? (
-              <EntityLink workspaceId={props.workspaceId} id={d.id} />
-            ) : d.id?.startsWith("schema/") ? (
-              <Link
-                to={wikiPath(props.workspaceId, `/types/${d.id.slice(7)}`)}
-                className={linkClass}
-              >
-                {d.id}
-              </Link>
-            ) : d.id === "start-here" ? (
-              <Link
-                to={wikiPath(props.workspaceId, "/start-here")}
-                className={linkClass}
-              >
-                Start here
-              </Link>
-            ) : (
-              <span className="font-mono">{d.id ?? "a document"}</span>
-            )}
-          </li>
-        ))}
-      </ul>
     </>
   )
 }

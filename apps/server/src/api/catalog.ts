@@ -3,13 +3,10 @@ import type { Hono, Context as HonoContext } from "hono"
 import type * as Api from "@shinan/api-client"
 import {
   catalogLists,
-  getCatalogChanges,
-  getCatalogDocumentText,
   getCatalogEntity,
   getCatalogList,
   getCatalogStartHere,
   getCatalogTypeSchema,
-  listCatalogHistory,
   listCatalogPurges,
   listCatalogTypeIndex,
   listCatalogTypeSchemas,
@@ -28,9 +25,10 @@ import { BadRequestError } from "./errors.js"
 import type { SignedInEnv } from "./sign-in.js"
 
 /**
- * The catalog for the wiki (human experience, the wiki; build plan M2-7):
- * the agent index's queries, and a page's history and earlier text. Every answer is core's, in the agent
- * index's JSON format; handlers only read the request.
+ * The catalog for the catalog pages (human experience, the catalog; build
+ * plan M2-7): the agent index's queries. Every answer is core's, in the
+ * agent index's JSON format; handlers only read the request. A page's
+ * history comes from `main`'s commits (GC-7).
  */
 export function catalogRoutes(
   app: Hono<SignedInEnv>,
@@ -113,19 +111,6 @@ export function catalogRoutes(
     return c.json(answer)
   })
 
-  app.get(`${base}/changes`, async (c) => {
-    const limit = integerQuery(c, "limit")
-    const answer: Api.CatalogChangesAnswer = await getCatalogChanges(
-      ctx(c),
-      workspaceId(c),
-      {
-        since: integerQuery(c, "since") ?? 0,
-        ...(limit === undefined ? {} : { limit }),
-      },
-    )
-    return c.json(answer)
-  })
-
   app.get(`${base}/start-here`, async (c) => {
     const path = c.req.query("path") ?? "people"
     if (path !== "people" && path !== "agents")
@@ -134,34 +119,6 @@ export function catalogRoutes(
       ctx(c),
       workspaceId(c),
       { path },
-    )
-    return c.json(answer)
-  })
-
-  app.get(`${base}/history`, async (c) => {
-    const before = integerQuery(c, "before")
-    const limit = integerQuery(c, "limit")
-    const answer: Api.CatalogHistoryAnswer = await listCatalogHistory(
-      ctx(c),
-      workspaceId(c),
-      {
-        id: requiredQuery(c, "id"),
-        ...(before === undefined ? {} : { before }),
-        ...(limit === undefined ? {} : { limit }),
-      },
-    )
-    return c.json(answer)
-  })
-
-  app.get(`${base}/text`, async (c) => {
-    const revision = integerQuery(c, "revision")
-    const answer: Api.CatalogDocumentTextAnswer = await getCatalogDocumentText(
-      ctx(c),
-      workspaceId(c),
-      {
-        id: requiredQuery(c, "id"),
-        ...(revision === undefined ? {} : { revision }),
-      },
     )
     return c.json(answer)
   })

@@ -1,27 +1,17 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect } from "react"
 import type { ReactNode } from "react"
-import {
-  Link,
-  Navigate,
-  useLocation,
-  useParams,
-  useSearchParams,
-} from "react-router"
+import { Link, Navigate, useLocation, useParams } from "react-router"
 
-import type { CatalogFact, CatalogHistoryAnswer } from "@shinan/api-client"
+import type { CatalogFact } from "@shinan/api-client"
 
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
 import { isApiError, useApi, useResource } from "../../api"
 import { Section } from "../../components/page"
 import { ErrorMessage, Loading } from "../../components/status"
-import { formatDate, formatTime } from "../../format"
 import { NotFound } from "../NotFound"
 import { EntityPageContext, useEntityPage } from "./context"
-import { diffLines } from "./diff"
-import type { DiffLine } from "./diff"
 import { EntityLink, FactRow, linkClass, MaybeLink } from "./facts"
 import {
   entityPath,
@@ -37,15 +27,15 @@ import { IndexBehind, PageNotice } from "./notices"
 /**
  * An entity page (human experience, an entity page), in order of
  * importance: what it is (and whether it is retired), discrepancies, owning
- * sources, a freshness summary, the facts, the body, links both ways, and
- * history. Tasks come with M3.
+ * sources, a freshness summary, the facts, the body and links both ways.
+ * Its history, from `main`'s commits, comes with the catalog UI (GC-7);
+ * tasks come with M3.
  */
 export function EntityPage() {
   const api = useApi()
   const workspaceId = useParams().workspaceId!
   const id = useParams()["*"] ?? ""
   const location = useLocation()
-  const [search] = useSearchParams()
   const answer = useResource(`catalog-entity:${workspaceId}:${id}`, () =>
     api.catalogEntity(workspaceId, id),
   )
@@ -84,23 +74,17 @@ export function EntityPage() {
       />
     )
 
-  const revision = Number(search.get("revision"))
   return (
     <EntityPageContext value={{ workspaceId, entity }}>
-      {Number.isInteger(revision) && revision > 0 ? (
-        <RevisionView revision={revision} />
-      ) : (
-        <div className="flex flex-col gap-6">
-          <EntityHeader />
-          <IndexBehind behind={answer.data.index_behind} />
-          <Discrepancies />
-          <OwningSources />
-          <Facts />
-          <Body />
-          <Links />
-          <History />
-        </div>
-      )}
+      <div className="flex flex-col gap-6">
+        <EntityHeader />
+        <IndexBehind behind={answer.data.index_behind} />
+        <Discrepancies />
+        <OwningSources />
+        <Facts />
+        <Body />
+        <Links />
+      </div>
     </EntityPageContext>
   )
 }
@@ -488,164 +472,5 @@ export function Links() {
           )),
         )}
     </Section>
-  )
-}
-
-/** The catalog revisions that changed the page; any can be compared with now. */
-export function History() {
-  const { workspaceId, entity } = useEntityPage()
-  const api = useApi()
-  const [pages, setPages] = useState<CatalogHistoryAnswer[]>([])
-  const first = useResource(
-    `catalog-history:${workspaceId}:${entity.id}:${entity.revision}`,
-    () => api.catalogHistory(workspaceId, entity.id, { limit: 20 }),
-  )
-  const all = first.data ? [first.data, ...pages] : []
-  const items = all.flatMap((p) => p.items)
-  const next = all[all.length - 1]?.next_before ?? null
-  const [loading, setLoading] = useState(false)
-
-  return (
-    <Section title="History">
-      {first.error ? <ErrorMessage error={first.error} /> : null}
-      {!first.data && !first.error && <Loading />}
-      {items.length > 0 && (
-        <ol className="flex flex-col divide-y rounded-lg border text-sm">
-          {items.map((item, i) => (
-            <li
-              key={item.revision}
-              className="flex flex-wrap items-baseline justify-between gap-2 p-3"
-            >
-              <span>
-                <span className="font-medium">Revision {item.revision}</span>{" "}
-                <span className="text-muted-foreground">
-                  · {formatTime(item.at)} · {item.changed_by}
-                  {item.purge !== null && ` · purge ${item.purge}`}
-                  {item.approved_by && ` · approved by ${item.approved_by}`}
-                </span>
-              </span>
-              {i === 0 && item.revision === entity.revision ? (
-                <span className="text-xs text-muted-foreground">current</span>
-              ) : (
-                <Link
-                  to={`${entityPath(workspaceId, entity.id)}?revision=${item.revision}`}
-                  className={cn(linkClass, "text-sm")}
-                >
-                  Compare with now
-                </Link>
-              )}
-            </li>
-          ))}
-        </ol>
-      )}
-      {next !== null && (
-        <Button
-          variant="outline"
-          className="self-start"
-          disabled={loading}
-          onClick={() => {
-            setLoading(true)
-            void api
-              .catalogHistory(workspaceId, entity.id, {
-                before: next,
-                limit: 20,
-              })
-              .then((page) => setPages((p) => [...p, page]))
-              .finally(() => setLoading(false))
-          }}
-        >
-          Older revisions
-        </Button>
-      )}
-    </Section>
-  )
-}
-
-/** An earlier revision of the page's text, compared line by line with now. */
-function RevisionView(props: { revision: number }) {
-  const { workspaceId, entity } = useEntityPage()
-  const api = useApi()
-  const texts = useResource(
-    `catalog-compare:${workspaceId}:${entity.id}:${props.revision}:${entity.revision}`,
-    () =>
-      Promise.all([
-        api.catalogText(workspaceId, entity.id, props.revision),
-        api.catalogText(workspaceId, entity.id),
-      ]),
-  )
-  const back = entityPath(workspaceId, entity.id)
-  return (
-    <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight wrap-anywhere">
-          {entity.title ?? entity.id}: earlier revision
-        </h1>
-        <p className="text-sm">
-          <Link to={back} className={linkClass}>
-            Back to the current page
-          </Link>
-        </p>
-      </div>
-      {texts.error ? <ErrorMessage error={texts.error} /> : null}
-      {!texts.data && !texts.error && <Loading />}
-      {texts.data && <Comparison then={texts.data[0]} now={texts.data[1]} />}
-    </div>
-  )
-}
-
-function Comparison(props: {
-  then: { revision: number; at: string; changed_by: string; text: string }
-  now: { revision: number; at: string; changed_by: string; text: string }
-}) {
-  const { then, now } = props
-  // Comparing two long texts can take a noticeable moment: once per pair.
-  const lines = useMemo(
-    () => diffLines(then.text, now.text),
-    [then.text, now.text],
-  )
-  const changes = lines.filter((l) => l.kind !== "same").length
-  return (
-    <Section
-      title={`Revision ${then.revision} compared with revision ${now.revision}`}
-      description={`Revision ${then.revision}: ${formatDate(then.at)} by ${then.changed_by}. Now: revision ${now.revision}, ${formatDate(now.at)} by ${now.changed_by}. ${changes === 0 ? "No differences." : `${changes} lines differ: removed lines are marked "−", added lines "+".`}`}
-    >
-      <DiffView lines={lines} />
-    </Section>
-  )
-}
-
-/** Lines removed and added, marked for sight and for screen readers. */
-export function DiffView(props: { lines: readonly DiffLine[] }) {
-  const { lines } = props
-  return (
-    <div className="overflow-x-auto rounded-md border font-mono text-xs/5">
-      {lines.map((line, i) => (
-        <div
-          key={i}
-          className={cn(
-            "px-3 wrap-anywhere whitespace-pre-wrap",
-            line.kind === "removed" &&
-              "bg-red-50 text-red-950 dark:bg-red-950/40 dark:text-red-50",
-            line.kind === "added" &&
-              "bg-green-50 text-green-950 dark:bg-green-950/40 dark:text-green-50",
-          )}
-        >
-          <span
-            aria-hidden="true"
-            className="mr-2 text-muted-foreground select-none"
-          >
-            {line.kind === "removed" ? "−" : line.kind === "added" ? "+" : " "}
-          </span>
-          <span className="sr-only">
-            {line.kind === "removed"
-              ? "Removed: "
-              : line.kind === "added"
-                ? "Added: "
-                : ""}
-          </span>
-          {line.text || " "}
-        </div>
-      ))}
-    </div>
   )
 }

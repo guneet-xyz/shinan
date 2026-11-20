@@ -1,5 +1,15 @@
-import { and, asc, desc, eq, gt, inArray, ne, schema, sql } from "@shinan/db"
-import type { SQL, Transaction } from "@shinan/db"
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  inArray,
+  isNotNull,
+  ne,
+  schema,
+  sql,
+} from "@shinan/db"
+import type { Column, SQL, Transaction } from "@shinan/db"
 
 import { inWorkspace, snapshotRead } from "../../authorize.js"
 import type { Context } from "../../context.js"
@@ -21,7 +31,6 @@ import type {
   FactJson,
   IncomingRelationJson,
   OutgoingRelationJson,
-  PendingProposalJson,
   ResolvedStepJson,
   SectionJson,
   StepJson,
@@ -29,14 +38,12 @@ import type {
   TypeSchemaJson,
 } from "./format.js"
 import { hasStaleRows, stateBehind } from "./indexer.js"
-import { latestRevision } from "./store.js"
 
 /**
- * Reading the agent index (catalog §12.2): the queries agents (through MCP,
- * M2-6) and the wiki (M2-7) use. Every answer names the catalog revision it
- * was built from and says when the index is behind; each is read from one
- * snapshot, so the revision and the rows agree. Freshness is computed here,
- * when read, never stored.
+ * Reading the agent index (catalog §12.2): the queries the catalog pages
+ * use. Every answer names the commit of `main` it was built from and says
+ * when the index is behind; each is read from one snapshot, so the commit
+ * and the rows agree. Freshness is computed here, when read, never stored.
  */
 
 const documents = schema.catalogIndexDocuments
@@ -46,7 +53,12 @@ const sections = schema.catalogIndexSections
 
 type DocumentRecord = typeof documents.$inferSelect
 
-/** The catalog revision the index stands at, and whether it is behind. */
+/**
+ * The commit of `main` the index stands at, and whether it is behind: not
+ * yet built while the workspace has a repository, behind the latest
+ * recorded `main`, built by another parser or rules version, or being
+ * rebuilt.
+ */
 export async function answerFor(
   tx: Transaction,
   workspaceId: string,
@@ -55,14 +67,24 @@ export async function answerFor(
     .select()
     .from(schema.catalogIndexState)
     .where(eq(schema.catalogIndexState.workspaceId, workspaceId))
-  const latest = await latestRevision(tx, workspaceId)
+  if (!state || state.commit === null) {
+    const [repository] = await tx
+      .select({ workspaceId: schema.catalogRepositories.workspaceId })
+      .from(schema.catalogRepositories)
+      .where(
+        and(
+          eq(schema.catalogRepositories.workspaceId, workspaceId),
+          isNotNull(schema.catalogRepositories.firstCommit),
+        ),
+      )
+    return { catalog_commit: null, index_behind: repository !== undefined }
+  }
   return {
-    catalog_revision: state?.revision ?? 0,
-    index_behind: state
-      ? state.revision < latest ||
-        stateBehind(state) ||
-        (await hasStaleRows(tx, workspaceId))
-      : latest > 0,
+    catalog_commit: state.commit,
+    index_behind:
+      state.commit !== state.mainCommit ||
+      stateBehind(state) ||
+      (await hasStaleRows(tx, workspaceId)),
   }
 }
 
@@ -163,10 +185,7 @@ async function findEntity(
         sql`(${documents.catalogId} = ${id} or ${documents.aliases} @> array[${id}]::text[])`,
       ),
     )
-    .orderBy(
-      sql`${documents.catalogId} = ${id} desc`,
-      asc(documents.documentId),
-    )
+    .orderBy(sql`${documents.catalogId} = ${id} desc`, asc(documents.path))
     .limit(1)
   return row ?? null
 }
@@ -203,7 +222,7 @@ async function summaries(
         )}]::text[]`})`,
       ),
     )
-    .orderBy(asc(documents.documentId))
+    .orderBy(asc(documents.path))
   for (const row of rows)
     if (!found.has(row.catalogId!)) found.set(row.catalogId!, summaryJson(row))
   const want = new Set(wanted)
@@ -256,17 +275,17 @@ async function entityJson(
   const factRows = await tx
     .select()
     .from(facts)
-    .where(eq(facts.documentId, row.documentId))
+    .where(ofDocument(facts, row))
     .orderBy(asc(facts.position))
   const discrepancyRows = await tx
     .select()
     .from(schema.catalogIndexDiscrepancies)
-    .where(eq(schema.catalogIndexDiscrepancies.documentId, row.documentId))
+    .where(ofDocument(schema.catalogIndexDiscrepancies, row))
     .orderBy(asc(schema.catalogIndexDiscrepancies.key))
   const sectionRows = await tx
     .select()
     .from(sections)
-    .where(eq(sections.documentId, row.documentId))
+    .where(ofDocument(sections, row))
     .orderBy(asc(sections.position))
   const links = await relationsOf(tx, workspaceId, row)
 
@@ -275,7 +294,8 @@ async function entityJson(
     replaced_by: row.replacedBy,
     aliases: row.aliases,
     imported_from: row.importedFrom,
-    revision: row.revision,
+    path: row.path,
+    blob: row.blob,
     facts: factRows.map((f) => factJson(f, now)),
     relations: { outgoing: links.outgoing, incoming: links.incoming },
     discrepancies: discrepancyRows.map((d): DiscrepancyJson => ({
@@ -296,7 +316,6 @@ async function entityJson(
     applies: await appliesTo(tx, workspaceId, row),
     body: sectionRows.map(sectionJson),
     problems: row.problems,
-    pending_proposals: await pendingProposals(tx, workspaceId, row),
   }
   if (row.type === "decision") {
     json.decision_state = row.decisionState
@@ -306,45 +325,20 @@ async function entityJson(
   return json
 }
 
-/** Waiting proposals whose changes touch the entity by its ID or an alias. */
-async function pendingProposals(
-  tx: Transaction,
-  workspaceId: string,
-  row: DocumentRecord,
-): Promise<PendingProposalJson[]> {
-  const p = schema.catalogProposals
-  const names = namesOf(row)
-  const rows = await tx
-    .select({
-      id: p.id,
-      number: p.number,
-      author: p.actorLabel,
-      authorKind: p.actorKind,
-      createdAt: p.createdAt,
-      classes: p.approvalClasses,
-      relatedTask: p.relatedTask,
-    })
-    .from(p)
-    .where(
-      and(
-        eq(p.workspaceId, workspaceId),
-        eq(p.state, "pending"),
-        sql`${p.touches} && ${sql`array[${sql.join(
-          names.map((n) => sql`${n}`),
-          sql`, `,
-        )}]::text[]`}`,
-      ),
-    )
-    .orderBy(asc(p.number))
-  return rows.map((r) => ({
-    proposal_id: r.id,
-    number: r.number,
-    author: r.author,
-    author_kind: r.authorKind === "agent" ? "agent" : "person",
-    created_at: r.createdAt.toISOString(),
-    approval_classes: r.classes,
-    related_task: r.relatedTask,
-  }))
+/** The rows of one table that belong to a document. */
+function ofDocument(
+  table: { workspaceId: Column; path: Column },
+  row: Pick<DocumentRecord, "workspaceId" | "path">,
+): SQL {
+  return and(eq(table.workspaceId, row.workspaceId), eq(table.path, row.path))!
+}
+
+/** Joins a table's rows to their document. */
+function joinDocument(table: { workspaceId: Column; path: Column }): SQL {
+  return and(
+    eq(documents.workspaceId, table.workspaceId),
+    eq(documents.path, table.path),
+  )!
 }
 
 /** The IDs a relation may name this entity by: its ID and its aliases. */
@@ -363,9 +357,7 @@ async function relationsOf(
   const written = await tx
     .select()
     .from(relations)
-    .where(
-      and(eq(relations.documentId, row.documentId), eq(relations.field, false)),
-    )
+    .where(and(ofDocument(relations, row), eq(relations.field, false)))
     .orderBy(asc(relations.position))
   const targets = await summaries(
     tx,
@@ -375,7 +367,7 @@ async function relationsOf(
   const incoming = await tx
     .select({ relation: relations, from: documents })
     .from(relations)
-    .innerJoin(documents, eq(documents.documentId, relations.documentId))
+    .innerJoin(documents, joinDocument(relations))
     .where(
       and(
         eq(relations.workspaceId, workspaceId),
@@ -422,7 +414,7 @@ async function appliesTo(
   const rows = await tx
     .select({ relation: relations, from: documents })
     .from(relations)
-    .innerJoin(documents, eq(documents.documentId, relations.documentId))
+    .innerJoin(documents, joinDocument(relations))
     .where(
       and(
         eq(relations.workspaceId, workspaceId),
@@ -567,7 +559,7 @@ export async function readCatalogEntities(
         statusFilter(input),
       ),
     )
-    .orderBy(asc(documents.catalogId), asc(documents.documentId))
+    .orderBy(asc(documents.catalogId), asc(documents.path))
     .offset(range.offset)
     .limit(range.limit + 1)
   return { ...answer, ...paged(rows.map(summaryJson), range) }
@@ -644,24 +636,29 @@ export async function readCatalogSearch(
   // An entity matches as a whole (its fields, facts and body), so a
   // word after a minus leaves it out wherever the word is; its best
   // matching section can lift its rank.
-  const bestSection = sql`coalesce((select max(${sectionRank}) from ${sections} where ${sections.documentId} = ${documents.documentId} and ${sectionMatch}), 0)`
+  const bestSection = sql`coalesce((select max(${sectionRank}) from ${sections} where ${sections.workspaceId} = ${documents.workspaceId} and ${sections.path} = ${documents.path} and ${sectionMatch}), 0)`
   const rank = sql<number>`greatest(${documentRank}, ${bestSection})::float8`
   const ranked = await tx
-    .select({ documentId: documents.documentId, rank })
+    .select({ path: documents.path, rank })
     .from(documents)
     .where(and(filters, documentMatch))
-    .orderBy(desc(rank), asc(documents.documentId))
+    .orderBy(desc(rank), asc(documents.path))
     .limit(limit)
   if (ranked.length === 0) return { ...answer, items: [] }
 
-  const ids = ranked.map((r) => r.documentId)
+  const paths = ranked.map((r) => r.path)
   const rows = new Map(
     (
       await tx
         .select()
         .from(documents)
-        .where(inArray(documents.documentId, ids))
-    ).map((r) => [r.documentId, r]),
+        .where(
+          and(
+            eq(documents.workspaceId, workspaceId),
+            inArray(documents.path, paths),
+          ),
+        )
+    ).map((r) => [r.path, r]),
   )
   const sectionRows = await tx
     .select({
@@ -669,15 +666,21 @@ export async function readCatalogSearch(
       rank: sql<number>`${sectionRank}`,
     })
     .from(sections)
-    .where(and(inArray(sections.documentId, ids), sectionMatch))
+    .where(
+      and(
+        eq(sections.workspaceId, workspaceId),
+        inArray(sections.path, paths),
+        sectionMatch,
+      ),
+    )
     .orderBy(desc(sectionRank), asc(sections.position))
   return {
     ...answer,
     items: ranked.map((r) => ({
-      entity: summaryJson(rows.get(r.documentId)!),
+      entity: summaryJson(rows.get(r.path)!),
       rank: r.rank,
       sections: sectionRows
-        .filter((s) => s.section.documentId === r.documentId)
+        .filter((s) => s.section.path === r.path)
         .slice(0, 3)
         .map((s) => sectionJson(s.section)),
     })),
@@ -725,13 +728,13 @@ export async function readCatalogTypeSchema(
         sql`${documents.data} is not null`,
       ),
     )
-    .orderBy(asc(documents.documentId))
+    .orderBy(asc(documents.path))
     .limit(1)
   if (row) {
     const body = await tx
       .select()
       .from(sections)
-      .where(eq(sections.documentId, row.documentId))
+      .where(ofDocument(sections, row))
       .orderBy(asc(sections.position))
     return {
       ...answer,
@@ -786,7 +789,7 @@ export async function readCatalogTypeSchemas(
         sql`${documents.data} is not null`,
       ),
     )
-    .orderBy(asc(documents.documentId))
+    .orderBy(asc(documents.path))
   const types = new Map<string, TypeSchemaJson>()
   for (const [type, builtIn] of builtInSchemas)
     types.set(type, typeSchemaJson(builtIn))
@@ -885,14 +888,15 @@ export async function readCatalogList(
       const rows = await tx
         .select({ discrepancy: d, document: documents })
         .from(d)
-        .innerJoin(documents, eq(documents.documentId, d.documentId))
+        .innerJoin(documents, joinDocument(d))
         .where(inScope)
-        .orderBy(asc(d.entityId), asc(d.key), asc(d.documentId))
+        .orderBy(asc(d.entityId), asc(d.key), asc(d.path))
         .offset(range.offset)
         .limit(range.limit + 1)
       const factRows = await factsOf(
         tx,
-        rows.map((r) => r.document.documentId),
+        workspaceId,
+        rows.map((r) => r.document.path),
       )
       items = rows.map(({ discrepancy, document }) => ({
         entity: summaryJson(document),
@@ -903,7 +907,7 @@ export async function readCatalogList(
         fact_details: factRows
           .filter(
             (f) =>
-              f.documentId === document.documentId &&
+              f.path === document.path &&
               discrepancy.identities.includes(f.identity),
           )
           .map((f) => factJson(f, now)),
@@ -916,7 +920,7 @@ export async function readCatalogList(
       const rows = await tx
         .select({ fact: facts, document: documents })
         .from(facts)
-        .innerJoin(documents, eq(documents.documentId, facts.documentId))
+        .innerJoin(documents, joinDocument(facts))
         .where(
           and(
             inScope,
@@ -928,7 +932,7 @@ export async function readCatalogList(
         .orderBy(
           ...(due ? [asc(facts.dueAt)] : []),
           asc(facts.entityId),
-          asc(facts.documentId),
+          asc(facts.path),
           asc(facts.position),
         )
         .offset(range.offset)
@@ -946,25 +950,23 @@ export async function readCatalogList(
         .where(
           and(
             inScope,
-            sql`(cardinality(${documents.missingKeys}) > 0 or exists (select 1 from ${facts} where ${facts.documentId} = ${documents.documentId} and ${facts.hasCheck} and ${facts.checked} is null))`,
+            sql`(cardinality(${documents.missingKeys}) > 0 or exists (select 1 from ${facts} where ${facts.workspaceId} = ${documents.workspaceId} and ${facts.path} = ${documents.path} and ${facts.hasCheck} and ${facts.checked} is null))`,
           ),
         )
-        .orderBy(asc(documents.catalogId), asc(documents.documentId))
+        .orderBy(asc(documents.catalogId), asc(documents.path))
         .offset(range.offset)
         .limit(range.limit + 1)
       const factRows = await factsOf(
         tx,
-        rows.map((r) => r.documentId),
+        workspaceId,
+        rows.map((r) => r.path),
       )
       items = rows.map((document) => ({
         entity: summaryJson(document),
         missing_keys: document.missingKeys,
         not_checked: factRows
           .filter(
-            (f) =>
-              f.documentId === document.documentId &&
-              f.hasCheck &&
-              f.checked === null,
+            (f) => f.path === document.path && f.hasCheck && f.checked === null,
           )
           .map((f) => factJson(f, now)),
       }))
@@ -974,120 +976,30 @@ export async function readCatalogList(
   return { ...answer, ...paged(items, range) }
 }
 
-async function factsOf(tx: Transaction, documentIds: readonly string[]) {
-  if (documentIds.length === 0) return []
+async function factsOf(
+  tx: Transaction,
+  workspaceId: string,
+  paths: readonly string[],
+) {
+  if (paths.length === 0) return []
   return tx
     .select()
     .from(facts)
-    .where(inArray(facts.documentId, [...new Set(documentIds)]))
-    .orderBy(asc(facts.documentId), asc(facts.position))
-}
-
-export interface CatalogChangeJson {
-  revision: number
-  /** When it was applied (ISO 8601). */
-  at: string
-  changed_by: string
-  changed_by_kind: string
-  /** Who gave catalog approval, when the change needed one; null otherwise. */
-  approved_by: string | null
-  /** The documents it changed, by their current ID (null if the text has none), with their kind. */
-  documents: { id: string | null; kind: string | null }[]
-}
-
-export interface CatalogChangesAnswer extends CatalogAnswer {
-  since: number
-  items: CatalogChangeJson[]
-  /** Ask again with this `since` for more, or null when there are none. */
-  next_since: number | null
-}
-
-/**
- * The catalog revisions after `since`, oldest first, with the documents
- * each changed (catalog §12.2: agents ask "what changed since revision
- * N").
- */
-export async function getCatalogChanges(
-  ctx: Context,
-  workspaceId: string,
-  input: { since: number; limit?: number },
-): Promise<CatalogChangesAnswer> {
-  return inWorkspace(
-    ctx,
-    workspaceId,
-    "catalog.read",
-    (scope) => readCatalogChanges(scope.tx, scope.workspaceId, input),
-    snapshotRead,
-  )
-}
-
-/** `getCatalogChanges` inside a transaction the caller has checked for `catalog.read`. */
-export async function readCatalogChanges(
-  tx: Transaction,
-  workspaceId: string,
-  input: { since: number; limit?: number },
-): Promise<CatalogChangesAnswer> {
-  if (!Number.isInteger(input.since) || input.since < 0)
-    throw new InvalidInputError(
-      "since",
-      "A catalog revision is a whole number from 0",
+    .where(
+      and(
+        eq(facts.workspaceId, workspaceId),
+        inArray(facts.path, [...new Set(paths)]),
+      ),
     )
-  const { limit } = page({ limit: input.limit ?? 100 })
-  const answer = await answerFor(tx, workspaceId)
-  const r = schema.catalogRevisions
-  const revisions = await tx
-    .select()
-    .from(r)
-    .where(and(eq(r.workspaceId, workspaceId), gt(r.number, input.since)))
-    .orderBy(asc(r.number))
-    .limit(limit + 1)
-  const shown = revisions.slice(0, limit)
-  const rd = schema.catalogRevisionDocuments
-  const changed =
-    shown.length === 0
-      ? []
-      : await tx
-          .select({
-            revision: rd.revision,
-            id: documents.catalogId,
-            kind: documents.kind,
-          })
-          .from(rd)
-          .leftJoin(documents, eq(documents.documentId, rd.documentId))
-          .where(
-            and(
-              eq(rd.workspaceId, workspaceId),
-              inArray(
-                rd.revision,
-                shown.map((s) => s.number),
-              ),
-            ),
-          )
-          .orderBy(asc(rd.revision), asc(documents.catalogId))
-  return {
-    ...answer,
-    since: input.since,
-    items: shown.map((s) => ({
-      revision: s.number,
-      at: s.createdAt.toISOString(),
-      changed_by: s.actorLabel,
-      changed_by_kind: s.actorKind,
-      approved_by: s.approvedByLabel,
-      documents: changed
-        .filter((c) => c.revision === s.number)
-        .map((c) => ({ id: c.id, kind: c.kind })),
-    })),
-    next_since:
-      revisions.length > limit ? shown[shown.length - 1]!.number : null,
-  }
+    .orderBy(asc(facts.path), asc(facts.position))
 }
 
 export interface StartHereJson {
   path: "people" | "agents"
   title: string | null
   summary: string | null
-  /** The catalog revision that last changed the start-here document. */
-  revision: number
+  /** The start-here document's path on `main` and the Git blob ID of its text. */
+  document: { path: string; blob: string }
   steps: ResolvedStepJson[]
 }
 
@@ -1130,7 +1042,7 @@ export async function readCatalogStartHere(
         ne(sql`coalesce(${documents.data}, 'null'::jsonb)`, sql`'null'::jsonb`),
       ),
     )
-    .orderBy(asc(documents.documentId))
+    .orderBy(asc(documents.path))
     .limit(1)
   if (!row) return { ...answer, start_here: null }
   const steps = (row.data as Record<typeof path, StepJson[]>)[path]
@@ -1145,7 +1057,7 @@ export async function readCatalogStartHere(
       path,
       title: row.title,
       summary: row.summary,
-      revision: row.revision,
+      document: { path: row.path, blob: row.blob },
       steps: steps.map((s) =>
         "to" in s ? { ...s, entity: named.get(s.to) ?? null } : s,
       ),

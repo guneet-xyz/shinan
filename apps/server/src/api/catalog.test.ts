@@ -3,8 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import type * as Api from "@shinan/api-client"
 import { createWorkspace } from "@shinan/core"
 import type { JobQueue, Person } from "@shinan/core"
-import { storeCatalogRevision } from "@shinan/core/testing"
-import type { RevisionActor } from "@shinan/core/testing"
+import { pushCatalogFiles } from "@shinan/core/testing"
 import { connectTestDatabase } from "@shinan/db/testing"
 
 import { insertPerson } from "../../test/people.js"
@@ -93,14 +92,7 @@ let owner: Person
 let outsider: Person
 let workspaceId: string
 
-const actor = (p: Person): RevisionActor => ({
-  kind: "person",
-  personId: p.id,
-  agentId: null,
-  agentSessionId: null,
-  label: p.handle,
-  confidence: "recorded",
-})
+let commit: string
 
 beforeAll(async () => {
   owner = await insertPerson(db, "owner")
@@ -110,12 +102,12 @@ beforeAll(async () => {
     { name: "Wiki" },
   )
   workspaceId = created.workspace.id
-  await storeCatalogRevision(
-    db,
-    workspaceId,
-    actor(owner),
-    [person("guneet"), musashi, registry, startHere].map((text) => ({ text })),
-  )
+  commit = await pushCatalogFiles(db, workspaceId, {
+    "person/guneet.md": person("guneet"),
+    "machine/musashi.md": musashi,
+    "service/registry.md": registry,
+    "start-here.md": startHere,
+  })
 })
 
 const ws = (path: string) => `/workspaces/${workspaceId}/catalog${path}`
@@ -127,23 +119,27 @@ async function get<T>(path: string, who: Person = owner) {
   return { status: response.status, body: (await response.json()) as T }
 }
 
-describe("the catalog for the wiki", () => {
+describe("the catalog for the catalog pages", () => {
   it("reads an entity, also by a former ID", async () => {
     const { status, body } = await get<Api.CatalogEntityAnswer>(
       ws("/entity?id=machine/old-musashi"),
     )
     expect(status).toBe(200)
     expect(body).toMatchObject({
-      catalog_revision: 1,
+      catalog_commit: commit,
       index_behind: false,
-      entity: { id: "machine/musashi", title: "Musashi" },
+      entity: {
+        id: "machine/musashi",
+        title: "Musashi",
+        path: "machine/musashi.md",
+      },
     })
     expect(body.entity.relations.incoming.map((r) => r.from.id)).toContain(
       "service/registry",
     )
   })
 
-  it("reads types, a type's index, search, lists, changes and start here", async () => {
+  it("reads types, a type's index, search, lists and start here", async () => {
     const types = await get<Api.CatalogTypeSchemasAnswer>(ws("/types"))
     expect(types.body.items.map((t) => t.type)).toContain("machine")
     const type = await get<Api.CatalogTypeSchemaAnswer>(ws("/types/machine"))
@@ -167,8 +163,6 @@ describe("the catalog for the wiki", () => {
       ws("/lists/known-unknowns"),
     )
     expect(unknowns.body.items).toHaveLength(1)
-    const changes = await get<Api.CatalogChangesAnswer>(ws("/changes"))
-    expect(changes.body.items.map((i) => i.revision)).toEqual([1])
     const people = await get<Api.StartHereAnswer>(ws("/start-here?path=people"))
     expect(people.body.start_here?.steps).toEqual([
       {
@@ -178,34 +172,24 @@ describe("the catalog for the wiki", () => {
       },
     ])
     // "Preview as agent", "opened" markers and the editable form are gone
-    // with M2's wiki editing (Git-based catalog plan §1.2).
+    // with M2's wiki editing (Git-based catalog plan §1.2); revision
+    // history, earlier text and changes since a revision with M2's revision
+    // store (GC-4).
     for (const path of [
       "/start-here/agent-preview",
       "/opened?id=machine/musashi",
       "/editable?id=machine/musashi",
+      "/changes",
+      "/history?id=machine/musashi",
+      "/text?id=machine/musashi&revision=1",
     ])
       expect((await get(ws(path))).status, path).toBe(404)
-  })
-
-  it("reads a page's history and its text at a revision", async () => {
-    const history = await get<Api.CatalogHistoryAnswer>(
-      ws("/history?id=machine/musashi"),
-    )
-    expect(history.body.items).toEqual([
-      expect.objectContaining({ revision: 1, changed_by: owner.handle }),
-    ])
-    const text = await get<Api.CatalogDocumentTextAnswer>(
-      ws("/text?id=machine/musashi&revision=1"),
-    )
-    expect(text.body.text).toBe(musashi)
   })
 
   it("refuses bad input, other workspaces' members, and no sign-in", async () => {
     expect((await get(ws("/entity"))).status).toBe(422)
     expect((await get(ws("/lists/everything"))).status).toBe(422)
-    expect((await get(ws("/history?id=machine/musashi&before=x"))).status).toBe(
-      422,
-    )
+    expect((await get(ws("/search?text=x&limit=y"))).status).toBe(422)
     expect((await get(ws("/entity?id=machine/nowhere"))).status).toBe(404)
     expect((await get(ws("/entity?id=machine/musashi"), outsider)).status).toBe(
       404,

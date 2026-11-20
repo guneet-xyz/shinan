@@ -17,7 +17,7 @@ describe("core", () => {
   })
 
   it("exports the catalog document model", () => {
-    expect(parserVersion).toBe(4)
+    expect(parserVersion).toBe(5)
     expect(parseCatalogDocument("---\nid: start-here\n---\n").kind).toBe(
       "start-here",
     )
