@@ -9,6 +9,8 @@ import type {
   JournalEntry,
   RepositoryFile,
   RepositoryInfo,
+  RepositoryPurgePreview,
+  RepositoryPurgeStatus,
   RepositoryRefs,
   TreeChange,
   TreeEntry,
@@ -123,6 +125,36 @@ export interface GitClient {
    * were read: every update applied before then is in the journal up to it.
    */
   listRefs(workspaceId: string): Promise<RepositoryRefs | null>
+  /** Where a purge text is in the repository; reads only. */
+  previewPurge(
+    workspaceId: string,
+    input: { text: string },
+  ): Promise<RepositoryPurgePreview>
+  /**
+   * Starts removing a purge text from the repository's whole history and
+   * from the journal entries not yet acknowledged (plan §2.9), as a job:
+   * answers at once, `running` (refused `busy` while another purge of the
+   * repository runs). Follow it with `purgeStatus`.
+   */
+  startPurge(
+    workspaceId: string,
+    input: { purgeId: string; text: string },
+  ): Promise<RepositoryPurgeStatus>
+  /** Where a purge stands. */
+  purgeStatus(
+    workspaceId: string,
+    purgeId: string,
+  ): Promise<RepositoryPurgeStatus>
+  /**
+   * Whether `text` is the text of the Git container's purge `purgeId`
+   * (by its keyed hash): the only text that may finish that purge.
+   */
+  isPurgeText(
+    workspaceId: string,
+    input: { purgeId: string; text: string },
+  ): Promise<boolean>
+  /** Drops purge `purgeId`'s keyed hash, once `web` has recorded it. */
+  forgetPurgeText(workspaceId: string, purgeId: string): Promise<void>
 }
 
 type Json = Record<string, unknown>
@@ -138,12 +170,13 @@ export function createGitClient(options: GitClientOptions): GitClient {
   const timeoutMs = options.timeoutMs ?? 60_000
 
   async function call(
-    method: "GET" | "POST" | "PUT",
+    method: "GET" | "POST" | "PUT" | "DELETE",
     path: string,
     input: {
       query?: Record<string, string | undefined>
       body?: Json
       notFound?: true
+      timeoutMs?: number
     } = {},
   ): Promise<Json | null> {
     const url = new URL(path, base)
@@ -160,7 +193,7 @@ export function createGitClient(options: GitClientOptions): GitClient {
         },
         body: input.body ? JSON.stringify(input.body) : undefined,
         redirect: "error",
-        signal: AbortSignal.timeout(timeoutMs),
+        signal: AbortSignal.timeout(input.timeoutMs ?? timeoutMs),
       })
     } catch (error) {
       throw new GitServiceError(
@@ -298,5 +331,45 @@ export function createGitClient(options: GitClientOptions): GitClient {
       })
       return body ? (body as unknown as RepositoryRefs) : null
     },
+    async previewPurge(workspaceId, input) {
+      return (await call("POST", repository(workspaceId, "/purge/preview"), {
+        body: { text: input.text },
+        timeoutMs: purgeTimeoutMs,
+      })) as unknown as RepositoryPurgePreview
+    },
+    async startPurge(workspaceId, input) {
+      return (await call("POST", repository(workspaceId, "/purges"), {
+        body: { purgeId: input.purgeId, text: input.text },
+      })) as unknown as RepositoryPurgeStatus
+    },
+    async purgeStatus(workspaceId, purgeId) {
+      return (await call(
+        "GET",
+        repository(workspaceId, `/purges/${encodeURIComponent(purgeId)}`),
+      )) as unknown as RepositoryPurgeStatus
+    },
+    async forgetPurgeText(workspaceId, purgeId) {
+      await call(
+        "DELETE",
+        repository(workspaceId, `/purges/${encodeURIComponent(purgeId)}/text`),
+      )
+    },
+    async isPurgeText(workspaceId, input) {
+      const body = await call(
+        "POST",
+        repository(
+          workspaceId,
+          `/purges/${encodeURIComponent(input.purgeId)}/text`,
+        ),
+        { body: { text: input.text } },
+      )
+      return body?.matches === true
+    },
   }
 }
+
+/**
+ * How long a purge's preview may take: 10 minutes, like one Git process
+ * (plan §2.10). A purge itself runs as a job, followed by `purgeStatus`.
+ */
+const purgeTimeoutMs = 10 * 60 * 1000

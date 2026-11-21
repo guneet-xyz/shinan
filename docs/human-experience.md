@@ -1272,7 +1272,7 @@ details (D-015).
 
 > **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-7](build-plan-git-catalog.md#gc-7-the-catalog-ui)): the "Catalog" screen holds the clone URL, "not a secret" values and purge (GC-5 removed the strict setting). Until then, this section describes M2 as built (v0.3.0).
 >
-> **As built in GC-7 ([#169](https://github.com/guneet-xyz/shinan/issues/169)):** a **Catalog** tab, for every member, between Agents and Security log. It holds "Address for agents": the address agents clone the catalog from (`https://<installation>/git/<workspace ID>.git`), shown whole (it wraps on a phone), with a Copy button, and "Agents clone the catalog from here. Set up an agent →". For workspace owners, it also holds **"Values that aren't secrets"** (GQ-2): one line ("If Shinan refused a push because something looked like a secret but isn't, add it here so the next push goes through."), one masked field for the value or the fingerprint the refusal showed, with a Show button to check what was pasted, and the list, one row each: "Allowed Nov 20 by Guneet · sha256:3f9a1c2d4e5f…" on the left, Remove on the right. Only text that starts with `sha256:` is a fingerprint (a mistyped one is refused with a line saying so); anything else is a value, whose fingerprint the page works out itself (SHA-256, in the browser), so the value never leaves the page: 64 hexadecimal characters on their own are what a key looks like, so they are a value too (review of #196). The API takes a fingerprint only with its `sha256:` prefix. Shinan keeps only fingerprints, so the list never shows a value. Allowing and removing ask for a recent sign-in, and each is in the security log. Removing text from the catalog's history (GC-8) is a page of its own, behind a quiet owners-only link at the bottom of the tab (agreed on [#170](https://github.com/guneet-xyz/shinan/issues/170)); until GC-8, M2's purge stays under Data.
+> **As built in GC-7 ([#169](https://github.com/guneet-xyz/shinan/issues/169)):** a **Catalog** tab, for every member, between Agents and Security log. It holds "Address for agents": the address agents clone the catalog from (`https://<installation>/git/<workspace ID>.git`), shown whole (it wraps on a phone), with a Copy button, and "Agents clone the catalog from here. Set up an agent →". For workspace owners, it also holds **"Values that aren't secrets"** (GQ-2): one line ("If Shinan refused a push because something looked like a secret but isn't, add it here so the next push goes through."), one masked field for the value or the fingerprint the refusal showed, with a Show button to check what was pasted, and the list, one row each: "Allowed Nov 20 by Guneet · sha256:3f9a1c2d4e5f…" on the left, Remove on the right. Only text that starts with `sha256:` is a fingerprint (a mistyped one is refused with a line saying so); anything else is a value, whose fingerprint the page works out itself (SHA-256, in the browser), so the value never leaves the page: 64 hexadecimal characters on their own are what a key looks like, so they are a value too (review of #196). The API takes a fingerprint only with its `sha256:` prefix. Shinan keeps only fingerprints, so the list never shows a value. Allowing and removing ask for a recent sign-in, and each is in the security log. Removing text from the catalog's history (GC-8, below) is a page of its own, behind a quiet owners-only link at the bottom of the tab (agreed on [#170](https://github.com/guneet-xyz/shinan/issues/170)); M2's Data tab is gone, and its address leads there.
 
 For workspace owners. Contributors see three of these screens read only:
 General, Members and Security log (only the entries they made or that are
@@ -1305,26 +1305,69 @@ types are not a setting: they are type schema documents in the catalog, changed
 like any catalog document ([moving around the catalog](#moving-around-the-catalog)).
 Reason: one screen per thing the workspace owns.
 
-**As built (M2-10, [#91](https://github.com/guneet-xyz/shinan/issues/91)), decided (owner, 2026-11-19, M2-Q17):**
-the Data tab has **Purge catalog text** for workspace owners
-([catalog §9](catalog.md#9-history-and-purge)). It first warns that a purge
-cleans Shinan, not copies that left it (exports, the host's backups, agents'
-model providers), that a secret must be rotated where it was issued, and
-that security-log entries are never purged. The owner types the text and
-chooses **Find it**; spaces and line breaks need not match. Shinan shows
-where it is (revision texts and documents, the current pages it will store
-again, proposals and the waiting ones it will reject, comments, timeline
-events, and where it was found across a line break, to check),
-copies in other forms (URL- or percent-encoded, HTML entities, escapes),
-each with **Find this form**, and pages whose structure the purge changes
-(the text in an ID or alias, or across frontmatter lines). Purging takes a
-reason, which must not repeat the text, and typing "purge". Afterwards the
-screen lists pages that now read with problems and asks the
-owner to press **Find it** again in a minute, since a change in progress
-can bring the text back. The text stays only in the page's memory and is
-cleared once purged. Below, every member sees the list of purges: who,
-when, why and how much, never the text. A purge revision shows "purge N" in
-an entity page's history. Exports come with a later milestone.
+**As built (GC-8, [#170](https://github.com/guneet-xyz/shinan/issues/170); M2-10's form, owner M2-Q17):**
+Settings › Catalog ends, for workspace owners, with "A secret or personal
+data reached the catalog? **Remove text from the catalog's history**", a
+page of its own ([catalog §9](catalog.md#9-history-and-purge)). It says in
+one paragraph what it does (the text becomes "(purged)" in every page and
+earlier version, change messages, every branch and Shinan's records, and
+"purged" in a branch, file or folder name; who, when and why is kept, never
+the text), then, calmly, that copies outside Shinan keep the text: for a
+secret, first, that it must be changed where it was issued; every agent's
+copy of the catalog (whoever runs those machines deletes it and gets a new
+one); the AI providers that read it. The owner types the text and chooses
+**Find it**; spaces and line breaks need not match. Shinan lists where it
+is in plain words, as an ordinary list: changes to the catalog (and how
+many only on agents' branches), changes' messages or authors, branch names,
+entries in Shinan's push records and on the timeline, the record of the
+catalog's move into Git; the pages that show it now, by title and path
+("Musashi (machine/musashi.md)"), at the names they will have; under
+"**Renamed with a number, because the plain name is taken:**", each page
+or folder whose new name another already has ("Box dl becomes
+machine/purged-dl-box-2.md (machine/purged-dl-box.md already exists)"; a
+folder without a title: "notes/purged-2/ (notes/purged/ already exists)";
+review of #197); places found across a line break, to check; pages whose
+structure changes other than by their new name (a page's ID that held the
+text is its new name, shown above, so it isn't listed again); and copies written another way (in a
+link, with HTML entities, escapes), each with **Find this form**. It says
+that agents get the new history on their next fetch and redo unpushed work
+on top of it, as the skill says. Removing takes a reason, which must not
+repeat the text, then "**This can't be undone.** Shinan rewrites the
+catalog's history and deletes the old one. Every change that held the text
+gets a new ID.", typing "remove", and the one red button, **Remove from
+Shinan's history**. While it runs, the page says "**Removing…** This can
+take a few minutes on a large catalog. You can leave this page: it goes on,
+and it appears under Earlier removals when it's done. Agents can keep
+pushing, except for a few seconds near the end", and asks the server how it
+stands every 3 seconds. If it failed after the swap and is being finished,
+the page shows the server's reason instead of that last sentence: "The text
+is already gone from the catalog's history. Shinan is still finishing its
+own records and tries again every minute; agents' pushes wait until then.
+You can leave this page." (product review of #197). After "Pages that show it now", the preview says
+where the text may be encoded, which a removal doesn't reach: "**Shinan
+removes only the text exactly as written.** It may also be in the catalog
+encoded: base64 (1 place). Those copies stay. If it's a secret, changing it
+where it was issued makes them harmless. Otherwise, ask an agent for the
+encoded form and remove that here as well." When the text is nowhere as
+written but may be encoded, the page says "Shinan doesn't hold this text as
+written anywhere in this catalog." and "**It may be in the catalog
+encoded:** base64 (1 place). Shinan removes only text exactly as written,
+so ask an agent for the encoded form and remove that here.", never "Nothing
+to remove". It names no pages, since the preview counts those places
+without knowing their pages (product re-checks of #197). The list of places also
+says when removing this text finishes an earlier removal that didn't (only
+the same text can). Afterwards, until the owner leaves the page, the top of
+the section says "Removed from Shinan's history (removal N). Now:" with
+three ordered steps: change the secret where it was issued; ask whoever
+runs each agent's machine to delete its copy and make a new one (step 2 of
+Set up an agent; old history is refused, and "A copy that was still
+downloading when the removal finished may hold the text too."); tell your agents the history
+changed (the skill says what to do). Found nothing: "Shinan doesn't hold
+this text anywhere in this catalog. Nothing to remove." (Product review of
+#197.) The text stays only in the page's memory and is cleared once
+removed. Below, every member sees **Earlier removals**: who, when, why and
+how much, never the text. Contributors see the list and that only owners
+remove text. Exports come with a later milestone.
 
 Screen details:
 

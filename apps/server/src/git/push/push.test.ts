@@ -23,6 +23,7 @@ import {
   createCatalogRepository,
   createGitClient,
   createWorkspace,
+  refFingerprint,
   shinan,
   storeCatalogJournal,
 } from "@shinan/core"
@@ -1142,7 +1143,21 @@ describe("branches, main and the push log", () => {
     expect(entry).toMatchObject({
       workspaceId,
       actorKind: "shinan",
-      details: { ref: "refs/heads/sneaky", commit: firstCommit, logged: null },
+      details: {
+        ref: refFingerprint(
+          (
+            await db
+              .select({ key: schema.catalogRefFingerprintKeys.key })
+              .from(schema.catalogRefFingerprintKeys)
+              .where(
+                eq(schema.catalogRefFingerprintKeys.workspaceId, workspaceId),
+              )
+          )[0]!.key,
+          "refs/heads/sneaky",
+        ),
+        commit: firstCommit,
+        logged: null,
+      },
     })
     await store.git.run(["update-ref", "-d", "refs/heads/sneaky"], {
       gitDir: store.pathOf(workspaceId),

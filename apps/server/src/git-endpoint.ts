@@ -33,6 +33,7 @@ import { createLimitedLog, errorSummary } from "@shinan/db"
 import { checkAgentRequest, tokenInAddress } from "./api/agent-auth.js"
 import { gitMessages, gitText } from "./git-text.js"
 import type { InFlightCounter, NodeBindings } from "./in-flight.js"
+import { resetConnection } from "./reset.js"
 
 export interface GitEndpointOptions {
   db: Database
@@ -421,10 +422,12 @@ function streamed(
         })
         answer.once("close", () => {
           if (done) return
-          // The Git container's answer ended without finishing: the
-          // agent's connection is closed, so Git sees it is incomplete.
+          // The Git container's answer ended without finishing (Git was
+          // stopped, as at a purge's swap): the agent's connection is
+          // reset, so Git sees it is incomplete and what is still on its
+          // way is dropped rather than delivered.
           done = true
-          outgoing?.destroy()
+          resetConnection(outgoing)
           controller.error(
             new Error("The Git container's answer was cut short"),
           )

@@ -33,7 +33,8 @@ export function WorkspaceLayout() {
  * Workspace settings (human experience, Workspace settings). They are for
  * workspace owners; contributors see what they may read and no actions.
  * Git host connections, task flags and exports come with later
- * milestones; Data has catalog purge (M2-10).
+ * milestones; removing text from the catalog's history is under Catalog
+ * (GC-8).
  */
 export function SettingsLayout() {
   const { workspace } = useWorkspace()
@@ -76,9 +77,6 @@ export function SettingsLayout() {
           </NavLink>
           <NavLink to="security-log" className={tab}>
             Security log
-          </NavLink>
-          <NavLink to="data" className={tab}>
-            Data
           </NavLink>
         </div>
       </nav>

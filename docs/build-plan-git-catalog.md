@@ -402,6 +402,11 @@ the tree of the old one:
 4. **Layout** ([2.1](#21-the-repository-layout-and-rules)): only the allowed
    paths; each path matches its document's ID; no ID that resolved before has
    disappeared.
+   **As built (review of #197):** layout is charged to the push like
+   validation: a file `main` already holds as it was (the same path, mode
+   and content) is never the push's problem, and an old "ID" that was
+   never a valid one is not one that disappeared, so a problem `main`
+   holds (left by a purge, say) blocks no unrelated push and no fix-up.
 5. **Validation**, every rule of [catalog §8.3](catalog.md#83-validation-on-push),
    charged to the push as M2 charged a proposal: every blocking problem in the
    documents the push adds or changes, and any problem it newly causes
@@ -704,6 +709,52 @@ operator's to clean, and the secret is rotated.
 - **Agents after a purge:** their next fetch sees `main` forced. The skill
   says: reset local branches onto the new `origin/main` and redo unpushed
   work on top; never push old history back (it is refused anyway).
+- **As built (GC-8, [#170](https://github.com/guneet-xyz/shinan/issues/170);
+  [architecture §4.4](architecture.md#44-purge)):** as above, with these
+  choices the plan left open:
+  - **Commit authors and committers, file and folder names** are purged
+    too, not only contents and messages; names (and branch names) get
+    `purged`, since `(purged)`'s brackets are not allowed in branch names
+    or in paths on `main`, and so do catalog IDs wherever they are written
+    (a page's `id`, its aliases, references), so a page's ID still equals
+    its path (review of #197). A branch name made invalid or taken is made
+    unique (`purged-2`); `main` keeps its name.
+  - **The removed-commits list** holds every commit the old repository
+    held that the new one does not, unreachable ones included, so a clone
+    can't bring back a deleted branch's copy either.
+  - **A job, mostly without the push lock** (review of #197): the Git
+    container scans, rewrites and checks without the lock, then takes it
+    for the swap and what follows (seconds: what a push added meanwhile is
+    rewritten then, alone, with the first run's marks; re-read too when the
+    scan found nothing). `web` follows the job and records it when it
+    ends; the screen polls. A repository holding no copy at all is not
+    rewritten.
+  - **New names never land on existing ones** (review of #197): paths,
+    folders and catalog IDs are planned before the rewrite and numbered
+    when taken (`machine/purged-box-2.md`), the same in every commit; the
+    preview lists them.
+  - **The purge ID** is made by `web` for each attempt, and `catalog_purges`
+    takes the ID of the rewrite it records. A rewrite never recorded stays
+    listed until a purge of the same text (by an HMAC of it kept on the
+    volume) finishes it under its own ID; never under another text.
+  - **After the swap,** until the removed commits and every record are
+    written, every push is refused, and the work is retried every minute;
+    a failure there never lets a removed commit back.
+  - **The record of groups ever on `main`** (GC-3b) gets the text replaced
+    as `main` did, rather than being rebuilt from the new history; a group
+    where the replacement can't be made is dropped (the next push to
+    `main` records it again).
+  - **Unreachable objects after pushes (proposed):** each repository a
+    push changed is looked at once pushes to it pause (20 seconds, 10
+    minutes at most), with its push lock held, so objects no branch reaches
+    (which the Git API could read by ID) never linger (reviews of GC-1b and
+    GC-3a). Whether any is unreachable is counted first, by the
+    reachability bitmap; only then is the whole repository repacked, with
+    no Git process on it. Otherwise the packs pushes added are joined, in
+    milliseconds (review of #197).
+  - **The screen** is "Remove text from the catalog's history", a page
+    behind a quiet link at the bottom of Settings › Catalog (GC-7's product
+    brief); M2's Data tab is gone.
 
 ### 2.10 Limits
 

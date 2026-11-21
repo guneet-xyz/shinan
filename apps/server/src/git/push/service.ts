@@ -57,6 +57,22 @@ export interface PushService {
   /** Records a new repository's first commit, first pushed by Shinan. */
   repositoryCreated(workspaceId: string, commit: string): Promise<void>
   /**
+   * Takes the repository's push lock for work that is not a push, such as
+   * a purge's rewrite (plan §2.9): its release, or null if a push held it
+   * for `waitMs`. Pushes meanwhile wait, then are refused as busy.
+   */
+  exclusive(
+    workspaceId: string,
+    waitMs: number,
+    holder?: "purge",
+  ): Promise<(() => void) | null>
+  /**
+   * Marks the repository's history rewritten (a purge swapped it): a push
+   * that started before is refused once it reaches its checks, since what
+   * it sent was against the old history.
+   */
+  rewritten(workspaceId: string): void
+  /**
    * After a restart: puts the first pushes of journal entries not
    * acknowledged yet into the record (a stop between the two writes), and
    * records the first commit of any repository with no record at all.
@@ -68,6 +84,8 @@ type Phase = "new" | "checking" | "checked" | "done"
 
 interface State {
   context: GitRequestContext
+  /** The repository's rewrites when the push started. */
+  generation: number
   phase: Phase
   checking?: Promise<void>
   release?: () => void
@@ -106,11 +124,19 @@ export function createPushService(options: {
   mainChecker?: MainChecker
   /** Other limits than `pushLimits`, for tests; read at each push. */
   limits?: Partial<PushLimits>
+  /** Called after Git updated any ref of a push, such as to prune the repository. */
+  onUpdated?: (workspaceId: string) => void
 }): PushService {
   const { store, journal, records } = options
   const log = options.log ?? createLimitedLog()
   const locks = options.locks ?? createPushLocks()
   const sessions = new Map<string, State>()
+  const generations = new Map<string, number>()
+  /** Repositories whose lock a purge holds. */
+  const purging = new Set<string>()
+  /** Whether a purge holds the repository, or left it unfinished (`Records.unfinishedPurge`). */
+  const removing = (workspaceId: string) =>
+    purging.has(workspaceId) || records.unfinishedPurge(workspaceId)
   const git = store.git
 
   const service: PushService = {
@@ -118,7 +144,12 @@ export function createPushService(options: {
     hookApp: new Hono(),
     begin(context) {
       const nonce = randomBytes(32).toString("hex")
-      const state: State = { context, phase: "new", updates: [] }
+      const state: State = {
+        context,
+        generation: generations.get(context.workspaceId) ?? 0,
+        phase: "new",
+        updates: [],
+      }
       sessions.set(nonce, state)
       return {
         nonce,
@@ -137,7 +168,9 @@ export function createPushService(options: {
       }
     },
     async refs(workspaceId) {
-      const release = await locks.acquire(workspaceId, 0)
+      const release = removing(workspaceId)
+        ? null
+        : await locks.acquire(workspaceId, 0)
       if (!release) {
         return {
           workspaceId,
@@ -170,6 +203,18 @@ export function createPushService(options: {
       } finally {
         release()
       }
+    },
+    async exclusive(workspaceId, waitMs, holder) {
+      const release = await locks.acquire(workspaceId, waitMs)
+      if (!release || holder !== "purge") return release
+      purging.add(workspaceId)
+      return () => {
+        purging.delete(workspaceId)
+        release()
+      }
+    },
+    rewritten(workspaceId) {
+      generations.set(workspaceId, (generations.get(workspaceId) ?? 0) + 1)
     },
     async repositoryCreated(workspaceId, commit) {
       const entry = await journal.append("repository.created", {
@@ -215,6 +260,30 @@ export function createPushService(options: {
                 at: entry.recordedAt,
               },
             ])
+          } else if (entry.kind === "repository.rewritten") {
+            // A purge's rewritten commits inherit their first pushers.
+            const data = entry.data as {
+              workspaceId: string
+              commits: {
+                commit: string
+                replaces: string
+                ref: string | null
+              }[]
+            }
+            records.addFirstPushes(
+              data.workspaceId,
+              data.commits.map((c) => {
+                const first = records.firstPush(data.workspaceId, c.replaces)
+                return {
+                  commit: c.commit,
+                  push: first?.push ?? null,
+                  ref: c.ref,
+                  by: first?.by ?? "shinan",
+                  at: first?.at ?? entry.recordedAt,
+                  replaces: c.replaces,
+                }
+              }),
+            )
           }
           after = entry.number
         }
@@ -305,6 +374,7 @@ export function createPushService(options: {
         records.addMainGroups(context.workspaceId, state.mainGroups)
       state.phase = "done"
       state.release?.()
+      if (confirmed.length > 0) options.onUpdated?.(context.workspaceId)
     })())
 
   const mainUpdate = async (
@@ -448,16 +518,34 @@ export function createPushService(options: {
     }
     const limits: PushLimits = { ...pushLimits, ...options.limits }
     let mainWarnings: Problem[] = []
-    const release = await locks.acquire(
-      context.workspaceId,
-      limits.lockWaitSeconds * 1000,
-    )
-    if (!release) {
+    // While text is being removed from the history, pushes are refused at
+    // once, with how long to wait (review of #197).
+    const release = removing(context.workspaceId)
+      ? null
+      : await locks.acquire(context.workspaceId, limits.lockWaitSeconds * 1000)
+    if (!release && removing(context.workspaceId)) {
+      problems.push({
+        code: "busy",
+        where: "",
+        message:
+          "Shinan is removing text from this catalog's history: wait a few minutes, fetch, then push again",
+      })
+    } else if (!release) {
       problems.push({
         code: "busy",
         where: "",
         message:
           "another push to this repository is being checked: push again in 30 seconds",
+      })
+    } else if (
+      (generations.get(context.workspaceId) ?? 0) !== state.generation
+    ) {
+      state.release = release
+      problems.push({
+        code: "busy",
+        where: "",
+        message:
+          "the catalog's history was rewritten while this push was sent: fetch, reset your branch onto the new history, then push again",
       })
     } else {
       state.release = release

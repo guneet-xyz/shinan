@@ -66,7 +66,17 @@ export function CatalogSettings() {
         </p>
       </Section>
       {workspace.role === "owner" && <AllowedValues />}
-      {/* GC-8: an owners-only "Remove text from the catalog's history →" link here. */}
+      {workspace.role === "owner" && (
+        <p className="text-sm text-muted-foreground">
+          A secret or personal data reached the catalog?{" "}
+          <Link
+            to="remove-text"
+            className="font-medium text-foreground underline underline-offset-4"
+          >
+            Remove text from the catalog's history
+          </Link>
+        </p>
+      )}
     </div>
   )
 }

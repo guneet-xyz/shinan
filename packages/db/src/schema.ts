@@ -820,8 +820,20 @@ export const rateLimits = pgTable("rate_limits", {
   count: integer("count").notNull(),
 })
 
-/** How many records a catalog purge changed, by kind: counts only, never the text. */
+/**
+ * How many records a catalog purge changed, by kind: counts only, never the
+ * text. Since the catalog moved into Git (GC-8), a purge rewrites the
+ * repository's history (`history`) and the push log (`pushLog`). M2's
+ * counts are kept for purges made before, and are zero since GC-6 dropped
+ * its tables.
+ */
 export interface CatalogPurgeCounts {
+  /** The repository's history, as the Git container rewrote it. */
+  history?: CatalogPurgeHistoryCounts
+  /** Branch names in the push log and the first-pusher record. */
+  pushLog?: number
+  /** Documents of the agent index, dropped until the rebuild from the new `main`. */
+  indexDocuments?: number
   /** Stored texts of document revisions. */
   revisionTexts: number
   /** Documents with any purged revision text. */
@@ -836,6 +848,24 @@ export interface CatalogPurgeCounts {
   events: number
   /** Comments on catalog proposals. */
   comments: number
+}
+
+/** What a purge rewrote in a repository's history (GC-8). */
+export interface CatalogPurgeHistoryCounts {
+  /** Commits that held the text, in a file, a path, the message or an identity. */
+  commits: number
+  /** Commits that got a new ID: those, and every commit after them. */
+  rewrittenCommits: number
+  /** Commits the repository no longer holds, unreachable ones included. */
+  removedCommits: number
+  /** Files (by path) that held the text. */
+  files: number
+  /** Commit messages and identities that held it. */
+  messages: number
+  /** Branches renamed because their names held it. */
+  renamedBranches: number
+  /** Journal entries not yet stored that held it. */
+  journalEntries: number
 }
 
 const xid8 = customType<{ data: string }>({ dataType: () => "xid8" })
@@ -917,6 +947,26 @@ export const catalogRepositories = pgTable(
       sql`${t.firstCommit} is null or ${t.firstCommit} ~ '^([0-9a-f]{40}|[0-9a-f]{64})$'`,
     ),
   ],
+)
+
+/**
+ * The key of each repository's branch fingerprints in the security log
+ * (`catalog.unlogged-update` keeps HMAC-SHA256 of a branch's name), so a
+ * guessed name can't be confirmed from the log (review of #197). Made by
+ * PostgreSQL from two random UUIDs when first needed; never shown. A table
+ * of its own, so the move into Git (GC-6), which writes
+ * `catalog_repositories` during the migrations, is left alone.
+ */
+export const catalogRefFingerprintKeys = pgTable(
+  "catalog_ref_fingerprint_keys",
+  {
+    workspaceId: uuid("workspace_id")
+      .primaryKey()
+      .references(() => workspaces.id),
+    key: text("key")
+      .notNull()
+      .default(sql`gen_random_uuid()::text || gen_random_uuid()::text`),
+  },
 )
 
 const gitObjectId = (column: string) =>
@@ -1162,6 +1212,45 @@ export const catalogAllowedValues = pgTable(
     check(
       "catalog_allowed_values_fingerprint",
       sql`${t.fingerprint} ~ '^[0-9a-f]{64}$'`,
+    ),
+  ],
+)
+
+/**
+ * A rewrite of a workspace's repository by a purge (Git-based catalog plan
+ * §2.9, GC-8), copied from the Git container's journal (its
+ * `repository.purged` entry): the branches as the rewrite left them, which
+ * the minute check of the push log starts from, and what it changed,
+ * counted. Keyed by the purge's ID: the purge's record
+ * (`catalog_purges`) is stored after it, by `web`, and a rewrite without
+ * one is a purge whose database part has yet to finish. Append-only, except
+ * that a later purge may replace text in `refs`.
+ */
+export const catalogRewrites = pgTable(
+  "catalog_rewrites",
+  {
+    id: uuid("id").primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id),
+    journalId: uuid("journal_id").notNull(),
+    journalEntry: bigint("journal_entry", { mode: "number" }).notNull(),
+    rewrittenAt: timestamp("rewritten_at", { withTimezone: true }).notNull(),
+    /** Every branch after the rewrite, and its commit. */
+    refs: jsonb("refs").$type<{ ref: string; commit: string }[]>().notNull(),
+    /** What the rewrite changed, counted. */
+    counts: jsonb("counts").$type<CatalogPurgeHistoryCounts>().notNull(),
+    /**
+     * Catalog IDs the rewrite named apart from another page's (review of
+     * #197): each ID's plain form (the text as `purged`) and its new ID.
+     * Neither holds the text.
+     */
+    ids: jsonb("ids").$type<[string, string][]>().notNull().default([]),
+  },
+  (t) => [
+    index("catalog_rewrites_workspace_rewritten_at").on(
+      t.workspaceId,
+      t.rewrittenAt,
     ),
   ],
 )

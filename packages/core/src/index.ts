@@ -275,6 +275,7 @@ export {
   smartHttpRequest,
   maxTreeEntries,
   maxTreePathBytes,
+  maxPurgePaths,
   serviceTokenMinLength,
 } from "./catalog/git/api.js"
 export type {
@@ -285,6 +286,12 @@ export type {
   GitRequestContext,
   GitService,
   JournalEntry,
+  PurgeEncoding,
+  PurgeForm,
+  RepositoryPurgePlaces,
+  RepositoryPurgePreview,
+  RepositoryPurgeResult,
+  RepositoryPurgeStatus,
   SmartHttpRequest,
   RepositoryFile,
   RepositoryInfo,
@@ -309,6 +316,7 @@ export {
 export type { CatalogAllowedValue } from "./catalog/git/allowed-values.js"
 export {
   checkCatalogRefs,
+  refFingerprint,
   setAsideMessage,
   storeCatalogJournal,
 } from "./catalog/git/push-log.js"

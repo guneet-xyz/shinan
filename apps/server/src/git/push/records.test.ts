@@ -187,3 +187,90 @@ describe("the push lock", () => {
     expect(locks.held(workspaceId)).toBe(false)
   })
 })
+
+describe("a purge's changes to the records", () => {
+  it("renames branches in the first-pusher record and earlier purges' records, across restarts", () => {
+    const root = folder()
+    const records = openRecords(root)
+    records.addFirstPushes(workspaceId, [
+      { ...row("a"), ref: "refs/heads/notes-leaked" },
+      row("b"),
+    ])
+    const purgeId = "1b9c1a2e-3d4f-4a5b-8c6d-7e8f9a0b1c2d"
+    records.writePurge(workspaceId, {
+      purgeId,
+      phase: "done",
+      at: "2026-11-20T00:00:00.000Z",
+      textHash: records.textHash("leaked"),
+      rewritten: [],
+      removed: [],
+      refs: [{ ref: "refs/heads/notes-leaked", commit: "c".repeat(40) }],
+      renamedBranches: 0,
+      counts: { commits: 0, files: 0, messages: 0, journalEntries: 0 },
+    })
+    const rename = (ref: string) => ref.replace("leaked", "purged")
+    expect(records.renameRefs(workspaceId, rename)).toBe(1)
+    expect(records.renameRefs(workspaceId, rename)).toBe(0)
+    const reopened = openRecords(root)
+    expect(reopened.firstPush(workspaceId, "a".repeat(40))?.ref).toBe(
+      "refs/heads/notes-purged",
+    )
+    expect(reopened.firstPush(workspaceId, "b".repeat(40))?.ref).toBe(
+      "refs/heads/main",
+    )
+    expect(reopened.purge(workspaceId, purgeId)?.refs).toEqual([
+      { ref: "refs/heads/notes-purged", commit: "c".repeat(40) },
+    ])
+    expect(reopened.purgedWorkspaces()).toEqual([workspaceId])
+    // The text is known again by its keyed hash only, with the same key.
+    expect(reopened.purge(workspaceId, purgeId)?.textHash).toBe(
+      reopened.textHash("leaked"),
+    )
+    expect(openRecords(folder()).textHash("leaked")).not.toBe(
+      reopened.textHash("leaked"),
+    )
+    expect(reopened.unfinishedPurge(workspaceId)).toBe(false)
+  })
+
+  it("replaces the text in the groups ever on main, and drops a group it can't clean", () => {
+    const root = folder()
+    const records = openRecords(root)
+    records.addMainGroups(workspaceId, [
+      {
+        document: "machine/a",
+        check: JSON.stringify(["x", "leaked"]),
+        facts: ["k"],
+      },
+      {
+        document: "machine/b",
+        check: JSON.stringify(["y"]),
+        facts: ['"le\\"aked'],
+      },
+      { document: "machine/c", check: JSON.stringify(["z"]), facts: ["k"] },
+    ])
+    const changed = records.purgeMainGroups(
+      workspaceId,
+      (text) => text.replaceAll("leaked", "(purged)"),
+      (text) => /le\\*"?aked/.test(text),
+    )
+    expect(changed).toBe(2)
+    expect(openRecords(root).mainGroups(workspaceId)).toEqual([
+      {
+        document: "machine/a",
+        check: JSON.stringify(["x", "(purged)"]),
+        facts: ["k"],
+      },
+      { document: "machine/c", check: JSON.stringify(["z"]), facts: ["k"] },
+    ])
+  })
+
+  it("keeps the commits a purge removed, once each", () => {
+    const records = openRecords(folder())
+    records.addPurgedCommits(workspaceId, ["a".repeat(40), "a".repeat(40)])
+    records.addPurgedCommits(workspaceId, ["a".repeat(40), "b".repeat(40)])
+    expect([...records.purgedCommits(workspaceId)]).toEqual([
+      "a".repeat(40),
+      "b".repeat(40),
+    ])
+  })
+})

@@ -37,6 +37,7 @@ export type {
   CatalogMoveProblem,
   CatalogMoveWaitingProposal,
   CatalogPurgeCounts,
+  CatalogPurgeHistoryCounts,
   Confidence,
   EmailContent,
   EmailKind,

@@ -587,27 +587,86 @@ index, marked as behind.
 
 ## Catalog purge
 
-> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-8](build-plan-git-catalog.md#gc-8-purge-as-a-history-rewrite)): a purge rewrites the repository's history; cleaning clones and rotating the secret. Since the catalog moved into Git (GC-6) and until GC-8, a purge rewrites the timeline's events only: it does not reach the catalog's repositories.
+Workspace owners remove text from their catalog themselves, in workspace
+settings, Catalog, "Remove text from the catalog's history"
+([catalog §9](catalog.md#9-history-and-purge)); operators cannot. The Git
+container rewrites the workspace's repository on its volume, every branch
+included, so no object in it holds the text (not even commits no branch
+reached), and `web` cleans the push log, the timeline, the record of the
+catalog's move into Git and the agent index in PostgreSQL. A purge asks PostgreSQL to vacuum the tables it changed, so a
+database dump no longer holds the text.
 
-Workspace owners purge text from their catalog themselves, in workspace
-settings, Data ([catalog §9](catalog.md#9-history-and-purge)); operators
-cannot. A purge changes what Shinan stores, and asks PostgreSQL to vacuum
-the tables it changed, so a database dump no longer holds the text. It
-cannot reach copies outside the live rows: your backups of the database
-volume, PostgreSQL's write-ahead log, any PostgreSQL log that records
-statement parameters (the reference setup does not turn that on), and the
-bytes of deleted row versions, which stay in the database's files until
-PostgreSQL reuses the space. If a purge was for a leaked secret, make sure
-the secret was rotated, and treat those copies as holding it until they age
-out. To clear the database's files too, run this at a quiet moment (it
-locks the tables while it rewrites them):
+**What a purge cannot reach, and what you do about it:**
 
-```sh
-docker compose exec -T postgres psql -U shinan -d shinan -c "vacuum full events"
-```
+1. **Agents' clones.** Every machine with a clone of the catalog still holds
+   the old history, text included. Cleaning them is your job: on each
+   machine, delete the clone and clone it again (or, where an agent has
+   unpushed work, fetch and reset each branch onto the new history, then
+   delete the old objects with `git reflog expire --expire=now --all && git
+gc --prune=now`). Shinan refuses any push that brings an old commit
+   back, with "this commit was removed by a purge: fetch, then reset your
+   branch onto the new history". Copies elsewhere (a bundle, a mirror, a
+   backup of the volume) need the same.
+2. **The secret itself.** If the text was a secret, rotate it at its source:
+   removing it from Shinan does not make it safe again. The AI providers of
+   agents that read it keep their own copies.
+3. **Copies outside the live data:** your backups of the database and of
+   the catalog volume, PostgreSQL's write-ahead log, any PostgreSQL log that
+   records statement parameters (the reference setup does not turn that
+   on), and the bytes of deleted row versions, which stay in the database's
+   files until PostgreSQL reuses the space. On the catalog volume, the old
+   repository's files are deleted, not overwritten. Treat those copies as
+   holding the text until they age out. To clear the database's files too,
+   run this at a quiet moment (it locks the tables while it rewrites them):
 
-Every `web` and `worker` process forgets parsed catalog text within a
-minute of a purge; nothing needs restarting.
+   ```sh
+   docker compose exec -T postgres psql -U shinan -d shinan -c "vacuum full catalog_push_refs, catalog_commit_first_pushes, catalog_rewrites, events, catalog_index_documents, catalog_index_facts, catalog_index_relations, catalog_index_discrepancies, catalog_index_sections, catalog_moves"
+   ```
+
+   A database dump also holds the key of the security log's branch
+   fingerprints (`catalog_ref_fingerprint_keys`) next to the security log,
+   so whoever has a dump can check a guessed branch name against it: keep
+   dumps as private as the catalog volume.
+
+A purge runs in the background: the owner's page shows "Removing…" and
+asks how it stands. The Git container reads and rewrites the history while
+pushes go on, then holds pushes back for the swap only: what was pushed
+meanwhile is rewritten then, alone. Measured on Daedalus, for a branch of
+20,000 pages and 6,002 commits: 69 s in all and pushes held back 1.2 s;
+with a push every 3 seconds throughout, 85 s and 3.6 s. Pushes meanwhile
+are refused with "Shinan is removing text from this catalog's history:
+wait a few minutes, fetch, then push again"; a second purge of the same
+catalog is refused until the first ends. Clones and fetches running at the
+swap are ended with a reset, so what was still in Shinan's buffers is
+dropped; what had already left (in the proxy's buffers or the network)
+still arrives, so a clone that was running then may hold some of the old
+history, and the owner is told so. The Git container's log has one line
+per purge with how long each part took and how long pushes were held
+back, never the text. One case is slow on purpose: if a push during the
+purge adds a page under a name the purge had planned to give a renamed
+one, the plan and the whole rewrite start again with pushes held back
+(74 s on that branch, in review). An agent could cause it; the log line
+shows it as a long hold.
+
+If something fails after the swap (a full or failing disk, say), every push
+to that catalog stays refused until the Git container has written the
+removed commits and its records; it retries every minute and at start, so
+fix the disk and it finishes by itself. If the Git container stops during
+a purge, it finishes the purge, or puts the repository back as it was, when
+it starts again. If `web` stops while a purge runs, the rewrite stays
+listed as unfinished until the owner removes the same text again, which
+records it without rewriting. The index is rebuilt from the new `main` by
+the worker. Every `web` and `worker` process forgets parsed catalog text within a minute
+of a purge; nothing needs restarting.
+
+The `git` role also removes, from each repository a push changed, the
+objects no branch reaches (a deleted branch's commits, or objects a push
+sent that no commit uses), so the Git container's API can never read them.
+It waits until no push has reached the repository for 20 seconds (10
+minutes at most), and holds fetches for milliseconds: it counts first
+whether anything is unreachable, and only then repacks the whole
+repository (9.4 s for a branch of 20,000 pages and 6,002 commits on
+Daedalus; otherwise it joins the packs pushes added, in milliseconds).
 
 ## Stopping and removing
 

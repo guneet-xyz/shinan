@@ -21,7 +21,9 @@ import {
 import type { LimitedLog } from "@shinan/db"
 
 import { gitMessages, gitText } from "../git-text.js"
+import { resetConnection } from "../reset.js"
 import type { GitAppEnv } from "./app.js"
+import type { RepositoryGate } from "./prune.js"
 import { hookUrlVariable, nonceVariable } from "./push/service.js"
 import type { PushService } from "./push/service.js"
 import type { RepositoryStore } from "./store.js"
@@ -186,6 +188,8 @@ export function createSmartHttp(options: {
   openSpool?: (path: string) => NodeJS.WritableStream
   /** The push checks; without them, the hooks refuse every push. */
   push?: PushService
+  /** Who uses each repository, so the pruner waits for them (`prune.ts`). */
+  gate?: RepositoryGate
 }) {
   const { store, log } = options
   const processLimits = options.processes ?? defaultGitProcessLimits
@@ -321,7 +325,19 @@ export function createSmartHttp(options: {
         { "retry-after": String(gitProcessWaitSeconds) },
       )
     }
-    const release = place
+    // A repository being pruned or swapped by a purge is not read meanwhile,
+    // and a purge's swap ends this process (`gate.drain`).
+    let drainedEarly = false
+    let killProcess: () => void = () => {
+      drainedEarly = true
+    }
+    const leave =
+      (await options.gate?.enter(target.workspaceId, () => killProcess())) ??
+      (() => {})
+    const release = () => {
+      leave()
+      place()
+    }
 
     const settings: [string, string][] = [
       ...repositoryConfiguration(store.hooksDirectory),
@@ -352,6 +368,14 @@ export function createSmartHttp(options: {
       env[hookUrlVariable] = options.push!.hookUrl!
     }
 
+    if (drainedEarly) {
+      release()
+      removeSpool()
+      void session?.end()
+      return gitText(503, gitMessages.busy, {
+        "retry-after": String(gitProcessWaitSeconds),
+      })
+    }
     let spawned: ReturnType<RepositoryStore["git"]["spawn"]>
     try {
       spawned = store.git.spawn(
@@ -368,6 +392,7 @@ export function createSmartHttp(options: {
       throw error
     }
     const { child, kill } = spawned
+    killProcess = kill
     const ended = spawned.ended.then(async (end) => {
       // The push is recorded before the next Git process may start.
       await session?.end()
@@ -439,7 +464,7 @@ export function createSmartHttp(options: {
                 if (done) return
                 done = true
                 kill()
-                outgoing?.destroy()
+                resetConnection(outgoing)
                 controller.error(quietError("The client stopped reading"))
               }, answerStallMs)
             }
@@ -451,9 +476,11 @@ export function createSmartHttp(options: {
               if (done) return
               done = true
               if (!whole || timedOut || signal === "SIGKILL") {
-                // Cut short: the connection is closed rather than the
-                // answer ended, so the client sees it is incomplete.
-                outgoing?.destroy()
+                // Cut short: the connection is reset rather than the
+                // answer ended, so the client sees it is incomplete, and
+                // what is still on its way (in `web`'s buffers) is dropped
+                // rather than delivered, as after a purge's swap.
+                resetConnection(outgoing)
                 controller.error(quietError("Git was stopped"))
               } else {
                 controller.close()

@@ -749,6 +749,13 @@ async function run() {
       git.push.objectsDropped,
     "git http-backend takes a push to the hook, which refuses it: main is unchanged and the pushed objects are gone",
   )
+  check(
+    git.rewrite.firstKept &&
+      git.rewrite.secondNew &&
+      git.rewrite.objects > 0 &&
+      !git.rewrite.holds,
+    "a purge's history rewrite runs: fast-export into fast-import, repack and prune, with nothing of the old file left",
+  )
 
   console.info(`Starting ${project} in ${dir}`)
   compose("up", "--detach", "--quiet-pull")

@@ -410,3 +410,102 @@ export interface JournalEntry {
   kind: string
   data: Record<string, unknown>
 }
+
+/** Places that hold a purge text, on `main` and on the other branches only. */
+export interface RepositoryPurgePlaces {
+  main: number
+  branches: number
+}
+
+/**
+ * Where a purge text is in a workspace's repository (Git-based catalog
+ * plan §2.9): the Git container's part of a purge's preview. Paths are
+ * given as they would read after the purge, never with the text.
+ */
+export interface RepositoryPurgePreview {
+  /** Commits that hold it: in a file, a path, the message or an identity. */
+  commits: RepositoryPurgePlaces
+  /** Files (by path) that hold it, in their content or their path. */
+  files: RepositoryPurgePlaces
+  /** Commit messages (and commit identities) that hold it. */
+  messages: RepositoryPurgePlaces
+  /** Branches whose names hold it. */
+  branchNames: number
+  /**
+   * Files on `main` now that hold it, by path as they would read after the
+   * purge, with their titles as the catalog will show them (null for a
+   * file that has none), at most `maxPurgePaths`; `currentFilesMore`
+   * counts the rest.
+   */
+  currentFiles: { path: string; title: string | null }[]
+  currentFilesMore: number
+  /** Of the places found, those found only across a line break. */
+  acrossLines: number
+  /** Documents on `main` whose structure the purge changes, by path as above. */
+  structure: { path: string; where: "id" | "alias" | "key" | "frontmatter" }[]
+  /** Places that hold it in an encoded form the purge does not reach. */
+  alsoWrittenAs: { form: PurgeForm; places: number }[]
+  /** Places that may hold it encoded (`PurgeEncoding`), which a purge does not reach. */
+  mayAppearEncoded: { encoding: PurgeEncoding; places: number }[]
+  /**
+   * Files and folders the purge names with a number, because the name the
+   * text alone gives them (`plain`, holding `purged`, never the text) is
+   * taken (review of #197): a folder once, a page on `main` with its title
+   * as the catalog will show it; at most `maxPurgePaths`.
+   */
+  renamedApart: {
+    plain: string
+    path: string
+    folder: boolean
+    title: string | null
+  }[]
+  renamedApartMore: number
+  /** Journal entries not stored yet that hold it (branch names of pushes). */
+  journalEntries: number
+}
+
+/** An encoded form of a purge text that a purge of the text itself does not reach. */
+export type PurgeForm = "url" | "percent" | "html" | "escaped"
+
+/**
+ * An encoding a purge text may also appear in, which a purge does not
+ * remove: only the exact text (whitespace aside) is removed (review of
+ * #197). Reported so the owner can have it checked.
+ */
+export type PurgeEncoding =
+  "base64" | "percent-every-byte" | "quoted-printable" | "utf-16" | "other-case"
+
+/** The most paths a purge preview lists. */
+export const maxPurgePaths = 100
+
+/**
+ * Where the Git container's part of a purge stands: a purge runs as a job
+ * the caller follows (review of #197), since a large history takes minutes.
+ * `unknown`: no such purge (or it stopped with the Git container before
+ * its swap: nothing changed).
+ */
+export interface RepositoryPurgeStatus {
+  purgeId: string
+  state: "running" | "done" | "failed" | "unknown"
+  /** When `done`. */
+  result?: RepositoryPurgeResult
+  /**
+   * When `failed`: why, never the text. When `running`: why it takes
+   * longer than it should (it failed after its swap and is being retried).
+   */
+  message?: string
+}
+
+/** What the Git container's part of a purge did (plan §2.9). */
+export interface RepositoryPurgeResult {
+  purgeId: string
+  /** Whether the history was rewritten: false when it held no copy. */
+  rewritten: boolean
+  commits: number
+  rewrittenCommits: number
+  removedCommits: number
+  files: number
+  messages: number
+  renamedBranches: number
+  journalEntries: number
+}

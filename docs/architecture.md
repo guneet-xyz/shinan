@@ -497,8 +497,6 @@ recalculating on every page view would be slow.
 
 ### 4.4 Purge
 
-> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-8](build-plan-git-catalog.md#gc-8-purge-as-a-history-rewrite)): a catalog purge rewrites the repository's history on the server. Until then, this section describes M2 as built (v0.3.0).
-
 The glossary and the [catalog](catalog.md) call this operation **purge**.
 
 **Who:** only workspace owners can purge, including operational records about
@@ -513,8 +511,9 @@ workspace:
   actor and subjects, so history keeps its shape.
 - The purge is itself an event saying who purged what and why, without the
   removed content.
-- Derived data (search text, agent index rows) is rebuilt in the same
-  transaction. There is no Git mirror to rewrite (**Decided**, owner, N-5, [#25](https://github.com/guneet-xyz/shinan/issues/25)).
+- Derived data (search text, agent index rows) is rebuilt. Since the
+  catalog moved into Git, its history is rewritten on the server (below;
+  owner, GD-11).
 - Copies outside Shinan's control are reported, not assumed clean: workspace
   exports downloaded earlier ([5.5](#55-export-and-import)), and the host's own
   backups, if any. The purge screen says so.
@@ -533,69 +532,202 @@ Reason: "never edited" keeps history trustworthy, but a leaked secret or a
 lawful deletion request must still be removable; a visible, attributed purge
 keeps both. A secret that reached Shinan must also be rotated at its source.
 
-**As built for the catalog (M2-10, [#91](https://github.com/guneet-xyz/shinan/issues/91); catalog content only in M2, owner, M2-Q4), decided (owner, 2026-11-19, M2-Q17).**
-What a purge removes and records is in [catalog §9](catalog.md#9-history-and-purge).
-How:
+**As built for the catalog (GC-8, [#170](https://github.com/guneet-xyz/shinan/issues/170); M2-10's matching, owner M2-Q17).**
+What a purge removes and records is in [catalog §9](catalog.md#9-history-and-purge);
+the plan is [§2.9](build-plan-git-catalog.md#29-undo-and-purge). A purge
+runs as a job, because a large history takes minutes (review of #197), and
+the Git container is never called inside a database transaction:
 
-- **One transaction, under the lock of the workspace's revision store**
-  (the lock taken to store a revision; it was the index lock until the
-  index moved to `main` in GC-4), so no revision is stored halfway through a
-  purge.
-- **Where the text is rewritten:** `catalog_revision_documents.text` (every
-  revision, in place); `catalog_proposals` (the request and what Shinan
-  stored about it; the request hash is computed again and the idempotency
-  key cleared); comments on proposals (`catalog_proposal_comments.text`,
-  the idempotency key cleared); `events.summary` and `events.data`. The
-  list lives in one place in core (`purgeTargets`); a later table holding
-  catalog text joins it.
-- **The append-only triggers are narrowed, not removed** (migration
-  `0010_catalog_purge`): an update of `events` may change only `summary` and
-  `data`, and an update of `catalog_revision_documents` only `text`, and
-  only in the transaction that recorded a purge of the row's workspace in
-  `catalog_purges` (matched by transaction ID). Deletes, truncation and
-  updates of `catalog_revisions` stay refused. `catalog_purges` is
-  append-only itself: no row is ever deleted, and the only update is the
-  purge filling in its own counts, in its own transaction, so every
-  transaction that rewrote history leaves its record. The security log's
-  triggers are untouched (D-049).
-- **Matching:** whitespace-insensitive ([catalog §9](catalog.md#9-history-and-purge)).
-  Candidates are found in SQL by a regular expression on the text's first
-  64 characters other than whitespace, with any whitespace (or JSON's
-  escapes of it) between them, a superset. Each is then matched and
-  rewritten in the application by one matcher (`PurgeMatcher`), used for
-  the preview, the purge and its check afterwards, in time linear in the
-  value and the text: the value's characters other than whitespace are
-  searched with the Knuth-Morris-Pratt algorithm, and each place found is
-  checked against the whitespace around it with running counts. So the
-  full 10,000-character text (a key block) and repetitive values take
-  milliseconds. Between values it gives the event loop back once matching
-  has held it for 50 ms, as rebuilds do since #140 (#149), so many large
-  values hold the server's other requests for about one value at a time. As a
-  backstop, matching for one preview or purge stops after 15 seconds in
-  all (`purge-too-slow`).
-- **Derived data:** in M2 the purge derived the index rows of every document
-  with purged text again and checked the index too. Since GC-4 the index is
-  built from `main` of the workspace's Git repository, which this purge does
-  not reach, so it no longer touches the index; GC-8 replaces it with a
-  rewrite of the repository's history followed by an index rebuild. The
-  purge checks that the text is nowhere left in the records it rewrites,
-  and otherwise rolls back.
-- **Text kept in memory:** catalog workers and the type schema cache keep
-  parsed text. The purging process forgets the workspace's at once; every
-  `web` and `worker` process checks for new purges each minute and stops
-  that workspace's catalog worker (after its turn, if one is running). Work
-  a catalog proposal did on text read before a purge is never stored: the
-  storing transaction sees the purge and the proposal is worked out again
-  on the purged text.
+1. **Check** (core `purgeCatalogText`): a workspace owner who signed in
+   again recently (`catalog.purge`); the text and the reason. `web` then
+   stores the Git container's journal, so every rewrite it made is known.
+2. **The repository, in the Git container** (`apps/server/src/git/purge.ts`),
+   as a job under a new purge ID (`POST /repositories/<ID>/purges`, then
+   `GET …/purges/<purge ID>`; one at a time per repository, a second is
+   refused `purge-running`). **Without the push lock** (pushes go on):
+   - **Scan:** `git fast-export --all --show-original-ids --reencode=no`
+     is read once (each blob and commit once, each path name matched once),
+     and the objects no branch reaches (`cat-file --batch-check` less
+     `rev-list --objects --all`) are read whole. It also gathers every path
+     the history holds. If nothing holds the text, the purge takes the lock
+     and reads what was pushed meanwhile (fast-export of the moved branches
+     less the old tips); only if that holds none either does it end, with
+     no rewrite (review of #197). The repository isn't pruned while a purge
+     reads it (`Purges.running`).
+   - **New names, planned first** (`apps/server/src/git/purge-plan.ts`,
+     review of #197): every path, folder and catalog ID holding the text
+     gets its new name once, the same in every commit, and never one the
+     history already has: folder by folder, the names that keep their form
+     first, then the new ones, numbered when taken
+     (names compared as Windows and macOS see them, letter case aside;
+     `machine/purged-box.md` beside an existing one becomes
+     `machine/purged-box-2.md`, a renamed folder beside an existing
+     `notes/purged/` becomes `notes/purged-2/`). The page's ID, its links and references
+     follow its path (`machine/purged-box-2`); an alias or reference that
+     would now name another page is numbered too. So a purge never writes
+     one page over another. The preview lists the paths it numbers.
+   - **Rewrite:** the same stream (`@shinan/git` `rewriteHistory`), each
+     blob, commit message, author and committer name and email, path and
+     branch name passed through core's `PurgeScanner` (the same
+     `PurgeMatcher`, on bytes: UTF-8 as text, anything else byte for
+     byte), into `git fast-import` in a new repository in
+     `.tmp/purge-<ID>/`, with the marks of both sides kept. The text
+     becomes `(purged)`, but in names and where it is part of a catalog ID
+     (a page's `id`, an alias, a reference) the name the plan gives, so a
+     page's ID still equals its path. A commit nothing changes
+     keeps its ID (signed commits lose their signature, so they and what
+     follows them get new IDs). Branch names are made unique (`purged-2`),
+     and `main` keeps its name.
+   - **Check:** every blob and commit of the new repository (names, emails,
+     headers and messages, not object IDs or times), every path name it
+     was written with (its trees' names), and every branch name; any copy
+     stops the purge before the swap.
+
+   **With the push lock** (pushes meanwhile are refused at once: "Shinan is
+   removing text from this catalog's history: wait a few minutes, fetch,
+   then push again"): if a push moved a branch during the first part, only
+   what it added is rewritten and checked (fast-export and fast-import
+   again, with the first run's marks; review of #197), the new repository's
+   branches are set to where the pushes left them, and branches deleted
+   meanwhile go. A pushed path that keeps a name the plan gave away (rare)
+   makes the plan and rewrite start again, whole, with the lock held. Then,
+   with the text: the journal entries
+   not yet acknowledged, the first-pusher record and earlier purges'
+   records get the new branch names, and the record of fact check groups
+   ever on `main` (GC-3b's revert rule) the text replaced as on `main` (a
+   group where it can't be is dropped and recorded again from `main` by the
+   next push). The purge's record (`records/<workspace>/purges/<ID>.json`:
+   commit IDs old and new, removed commits, branches, the IDs named apart,
+   an HMAC-SHA256 of the text under a key made once on the volume,
+   `records/purge-key`; never the text) is written `swapping`. Git
+   processes on the repository are ended and held back (`gate.drain`); the
+   answers they were giving are cut short with a TCP reset, by the Git
+   container and then by `web` towards the agent, so what was still on its
+   way is dropped rather than delivered (review of #197). What had already
+   left `web` (in Caddy's buffers and the network) still arrives, so a
+   clone in progress at the swap may hold some of the old history, as the
+   after-removal steps say; the folders are swapped; the
+   record says `swapped`; the old repository is deleted. Then, from the
+   record alone: every commit the old repository held that the new one
+   does not (unreachable ones included) joins `purged-commits`, which
+   pre-receive refuses; each rewritten commit inherits the first pusher of
+   the commit it replaces; the journal gets `repository.rewritten` (2,000
+   commits an entry) and `repository.purged` (branches, counts and the IDs
+   named apart); the record becomes `done`.
+   - **Interrupted:** while a record is `swapping` or `swapped`, every push
+     is refused (the same message), and the refs the minute check of the
+     push log asks for are answered busy, so no removed commit comes back
+     before `purged-commits` holds it. What follows the swap is tried three
+     times, then again every minute and at start (`finishPending`). A
+     `swapping` record counts as swapped when its folder holds the old
+     repository and no new one, or (folder gone) when the branches are the
+     record's; otherwise the swap never happened and it is abandoned, which
+     is safe: the repository is the old one. At start, a repository stopped
+     between the two renames is put in place before `.tmp/` is emptied.
+     Meanwhile the purge's status says `running`, with why it takes longer;
+     once finished, `done` (review of #197).
+   - **Measured** on Daedalus (review of #197's case: a branch of 20,000
+     pages of about 2 KB, 6,002 commits, 59 MiB packed): 69 s in all
+     (scan 8 s, rewrite 60 s), **pushes held back 1.2 s**, 330 MiB of
+     memory. With a push every 3 seconds while it ran (25 accepted, a fifth
+     of them on branches named with the text, a third holding it): 85 s,
+     what was pushed meanwhile rewritten in 2.8 s, **pushes held back
+     3.6 s**, and no object holding the text afterwards. Earlier, on the
+     first version: removing the same text again took 34 s, no rewrite; a
+     text that is nowhere, 25 s.
+
+3. **The database, in one transaction** (`web`, when the job ends; it
+   follows the job in the process that started it, holding the text in
+   memory meanwhile): the journal is stored (the rewrite becomes a
+   `catalog_rewrites` row, the minute check of the push log starts from
+   its branches, and the rewritten commits' first-pusher rows are copied
+   with `replaces_commit`); then the purge's record (`catalog_purges`,
+   under the rewrite's ID); the text replaced in the push log's branch
+   names (`catalog_push_refs.ref`, `catalog_commit_first_pushes.ref`,
+   `catalog_rewrites.refs`), in `events.summary` and `events.data`, and in
+   the catalog IDs of the record of the move into Git
+   (`catalog_moves.waiting_proposals`, `catalog_moves.problems`); index
+   rows that hold it dropped and a rebuild from the new `main` asked for; a
+   check that nothing it purges still holds it; a `catalog.purged` event and
+   security-log entry with counts only. Catalog IDs the rewrite named apart
+   (`catalog_rewrites.ids`) are named the same way in events and in the
+   record of the move. The list lives in core (`purgeTargets`). Once
+   recorded, `web` tells the Git container to drop the text's keyed hash
+   (`DELETE …/purges/<purge ID>/text`; review of #197). The screen asks how
+   the purge stands every 3 seconds
+   (`GET /api/workspaces/<ID>/catalog/purges/<purge ID>`, workspace owners
+   only, `catalog.purge-status`, without signing in again).
+   - **A rewrite never recorded** (`web` stopped while following it, or the
+     database part failed) stays listed as unfinished until it is
+     finished, and only by the same text: a purge first asks the Git
+     container whether its text is an unfinished rewrite's
+     (`POST …/purges/<purge ID>/text`, by the keyed hash, which only an
+     unrecorded rewrite keeps), and if so
+     records that rewrite under its own ID without rewriting again. A
+     rewrite is never recorded under another text.
+
+- **The append-only triggers are narrowed, not removed** (migrations
+  `0010_catalog_purge`, `0022_catalog_purge_rewrite`): an update of
+  `events` may change only `summary` and `data`, of `catalog_push_refs`,
+  `catalog_commit_first_pushes` and `catalog_rewrites` only the branch
+  names, of `catalog_moves` only its catalog IDs, and only in the transaction that recorded a purge of the row's
+  workspace in `catalog_purges` (matched by transaction ID). Deletes and
+  truncation stay refused. `catalog_purges` is append-only itself: the
+  only update is the purge filling in its own counts, in its own
+  transaction. The security log's triggers are untouched (D-049).
+- **Matching:** whitespace-insensitive ([catalog §9](catalog.md#9-history-and-purge)),
+  by one matcher (`PurgeMatcher`) for the preview, the purge and its checks,
+  in time linear in the value and the text (Knuth-Morris-Pratt over the
+  characters other than whitespace, each place then checked against the
+  whitespace around it with running counts). In the database, candidates
+  are found in SQL by a regular expression on the text's first 64
+  characters other than whitespace, a superset. Between values it gives the
+  event loop back once matching has held it for 50 ms (#149). Matching
+  stops after 15 seconds in all for a request in `web`, and 30 minutes for
+  the Git container's passes over a whole history (`purge-too-slow`). Only
+  the exact text (whitespace aside) is removed; the preview also reports
+  places that may hold it encoded (base64 at each alignment, also wrapped
+  across lines, every byte percent-encoded, quoted-printable with soft
+  breaks, UTF-16, another letter case), which a purge does not remove.
+  They are looked for in what is left once the text itself is removed, so
+  a file holding both is reported too, and a text of at most 12 bytes in
+  another case only as a word of its own ("Mark", not "markdown"; review
+  of #197). A link to a page written with a leading slash
+  (`/machine/box`) is renamed like any other.
+- **Unreachable objects after pushes:** a pushed pack may hold objects no
+  pushed commit uses, which the checks never read, and a deleted branch
+  leaves its commits; the Git API reads any object by full ID. So the `git`
+  role looks at each repository whose refs a push moved, and every
+  repository once after a start, once no push has reached it for 20
+  seconds (or it has waited 10 minutes), with its push lock held
+  (`apps/server/src/git/prune.ts`). It counts first, while fetches go on,
+  whether any object is unreachable: every object it holds against those
+  its branches reach, by the reachability bitmap, in milliseconds (a
+  repository without a bitmap counts as having some). If none, it joins
+  the packs pushes added (`git repack -d --geometric=2`) and prunes loose
+  objects (`git prune --expire=now`), holding Git processes back for
+  milliseconds; if some (a branch deleted or rewound, a pack with more
+  than its commits), it repacks the whole repository (`git repack -a -d`,
+  which keeps only what the branches reach and writes the bitmap) and
+  prunes, with no Git process running on it (a Git process that would
+  start waits). On a branch of 20,000 pages and 6,002 commits: 0.01 to
+  0.05 s held after a push, 9.4 s after a deleted branch (review of #197:
+  the whole repack after every push held fetches about 10 s a minute).
+  **Proposed** (GC-8): the reviews of GC-1b and GC-3a asked for it.
+- **Text kept in memory:** the type schema cache keeps parsed text. The
+  purging process forgets it at once; every `web` and `worker` process
+  checks for new purges each minute.
 - **Earlier row versions:** PostgreSQL keeps a row's earlier version until
   vacuum clears it, so the purge asks for a vacuum of the tables it changed
   right after (best effort; autovacuum does it otherwise), and a database
-  dump then has no trace of the text (`purge.test.ts` reads every table;
-  checked with `pg_dump` too). The bytes of deleted row versions stay in the
-  database's files until the space is reused, and the write-ahead log and
-  the host's backups may hold the text: the purge screen says copies outside
-  Shinan's control remain, and the [operator guide](operator-guide.md#catalog-purge)
-  says how to clear the files with `VACUUM FULL`.
+  dump then has no trace of the text (`purge.test.ts` in core and in the
+  `git` role read every table; checked with `pg_dump` too). The bytes of
+  deleted row versions stay in the database's files until the space is
+  reused, and the write-ahead log and the host's backups may hold the text:
+  the purge screen says copies outside Shinan's control remain, and the
+  [operator guide](operator-guide.md#catalog-purge) says how to clear the
+  files with `VACUUM FULL`. On the Git volume, the old repository's files
+  are deleted, not overwritten.
 
 ## 5. Catalog Markdown and agent index
 

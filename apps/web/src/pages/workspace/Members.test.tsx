@@ -190,6 +190,6 @@ describe("the members screen", () => {
       within(tabs)
         .getAllByRole("link")
         .map((l) => l.textContent),
-    ).toEqual(["General", "Members", "Catalog", "Security log", "Data"])
+    ).toEqual(["General", "Members", "Catalog", "Security log"])
   })
 })

@@ -9,11 +9,13 @@ import {
   GitContextError,
   gitContextHeader,
   gitContextMaxLength,
+  InvalidInputError,
   maxConcurrentReads,
   maxDocumentsPerRead,
   maxFileBytes,
   maxQueuedReads,
   maxRequestBodyBytes,
+  RuleViolationError,
 } from "@shinan/core"
 import type {
   DocumentRead,
@@ -26,6 +28,8 @@ import { GitError } from "@shinan/git"
 
 import type { Journal } from "./journal.js"
 import { JournalDamagedError, JournalError } from "./journal.js"
+import type { RepositoryGate } from "./prune.js"
+import type { Purges } from "./purge.js"
 import type { PushService } from "./push/service.js"
 import { createSmartHttp } from "./smart-http.js"
 import type { GitProcessLimits } from "./smart-http.js"
@@ -204,6 +208,10 @@ export function createGitApp(options: {
   openSpool?: (path: string) => NodeJS.WritableStream
   /** The push checks (Git-based catalog plan §2.5); without them, the hooks refuse every push. */
   push?: PushService
+  /** Purges as history rewrites (plan §2.9). */
+  purges?: Purges
+  /** Who uses each repository, for the pruner. */
+  gate?: RepositoryGate
 }) {
   const log = options.log ?? createLimitedLog()
   const authorized = serviceTokenCheck(options.serviceToken)
@@ -220,6 +228,11 @@ export function createGitApp(options: {
       return fail(c, 400, "invalid-request", error.message)
     if (error instanceof GitContextError)
       return fail(c, 400, "invalid-context", error.message)
+    // A purge text the rules refuse, or one that takes too long to find.
+    if (error instanceof InvalidInputError)
+      return fail(c, 400, error.rule, error.message)
+    if (error instanceof RuleViolationError)
+      return fail(c, 422, error.rule, error.message)
     if (error instanceof GitError && error.kind === "start") {
       return fail(c, 400, "invalid-request", error.message)
     }
@@ -417,6 +430,70 @@ export function createGitApp(options: {
     )
   })
 
+  // A purge (plan §2.9): its preview reads, the purge rewrites. The text
+  // comes in the body and no answer or log line repeats it.
+  app.post(
+    "/repositories/:workspaceId/purge/preview",
+    limit(64 * 1024),
+    async (c) => {
+      if (!options.purges) return fail(c, 404, "not-found", "Not found")
+      const body = await jsonBody(c)
+      if (typeof body.text !== "string") bad("text must be a string")
+      return c.json(await options.purges.preview(workspace(c), body.text))
+    },
+  )
+  // A purge runs as a job (review of #197): started here, then followed.
+  const purgeId = (value: unknown) => {
+    if (
+      typeof value !== "string" ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(
+        value,
+      )
+    )
+      bad("purgeId must be a UUID")
+    return value
+  }
+  app.post("/repositories/:workspaceId/purges", limit(64 * 1024), async (c) => {
+    if (!options.purges) return fail(c, 404, "not-found", "Not found")
+    const body = await jsonBody(c)
+    if (typeof body.text !== "string") bad("text must be a string")
+    return c.json(
+      options.purges.start(workspace(c), {
+        purgeId: purgeId(body.purgeId),
+        text: body.text,
+      }),
+      202,
+    )
+  })
+  app.get("/repositories/:workspaceId/purges/:purgeId", (c) => {
+    if (!options.purges) return fail(c, 404, "not-found", "Not found")
+    return c.json(
+      options.purges.status(workspace(c), purgeId(c.req.param("purgeId"))),
+    )
+  })
+  // `web` recorded the purge: its text's keyed hash goes (review of #197).
+  app.delete("/repositories/:workspaceId/purges/:purgeId/text", (c) => {
+    if (!options.purges) return fail(c, 404, "not-found", "Not found")
+    options.purges.forgetText(workspace(c), purgeId(c.req.param("purgeId")))
+    return c.json({ forgotten: true })
+  })
+  app.post(
+    "/repositories/:workspaceId/purges/:purgeId/text",
+    limit(64 * 1024),
+    async (c) => {
+      if (!options.purges) return fail(c, 404, "not-found", "Not found")
+      const body = await jsonBody(c)
+      if (typeof body.text !== "string") bad("text must be a string")
+      return c.json({
+        matches: options.purges.isText(
+          workspace(c),
+          purgeId(c.req.param("purgeId")),
+          body.text,
+        ),
+      })
+    },
+  )
+
   app.get("/journal", (c) =>
     c.json({
       journalId: options.journal.id,
@@ -450,6 +527,7 @@ export function createGitApp(options: {
       answerStallSeconds: options.answerStallSeconds,
       openSpool: options.openSpool,
       push: options.push,
+      gate: options.gate,
     }),
   )
 

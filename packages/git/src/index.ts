@@ -61,3 +61,28 @@ export type {
   RunOptions,
   RunResult,
 } from "./run.js"
+export {
+  commitTexts,
+  joinIdentity,
+  listObjects,
+  quotePath,
+  reachableObjects,
+  readAllObjects,
+  readObjects,
+  readHistory,
+  rewriteHistory,
+  splitIdentity,
+  treeEntryNames,
+  unquotePath,
+} from "./history.js"
+export type {
+  HistoryBlob,
+  HistoryChange,
+  HistoryCommit,
+  HistoryItem,
+  HistoryRange,
+  HistoryReset,
+  IdentityParts,
+  RewrittenHistory,
+  StoredObject,
+} from "./history.js"
