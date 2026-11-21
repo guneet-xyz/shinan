@@ -555,8 +555,22 @@ accepted with the plan):**
   merged. Retire rather than delete; keep old IDs in `aliases`. Undo is
   `git revert`. On a refusal, the agent does what the output's last lines
   say: a new commit, or for problems inside its commits, rewriting them
-  with `git rebase -i origin/main` (product review of #176). After a purge,
-  it resets onto the new history and never pushes old commits back.
+  with `git rebase -i origin/main` (product review of #176).
+- **After a purge** (GC-8, [#197](https://github.com/guneet-xyz/shinan/pull/197);
+  the product owner's note on [#171](https://github.com/guneet-xyz/shinan/issues/171#issuecomment-7046346205)),
+  in `references/changing.md`: the agent notices a forced `main` on fetch,
+  or a refusal with `purged-commit` or one of the two `busy` messages
+  ("Shinan is removing text from this catalog's history", "the catalog's
+  history was rewritten while this push was sent"). It fetches without
+  merging the old `main` into the new one; rebuilds each local branch from
+  `origin/main` with only its own unpushed work (continuing a branch it had
+  pushed from its rewritten `origin/<branch>`); never puts the removed text
+  back, keeping `(purged)` and names and IDs with `purged` (`purged-2`, …)
+  as they are; never pushes old commits; and tells its person that the
+  clone still holds the old history on disk. The person deletes the clone
+  and runs step 2 of Set up an agent again; the agent never deletes the
+  clone or touches credential helpers itself. A server test checks that
+  the skill quotes each of these refusals as the push checks write them.
 - **Writing fact checks by hand:** `checked` is the real time of the check,
   never rounded and never the time of writing or pushing
   ([#158](https://github.com/guneet-xyz/shinan/issues/158)); `by` is the

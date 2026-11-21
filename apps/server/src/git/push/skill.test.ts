@@ -341,6 +341,26 @@ describe("the shinan skill against Shinan's push checks", () => {
     await ok(["worktree", "remove", "--force", worktree], clone())
   })
 
+  it("explains the refusals after a purge in the push output's words", () => {
+    // The messages as the push checks write them (GC-8): the part before
+    // the colon is what an agent sees first, and the skill quotes it.
+    const source = ["service.ts", "checks.ts"]
+      .map((file) =>
+        readFileSync(new URL(`./${file}`, import.meta.url), "utf8"),
+      )
+      .join("\n")
+    const prose = changing.replace(/\s+/g, " ")
+    for (const start of [
+      "this commit was removed by a purge",
+      "Shinan is removing text from this catalog's history",
+      "the catalog's history was rewritten while this push was sent",
+    ]) {
+      expect(source, start).toContain(`${start}:`)
+      expect(prose, start).toContain(start)
+    }
+    expect(prose).toContain("## After a purge")
+  })
+
   it("explains every push check code", () => {
     for (const code of Object.keys(pushCheckCodes))
       expect(changing, code).toContain(`| \`${code}\``)
