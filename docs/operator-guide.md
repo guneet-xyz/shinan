@@ -673,7 +673,12 @@ It waits until no push has reached the repository for 20 seconds (10
 minutes at most), and holds fetches for milliseconds: it counts first
 whether anything is unreachable, and only then repacks the whole
 repository (9.4 s for a branch of 20,000 pages and 6,002 commits on
-Daedalus; otherwise it joins the packs pushes added, in milliseconds).
+Daedalus; otherwise it joins the packs pushes added, in milliseconds). If
+that fails, the `git` log says "Pruning the repository of workspace …
+failed", and it tries again an hour later; until then the unreachable
+objects stay. A history of hundreds of thousands of commits can need more
+memory for the whole repack than the `git` container has
+(`SHINAN_GIT_MEMORY`).
 
 ## Stopping and removing
 

@@ -1,4 +1,4 @@
-import { mkdtempSync, readdirSync, rmSync } from "node:fs"
+import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
@@ -7,7 +7,11 @@ import { createGit } from "@shinan/git"
 import { commitFiles } from "@shinan/git/testing"
 
 import { openJournal } from "./journal.js"
-import { createPruner, createRepositoryGate } from "./prune.js"
+import {
+  createPruner,
+  createRepositoryGate,
+  unreachableObjects,
+} from "./prune.js"
 import { createPushLocks } from "./push/lock.js"
 import { openRecords } from "./push/records.js"
 import { createPushService } from "./push/service.js"
@@ -94,6 +98,50 @@ describe("pruning repositories after pushes", () => {
     expect(await pruner.run()).toEqual([])
   })
 
+  it("counts the objects a repository holds as one byte each, never by name", async () => {
+    const { store, git } = setup()
+    await store.create(workspaceId, {
+      files: [{ path: "README.md", content: new TextEncoder().encode("Hi\n") }],
+      message: "First",
+    })
+    const gitDir = store.pathOf(workspaceId)
+    const main = (await store.main(workspaceId))!
+    const files = Object.fromEntries(
+      Array.from({ length: 200 }, (_, i) => [`p/${i}.md`, `Page ${i}\n`]),
+    )
+    await commitFiles(git, gitDir, files, {
+      parents: [main],
+      ref: "refs/heads/main",
+    })
+    await git.run(["repack", "-a", "-d", "-q", "--write-bitmap-index"], {
+      gitDir,
+    })
+    const outputs: number[] = []
+    const counting = {
+      git: {
+        ...git,
+        run: async (...args: Parameters<typeof git.run>) => {
+          const result = await git.run(...args)
+          if (args[0][0] === "cat-file") outputs.push(result.stdout.length)
+          return result
+        },
+      },
+    }
+    // The README and 200 pages, their folder, two root trees, two commits.
+    expect(await unreachableObjects(counting, gitDir)).toBe(false)
+    expect(outputs).toEqual([206])
+
+    const gone = await commitFiles(
+      git,
+      gitDir,
+      { "b.md": "b\n" },
+      { parents: [main], ref: "refs/heads/gone" },
+    )
+    await git.run(["update-ref", "-d", "refs/heads/gone"], { gitDir })
+    expect(await has(git, gitDir, gone)).toBe(true)
+    expect(await unreachableObjects(counting, gitDir)).toBe(true)
+  })
+
   it("joins pushed packs only, keeping the whole pack, when nothing is unreachable; repacks whole when something is", async () => {
     const { store, git, pruner } = setup()
     await store.create(workspaceId, {
@@ -139,6 +187,70 @@ describe("pruning repositories after pushes", () => {
     expect(await pruner.run()).toEqual([workspaceId])
     expect(await has(git, gitDir, gone)).toBe(false)
     expect(packs()).not.toContain(whole)
+  })
+
+  it("removes a failed repack's half-written pack, and tries again only after a wait, pushes or not", async () => {
+    const root = mkdtempSync(join(work, "catalog-"))
+    const real = createGit()
+    let failing = true
+    let repacks = 0
+    const git: typeof real = {
+      ...real,
+      run: async (args, options) => {
+        if (args[0] === "repack") {
+          repacks++
+          if (failing) {
+            // As a repack stopped half-way leaves it.
+            writeFileSync(
+              join(options!.gitDir!, "objects", "pack", "tmp_pack_x"),
+              "half a pack",
+            )
+            throw new Error("pack-objects died of signal 9")
+          }
+        }
+        return real.run(args, options)
+      },
+    }
+    const store = createRepositoryStore({ root, git })
+    const push = createPushService({
+      store,
+      journal: openJournal(root),
+      records: openRecords(root),
+      locks: createPushLocks(),
+    })
+    const logged: string[] = []
+    const pruner = createPruner({
+      store,
+      push,
+      gate: createRepositoryGate(),
+      quietMs: 0,
+      failedWaitMs: 300,
+      log: (line) => logged.push(line),
+    })
+    await store.create(workspaceId, {
+      files: [{ path: "README.md", content: new TextEncoder().encode("Hi\n") }],
+      message: "First",
+    })
+    const packs = join(store.pathOf(workspaceId), "objects", "pack")
+
+    pruner.soon(workspaceId)
+    expect(await pruner.run()).toEqual([])
+    expect(repacks).toBe(1)
+    expect(readdirSync(packs).filter((f) => f.startsWith("tmp_"))).toEqual([])
+    expect(logged).toHaveLength(1)
+    expect(logged[0]).toContain(
+      `Pruning the repository of workspace ${workspaceId} failed`,
+    )
+
+    // Another push meanwhile: still not before the wait is over.
+    pruner.soon(workspaceId)
+    expect(await pruner.run()).toEqual([])
+    expect(repacks).toBe(1)
+
+    failing = false
+    await new Promise((resolve) => setTimeout(resolve, 350))
+    expect(await pruner.run()).toEqual([workspaceId])
+    expect(repacks).toBe(2)
   })
 
   it("leaves a repository pushed to just now for later, unless it waited long enough", async () => {

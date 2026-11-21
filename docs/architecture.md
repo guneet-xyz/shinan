@@ -728,6 +728,13 @@ the Git container is never called inside a database transaction:
   start waits). On a branch of 20,000 pages and 6,002 commits: 0.01 to
   0.05 s held after a push, 9.4 s after a deleted branch (review of #197:
   the whole repack after every push held fetches about 10 s a minute).
+  The count reads one byte per object, never their names. A pruning that
+  fails (a whole repack out of memory or past its time) has its
+  half-written pack removed, and the repository waits an hour before it
+  is tried again, pushes or not (GC-11: on a 1,000,000-commit history the
+  whole repack needs more than the container's 1,024 MiB; tried every
+  minute, it held the repository for minutes each time and left a
+  400 MB pack behind each time).
   **Proposed** (GC-8): the reviews of GC-1b and GC-3a asked for it.
 - **Text kept in memory:** the type schema cache keeps parsed text. The
   purging process forgets it at once; every `web` and `worker` process
