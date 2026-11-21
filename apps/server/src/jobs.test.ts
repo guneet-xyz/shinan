@@ -4,7 +4,6 @@ import {
   beforeAll,
   describe,
   expect,
-  inject,
   it,
   vi,
 } from "vitest"
@@ -12,7 +11,8 @@ import {
 import { catalogIndexQueue, emailQueue, getInstallation } from "@shinan/core"
 import { createMemoryGit } from "@shinan/core/testing"
 import { createDatabase, eq, schema, sql } from "@shinan/db"
-import { connectTestDatabase, createTestDatabase } from "@shinan/db/testing"
+import { createTestDatabase } from "@shinan/db/testing"
+import type { TestDatabase } from "@shinan/db/testing"
 import type { EmailSender, SendResult } from "@shinan/email"
 
 import { runCommand } from "./commands.js"
@@ -25,17 +25,28 @@ import {
 } from "./jobs.js"
 import type { Worker } from "./jobs.js"
 
-const databaseUrl = inject("databaseUrl")
-const { db, pool } = connectTestDatabase()
+// A database of its own (#200): the workers these tests start act on the
+// whole installation, as the worker does (the index catch-up and nightly
+// check, the push log's minute job), so on the database the other test
+// files share they would ask for rebuilds of, and run index jobs for, those
+// files' workspaces.
+let own: TestDatabase
+let databaseUrl: string
+let db: ReturnType<typeof createDatabase>["db"]
+let pool: ReturnType<typeof createDatabase>["pool"]
 
 beforeAll(async () => {
   vi.spyOn(console, "info").mockImplementation(() => {})
+  own = await createTestDatabase()
+  databaseUrl = own.url
+  ;({ db, pool } = createDatabase(databaseUrl, { refuseNested: true }))
   await migrateJobQueue(databaseUrl)
 })
 
 afterAll(async () => {
   vi.restoreAllMocks()
   await pool.end()
+  await own.drop()
 })
 
 describe("migrate", () => {

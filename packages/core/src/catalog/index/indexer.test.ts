@@ -1,6 +1,15 @@
-import { afterAll, beforeEach, describe, expect, it } from "vitest"
+import {
+  afterAll,
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest"
 
-import { and, asc, eq, schema, sql } from "@shinan/db"
+import { and, asc, createDatabase, eq, schema, sql } from "@shinan/db"
+import { createTestDatabase } from "@shinan/db/testing"
 
 import * as fixtures from "../../../test/catalog-index-fixtures.js"
 import {
@@ -1230,38 +1239,6 @@ describe("rebuilds, catch-up and the round-trip check", () => {
     expect(state).toMatchObject({ failure: "git-unavailable" })
   })
 
-  it("does not compare an index that is not at main, and queues its update", async () => {
-    await push(filesOf([fixtures.musashi]))
-    await repositoryMade()
-    git.push(workspaceId, filesOf([fixtures.daedalus]))
-    const jobs = recordingJobs()
-    const checks = await checkCatalogIndexes({ ...asShinan(db), jobs }, git, {})
-    expect(checks.find((c) => c.workspaceId === workspaceId)).toMatchObject({
-      outcome: "behind",
-    })
-    expect(jobs.sent).toContainEqual({ workspaceId })
-  })
-
-  it("catches up on start: a job for every workspace with a repository", async () => {
-    await repositoryMade()
-    const jobs = recordingJobs()
-    const queued = await catchUpCatalogIndexes({ ...asShinan(db), jobs })
-    expect(queued).toContain(workspaceId)
-    expect(jobs.sent).toContainEqual({ workspaceId })
-    // Its index was never built: a rebuild is asked for, and answers say so.
-    expect((await stateOf()).rebuildRequestedAt).not.toBeNull()
-    const answer = await searchCatalog(asPerson(db, owner), workspaceId, {
-      text: "Musashi",
-    })
-    expect(answer).toMatchObject({ catalog_commit: null, index_behind: true })
-    await updateCatalogIndex(asShinan(db), { workspaceId }, git)
-    expect(
-      await searchCatalog(asPerson(db, owner), workspaceId, {
-        text: "Musashi",
-      }),
-    ).toMatchObject({ index_behind: false })
-  })
-
   it("queues the first index of a new repository's main", async () => {
     const main = (await git.getRepository(workspaceId))!.main
     const jobs = recordingJobs()
@@ -1317,4 +1294,131 @@ describe("rebuilds, catch-up and the round-trip check", () => {
       ),
     ).rejects.toThrow(NotFoundError)
   })
+})
+
+// Maintenance across the whole installation (the worker's catch-up, the
+// nightly check) reaches every workspace with a repository: on the shared
+// test database that would be other test files' workspaces too (#200), so
+// these tests have a database of their own.
+describe("installation-wide maintenance, on a database of its own", () => {
+  let own: Awaited<ReturnType<typeof createTestDatabase>>
+  let ownDb: ReturnType<typeof createDatabase>["db"]
+  let ownPool: ReturnType<typeof createDatabase>["pool"]
+  let ownGit: MemoryGit
+  let ownWorkspace: string
+
+  beforeEach(async () => {
+    own = await createTestDatabase()
+    ;({ db: ownDb, pool: ownPool } = createDatabase(own.url, {
+      refuseNested: true,
+    }))
+    const person = await newPerson(ownDb, "owner")
+    ownWorkspace = (
+      await createWorkspace(asPerson(ownDb, person), { name: "Own" })
+    ).workspace.id
+    ownGit = createMemoryGit()
+    const main = ownGit.create(ownWorkspace, {
+      "README.md": "# Catalog\n",
+      ...filesOf([fixtures.musashi]),
+    })
+    await ownDb
+      .update(schema.catalogRepositories)
+      .set({ createdAt: sql`now()`, firstCommit: main })
+      .where(eq(schema.catalogRepositories.workspaceId, ownWorkspace))
+  }, 60_000)
+
+  afterEach(async () => {
+    await ownPool.end()
+    await own.drop()
+  })
+
+  it("does not compare an index that is not at main, and queues its update", async () => {
+    await updateWorkspaceIndex(ownDb, ownGit, ownWorkspace)
+    ownGit.push(ownWorkspace, filesOf([fixtures.daedalus]))
+    const jobs = recordingJobs()
+    const checks = await checkCatalogIndexes(
+      { ...asShinan(ownDb), jobs },
+      ownGit,
+      {},
+    )
+    expect(checks).toMatchObject([
+      { workspaceId: ownWorkspace, outcome: "behind" },
+    ])
+    expect(jobs.sent).toContainEqual({ workspaceId: ownWorkspace })
+  })
+
+  it("catches up on start: a job for every workspace with a repository", async () => {
+    const jobs = recordingJobs()
+    const queued = await catchUpCatalogIndexes({ ...asShinan(ownDb), jobs })
+    expect(queued).toEqual([ownWorkspace])
+    expect(jobs.sent).toContainEqual({ workspaceId: ownWorkspace })
+    // Its index was never built: a rebuild is asked for, and answers say so.
+    const state = async () =>
+      (
+        await ownDb
+          .select()
+          .from(schema.catalogIndexState)
+          .where(eq(schema.catalogIndexState.workspaceId, ownWorkspace))
+      )[0]!
+    expect((await state()).rebuildRequestedAt).not.toBeNull()
+    const person = await ownDb
+      .select({ id: schema.members.personId })
+      .from(schema.members)
+      .where(eq(schema.members.workspaceId, ownWorkspace))
+    const reader = asPerson(ownDb, { id: person[0]!.id } as Person)
+    expect(
+      await searchCatalog(reader, ownWorkspace, { text: "Musashi" }),
+    ).toMatchObject({ catalog_commit: null, index_behind: true })
+    await updateCatalogIndex(
+      asShinan(ownDb),
+      { workspaceId: ownWorkspace },
+      ownGit,
+    )
+    expect(
+      await searchCatalog(reader, ownWorkspace, { text: "Musashi" }),
+    ).toMatchObject({ index_behind: false })
+  })
+
+  it("leaves an index built while a catch-up asked for rebuilds as it is: built, not behind", async () => {
+    // Holds the first build's write open, after it has locked the index
+    // state's row: the moment a catch-up finds the index never built
+    // (its commit still null) and waits on that row.
+    await ownPool.query(`
+      create function pause_index_build() returns trigger language plpgsql as $$
+      begin perform pg_sleep(2); return new; end $$;
+      create trigger pause_index_build after insert on catalog_index_documents
+        for each row execute function pause_index_build()`)
+    const building = updateWorkspaceIndex(ownDb, ownGit, ownWorkspace)
+    await vi.waitFor(
+      async () => {
+        const { rows } = await ownPool.query<{ n: number }>(
+          "select count(*)::int as n from pg_stat_activity where datname = current_database() and wait_event = 'PgSleep'",
+        )
+        expect(rows[0]!.n).toBe(1)
+      },
+      { timeout: 20_000, interval: 50 },
+    )
+    const jobs = recordingJobs()
+    const [asked, built] = await Promise.all([
+      requestCatalogIndexRebuilds({ ...asShinan(ownDb), jobs }),
+      building,
+    ])
+    expect(built).toMatchObject({ outcome: "rebuilt", documents: 1 })
+    // The catch-up found it while it was built, and found it built once it
+    // could look: nothing to ask for.
+    expect(asked).toEqual([])
+    expect(jobs.sent).toEqual([])
+    const [state] = await ownDb
+      .select()
+      .from(schema.catalogIndexState)
+      .where(eq(schema.catalogIndexState.workspaceId, ownWorkspace))
+    expect(state!.rebuildRequestedAt).toBeNull()
+    const [checked] = await checkCatalogIndexes(asShinan(ownDb), ownGit, {
+      workspaceIds: [ownWorkspace],
+    })
+    expect(checked).toMatchObject({ outcome: "matched", documents: 1 })
+    await ownPool.query(
+      "drop trigger pause_index_build on catalog_index_documents; drop function pause_index_build()",
+    )
+  }, 60_000)
 })

@@ -126,17 +126,39 @@ export async function requestCatalogIndexRebuilds(
     }
     // In one order everywhere, so two requests at once cannot deadlock.
     workspaceIds.sort()
+    const asked: string[] = []
     for (const workspaceId of workspaceIds) {
-      await markRebuild(scope.tx, workspaceId)
+      // Those found by their state are marked only if they still need it
+      // once their row is locked: an index being built for the first time
+      // is found (its commit is still null), and its rebuild may commit
+      // while this waits for the row. Marking it then would leave a fresh
+      // index behind, rebuilt again for nothing (#200).
+      if (
+        !(await markRebuild(scope.tx, workspaceId, {
+          onlyIfNeeded: !input.workspaceIds,
+        }))
+      )
+        continue
       await queueUpdate(scope, workspaceId)
+      asked.push(workspaceId)
     }
-    return workspaceIds
+    return asked
   })
 }
 
-async function markRebuild(tx: Transaction, workspaceId: string) {
-  await tx
-    .insert(schema.catalogIndexState)
+/**
+ * Asks for the workspace's rebuild, unless `onlyIfNeeded` and its index,
+ * as it stands once its row is locked, no longer needs one. Says whether
+ * it asked.
+ */
+async function markRebuild(
+  tx: Transaction,
+  workspaceId: string,
+  options: { onlyIfNeeded: boolean },
+): Promise<boolean> {
+  const s = schema.catalogIndexState
+  const rows = await tx
+    .insert(s)
     .values({
       workspaceId,
       parserVersion,
@@ -144,11 +166,19 @@ async function markRebuild(tx: Transaction, workspaceId: string) {
       rebuildRequestedAt: sql`now()`,
     })
     .onConflictDoUpdate({
-      target: schema.catalogIndexState.workspaceId,
+      target: s.workspaceId,
       set: {
-        rebuildRequestedAt: sql`coalesce(${schema.catalogIndexState.rebuildRequestedAt}, now())`,
+        rebuildRequestedAt: sql`coalesce(${s.rebuildRequestedAt}, now())`,
       },
+      // Judged on the row as it stands after any transaction that held it.
+      ...(options.onlyIfNeeded
+        ? {
+            setWhere: sql`${s.commit} is null or ${s.parserVersion} <> ${parserVersion} or ${s.rulesVersion} <> ${indexRulesVersion} or ${s.rebuildRequestedAt} is not null or exists (select 1 from ${schema.catalogIndexDocuments} d where d.workspace_id = ${s.workspaceId} and (d.parser_version <> ${parserVersion} or d.rules_version <> ${indexRulesVersion}))`,
+          }
+        : {}),
     })
+    .returning({ workspaceId: s.workspaceId })
+  return rows.length > 0
 }
 
 /**
@@ -240,7 +270,7 @@ export async function rebuildCatalogIndex(
     "catalog-index.maintain",
     async (scope) => {
       const found = await existingWorkspaces(scope.tx, [input.workspaceId])
-      await markRebuild(scope.tx, found[0]!)
+      await markRebuild(scope.tx, found[0]!, { onlyIfNeeded: false })
       return found
     },
   )

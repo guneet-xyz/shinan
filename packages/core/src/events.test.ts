@@ -146,24 +146,34 @@ describe("createPerson", () => {
         "insert into people (handle, name, email) values ($1, 'First', $2)",
         [handle, `${handle}@example.com`],
       )
+      const { rows: me } = await other.query<{ pid: number }>(
+        "select pg_backend_pid() as pid",
+      )
+      // Its outcome is taken at once: the attempt can fail before the
+      // commit below has answered, and must never be an unhandled
+      // rejection meanwhile (#200).
       const attempt = createPerson(asShinan(db), {
         handle,
         name: "Second",
         email: `${handle}-2@example.com`,
-      })
+      }).then(
+        () => null,
+        (error: unknown) => error,
+      )
+      // Waiting on this connection's row: a session blocked by it, not by
+      // another test file's (the database is shared, #200).
       await vi.waitFor(
         async () => {
           const { rows } = await db.execute<{ count: number }>(
             sql`select count(*)::int as count from pg_stat_activity
-                where wait_event_type = 'Lock' and datname = current_database()
-                and query ilike '%insert into "people"%'`,
+                where ${me[0]!.pid} = any(pg_blocking_pids(pid))`,
           )
           expect(rows[0]!.count).toBe(1)
         },
         { timeout: 10_000, interval: 20 },
       )
       await other.query("commit")
-      await expect(attempt).rejects.toMatchObject({ rule: "handle-taken" })
+      expect(await attempt).toMatchObject({ rule: "handle-taken" })
     } finally {
       await other.query("rollback").catch(() => {})
       other.release()
