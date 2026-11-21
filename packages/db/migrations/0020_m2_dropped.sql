@@ -9,10 +9,19 @@
 --
 -- The tables are locked first, so nothing can write to them between the
 -- check and the drop: a write committed before is seen by the check, and
--- one that comes later waits, then fails once they are gone.
+-- one that comes later waits, then fails once they are gone. `workspaces`
+-- too, whose column the drop removes, so every lock this migration needs
+-- is taken here, at once. The lock is waited for at most 15 seconds: a
+-- session that keeps one of these tables open, such as 0.3's web left
+-- running, makes this statement fail with lock_not_available (55P03),
+-- which migrate explains, rather than wait for ever. The time-out ends with
+-- this migration (the last statement), not with the transaction, which
+-- may also apply later migrations.
+SET LOCAL lock_timeout = '15s';
+--> statement-breakpoint
 LOCK TABLE "catalog_page_visits", "catalog_proposal_comments",
   "catalog_revision_documents", "catalog_documents", "catalog_revisions",
-  "catalog_proposals" IN ACCESS EXCLUSIVE MODE;
+  "catalog_proposals", "workspaces" IN ACCESS EXCLUSIVE MODE;
 --> statement-breakpoint
 DO $$
 BEGIN
@@ -53,4 +62,5 @@ DROP TABLE "catalog_documents";--> statement-breakpoint
 DROP TABLE "catalog_revisions";--> statement-breakpoint
 DROP TABLE "catalog_proposals";--> statement-breakpoint
 DROP TYPE "public"."catalog_proposal_state";--> statement-breakpoint
-ALTER TABLE "workspaces" DROP COLUMN "catalog_strict";
+ALTER TABLE "workspaces" DROP COLUMN "catalog_strict";--> statement-breakpoint
+SET LOCAL lock_timeout TO DEFAULT;

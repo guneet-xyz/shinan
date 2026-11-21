@@ -544,9 +544,9 @@ async function runMigrate(env: Env): Promise<number> {
     try {
       await migrateDatabase(databaseUrl)
     } catch (error) {
-      // The drop's own refusal (`RAISE EXCEPTION` in 0020_m2_dropped): its
-      // message is Shinan's, never a value, so it is shown.
-      const refusal = refusalOf(error)
+      // The drop's own refusal, or its lock waited for too long
+      // (0020_m2_dropped): explained, never a value.
+      const refusal = migrationRefusal(error)
       if (refusal === null) throw error
       console.error(refusal)
       return false
@@ -558,20 +558,39 @@ async function runMigrate(env: Env): Promise<number> {
   return 0
 }
 
-/** The message of a migration's own `RAISE EXCEPTION` (SQLSTATE P0001), or null. */
-function refusalOf(error: unknown): string | null {
+/**
+ * Why a migration refused to run, to show the operator, or null for any
+ * other failure: its own `RAISE EXCEPTION` (SQLSTATE P0001), whose message
+ * is Shinan's, never a value; or the drop of M2's tables (0020_m2_dropped)
+ * waiting past its `lock_timeout` (55P03) at its lock, the one statement
+ * that waits for locks there. Another migration's lock time-out is not
+ * explained so.
+ */
+export function migrationRefusal(error: unknown): string | null {
   let current: unknown = error
+  let query = ""
   for (let depth = 0; depth < 5 && current; depth++) {
-    const { code, message, cause } = current as {
+    const step = current as {
       code?: unknown
       message?: unknown
       cause?: unknown
+      query?: unknown
     }
-    if (code === "P0001" && typeof message === "string") return message
-    current = cause
+    // Drizzle's error carries the statement that failed.
+    if (typeof step.query === "string") query = step.query
+    if (step.code === "P0001" && typeof step.message === "string")
+      return step.message
+    if (step.code === "55P03")
+      return m2DropLockStatement.test(query)
+        ? "M2's catalog tables are kept: the drop waited 15 seconds for them while another session held them (is 0.3's web or worker still running?). Stop it and run migrate again; the moves already made are kept."
+        : null
+    current = step.cause
   }
   return null
 }
+
+/** The drop of M2's tables' lock statement (0020_m2_dropped). */
+const m2DropLockStatement = /LOCK TABLE "catalog_page_visits"/
 
 function waitForShutdown(): Promise<NodeJS.Signals> {
   return new Promise((resolve) => {

@@ -7,7 +7,13 @@ import { schema } from "@shinan/db"
 import { connectTestDatabase } from "@shinan/db/testing"
 
 import { createInternalApp } from "./app.js"
-import { closeWeb, createEmailSender, runCommand, usage } from "./commands.js"
+import {
+  closeWeb,
+  createEmailSender,
+  migrationRefusal,
+  runCommand,
+  usage,
+} from "./commands.js"
 import { checkHealth } from "./health.js"
 
 describe("runCommand", () => {
@@ -249,5 +255,55 @@ describe("health", () => {
       "http://[::1]:4001/readyz",
       "http://10.0.0.5:3001/readyz",
     ])
+  })
+})
+
+describe("a migration's refusal", () => {
+  it("shows the drop's own message, explains its lock waited for too long, and nothing else", () => {
+    // As Drizzle's error: the statement that failed, PostgreSQL's under it.
+    const drizzle = (
+      cause: unknown,
+      query = 'LOCK TABLE "catalog_page_visits", "workspaces" IN ACCESS EXCLUSIVE MODE;',
+    ) => Object.assign(new Error("Failed query: …"), { query, cause })
+    expect(
+      migrationRefusal(
+        drizzle(
+          Object.assign(new Error("M2's catalog tables are kept: …"), {
+            code: "P0001",
+          }),
+        ),
+      ),
+    ).toBe("M2's catalog tables are kept: …")
+    expect(
+      migrationRefusal(
+        drizzle(
+          Object.assign(new Error("canceling statement due to lock timeout"), {
+            code: "55P03",
+          }),
+        ),
+      ),
+    ).toBe(
+      "M2's catalog tables are kept: the drop waited 15 seconds for them while another session held them (is 0.3's web or worker still running?). Stop it and run migrate again; the moves already made are kept.",
+    )
+    // Another migration's lock time-out is not the drop's.
+    expect(
+      migrationRefusal(
+        drizzle(
+          Object.assign(new Error("canceling statement due to lock timeout"), {
+            code: "55P03",
+          }),
+          'ALTER TABLE "people" ADD COLUMN "x" text;',
+        ),
+      ),
+    ).toBeNull()
+    expect(
+      migrationRefusal(
+        drizzle(
+          Object.assign(new Error("duplicate key value violates…"), {
+            code: "23505",
+          }),
+        ),
+      ),
+    ).toBeNull()
   })
 })

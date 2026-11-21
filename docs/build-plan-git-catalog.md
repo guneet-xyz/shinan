@@ -1107,7 +1107,12 @@ changes nothing, unless every workspace with M2 documents or proposals has
 a recorded move of exactly what M2 holds then (its latest revision, its
 document count and the numbers of the proposals waiting). It locks the six
 tables before that check, so nothing can write to them between the check
-and the drop; `migrate` shows the refusal's own message.
+and the drop, with `workspaces` (whose column it drops), so every lock it
+needs is taken at once, waiting at most 15 seconds for them (`SET LOCAL
+lock_timeout`, reset at its end so later migrations in the same run don't
+inherit it; after the code review of GC-6) rather than behind a session
+0.3 left open for ever; `migrate` shows the refusal's own message, and
+explains a time-out at that lock.
 `migrate` applies the migrations before `0020`, moves the catalog, then
 applies `0020`. The expand step's index tables and `catalog_index_provenance`
 came earlier, in GC-4's `0015`. The Drizzle definitions, `revisions.ts` and
