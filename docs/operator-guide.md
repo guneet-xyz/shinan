@@ -28,9 +28,15 @@ not apply to anyone else's installation.
   Sign-in needs email, including the first start.
 - Optionally, a GitHub App for GitHub sign-in (see [below](#github-sign-in)).
 - Memory for the containers' limits: 3,456 MiB (about 3.4 GiB) while running
-  (PostgreSQL 512 MiB, `web` 1,536 MiB, which the next release reviews
-  for the Git-based catalog, `worker` 384 MiB, `git` 1,024 MiB), and
-  3,712 MiB (about 3.6 GiB) while `migrate` (256 MiB) runs at each start.
+  (PostgreSQL 512 MiB, `web` 1,536 MiB, `worker` 384 MiB, `git` 1,024 MiB),
+  and 3,712 MiB (about 3.6 GiB) while `migrate` (256 MiB) runs at each
+  start. Limits are ceilings, not reservations: idle, the four use about
+  350 MiB. Under load at the catalog's limits (a push of 20,000 pages to
+  `main` beside three 62 MiB pushes, or 250 of the heaviest page reads 50
+  at a time), `web` stayed under 260 MiB, `worker` under 210 MiB and `git`
+  within its 1,024 MiB, most of it page cache. So `web` runs in 768 MiB
+  too, if the host is short (`SHINAN_WEB_MEMORY=768m`); keep `git` at
+  1,024 MiB.
 - Disk for two volumes you keep: PostgreSQL's (`postgres`) and the catalog's
   Git repositories (`catalog`, see [Backups](#backups-your-responsibility)).
 
@@ -162,6 +168,11 @@ catalog's tree for the sidebar, which for a catalog of 20,000 pages is about
 2 MB of JSON and holds only paths, titles and statuses. Your proxy may
 compress the rest (Caddy's `encode zstd gzip`, nginx's `gzip on` with
 `gzip_types application/json`). The app's own files are small either way.
+Compressing is safe from guessing attacks on compressed answers (BREACH):
+such an attack needs another site to make a signed-in browser fetch an
+answer that holds a secret, such as a new agent token, many times with text
+it chose. Shinan's sign-in cookies are same-site and its state-changing
+requests need its own origin, so another site cannot.
 
 **Agents' requests at `/mcp`.** Don't buffer its answers, and don't time them
 out in under a few minutes. A request in the 2025-11-25 form, which OpenCode
@@ -186,6 +197,10 @@ send a push and 30 for anything else, a few requests in flight per token
 and address (shared with `/mcp`), and a 10-minute limit on each Git
 process. So don't limit request bodies below 64 MiB there, and don't time
 answers out in under 10 minutes: a full clone on a slow link takes time.
+The checks of a push to `main` run one at a time across all workspaces, each
+within 60 seconds: a push of a catalog at its limits takes about half a
+minute, and pushes to other workspaces' `main` wait their turn meanwhile
+(and are refused as too slow if their 60 seconds run out).
 Caddy's `reverse_proxy` needs nothing. With nginx, for `/git/`, set
 `client_max_body_size 64m`, `proxy_request_buffering off`,
 `proxy_buffering off` and `proxy_read_timeout 600s`.
@@ -482,8 +497,6 @@ with the token in the `Authorization` header, for tasks
 
 ## Backups: your responsibility
 
-> **GC-11** ([plan](build-plan-git-catalog.md#gc-11-security-review-and-deployment-preparation)) adds how to back up the `catalog` volume and how to recreate a lost repository from an agent's clone.
-
 Shinan has **no built-in backups**. The owner's own installation accepts that
 risk for now ([D-038](decisions/D-038-no-built-in-backups.md),
 [architecture §14](architecture.md#14-backups-accepted-risk)); for yours, it is
@@ -504,7 +517,9 @@ Back up:
   ```
 
   To restore, replace the database with an empty one, restore into it and
-  start again (`migrate` then brings it up to the running release):
+  start again (`migrate` then brings it up to the running release). A dump
+  also holds the keys of the push log's branch-name fingerprints
+  ([Catalog purge](#catalog-purge)), so keep it as private as the database:
 
   ```sh
   docker compose stop web worker
@@ -513,6 +528,69 @@ Back up:
   docker compose exec -T postgres pg_restore -U shinan -d shinan --exit-on-error < shinan-….dump
   docker compose up -d
   ```
+
+- **The `catalog` volume,** with the database, since the push log in the
+  database and the repositories on the volume describe each other. Stop
+  what writes to them, copy both, and start again; the archive holds the
+  whole catalog and its history, so write it readable only by you:
+
+  ```sh
+  docker compose stop web worker git
+  (umask 077 && docker compose exec -T postgres pg_dump -U shinan -Fc shinan > shinan-$(date -u +%Y%m%dT%H%M%SZ).dump)
+  docker run --rm -v <project>_catalog:/catalog:ro -v "$PWD:/backup" alpine \
+    sh -c 'umask 077 && tar -C /catalog -czf /backup/catalog-$(date -u +%Y%m%dT%H%M%SZ).tar.gz .'
+  docker compose up -d
+  ```
+
+  To restore both, restore the database as above, then, with `web`,
+  `worker` and `git` stopped, empty the volume and unpack the archive
+  into it (as root, which keeps the files' owner, 65532), then start again:
+
+  ```sh
+  docker run --rm -v <project>_catalog:/catalog alpine sh -c 'rm -rf /catalog/* /catalog/.[!.]*'
+  docker run --rm -v <project>_catalog:/catalog -v "$PWD:/backup:ro" alpine tar -C /catalog -xzpf /backup/catalog-….tar.gz
+  docker compose up -d
+  ```
+
+- **A lost repository** (the volume lost without a copy, or one
+  workspace's repository damaged) can be recreated from the freshest
+  agent clone. In that clone, on the agent's machine, bundle what it last
+  fetched of `main`:
+
+  ```sh
+  git bundle create catalog.bundle origin/main
+  ```
+
+  Copy `catalog.bundle` next to `compose.yml`, then, with the workspace's
+  ID, make the repository with the image's own Git as its user, and give it
+  Shinan's settings (the same for every repository):
+
+  ```sh
+  docker compose stop web worker git
+  repo=/var/lib/shinan/catalog/<workspace ID>.git
+  git_() { docker compose run --rm --no-deps -v "$PWD/catalog.bundle:/in/catalog.bundle:ro" --entrypoint git git "$@"; }
+  git_ init --quiet --bare --template= --initial-branch=main "$repo"
+  git_ --git-dir="$repo" fetch --quiet /in/catalog.bundle refs/remotes/origin/main:refs/heads/main
+  for setting in core.hooksPath=/app/packages/git/hooks receive.fsckObjects=true \
+      transfer.fsckObjects=true receive.maxInputSize=67108864 receive.advertisePushOptions=true \
+      core.fsync=committed core.fsyncMethod=fsync uploadpack.allowAnySHA1InWant=false \
+      uploadpack.allowReachableSHA1InWant=false uploadpack.allowTipSHA1InWant=false \
+      receive.denyNonFastForwards=false receive.denyDeletes=false core.bigFileThreshold=1m \
+      pack.threads=1 pack.windowMemory=64m gc.autoDetach=false core.logAllRefUpdates=false; do
+    git_ --git-dir="$repo" config "${setting%%=*}" "${setting#*=}"
+  done
+  docker compose up -d
+  ```
+
+  If the old folder is still there, remove it first, after `stop` (the
+  `init` fails otherwise):
+  `docker run --rm -v <project>_catalog:/catalog alpine rm -rf /catalog/<workspace ID>.git`. The agent index catches up with the
+  recreated `main` on its own. What the clone had not fetched is lost from
+  Shinan: the push log (`Recent changes`) shows what was pushed after it,
+  and the agents that pushed it can push it again. The first pushers of
+  the recreated commits are lost with the repository, so History shows no
+  pusher for them. Every agent then fetches; one whose clone is ahead of
+  the recreated `main` pushes its own commits again.
 
 - **The `secrets/` directory.** Git host credentials, once Shinan connects to
   git hosts, are to be encrypted with keys kept there
