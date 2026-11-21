@@ -29,7 +29,9 @@ status: active
 owner: person/guneet
 aliases: [machine/takezo-old]
 facts:
-  - checked: 2026-11-14
+  # Today, so the free space (rechecked weekly) never comes due as the
+  # calendar moves on.
+  - checked: ${new Date().toISOString().slice(0, 10)}
     by: guneet via opencode-daedalus
     scope: Online data-disk grow
     source: https://git.guneet.dev/infra/musashi/issues/93

@@ -710,7 +710,7 @@ describe("queries", () => {
       relation: false,
       in_schema: true,
       check: {
-        checked: "2026-11-14",
+        checked: new Date().toISOString().slice(0, 10),
         by: "guneet via opencode-daedalus",
         scope: "Online data-disk grow",
         limits: null,
