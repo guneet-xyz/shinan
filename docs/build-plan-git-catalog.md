@@ -801,6 +801,32 @@ sends at most 2 push bodies at once, and Git runs with
 `core.bigFileThreshold=1m`, so a small pack of a huge file never inflates
 in memory.
 
+**Confirmed in GC-11** ([#173](https://github.com/guneet-xyz/shinan/issues/173);
+[security checklist, v0.4.0 rerun](security-checklist.md#v040-rerun-2026-11-21)):
+every value of the table is the code's, and the real image held them
+behind Caddy in a rehearsal stack. Noted from the measurements:
+
+- **One check of `main` at a time, across all workspaces:** a push of
+  20,000 pages to `main` took 14 to 40 seconds end to end, and other
+  workspaces' pushes to `main` wait their turn meanwhile (refused as too
+  slow if their 60 seconds run out). The operator guide says so.
+- **The per-address limit is shared:** a round of an agent's Git work
+  (fetch, push a branch, fetch, push `main`, delete the branch) is 10 to
+  12 requests, so the agents of one machine share 300 a minute.
+- **Very long histories:** at 1,000,000 commits on `main` a page's History
+  (a path walk) took 16 seconds, and 12 at once took the Git container to
+  its memory limit (the Git processes, not the container, were stopped,
+  answering 500); a whole repack after a deleted branch needs more than
+  1,024 MiB. Building such a history takes one agent hours at the push
+  limits. Accepted for v0.4.0, with the pruner made safe when it fails
+  ([#208](https://github.com/guneet-xyz/shinan/pull/208)); a cap on a
+  repository's history is for the owner to decide later.
+- **The pruner after a deleted branch** held fetches 0.26 s on a 20,000-page
+  catalog and 0.37 s after dropping 120 MiB of unreachable blobs.
+- **Git's refusal on protocol v2:** a `429` to a fetch's `POST` shows only
+  `error: RPC failed; HTTP 429` and `fatal: expected flush after ref
+listing`, not Shinan's words; the skill tells agents what a `429` means.
+
 ### 2.11 Backups and recovery
 
 **Decided:** no built-in backups, as an accepted risk
@@ -1195,14 +1221,15 @@ All need the owner's approval ([D-016](decisions/D-016-musashi-and-deployment-ap
 - **A new container, `shinan-git`:** the same image, role `git`, hardened
   like the others (non-root, read-only root file system, `cap_drop: ALL`,
   `no-new-privileges`, a small `tmpfs` for `/tmp`), no published port, a
-  health check of its own, and a memory limit (proposed 1,024 MiB, for the
-  checker's heap and Git processes, measured in GC-11).
+  health check of its own, and a memory limit of 1,024 MiB, for the
+  checker's heap and Git processes (measured in GC-11: at most 1,023 MiB,
+  534 MiB of it anonymous, in the worst case within the limits).
 - **A new stack-local folder** for the repositories (for example `./catalog`
   beside `./postgres`), owned by 65532 with mode `0700`, mounted read-write in
   `shinan-git` only, with `SHINAN_CATALOG_DIR` set there.
 - **A new internal network, `shinan-git`** (`internal: true`, a fixed `/24`
-  from the unused `10.88.0.0/16` range chosen in GC-11, as Musashi's rules
-  require), joined by `shinan-git`, `shinan-web`, `shinan-worker` and
+  from the unused `10.88.0.0/16` range, as Musashi's rules require:
+  `10.88.18.0/24`, chosen in GC-11), joined by `shinan-git`, `shinan-web`, `shinan-worker` and
   `shinan-migrate`. `shinan-git` joins no other network.
 - **One new secret,** the service token (`SHINAN_GIT_SERVICE_TOKEN`), in
   Obscuro namespace `shinan`, typed by the owner (a long random value, made
@@ -1213,9 +1240,9 @@ All need the owner's approval ([D-016](decisions/D-016-musashi-and-deployment-ap
 - **The image pin** to v0.4.0, which contains Git.
 - **Start order:** `shinan-db` and `shinan-git`, then `shinan-migrate`, then
   `web` and `worker`.
-- **Memory:** `web` keeps 1,536 MiB until measured; with the checker moved to
-  the Git container, the request proposes a lower limit if the measurement
-  allows (the M2 catalog worker that needed it is gone).
+- **Memory:** with the checker moved to the Git container, `web` peaked at
+  257 MiB under GC-11's heaviest load; the request proposes 768 MiB instead
+  of 1,536 MiB, for the owner to decide.
 - **No DNS or Caddy route change expected.** `/git/` is a path on the same
   host, served by `web`. The request confirms from the Caddyfile that request bodies
   of 64 MiB pass, that long requests are not cut off, that `Authorization`
