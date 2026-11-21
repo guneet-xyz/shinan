@@ -113,7 +113,7 @@ describe("the examples", () => {
   it("validate, with only Musashi's keys outside the schema flagged", () => {
     const result = validateCatalog(readCatalog(Object.values(base)), context)
     expect(found(result)).toEqual(exampleWarnings)
-    expect(result).toMatchObject({ blocked: false, needsApproval: true })
+    expect(result).toMatchObject({ blocked: false, hasWarnings: true })
   })
 
   it("an unchanged document's problems are not the change's", () => {
@@ -121,7 +121,7 @@ describe("the examples", () => {
       "machine/daedalus": entity("machine/daedalus", { body: "# Daedalus\n" }),
     })
     expect(result.problems).toEqual([])
-    expect(result).toMatchObject({ blocked: false, needsApproval: false })
+    expect(result).toMatchObject({ blocked: false, hasWarnings: false })
   })
 })
 
@@ -646,7 +646,7 @@ describe("warning rules (catalog §8.3)", () => {
       code,
       "warning",
     ])
-    expect(result).toMatchObject({ blocked: false, needsApproval: true })
+    expect(result).toMatchObject({ blocked: false, hasWarnings: true })
   })
 
   it("does not warn about an owner who is a current member", () => {
@@ -718,7 +718,7 @@ describe("which problems a change is charged with", () => {
     )
     const result = change({ "machine/musashi": recheck })
     expect(result.problems).toEqual([])
-    expect(result).toMatchObject({ blocked: false, needsApproval: false })
+    expect(result).toMatchObject({ blocked: false, hasWarnings: false })
   })
 
   it("charges a new warning in a written document", () => {

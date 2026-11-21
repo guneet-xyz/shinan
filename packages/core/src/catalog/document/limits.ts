@@ -6,7 +6,7 @@
  * with the square of these shapes. The parser is now markdown-it
  * (`@shinan/markdown`), which reads every one of them in about linear time
  * (`packages/markdown/src/index.test.ts`); the limits stay as a cheap guard
- * for the server and the wiki alike. They do not bound how deep blocks nest
+ * for the server and the catalog pages alike. They do not bound how deep blocks nest
  * across lines (lists nested by indentation): markdown-it stops reading,
  * silently, past its nesting limit, so the body model watches for that
  * itself after reading and refuses such a body (`body.ts`).
@@ -41,8 +41,8 @@
  * conservative way, the highest counts are 81 nested containers, 452 blocks,
  * 220 lazy lines, 4 underlines and no unclosed links, all in Shinan's design
  * documents. The scan still cannot be proven complete,
- * which is why proposal and MCP text is also parsed off the main event loop
- * with a time limit (security checklist 10.8).
+ * which is why pushed text is also checked off the main event loop with a
+ * time limit (security checklist 10.8).
  */
 
 /** Quote and list markers a line may start with. */
