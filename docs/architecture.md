@@ -559,7 +559,8 @@ the Git container is never called inside a database transaction:
      gets its new name once, the same in every commit, and never one the
      history already has: folder by folder, the names that keep their form
      first, then the new ones, numbered when taken
-     (`machine/purged-box.md` beside an existing one becomes
+     (names compared as Windows and macOS see them, letter case aside;
+     `machine/purged-box.md` beside an existing one becomes
      `machine/purged-box-2.md`, a renamed folder beside an existing
      `notes/purged/` becomes `notes/purged-2/`). The page's ID, its links and references
      follow its path (`machine/purged-box-2`); an alias or reference that
@@ -689,16 +690,30 @@ the Git container is never called inside a database transaction:
   across lines, every byte percent-encoded, quoted-printable with soft
   breaks, UTF-16, another letter case), which a purge does not remove.
   They are looked for in what is left once the text itself is removed, so
-  a file holding both is reported too (review of #197).
+  a file holding both is reported too, and a text of at most 12 bytes in
+  another case only as a word of its own ("Mark", not "markdown"; review
+  of #197). A link to a page written with a leading slash
+  (`/machine/box`) is renamed like any other.
 - **Unreachable objects after pushes:** a pushed pack may hold objects no
   pushed commit uses, which the checks never read, and a deleted branch
   leaves its commits; the Git API reads any object by full ID. So the `git`
-  role repacks (`git repack -a -d`) and prunes (`git prune --expire=now`)
-  each repository whose refs a push moved, at most a minute later, and
-  every repository once after a start, with its push lock held and no Git
-  process running on it (a Git process that would start waits;
-  `apps/server/src/git/prune.ts`). **Proposed** (GC-8): the reviews of
-  GC-1b and GC-3a asked for it.
+  role looks at each repository whose refs a push moved, and every
+  repository once after a start, once no push has reached it for 20
+  seconds (or it has waited 10 minutes), with its push lock held
+  (`apps/server/src/git/prune.ts`). It counts first, while fetches go on,
+  whether any object is unreachable: every object it holds against those
+  its branches reach, by the reachability bitmap, in milliseconds (a
+  repository without a bitmap counts as having some). If none, it joins
+  the packs pushes added (`git repack -d --geometric=2`) and prunes loose
+  objects (`git prune --expire=now`), holding Git processes back for
+  milliseconds; if some (a branch deleted or rewound, a pack with more
+  than its commits), it repacks the whole repository (`git repack -a -d`,
+  which keeps only what the branches reach and writes the bitmap) and
+  prunes, with no Git process running on it (a Git process that would
+  start waits). On a branch of 20,000 pages and 6,002 commits: 0.01 to
+  0.05 s held after a push, 9.4 s after a deleted branch (review of #197:
+  the whole repack after every push held fetches about 10 s a minute).
+  **Proposed** (GC-8): the reviews of GC-1b and GC-3a asked for it.
 - **Text kept in memory:** the type schema cache keeps parsed text. The
   purging process forgets it at once; every `web` and `worker` process
   checks for new purges each minute.

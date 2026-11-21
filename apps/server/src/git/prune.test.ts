@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs"
+import { mkdtempSync, readdirSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
@@ -21,7 +21,10 @@ beforeAll(() => {
 })
 afterAll(() => rmSync(work, { recursive: true, force: true }))
 
-function setup(paused?: (workspaceId: string) => boolean) {
+function setup(
+  paused?: (workspaceId: string) => boolean,
+  wait: { quietMs?: number; longestWaitMs?: number } = { quietMs: 0 },
+) {
   const root = mkdtempSync(join(work, "catalog-"))
   const git = createGit()
   const store = createRepositoryStore({ root, git })
@@ -33,7 +36,14 @@ function setup(paused?: (workspaceId: string) => boolean) {
     locks,
   })
   const gate = createRepositoryGate()
-  const pruner = createPruner({ store, push, gate, paused, log: () => {} })
+  const pruner = createPruner({
+    store,
+    push,
+    gate,
+    paused,
+    ...wait,
+    log: () => {},
+  })
   return { store, git, locks, gate, pruner }
 }
 
@@ -82,6 +92,73 @@ describe("pruning repositories after pushes", () => {
     expect(await has(git, gitDir, main)).toBe(true)
     // Done: nothing is pruned again until the next push.
     expect(await pruner.run()).toEqual([])
+  })
+
+  it("joins pushed packs only, keeping the whole pack, when nothing is unreachable; repacks whole when something is", async () => {
+    const { store, git, pruner } = setup()
+    await store.create(workspaceId, {
+      files: [{ path: "README.md", content: new TextEncoder().encode("Hi\n") }],
+      message: "First",
+    })
+    const gitDir = store.pathOf(workspaceId)
+    const packs = () =>
+      readdirSync(join(gitDir, "objects", "pack")).filter((f) =>
+        f.endsWith(".pack"),
+      )
+    // The first time, with no bitmap: whole, which writes one.
+    pruner.soon(workspaceId)
+    expect(await pruner.run()).toEqual([workspaceId])
+    const [whole] = packs()
+    expect(
+      readdirSync(join(gitDir, "objects", "pack")).some((f) =>
+        f.endsWith(".bitmap"),
+      ),
+    ).toBe(true)
+    // A push that leaves nothing unreachable: the whole pack stays.
+    const main = (await store.main(workspaceId))!
+    const next = await commitFiles(
+      git,
+      gitDir,
+      { "a.md": "a\n" },
+      { parents: [main], ref: "refs/heads/main" },
+    )
+    pruner.soon(workspaceId)
+    expect(await pruner.run()).toEqual([workspaceId])
+    expect(packs()).toContain(whole)
+    expect(await has(git, gitDir, next)).toBe(true)
+    // A branch deleted: its commit goes, by a whole repack.
+    const gone = await commitFiles(
+      git,
+      gitDir,
+      { "b.md": "b\n" },
+      { parents: [next], ref: "refs/heads/gone" },
+    )
+    await git.run(["update-ref", "-d", "refs/heads/gone"], { gitDir })
+    await git.run(["repack", "-d", "-q"], { gitDir })
+    pruner.soon(workspaceId)
+    expect(await pruner.run()).toEqual([workspaceId])
+    expect(await has(git, gitDir, gone)).toBe(false)
+    expect(packs()).not.toContain(whole)
+  })
+
+  it("leaves a repository pushed to just now for later, unless it waited long enough", async () => {
+    const { store, pruner } = setup(undefined, {
+      quietMs: 60_000,
+      longestWaitMs: 60_000,
+    })
+    await store.create(workspaceId, {
+      files: [{ path: "README.md", content: new TextEncoder().encode("Hi\n") }],
+      message: "First",
+    })
+    pruner.soon(workspaceId)
+    expect(await pruner.run()).toEqual([])
+    const waited = setup(undefined, { quietMs: 60_000, longestWaitMs: 0 })
+    await waited.store.create(workspaceId, {
+      files: [{ path: "README.md", content: new TextEncoder().encode("Hi\n") }],
+      message: "First",
+    })
+    waited.pruner.soon(workspaceId)
+    expect(await waited.pruner.run()).toEqual([workspaceId])
   })
 
   it("waits for a push being checked and for Git processes, and tries again later", async () => {

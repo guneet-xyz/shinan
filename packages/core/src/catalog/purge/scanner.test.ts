@@ -133,6 +133,33 @@ describe("matching a purge text in what Git stores", () => {
     expect(encodedIn(`key: |\n  ${wrapped}\n`)).toEqual(["base64"])
   })
 
+  it("reports a short text in another case only as a word of its own", () => {
+    const scanner = new PurgeScanner("Mark")
+    const encodedIn = (value: string) => scanner.encodingsIn(Buffer.from(value))
+    expect(encodedIn("markdown, bookmark and Watermark")).toEqual([])
+    expect(encodedIn("Ask MARK about it")).toEqual(["other-case"])
+    // A longer text is reported inside a word too.
+    expect(
+      new PurgeScanner("quibbleworthsecret").encodingsIn(
+        Buffer.from("xQUIBBLEWORTHSECRETx"),
+      ),
+    ).toEqual(["other-case"])
+  })
+
+  it("names an ID in a link written with a leading slash", () => {
+    const scanner = new PurgeScanner("quibbleworth")
+    expect(
+      scanner
+        .replace(
+          Buffer.from("See [it](/machine/quibbleworth-box)."),
+          purgeMarker,
+          (plain) =>
+            plain === "machine/purged-box" ? "machine/purged-box-2" : plain,
+        )
+        .toString(),
+    ).toBe("See [it](/machine/purged-box-2).")
+  })
+
   it("names catalog IDs by the plan it is given, and keeps other places as before", () => {
     const scanner = new PurgeScanner("quibbleworth")
     const page = Buffer.from(

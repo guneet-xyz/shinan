@@ -55,6 +55,8 @@ export function replaceKeepingIds(
       if (m.start < from) continue
       let left = m.start
       while (left > 0 && idCharacter.test(result[left - 1]!)) left--
+      // A link may start with a slash (`/machine/box`): the ID is after it.
+      while (left < m.start && result[left] === "/") left++
       let right = m.end
       while (right < result.length && idCharacter.test(result[right]!)) right++
       const plain =
@@ -194,10 +196,35 @@ function encodingsOf(text: string): {
       find: (bytes) => bytes.includes(le) || bytes.includes(be),
     },
     {
+      // A short text only as a word of its own, so "Mark" is not reported
+      // for "markdown" (review of #197).
       encoding: "other-case",
-      find: (bytes, lower) => lower().includes(lowerText),
+      find: (bytes, lower) =>
+        raw.length > shortText
+          ? lower().includes(lowerText)
+          : includesAsWord(lower(), lowerText),
     },
   ]
+}
+
+/** Texts at most this long are other-case matches only as words of their own. */
+const shortText = 12
+
+/** Whether `needle` is in `bytes` with no letter or digit right before or after it. */
+function includesAsWord(bytes: Buffer, needle: Buffer): boolean {
+  const word = (byte: number | undefined) =>
+    byte !== undefined &&
+    ((byte >= 0x30 && byte <= 0x39) ||
+      (byte >= 0x61 && byte <= 0x7a) ||
+      (byte >= 0x41 && byte <= 0x5a) ||
+      byte >= 0x80)
+  for (
+    let at = bytes.indexOf(needle);
+    at >= 0;
+    at = bytes.indexOf(needle, at + 1)
+  )
+    if (!word(bytes[at - 1]) && !word(bytes[at + needle.length])) return true
+  return false
 }
 
 /**

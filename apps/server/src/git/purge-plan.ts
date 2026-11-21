@@ -1,3 +1,5 @@
+import { foldedName } from "./push/names.js"
+
 /**
  * What a purge renames, planned before the rewrite (review of #197): each
  * path, folder and catalog ID that holds the text gets its new name once,
@@ -18,7 +20,13 @@ export class PathPlan {
   /** Each folder's names, by the folder's path as the history holds it ("" for the top). */
   private readonly folders = new Map<
     string,
-    { names: Map<string, string>; taken: Set<string> }
+    {
+      names: Map<string, string>
+      /** Names that keep their form, folded (`foldedName`). */
+      kept: Set<string>
+      /** New names given, folded. */
+      given: Set<string>
+    }
   >()
   /** Every page's ID after the purge. */
   private readonly ids = new Set<string>()
@@ -62,19 +70,26 @@ export class PathPlan {
         const folder = this.folder(parent)
         const ordered = [...names].filter((n) => !folder.names.has(n)).sort()
         // Names that keep their form first, so a renamed one never takes one.
+        // Names are compared as Windows and macOS see them, letter case
+        // and Unicode normalisation aside (review of #197), so a new name
+        // never makes two files one there. Names the history already has
+        // keep their form, whatever they are.
         for (const name of ordered) {
           if (this.rename(name) !== name) continue
-          if (folder.taken.has(name)) throw new PlanConflict()
+          if (folder.given.has(foldedName(name))) throw new PlanConflict()
           folder.names.set(name, name)
-          folder.taken.add(name)
+          folder.kept.add(foldedName(name))
         }
+        const taken = (name: string) =>
+          folder.kept.has(foldedName(name)) ||
+          folder.given.has(foldedName(name))
         for (const name of ordered) {
           const plain = this.rename(name)
           if (plain === name) continue
           let next = plain
-          for (let n = 2; folder.taken.has(next); n++) next = numbered(plain, n)
+          for (let n = 2; taken(next); n++) next = numbered(plain, n)
           folder.names.set(name, next)
-          folder.taken.add(next)
+          folder.given.add(foldedName(next))
           if (next !== plain) {
             const under = parent === "" ? "" : `${this.path(parent)}/`
             this.apart.set(`${under}${next}`, {
@@ -123,7 +138,7 @@ export class PathPlan {
     if (!folder)
       this.folders.set(
         parent,
-        (folder = { names: new Map(), taken: new Set() }),
+        (folder = { names: new Map(), kept: new Set(), given: new Set() }),
       )
     return folder
   }

@@ -734,6 +734,17 @@ describe("purging catalog text", { timeout: 60_000 }, () => {
     expect(await listCatalogPurges(asOwner, workspaceId)).toEqual([])
   })
 
+  it("reports a short text in another case on the timeline only as a word of its own", async () => {
+    await event("Written in markdown, with a bookmark and a Watermark")
+    await event("Ask MARK (the owner) about it")
+    const preview = await previewCatalogPurge(asOwner, workspaceId, {
+      text: "Mark",
+    })
+    expect(preview.mayAppearEncoded).toEqual([
+      { encoding: "other-case", places: 1 },
+    ])
+  })
+
   it("purges catalog IDs in the record of the move into Git", async () => {
     await db.insert(schema.catalogMoves).values({
       workspaceId,

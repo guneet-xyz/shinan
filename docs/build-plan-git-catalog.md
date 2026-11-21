@@ -745,9 +745,13 @@ operator's to clean, and the secret is rotated.
     where the replacement can't be made is dropped (the next push to
     `main` records it again).
   - **Unreachable objects after pushes (proposed):** each repository a
-    push changed is repacked and pruned within a minute, with its push lock
-    held and no Git process on it, so objects no branch reaches (which the
-    Git API could read by ID) never linger (reviews of GC-1b and GC-3a).
+    push changed is looked at once pushes to it pause (20 seconds, 10
+    minutes at most), with its push lock held, so objects no branch reaches
+    (which the Git API could read by ID) never linger (reviews of GC-1b and
+    GC-3a). Whether any is unreachable is counted first, by the
+    reachability bitmap; only then is the whole repository repacked, with
+    no Git process on it. Otherwise the packs pushes added are joined, in
+    milliseconds (review of #197).
   - **The screen** is "Remove text from the catalog's history", a page
     behind a quiet link at the bottom of Settings › Catalog (GC-7's product
     brief); M2's Data tab is gone.

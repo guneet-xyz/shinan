@@ -1578,7 +1578,8 @@ change the source of truth, or the checks and history mean nothing.
       so a page's ID still equals its path. A new name another page,
       folder or branch already has gets a number (`machine/purged-box-2`),
       the same in every commit, so a purge never writes one page over
-      another; the preview lists them (review of #197). Shinan's own records
+      another, letter case aside so names stay distinct on Windows and
+      macOS; the preview lists them (review of #197). Shinan's own records
       follow: branch names in the push log and the first-pusher record,
       timeline events, catalog IDs in the record of the catalog's move
       into Git (GC-6), and the agent index (rebuilt from the new `main`).

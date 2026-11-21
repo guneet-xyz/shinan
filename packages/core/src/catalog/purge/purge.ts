@@ -1097,9 +1097,13 @@ async function encodingsInEvents(
     if (strings.length === 0) continue
     const any = sql.join(
       strings.map((s) =>
-        anyCase
-          ? sql`strpos(lower(${value}), ${s.toLowerCase()}) > 0`
-          : sql`strpos(${value}, ${s}) > 0`,
+        // A short text in another case only as a word of its own, as in
+        // the history (`PurgeScanner.encodingsIn`).
+        encoding === "other-case" && Buffer.byteLength(s) <= 12
+          ? sql`lower(${value}) ~ ${`(^|[^[:alnum:]])${s.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}($|[^[:alnum:]])`}`
+          : anyCase
+            ? sql`strpos(lower(${value}), ${s.toLowerCase()}) > 0`
+            : sql`strpos(${value}, ${s}) > 0`,
       ),
       sql` or `,
     )

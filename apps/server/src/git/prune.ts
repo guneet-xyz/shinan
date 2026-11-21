@@ -1,3 +1,6 @@
+import { existsSync, readdirSync } from "node:fs"
+import { join } from "node:path"
+
 import { createLimitedLog, errorSummary } from "@shinan/db"
 import type { LimitedLog } from "@shinan/db"
 
@@ -97,10 +100,23 @@ export function createRepositoryGate(): RepositoryGate {
  * objects no pushed commit points to, which the push checks never read,
  * and a deleted branch leaves its commits behind, while the Git API reads
  * any object by its full ID. Every `intervalMs` (a minute), each such
- * repository is repacked (`git repack -a -d`, which keeps only what the
- * branches reach) and pruned (`git prune --expire=now`), with its push lock
- * held and no Git process running on it; one that is busy is tried again
- * the next time.
+ * repository is looked at once no push has reached it for `quietMs` (or
+ * it has waited `longestWaitMs`), with its push lock held:
+ *
+ * - Whether any object is unreachable is counted first, while fetches go
+ *   on: every object the repository holds against those its branches reach
+ *   (`rev-list --objects --all`, by the reachability bitmap, so in
+ *   milliseconds; a repository without a bitmap counts as having some).
+ * - None: the packs pushes added are joined (`git repack -d
+ *   --geometric=2`), which takes milliseconds, and loose objects no branch
+ *   reaches are removed (`git prune --expire=now`).
+ * - Some (a branch deleted or rewound, or a pack with more than its
+ *   commits): the whole repository is repacked (`git repack -a -d`, which
+ *   keeps only what the branches reach, and writes the bitmap) and pruned.
+ *
+ * The repacking runs with no Git process on the repository; one that is
+ * busy is tried again the next time (review of #197: a whole repack of a
+ * large repository after every push held fetches for seconds).
  */
 export interface Pruner {
   /** Marks a repository to be pruned at the next round. */
@@ -124,11 +140,18 @@ export function createPruner(options: {
    * Tried again on the next round.
    */
   paused?: (workspaceId: string) => boolean
+  /** How long after the last push a repository is left alone: 20 seconds. */
+  quietMs?: number
+  /** How long a busy repository waits at most: 10 minutes. */
+  longestWaitMs?: number
   log?: LimitedLog
 }): Pruner {
   const { store, push, gate } = options
   const log = options.log ?? createLimitedLog()
-  const due = new Set<string>()
+  const quietMs = options.quietMs ?? 20_000
+  const longestWaitMs = options.longestWaitMs ?? 10 * 60_000
+  /** Repositories to look at: since when, and their last push. */
+  const due = new Map<string, { since: number; last: number }>()
   let round: Promise<string[]> | undefined
 
   const prune = async (workspaceId: string) => {
@@ -136,12 +159,15 @@ export function createPruner(options: {
     const release = await push.exclusive(workspaceId, 0)
     if (!release) return false
     try {
+      const gitDir = store.pathOf(workspaceId)
+      const whole = await unreachableObjects(store, gitDir)
       const pruned = await gate.whenIdle(workspaceId, async () => {
-        const gitDir = store.pathOf(workspaceId)
-        await store.git.run(["repack", "-a", "-d", "-q"], {
-          gitDir,
-          timeoutMs: pruneMs,
-        })
+        await store.git.run(
+          whole
+            ? ["repack", "-a", "-d", "-q"]
+            : ["repack", "-d", "-q", "--geometric=2"],
+          { gitDir, timeoutMs: pruneMs },
+        )
         await store.git.run(["prune", "--expire=now"], {
           gitDir,
           timeoutMs: pruneMs,
@@ -156,19 +182,27 @@ export function createPruner(options: {
 
   const pruner: Pruner = {
     soon(workspaceId) {
-      due.add(workspaceId)
+      const now = Date.now()
+      due.set(workspaceId, {
+        since: due.get(workspaceId)?.since ?? now,
+        last: now,
+      })
     },
     run() {
       round ??= (async () => {
         const pruned: string[] = []
-        for (const workspaceId of [...due]) {
+        for (const [workspaceId, when] of [...due]) {
+          const now = Date.now()
+          // Pushed to just now: later, unless it has waited long enough.
+          if (now - when.last < quietMs && now - when.since < longestWaitMs)
+            continue
           due.delete(workspaceId)
           try {
             if (!store.exists(workspaceId)) continue
             if (await prune(workspaceId)) pruned.push(workspaceId)
-            else due.add(workspaceId)
+            else due.set(workspaceId, due.get(workspaceId) ?? when)
           } catch (error) {
-            due.add(workspaceId)
+            due.set(workspaceId, due.get(workspaceId) ?? when)
             log(
               `Pruning the repository of workspace ${workspaceId} failed: ${errorSummary(error)}`,
             )
@@ -187,4 +221,33 @@ export function createPruner(options: {
     },
   }
   return pruner
+}
+
+/**
+ * Whether the repository holds any object its branches don't reach:
+ * counted, every object it holds against those the branches reach, by the
+ * reachability bitmap. Without a bitmap (a repository never repacked whole,
+ * or one a purge just made), it counts as holding some, so the whole
+ * repack that follows writes one.
+ */
+async function unreachableObjects(
+  store: RepositoryStore,
+  gitDir: string,
+): Promise<boolean> {
+  const packs = join(gitDir, "objects", "pack")
+  if (
+    !existsSync(packs) ||
+    !readdirSync(packs).some((f) => f.endsWith(".bitmap"))
+  )
+    return true
+  const all = await store.git.run(
+    ["cat-file", "--batch-all-objects", "--batch-check=%(objectname)"],
+    { gitDir, timeoutMs: pruneMs, maxOutputBytes: 1024 * 1024 * 1024 },
+  )
+  const held = all.stdout.toString("latin1").split("\n").filter(Boolean).length
+  const reached = await store.git.run(
+    ["rev-list", "--count", "--objects", "--all", "--use-bitmap-index"],
+    { gitDir, timeoutMs: pruneMs },
+  )
+  return held !== Number(reached.stdout.toString("latin1").trim())
 }

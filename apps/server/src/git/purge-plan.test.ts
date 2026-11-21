@@ -69,4 +69,26 @@ describe("the plan of a purge's new names", () => {
     // One that takes a free name is added.
     expect(plan.path("machine/quibble-new.md")).toBe("machine/purged-new.md")
   })
+
+  it("counts a name taken whatever its letter case, as Windows and macOS do", () => {
+    const plan = new PathPlan(rename)
+    plan.add(["case/Purged.md", "case/quibble.md"])
+    expect(plan.path("case/quibble.md")).toBe("case/purged-2.md")
+    expect(plan.path("case/Purged.md")).toBe("case/Purged.md")
+  })
+
+  it("lists every numbered path, also when several share one plain name", () => {
+    const plan = new PathPlan((name) => name.replace(/lime +tart/, "purged"))
+    plan.add([
+      "two/lime tart.md",
+      "two/lime  tart.md",
+      "two/lime   tart.md",
+      "two/purged.md",
+    ])
+    expect(plan.renamedApart()).toEqual([
+      { plain: "two/purged.md", path: "two/purged-2.md", folder: false },
+      { plain: "two/purged.md", path: "two/purged-3.md", folder: false },
+      { plain: "two/purged.md", path: "two/purged-4.md", folder: false },
+    ])
+  })
 })

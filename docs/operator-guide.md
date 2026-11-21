@@ -623,6 +623,11 @@ gc --prune=now`). Shinan refuses any push that brings an old commit
    docker compose exec -T postgres psql -U shinan -d shinan -c "vacuum full catalog_push_refs, catalog_commit_first_pushes, catalog_rewrites, events, catalog_index_documents, catalog_index_facts, catalog_index_relations, catalog_index_discrepancies, catalog_index_sections, catalog_moves"
    ```
 
+   A database dump also holds the key of the security log's branch
+   fingerprints (`catalog_ref_fingerprint_keys`) next to the security log,
+   so whoever has a dump can check a guessed branch name against it: keep
+   dumps as private as the catalog volume.
+
 A purge runs in the background: the owner's page shows "Removing…" and
 asks how it stands. The Git container reads and rewrites the history while
 pushes go on, then holds pushes back for the swap only: what was pushed
@@ -637,7 +642,11 @@ dropped; what had already left (in the proxy's buffers or the network)
 still arrives, so a clone that was running then may hold some of the old
 history, and the owner is told so. The Git container's log has one line
 per purge with how long each part took and how long pushes were held
-back, never the text.
+back, never the text. One case is slow on purpose: if a push during the
+purge adds a page under a name the purge had planned to give a renamed
+one, the plan and the whole rewrite start again with pushes held back
+(74 s on that branch, in review). An agent could cause it; the log line
+shows it as a long hold.
 
 If something fails after the swap (a full or failing disk, say), every push
 to that catalog stays refused until the Git container has written the
@@ -652,8 +661,12 @@ of a purge; nothing needs restarting.
 
 The `git` role also removes, from each repository a push changed, the
 objects no branch reaches (a deleted branch's commits, or objects a push
-sent that no commit uses), at most a minute later, so the Git container's
-API can never read them.
+sent that no commit uses), so the Git container's API can never read them.
+It waits until no push has reached the repository for 20 seconds (10
+minutes at most), and holds fetches for milliseconds: it counts first
+whether anything is unreachable, and only then repacks the whole
+repository (9.4 s for a branch of 20,000 pages and 6,002 commits on
+Daedalus; otherwise it joins the packs pushes added, in milliseconds).
 
 ## Stopping and removing
 
