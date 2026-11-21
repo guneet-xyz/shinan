@@ -6,6 +6,21 @@
  * strings so formatting tools never change their bytes.
  */
 
+/**
+ * The date `days` before the day the tests run (UTC), as a fact check
+ * writes it. Freshness is judged against the real clock (in SQL as well),
+ * so fact checks meant to be fresh are dated from today, never on a fixed
+ * date that a recheck period runs out on (#201).
+ */
+export function daysAgo(days: number): string {
+  return new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10)
+}
+
+/** When most of these fact checks were made: two days ago. */
+export const checkedOn = daysAgo(2)
+/** When the policies and the runbook were checked: four days before that. */
+export const checkedBefore = daysAgo(6)
+
 export const guneet = `---
 id: person/guneet
 type: person
@@ -29,7 +44,7 @@ status: active
 owner: person/guneet
 aliases: [machine/takezo-old]
 facts:
-  - checked: 2026-11-14
+  - checked: ${checkedOn}
     by: guneet via opencode-daedalus
     scope: Online data-disk grow
     source: https://git.guneet.dev/infra/musashi/issues/93
@@ -37,7 +52,7 @@ facts:
       disk.data.size: { value: 128 GiB, via: filesystem }
       disk.data.free: 74 GiB
       role: Production host
-  - checked: 2026-11-14
+  - checked: ${checkedOn}
     by: guneet via opencode-daedalus
     scope: Azure instance metadata right after the resize
     source: Azure instance metadata (non-sensitive fields)
@@ -103,7 +118,7 @@ summary: Self-hosted OCI registry with a web UI and access management.
 status: active
 owner: person/guneet
 facts:
-  - checked: 2026-11-14
+  - checked: ${checkedOn}
     by: guneet via opencode-daedalus
     scope: Checkouts and the registry it provides
     source: Local git on Daedalus
@@ -133,7 +148,7 @@ summary: The registry Dockyard serves on Musashi.
 status: active
 owner: person/guneet
 facts:
-  - checked: 2026-11-14
+  - checked: ${checkedOn}
     by: guneet
     scope: Where it runs
     source: docker ps on Musashi
@@ -156,7 +171,7 @@ summary: Every deployment change needs the owner's approval.
 status: active
 owner: person/guneet
 facts:
-  - checked: 2026-11-10
+  - checked: ${checkedBefore}
     by: guneet
     scope: The rule as the owner set it
     source: Owner's statement
@@ -178,7 +193,7 @@ summary: Secret values never go in the catalog.
 status: active
 owner: person/guneet
 facts:
-  - checked: 2026-11-10
+  - checked: ${checkedBefore}
     by: guneet
     scope: The rule as the owner set it
     source: Owner's statement
@@ -200,7 +215,7 @@ summary: How to rebuild the production host from scratch.
 status: active
 owner: person/guneet
 facts:
-  - checked: 2026-11-10
+  - checked: ${checkedBefore}
     by: guneet
     scope: Which machine it is for
     source: The runbook's own text

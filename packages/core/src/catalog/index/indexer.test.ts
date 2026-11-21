@@ -710,7 +710,7 @@ describe("queries", () => {
       relation: false,
       in_schema: true,
       check: {
-        checked: "2026-11-14",
+        checked: fixtures.checkedOn,
         by: "guneet via opencode-daedalus",
         scope: "Online data-disk grow",
         limits: null,

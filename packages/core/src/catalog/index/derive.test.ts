@@ -48,9 +48,12 @@ describe("deriveDocumentRows", () => {
       note: "Metadata lags after a resize",
       groupIndex: 1,
       hasCheck: true,
-      checked: "2026-11-14",
-      checkedAt: new Date("2026-11-14T00:00:00Z"),
-      dueAt: new Date("2026-12-14T00:00:00Z"),
+      checked: fixtures.checkedOn,
+      checkedAt: new Date(`${fixtures.checkedOn}T00:00:00Z`),
+      // disk.data.size is rechecked every 30 days.
+      dueAt: new Date(
+        Date.parse(`${fixtures.checkedOn}T00:00:00Z`) + 30 * 86_400_000,
+      ),
     })
     expect(facts[4]).toMatchObject({
       state: "unknown",

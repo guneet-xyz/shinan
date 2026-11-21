@@ -38,6 +38,15 @@ owner: person/${handle}
 ---
 `
 
+/**
+ * Two days ago, as a fact check writes it: freshness is judged against the
+ * real clock, so a fixed date would come due (disk.data.free is rechecked
+ * every 7 days; #201).
+ */
+const checkedOn = new Date(Date.now() - 2 * 86_400_000)
+  .toISOString()
+  .slice(0, 10)
+
 const musashi = `---
 id: machine/musashi
 type: machine
@@ -47,7 +56,7 @@ status: active
 owner: person/guneet
 aliases: [machine/old-musashi]
 facts:
-  - checked: 2026-11-14
+  - checked: ${checkedOn}
     by: guneet
     scope: df -h
     source: Read-only SSH
@@ -70,7 +79,7 @@ summary: Images.
 status: active
 owner: person/guneet
 facts:
-  - checked: 2026-11-14
+  - checked: ${checkedOn}
     by: guneet
     scope: Compose file
     source: https://git.guneet.dev/infra/musashi
