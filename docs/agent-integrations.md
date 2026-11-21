@@ -561,15 +561,27 @@ accepted with the plan):**
   in `references/changing.md`: the agent notices a forced `main` on fetch,
   or a refusal with `purged-commit` or one of the two `busy` messages
   ("Shinan is removing text from this catalog's history", "the catalog's
-  history was rewritten while this push was sent"). It fetches without
-  merging the old `main` into the new one; rebuilds each local branch from
-  `origin/main` with only its own unpushed work (continuing a branch it had
-  pushed from its rewritten `origin/<branch>`); never puts the removed text
-  back, keeping `(purged)` and names and IDs with `purged` (`purged-2`, …)
-  as they are; never pushes old commits; and tells its person that the
+  history was rewritten while this push was sent"). It fetches with
+  `--prune`, without merging the old `main` into the new one; moves only
+  its own unpushed commits onto `origin/main` with
+  `git rebase --onto origin/main "$(git merge-base --fork-point origin/main HEAD)"`,
+  or redoes them by hand if that finds nothing or does not apply
+  (continuing a branch it had pushed from its rewritten `origin/<branch>`);
+  never puts the removed text back, even in its unpushed changes, keeping
+  `(purged)` and names and IDs with `purged` (`purged-2`, …) as they are; never pushes old commits; and tells its person that the
   clone still holds the old history on disk. The person deletes the clone
   and runs step 2 of Set up an agent again; the agent never deletes the
-  clone or touches credential helpers itself. A server test checks that
+  clone or touches credential helpers itself. Why `--fork-point` rather
+  than `origin/main@{1}` (product review of #206), checked with Git 2.47.3
+  in a scratch repository (a rewrite of every commit, a renamed branch, a
+  local branch with unpushed work based on an older `main`): `@{1}` is the
+  old `main` only right after the one fetch that showed the forced update,
+  and after more fetches the rebase took in the new history and conflicted;
+  `merge-base --fork-point` found the right base after one fetch and after
+  three, with `--prune`, and the rebase left exactly the agent's own
+  commits. When the clone's record of `origin/main` has expired (`git gc`
+  drops entries no longer reachable after 30 days), it prints nothing and
+  fails, so the agent falls back to redoing the changes by hand. A server test checks that
   the skill quotes each of these refusals as the push checks write them.
 - **Writing fact checks by hand:** `checked` is the real time of the check,
   never rounded and never the time of writing or pushing

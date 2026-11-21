@@ -135,7 +135,9 @@ history.
 
 A workspace owner can remove a leaked text from the catalog's whole
 history. Shinan then rewrites every commit that held it, on `main` and on
-every branch, and the old commits are gone from Shinan. The text becomes
+every branch, and every commit after one of those, since a commit's ID
+depends on its parents: they all get new IDs, and the old commits are gone
+from Shinan. The text becomes
 `(purged)` inside files and commit messages, and `purged` in file, folder
 and branch names and in catalog IDs; a name that would clash gets a number
 (`machine/purged-box-2`, a branch `purged-2`).
@@ -151,18 +153,32 @@ and branch names and in catalog IDs; a name that would clash gets a number
 
 **What to do, in order:**
 
-1. `git fetch origin`. Don't merge or rebase the old `main` into the new
-   one. In the clone, which you never edit, move `main` onto the new
-   history: `git checkout main && git reset --hard origin/main`.
-2. Rebuild each of your local branches from `origin/main` with only your
-   own unpushed changes: `git rebase --onto origin/main <old base> <branch>`
-   when it applies cleanly, where `<old base>` is the old `main` commit the
-   branch started from; otherwise start a new branch from `origin/main` and
-   redo your changes by hand. A branch you had pushed was rewritten on
-   Shinan too (perhaps under a new name): continue from `origin/<branch>`,
-   not your old copy.
-3. Never put the removed text back. Where you see `(purged)`, or a name or
-   ID with `purged` in it (`purged`, `purged-2`, …), keep it as it is.
+1. `git fetch --prune origin`, so the old names of renamed branches
+   disappear with the removed commits they point to. Don't merge or rebase
+   the old `main` into the new one. In the clone, which you never edit,
+   move `main` onto the new history:
+   `git checkout main && git reset --hard origin/main`.
+2. In each worktree with unpushed work, move only your own commits onto
+   the new `main`:
+
+   ```sh
+   base=$(git merge-base --fork-point origin/main HEAD) &&
+     git rebase --onto origin/main "$base"
+   ```
+
+   `--fork-point` finds the old `main` commit your branch started from in
+   the clone's record of where `origin/main` has been, however many times
+   you fetched since. Then check that `git log --oneline origin/main..HEAD`
+   lists only your own commits. If the first command prints nothing (the
+   clone no longer remembers the old `main`), or the rebase does not apply
+   cleanly (`git rebase --abort`), start a new branch from `origin/main`
+   and redo your changes by hand. A branch you had pushed was rewritten on
+   Shinan too, perhaps under a new name: continue from its new
+   `origin/<branch>`, not your old copy.
+
+3. Never put the removed text back, including in your own unpushed
+   changes. Where you see `(purged)`, or a name or ID with `purged` in it
+   (`purged`, `purged-2`, …), keep it as it is.
 4. Never push old commits or old branches. Shinan refuses them, and trying
    again won't help.
 5. Tell your person that the clone still holds the old history on disk.
