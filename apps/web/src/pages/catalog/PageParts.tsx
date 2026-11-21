@@ -6,11 +6,13 @@ import type { CatalogSection } from "@shinan/api-client"
 import { useApi, useResource } from "../../api"
 import { formatTime } from "../../format"
 import { pageBody } from "./body"
+import { CommitDate } from "./ChangeList"
 import { EntityLink } from "./facts"
 import {
   entityPath,
   historyPath,
   listLinkClass,
+  pusherText,
   relativeTime,
   sourcePath,
 } from "./format"
@@ -137,9 +139,9 @@ export function PageBody(props: {
 }
 
 /**
- * When the page last changed, from `main`'s commits. Who changed it comes
- * from the push log (GC-3a): a commit's author is not trusted (D-061), so
- * until then no name is shown. Left out when the repository can't be read.
+ * When the page last changed and who changed it, from the push log (a
+ * commit's author is not trusted, D-061), else the commit's own time and
+ * no name. Left out when the repository can't be read.
  */
 function LastChanged(props: {
   workspaceId: string
@@ -151,15 +153,29 @@ function LastChanged(props: {
     `catalog-last-change:${props.workspaceId}:${props.id}:${props.commit ?? ""}`,
     () => api.catalogHistory(props.workspaceId, props.id, { limit: 1 }),
   )
-  const time = last.data?.changes[0]?.time
-  if (!time) return null
+  const change = last.data?.changes[0]
+  const time = change?.time
+  if (!change || !time) return null
   return (
     <>
-      Last changed{" "}
-      <time dateTime={time} title={formatTime(time)}>
-        {relativeTime(time)}
-      </time>
-      {/* GC-3a: "by Guneet, through OpenCode on Daedalus", from the push log. */}
+      {change.time_source === "main" ? (
+        <>
+          Last changed{" "}
+          <time dateTime={time} title={formatTime(time)}>
+            {relativeTime(time)}
+          </time>
+        </>
+      ) : (
+        <>
+          Last change <CommitDate time={time} />
+        </>
+      )}
+      {change.pushed_by && (
+        <>
+          {" by "}
+          <VisibleText text={pusherText(change.pushed_by)} oneLine />
+        </>
+      )}
       {" · "}
     </>
   )

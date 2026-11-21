@@ -15,6 +15,8 @@ import type { GitClient } from "./git/client.js"
 import { sectionJson } from "./index/format.js"
 import type { CatalogAnswer, SectionJson } from "./index/format.js"
 import { answerFor } from "./index/queries.js"
+import { readCommitPushes } from "./pushers.js"
+import type { CommitPushJson, PusherJson } from "./pushers.js"
 import { idText } from "./wiki.js"
 
 /**
@@ -178,15 +180,20 @@ export interface CatalogChangeJson {
   subject: string
   /** The start of the rest of the message, cut at `changeBodyLimit`. */
   body: string
-  /** When it was committed (ISO 8601), as the commit says. */
+  /**
+   * When it reached `main` (ISO 8601), as the push log recorded it; else
+   * when it was committed, as the commit says (`time_source`).
+   */
   time: string | null
+  time_source: "main" | "commit"
   /** Whether it merged other changes (it has more than one parent). */
   merge: boolean
   /**
-   * Who pushed it to Shinan: from the push log (GC-3a). Null until then;
-   * a commit's author is not trusted (D-061).
+   * Who first pushed it to Shinan, from the push log (D-061, D-066); null
+   * when the push log has no record of it. A commit's author is not
+   * trusted, so never that.
    */
-  pushed_by: null
+  pushed_by: PusherJson | null
 }
 
 export interface CatalogHistoryAnswer extends CatalogAnswer {
@@ -213,7 +220,10 @@ function cut(text: string, limit: number): string {
   return `${text.slice(0, end).trimEnd()}…`
 }
 
-export function changeJson(commit: CommitInfo): CatalogChangeJson {
+export function changeJson(
+  commit: CommitInfo,
+  push?: CommitPushJson,
+): CatalogChangeJson {
   const time = commit.committer?.time ?? commit.author?.time
   const message = commit.message.replace(/\r\n?/g, "\n").trim()
   const newline = message.indexOf("\n")
@@ -223,9 +233,12 @@ export function changeJson(commit: CommitInfo): CatalogChangeJson {
     commit: commit.oid,
     subject: cut(subject, changeSubjectLimit),
     body: cut(body, changeBodyLimit),
-    time: time === undefined ? null : new Date(time * 1000).toISOString(),
+    time:
+      push?.reached_main_at ??
+      (time === undefined ? null : new Date(time * 1000).toISOString()),
+    time_source: push?.reached_main_at ? "main" : "commit",
     merge: commit.parents.length > 1,
-    pushed_by: null,
+    pushed_by: push?.pushed_by ?? null,
   }
 }
 
@@ -354,9 +367,11 @@ export async function getCatalogPageHistory(
       limit: limit + 1,
     }),
   )
+  const page = commits.slice(0, limit)
+  const pushes = await readCommitPushes(ctx, located.workspaceId, page)
   return {
     ...empty,
-    changes: commits.slice(0, limit).map(changeJson),
+    changes: page.map((c) => changeJson(c, pushes.get(c.oid))),
     next_after:
       commits.length > limit
         ? cursors.issue({

@@ -2,7 +2,11 @@ import { screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { describe, expect, it, vi } from "vitest"
 
-import type { CatalogEntity, CatalogHistoryAnswer } from "@shinan/api-client"
+import type {
+  CatalogEntity,
+  CatalogHistoryAnswer,
+  CatalogPusher,
+} from "@shinan/api-client"
 
 import { answer, check, musashi, tree } from "../../test/catalog"
 import {
@@ -33,7 +37,12 @@ const unavailable = () =>
 
 /** A history answer with these changes, newest first. */
 function history(
-  changes: { message: string; minutesAgo: number; commit?: string }[],
+  changes: {
+    message: string
+    minutesAgo: number
+    commit?: string
+    pushed_by?: CatalogPusher | null
+  }[],
   next_after: string | null = null,
 ): CatalogHistoryAnswer {
   return {
@@ -45,8 +54,9 @@ function history(
       subject: c.message.split("\n")[0]!,
       body: c.message.split("\n").slice(1).join("\n").trim(),
       time: new Date(Date.now() - c.minutesAgo * 60_000).toISOString(),
+      time_source: "main" as const,
       merge: false,
-      pushed_by: null,
+      pushed_by: c.pushed_by ?? null,
     })),
     next_after,
   }
@@ -260,7 +270,19 @@ describe("a page", () => {
       musashiPath,
       api(musashi, {
         catalogHistory: () =>
-          Promise.resolve(history([{ message: "Recheck", minutesAgo: 150 }])),
+          Promise.resolve(
+            history([
+              {
+                message: "Recheck",
+                minutesAgo: 150,
+                pushed_by: {
+                  kind: "agent",
+                  person: "Guneet",
+                  agent: "OpenCode on Daedalus",
+                },
+              },
+            ]),
+          ),
       }),
     )
     const footer = (
@@ -268,7 +290,7 @@ describe("a page", () => {
     ).closest("footer")!
     await waitFor(() =>
       expect(footer.textContent).toContain(
-        "Last changed 2 hours ago · History · View source",
+        "Last changed 2 hours ago by Guneet, through OpenCode on Daedalus · History · View source",
       ),
     )
     expect(
@@ -321,6 +343,33 @@ describe("a page", () => {
     ).closest("div")!
     expect(about.textContent).toContain(
       "Filemachine/Musashi.mdIDmachine/musashi",
+    )
+  })
+
+  it("gives a last change's own date as the commit's when Shinan has no record of it", async () => {
+    renderApp(
+      musashiPath,
+      api(musashi, {
+        catalogHistory: () =>
+          Promise.resolve({
+            ...history([{ message: "Recheck", minutesAgo: 0 }]),
+            changes: [
+              {
+                ...history([{ message: "Recheck", minutesAgo: 0 }]).changes[0]!,
+                time: "2099-06-02T12:00:00.000Z",
+                time_source: "commit" as const,
+              },
+            ],
+          }),
+      }),
+    )
+    const footer = (
+      await screen.findByRole("link", { name: "History" })
+    ).closest("footer")!
+    await waitFor(() =>
+      expect(footer.querySelector("p")!.textContent).toBe(
+        "Last change dated Jun 2, 2099 · History · View source",
+      ),
     )
   })
 
@@ -862,13 +911,15 @@ describe("recent changes", () => {
     commit: string,
     pages: { path: string; id: string | null; title: string | null }[],
     page_count = pages.length,
+    pushed_by: CatalogPusher | null = null,
   ) => ({
     commit: commit.repeat(40),
     subject,
     body: "",
     time: new Date(Date.now() - minutesAgo * 60_000).toISOString(),
+    time_source: "main" as const,
     merge: false,
-    pushed_by: null,
+    pushed_by,
     pages,
     page_count,
     page_count_at_least: false,
@@ -902,6 +953,11 @@ describe("recent changes", () => {
                     "a",
                     projects,
                     5,
+                    {
+                      kind: "agent",
+                      person: "Guneet",
+                      agent: "OpenCode on Daedalus",
+                    },
                   ),
                   change("Recheck Musashi and Daedalus", 2, "b", [
                     {
@@ -915,9 +971,14 @@ describe("recent changes", () => {
                       title: "Daedalus",
                     },
                   ]),
-                  change("Write the README", 3, "c", [
-                    { path: "README.md", id: null, title: null },
-                  ]),
+                  change(
+                    "Write the README",
+                    3,
+                    "c",
+                    [{ path: "README.md", id: null, title: null }],
+                    1,
+                    { kind: "shinan" },
+                  ),
                 ],
                 next_after: "opaque-cursor",
               },
@@ -940,7 +1001,11 @@ describe("recent changes", () => {
     expect(items[0]!.textContent).toContain(
       "Add five projects ⟨U+202E⟩ (hidden character: right-to-left override) gnp.exe",
     )
-    expect(items[0]!.textContent).toContain("aaaaaaa")
+    // Who pushed it, then when it reached main, then the short ID.
+    expect(items[0]!.querySelectorAll("p")[1]!.textContent).toMatch(
+      /^Guneet, through OpenCode on Daedalus · \d{1,2}:\d\d\s?[AP]M · aaaaaaa$/,
+    )
+    expect(items[2]!.textContent).toContain("Shinan · ")
     expect(items[0]!.textContent).toContain(
       "Project 1, Project 2, Project 3 and 2 more",
     )
@@ -1002,6 +1067,94 @@ describe("recent changes", () => {
     expect(
       screen.getByText("Merge a large branch").closest("li")!.textContent,
     ).toContain("Changed files not known")
+  })
+
+  const datedNote =
+    "“dated” marks a date the agent wrote into the change; Shinan has no record of when it reached the catalog."
+
+  it("marks a commit's own date as such, and makes no day of it", async () => {
+    const dated = (iso: string) => ({
+      ...change("Dated by the agent", 0, "f", []),
+      time: iso,
+      time_source: "commit" as const,
+    })
+    renderApp(
+      `${base}/changes`,
+      fakeApi({
+        catalogChanges: () =>
+          Promise.resolve({
+            ...answer,
+            changes: [
+              { ...dated("2099-06-02T12:00:00.000Z"), commit: "f".repeat(40) },
+              change("Recorded", 60, "a", []),
+              { ...dated("2010-01-01T12:00:00.000Z"), commit: "e".repeat(40) },
+            ],
+            next_after: null,
+          }),
+      }),
+    )
+    await screen.findByText("Recorded")
+    expect(
+      screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent),
+    ).toEqual(["Date not recorded", "Today"])
+    const [future, , past] = within(screen.getByRole("main")).getAllByRole(
+      "listitem",
+    )
+    expect(future!.querySelector("time")!.textContent).toBe("dated Jun 2, 2099")
+    expect(future!.querySelector("time")!.getAttribute("title")).toMatch(
+      /as the agent wrote it/,
+    )
+    // Under today's heading, but marked as the commit's date.
+    expect(past!.querySelector("time")!.textContent).toBe("dated Jan 1, 2010")
+    // Said once in words, under "Date not recorded", which comes first.
+    const notes = screen.getAllByText(datedNote)
+    expect(notes).toHaveLength(1)
+    expect(notes[0]!.previousElementSibling!.textContent).toBe(
+      "Date not recorded",
+    )
+  })
+
+  it("says what dated means once, above the list, when recorded changes come first", async () => {
+    renderApp(
+      `${base}/changes`,
+      fakeApi({
+        catalogChanges: () =>
+          Promise.resolve({
+            ...answer,
+            changes: [
+              change("Recorded", 60, "a", []),
+              {
+                ...change("Dated by the agent", 0, "f", []),
+                time: "2010-01-01T12:00:00.000Z",
+                time_source: "commit" as const,
+              },
+            ],
+            next_after: null,
+          }),
+      }),
+    )
+    await screen.findByText("Recorded")
+    const notes = screen.getAllByText(datedNote)
+    expect(notes).toHaveLength(1)
+    expect(notes[0]!.nextElementSibling!.querySelector("h2")!.textContent).toBe(
+      "Today",
+    )
+  })
+
+  it("says nothing of dated when every change has its recorded time", async () => {
+    renderApp(
+      `${base}/changes`,
+      fakeApi({
+        catalogChanges: () =>
+          Promise.resolve({
+            ...answer,
+            changes: [change("Recorded", 60, "a", [])],
+            next_after: null,
+          }),
+      }),
+    )
+    await screen.findByText("Recorded")
+    expect(screen.queryByText(datedNote)).toBeNull()
   })
 
   it("says so when a page held only merges that changed nothing", async () => {

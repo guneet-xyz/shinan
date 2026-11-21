@@ -6,6 +6,7 @@ import type { CatalogChange } from "@shinan/api-client"
 import { Button } from "@/components/ui/button"
 
 import { ErrorMessage } from "../../components/status"
+import { pusherText } from "./format"
 import { VisibleText } from "./VisibleText"
 
 /*
@@ -13,7 +14,9 @@ import { VisibleText } from "./VisibleText"
  * page's History), newest first under day headings. Each change is its
  * message's first line as the headline, the start of the rest under it,
  * then who and when and the short commit ID, so a person can tell an agent
- * "revert abc1234". Who pushed it comes from the push log (GC-3a).
+ * "revert abc1234". Who pushed it, and when it reached `main`, come from
+ * the push log, which Shinan records: a commit's author and time are
+ * written by the agent (D-061).
  */
 
 const dayFormat = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" })
@@ -51,7 +54,10 @@ function byDay<T extends CatalogChange>(changes: readonly T[]) {
     changes: { change: T; ownDate: boolean }[]
   }[] = []
   for (const change of changes) {
-    const day = change.time ? dayOf(change.time) : null
+    // Only a time Shinan recorded makes a day heading: a commit's own date
+    // is the agent's to write (review of #196).
+    const day =
+      change.time && change.time_source === "main" ? dayOf(change.time) : null
     const last = days[days.length - 1]
     if (last && (day === null || (last.day !== null && day >= last.day)))
       last.changes.push({
@@ -92,6 +98,14 @@ export function ChangeList<T extends CatalogChange>(props: {
   const pages = more.key === key ? more.pages : []
   const changes = [props.first, ...pages].flatMap((p) => p.changes)
   const next = (pages[pages.length - 1] ?? props.first).next_after
+  const days = byDay(changes)
+  // Said once, in words, for a phone or keyboard user who never sees
+  // `CommitDate`'s title (product review of #196): under "Date not
+  // recorded" when those changes come first, else above the list.
+  const dated = changes.some(
+    (c) => c.time !== null && c.time_source === "commit",
+  )
+  const undatedFirst = days[0]?.day === null
   const showOlder = async () => {
     if (!next) return
     setLoading(true)
@@ -114,14 +128,16 @@ export function ChangeList<T extends CatalogChange>(props: {
             : props.empty}
         </p>
       )}
-      {byDay(changes).map((day) => (
+      {dated && !undatedFirst && <DatedNote />}
+      {days.map((day, i) => (
         <section
           key={day.changes[0]!.change.commit}
           className="flex flex-col gap-3"
         >
           <h2 className="text-sm font-semibold text-muted-foreground">
-            {day.day === null ? "Undated" : dayLabel(day.day)}
+            {day.day === null ? "Date not recorded" : dayLabel(day.day)}
           </h2>
+          {dated && i === 0 && undatedFirst && <DatedNote />}
           <ol className="flex flex-col gap-5">
             {day.changes.map(({ change, ownDate }) => (
               <ChangeItem key={change.commit} change={change} ownDate={ownDate}>
@@ -146,6 +162,16 @@ export function ChangeList<T extends CatalogChange>(props: {
   )
 }
 
+/** What "dated" means, in words. */
+function DatedNote() {
+  return (
+    <p className="text-sm text-muted-foreground">
+      “dated” marks a date the agent wrote into the change; Shinan has no record
+      of when it reached the catalog.
+    </p>
+  )
+}
+
 /** One change: its headline, the start of the rest, when, its short ID. */
 function ChangeItem(props: {
   change: CatalogChange
@@ -165,18 +191,42 @@ function ChangeItem(props: {
         </p>
       )}
       <p className="text-xs text-muted-foreground">
-        {/* GC-3a: "Guneet, through OpenCode on Daedalus · ", from the push log. */}
-        {change.time && (
+        {change.pushed_by && (
+          <>
+            <VisibleText text={pusherText(change.pushed_by)} oneLine />
+            {" · "}
+          </>
+        )}
+        {change.time && change.time_source === "main" && (
           <time dateTime={change.time}>
             {(props.ownDate ? dateTimeFormat : clockFormat).format(
               new Date(change.time),
             )}
           </time>
         )}
+        {change.time && change.time_source === "commit" && (
+          <CommitDate time={change.time} />
+        )}
         {change.time && " · "}
         <code className="font-mono">{change.commit.slice(0, 7)}</code>
       </p>
       {props.children}
     </li>
+  )
+}
+
+/**
+ * A commit's own date, when Shinan has no record of when the change
+ * reached `main`: marked as the commit's, with its year, since an agent
+ * writes it and it may be anything (review of #196).
+ */
+export function CommitDate(props: { time: string }) {
+  return (
+    <time
+      dateTime={props.time}
+      title="The date in the commit, as the agent wrote it: Shinan has no record of when this reached the catalog"
+    >
+      dated {dayFormat.format(new Date(props.time))}
+    </time>
   )
 }

@@ -393,6 +393,20 @@ const firstPushOf = async (commit: string) =>
       )
   )[0]
 
+/** When the push log says a commit reached `main`. */
+const arrivalOf = async (commit: string) =>
+  (
+    await db
+      .select()
+      .from(schema.catalogMainArrivals)
+      .where(
+        and(
+          eq(schema.catalogMainArrivals.workspaceId, workspaceId),
+          eq(schema.catalogMainArrivals.commit, commit),
+        ),
+      )
+  )[0]
+
 describe("pushing through web", () => {
   it("accepts a push to a branch, logs it once, and records its commits' first pusher", async () => {
     const since = journal.last()
@@ -984,6 +998,16 @@ describe("branches, main and the push log", () => {
       byLabel: labels.beta,
       ref: "refs/heads/main",
     })
+    // The branch's commit reached main with the merge, not when it was
+    // pushed on its branch (GC-7).
+    const merged = await arrivalOf(merge)
+    expect(merged).toBeDefined()
+    expect(await arrivalOf(theirs)).toEqual(
+      merged && { ...merged, commit: theirs },
+    )
+    expect(merged!.reachedMainAt.getTime()).toBeGreaterThan(
+      (await firstPushOf(theirs))!.firstPushedAt.getTime(),
+    )
   })
 
   it("names one push and its first ref for a commit that arrives on two branches", async () => {

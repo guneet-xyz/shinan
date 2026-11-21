@@ -148,6 +148,13 @@
       "when": 1795194481102,
       "tag": "0020_m2_dropped",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1795204042364,
+      "tag": "0021_catalog_main_arrivals",
+      "breakpoints": true
     }
   ]
 }

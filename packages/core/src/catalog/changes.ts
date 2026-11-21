@@ -8,6 +8,7 @@ import type { GitClient } from "./git/client.js"
 import type { CatalogAnswer } from "./index/format.js"
 import { changeJson, fromGit, locate, readCursor, requireGit } from "./pages.js"
 import type { CatalogChangeJson, HistoryCursors } from "./pages.js"
+import { readCommitPushes } from "./pushers.js"
 
 /*
  * Recent changes (Git-based catalog plan §3, GQ-6; product brief on #169):
@@ -134,10 +135,11 @@ export async function listCatalogChanges(
     ),
   ]
   const pages = await pagesAt(ctx, repository, shown)
+  const pushes = await readCommitPushes(ctx, repository, listed)
   return {
     ...empty,
     changes: listed.map((commit) => ({
-      ...changeJson(commit),
+      ...changeJson(commit, pushes.get(commit.oid)),
       pages: commit.changes
         .slice(0, changedPagesShown)
         .map(({ path }) => pages.get(path) ?? { path, id: null, title: null }),

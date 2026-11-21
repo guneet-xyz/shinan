@@ -19,7 +19,14 @@ export interface CatalogAllowedValue {
   createdAt: Date
 }
 
-const fingerprintPattern = /^(?:sha256:)?([0-9a-fA-F]{64})$/
+/**
+ * A fingerprint as a refusal shows it: `sha256:` and 64 hexadecimal
+ * characters. The prefix is required: 64 bare hexadecimal characters are
+ * what a key looks like, so they are a value (review of #196).
+ */
+const fingerprintPattern = /^sha256:([0-9a-fA-F]{64})$/
+/** A fingerprint as stored, for removing one: with or without the prefix. */
+const storedPattern = /^(?:sha256:)?([0-9a-fA-F]{64})$/
 
 /**
  * The values a workspace's owners allowed as "not a secret" (Git-based
@@ -126,7 +133,9 @@ export async function removeCatalogAllowedValue(
     input.workspaceId,
     "catalog-allowed-value.change",
     async (scope) => {
-      const fingerprint = fingerprintOf({ fingerprint: input.fingerprint })
+      const match = storedPattern.exec(input.fingerprint.trim())
+      if (!match) throw new NotFoundError()
+      const fingerprint = match[1]!.toLowerCase()
       const removed = await scope.tx
         .delete(schema.catalogAllowedValues)
         .where(
@@ -162,6 +171,13 @@ function fingerprintOf(input: {
   if (input.value !== undefined) {
     if (input.value === "" || input.value.length > 64 * 1024) {
       throw new InvalidInputError("value", "The value is empty or too long")
+    }
+    // A mistyped fingerprint would be allowed as a value nobody pushes.
+    if (/^\s*sha256:/i.test(input.value)) {
+      throw new InvalidInputError(
+        "fingerprint",
+        "A fingerprint is sha256: and 64 hexadecimal characters, as a refusal shows it",
+      )
     }
     return secretFingerprint(input.value)
   }

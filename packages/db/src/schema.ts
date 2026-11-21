@@ -1112,6 +1112,35 @@ export const catalogCommitFirstPushes = pgTable(
 )
 
 /**
+ * When each commit reached `main` (Git-based catalog plan §2.6; review of
+ * #196), copied from the journal: for each applied update of `main`, the
+ * commits it made reachable (`push.confirmed`'s `main.added`), with the
+ * time Shinan recorded; for a repository's first commit, when Shinan made
+ * it. Recorded once, on the first arrival, and never changed (an agent
+ * writes a commit's own date, so it is not this). A purge's rewritten
+ * commits keep their arrival through the first-pusher record's
+ * `replaces_commit`, which a read follows.
+ */
+export const catalogMainArrivals = pgTable(
+  "catalog_main_arrivals",
+  {
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id),
+    commit: text("commit").notNull(),
+    /** The push that brought it; null for a commit Shinan made. */
+    pushId: uuid("push_id").references(() => catalogPushes.id),
+    reachedMainAt: timestamp("reached_main_at", {
+      withTimezone: true,
+    }).notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.commit] }),
+    check("catalog_main_arrivals_commit", gitObjectId("commit")),
+  ],
+)
+
+/**
  * The values a workspace's owners allowed as "not a secret" (plan §2.5,
  * GQ-2): only the SHA-256 of each value, at most 100 per workspace. The
  * push checks let exactly these values through.

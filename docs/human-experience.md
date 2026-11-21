@@ -925,14 +925,14 @@ order:
    headings (the relation's inverse name, such as "Services", else "Linked
    from"), and "Policies and runbooks that apply". Each page shows once,
    under the first heading it belongs to. The page's own relations are among its facts.
-7. **The footer:** "Last changed 2 hours ago · History · View source", then
+7. **The footer:** "Last changed 2 hours ago by Guneet, through OpenCode on
+   Daedalus · History · View source", then
    a quiet "About this page" line: its file, its ID only when it isn't the
    file's name without `.md` (until push checks enforce that, GC-3), old
-   IDs, owner and status (and a decision's state). Who changed it comes from the push log
-   (GC-3a): a commit's author isn't trusted
-   ([D-061](decisions/D-061-push-authentication-and-push-log.md)), so until
-   then no name is shown. When the repository can't be read, "Last changed"
-   is left out.
+   IDs, owner and status (and a decision's state). Who changed it and when
+   come from the push log, as in Recent changes: a commit's author isn't
+   trusted ([D-061](decisions/D-061-push-authentication-and-push-log.md)).
+   When the repository can't be read, "Last changed" is left out.
 
 - **Type schema pages** (`schema/<type>`) are pages like any other: title,
   summary, body and footer, with a muted line under the summary:
@@ -970,9 +970,24 @@ order:
   signed cursor; a page reads on past merges left out, up to 90 commits,
   rather than come back empty ("These latest commits only merged work
   listed further back. Show older changes to see it." if it still does). It is the review after the fact, now that
-  changes need no approval. **Who pushed each change** comes with the push
-  log (GC-3a); until then no name is shown (commit authors aren't
-  trusted, D-061). Start here's "recent-changes" step links here.
+  changes need no approval. **Who and when** come from the push log, which
+  Shinan records (commit authors and times are written by the agent and
+  aren't trusted, D-061): each change, here and in History, reads
+  "Guneet, through OpenCode on Daedalus · 2:14 PM · abc1234", the agent
+  that first pushed it (D-066), or "Shinan" for what Shinan made. The time
+  is when the change reached `main`, as Shinan recorded it at the time:
+  each applied update of `main` records the commits it made reachable, so
+  a branch's commits have their merge's time wherever they are listed. A
+  change with no such record (from before this was recorded, or put into
+  the repository outside a push) shows its commit's own date marked as
+  such, "dated Jun 2, 2099", since the agent wrote it, and makes no day
+  heading of it: those changes stay under the heading before them, or
+  under "Date not recorded". One muted line, once on any list with such
+  a change, says what it means: "“dated” marks a date the agent wrote
+  into the change; Shinan has no record of when it reached the catalog."
+  It sits under "Date not recorded" when those changes come first, and
+  above the list otherwise. The footer then reads "Last change dated
+  Jun 2, 2099". Start here's "recent-changes" step links here.
 - **View source** (`…/catalog/source/<ID>`) shows the file as it is, with
   hidden characters marked and long lines wrapped, and a Copy button that
   copies it exactly.
@@ -1257,7 +1272,7 @@ details (D-015).
 
 > **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-7](build-plan-git-catalog.md#gc-7-the-catalog-ui)): the "Catalog" screen holds the clone URL, "not a secret" values and purge (GC-5 removed the strict setting). Until then, this section describes M2 as built (v0.3.0).
 >
-> **As built in GC-7 ([#169](https://github.com/guneet-xyz/shinan/issues/169)):** a **Catalog** tab, for every member, between Agents and Security log. It holds "Address for agents": the address agents clone the catalog from (`https://<installation>/git/<workspace ID>.git`), shown whole (it wraps on a phone), with a Copy button, and "Agents clone the catalog from here. Set up an agent →". The "not a secret" values (GC-3) and removing text from the catalog's history (GC-8) join it with their packages; until GC-8, M2's purge stays under Data.
+> **As built in GC-7 ([#169](https://github.com/guneet-xyz/shinan/issues/169)):** a **Catalog** tab, for every member, between Agents and Security log. It holds "Address for agents": the address agents clone the catalog from (`https://<installation>/git/<workspace ID>.git`), shown whole (it wraps on a phone), with a Copy button, and "Agents clone the catalog from here. Set up an agent →". For workspace owners, it also holds **"Values that aren't secrets"** (GQ-2): one line ("If Shinan refused a push because something looked like a secret but isn't, add it here so the next push goes through."), one masked field for the value or the fingerprint the refusal showed, with a Show button to check what was pasted, and the list, one row each: "Allowed Nov 20 by Guneet · sha256:3f9a1c2d4e5f…" on the left, Remove on the right. Only text that starts with `sha256:` is a fingerprint (a mistyped one is refused with a line saying so); anything else is a value, whose fingerprint the page works out itself (SHA-256, in the browser), so the value never leaves the page: 64 hexadecimal characters on their own are what a key looks like, so they are a value too (review of #196). The API takes a fingerprint only with its `sha256:` prefix. Shinan keeps only fingerprints, so the list never shows a value. Allowing and removing ask for a recent sign-in, and each is in the security log. Removing text from the catalog's history (GC-8) is a page of its own, behind a quiet owners-only link at the bottom of the tab (agreed on [#170](https://github.com/guneet-xyz/shinan/issues/170)); until GC-8, M2's purge stays under Data.
 
 For workspace owners. Contributors see three of these screens read only:
 General, Members and Security log (only the entries they made or that are
