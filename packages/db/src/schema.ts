@@ -949,6 +949,26 @@ export const catalogRepositories = pgTable(
   ],
 )
 
+/**
+ * The key of each repository's branch fingerprints in the security log
+ * (`catalog.unlogged-update` keeps HMAC-SHA256 of a branch's name), so a
+ * guessed name can't be confirmed from the log (review of #197). Made by
+ * PostgreSQL from two random UUIDs when first needed; never shown. A table
+ * of its own, so the move into Git (GC-6), which writes
+ * `catalog_repositories` during the migrations, is left alone.
+ */
+export const catalogRefFingerprintKeys = pgTable(
+  "catalog_ref_fingerprint_keys",
+  {
+    workspaceId: uuid("workspace_id")
+      .primaryKey()
+      .references(() => workspaces.id),
+    key: text("key")
+      .notNull()
+      .default(sql`gen_random_uuid()::text || gen_random_uuid()::text`),
+  },
+)
+
 const gitObjectId = (column: string) =>
   sql`${sql.identifier(column)} ~ '^([0-9a-f]{40}|[0-9a-f]{64})$'`
 
@@ -1220,6 +1240,12 @@ export const catalogRewrites = pgTable(
     refs: jsonb("refs").$type<{ ref: string; commit: string }[]>().notNull(),
     /** What the rewrite changed, counted. */
     counts: jsonb("counts").$type<CatalogPurgeHistoryCounts>().notNull(),
+    /**
+     * Catalog IDs the rewrite named apart from another page's (review of
+     * #197): each ID's plain form (the text as `purged`) and its new ID.
+     * Neither holds the text.
+     */
+    ids: jsonb("ids").$type<[string, string][]>().notNull().default([]),
   },
   (t) => [
     index("catalog_rewrites_workspace_rewritten_at").on(

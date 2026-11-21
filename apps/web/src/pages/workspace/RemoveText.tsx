@@ -95,6 +95,8 @@ function RemoveForm(props: { onRemoved: () => void }) {
   const [typed, setTyped] = useState("")
   const [done, setDone] = useState<CatalogPurge>()
   const [failure, setFailure] = useState<string>()
+  /** Why a removal takes longer than it should, as the server says. */
+  const [delay, setDelay] = useState<string>()
   const find = useAction()
   const remove = useAction()
 
@@ -114,6 +116,7 @@ function RemoveForm(props: { onRemoved: () => void }) {
     event.preventDefault()
     if (!found) return
     setFailure(undefined)
+    setDelay(undefined)
     remove.run(
       async () => {
         // A large catalog takes minutes: the removal runs on the server,
@@ -127,7 +130,9 @@ function RemoveForm(props: { onRemoved: () => void }) {
             setTimeout(resolve, removalPolling.intervalMs),
           )
           status = await api.catalogPurgeStatus(workspace.id, status.id)
+          setDelay(status.state === "running" ? status.message : undefined)
         }
+        setDelay(undefined)
         if (status.state !== "done" || !status.purge) {
           setFailure(
             status.message ?? "Shinan could not remove the text: try again",
@@ -273,6 +278,24 @@ function RemoveForm(props: { onRemoved: () => void }) {
               </ul>
             </div>
           )}
+          {preview.history && preview.history.renamedApart.length > 0 && (
+            <div className="flex flex-col gap-1">
+              <p className="font-medium">
+                Given a number, because another page or folder already has the
+                name:
+              </p>
+              <ul className="list-disc pl-5 wrap-anywhere">
+                {preview.history.renamedApart.map((r) => (
+                  <li key={r.path}>
+                    {r.path} ({r.plain} is taken)
+                  </li>
+                ))}
+                {preview.history.renamedApartMore > 0 && (
+                  <li>and {preview.history.renamedApartMore} more</li>
+                )}
+              </ul>
+            </div>
+          )}
           <EncodedCopies encodings={preview.mayAppearEncoded} />
           {preview.acrossLines > 0 && (
             <p>
@@ -359,6 +382,7 @@ function RemoveForm(props: { onRemoved: () => void }) {
           few seconds near the end.
         </Notice>
       )}
+      {remove.pending && delay !== undefined && <Notice>{delay}</Notice>}
       {remove.error !== undefined && <ErrorMessage error={remove.error} />}
       {failure !== undefined && <ErrorAlert>{failure}</ErrorAlert>}
     </Section>
@@ -429,7 +453,8 @@ function AfterRemoval(props: { removal: CatalogPurge }) {
           >
             Set up an agent
           </Link>{" "}
-          page). Shinan refuses any push of the old history.
+          page). Shinan refuses any push of the old history. A copy that was
+          still downloading when the removal finished may hold it too.
         </li>
         <li>
           <span className="font-medium">

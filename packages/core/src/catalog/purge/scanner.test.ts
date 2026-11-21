@@ -111,6 +111,41 @@ describe("matching a purge text in what Git stores", () => {
     expect(encodedIn(Buffer.from(`plain ${text}`))).toEqual([])
   })
 
+  it("reports encoded copies in a value that also holds the text, and base64 wrapped across lines", () => {
+    const text = "pitayaflambe"
+    const scanner = new PurgeScanner(text)
+    const encodedIn = (value: string) => scanner.encodingsIn(Buffer.from(value))
+    // Found by what is left once the text itself is removed (review of #197).
+    expect(encodedIn("pitayaflambe and PITAYAFLAMBE and Pitayaflambe")).toEqual(
+      ["other-case"],
+    )
+    expect(encodedIn("pitayaflambe, then pitaya=\nflambe")).toEqual([
+      "quoted-printable",
+    ])
+    expect(encodedIn("pitayaflambe twice: pitayaflambe")).toEqual([])
+    // As in mail or a certificate: 76-character lines.
+    const long = `${"x".repeat(50)}${text}${"y".repeat(50)}`
+    const wrapped = (
+      Buffer.from(long)
+        .toString("base64")
+        .match(/.{1,76}/g) ?? []
+    ).join("\n  ")
+    expect(encodedIn(`key: |\n  ${wrapped}\n`)).toEqual(["base64"])
+  })
+
+  it("names catalog IDs by the plan it is given, and keeps other places as before", () => {
+    const scanner = new PurgeScanner("quibbleworth")
+    const page = Buffer.from(
+      "---\nid: machine/quibbleworth-box\nsummary: Was quibbleworth.\n---\n\nSee [it](machine/quibbleworth-box) and [x](machine/purged-box).\n",
+    )
+    const named = scanner.replace(page, purgeMarker, (plain) =>
+      plain === "machine/purged-box" ? "machine/purged-box-2" : plain,
+    )
+    expect(named.toString()).toBe(
+      `---\nid: machine/purged-box-2\nsummary: Was ${purgeMarker}.\n---\n\nSee [it](machine/purged-box-2) and [x](machine/purged-box).\n`,
+    )
+  })
+
   it("checks the text as M2 did", () => {
     expect(() => new PurgeScanner("abc")).toThrow(InvalidInputError)
     expect(() => new PurgeScanner("urged")).toThrow(InvalidInputError)

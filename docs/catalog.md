@@ -1575,7 +1575,10 @@ change the source of truth, or the checks and history mean nothing.
       emails, on every branch; and by `purged` in file and folder names and
       branch names, which may not hold brackets, and in catalog IDs
       wherever they are written (a page's `id`, its aliases, references),
-      so a page's ID still equals its path. Shinan's own records
+      so a page's ID still equals its path. A new name another page,
+      folder or branch already has gets a number (`machine/purged-box-2`),
+      the same in every commit, so a purge never writes one page over
+      another; the preview lists them (review of #197). Shinan's own records
       follow: branch names in the push log and the first-pusher record,
       timeline events, catalog IDs in the record of the catalog's move
       into Git (GC-6), and the agent index (rebuilt from the new `main`).
@@ -1606,8 +1609,9 @@ change the source of truth, or the checks and history mean nothing.
       rule (§8.3) holds on the new history and another agent can still
       merge an agent's rewritten branch.
     - **Only the exact text** (whitespace aside) is removed. The preview
-      also reports places that may hold it encoded (base64, every byte
-      percent-encoded, quoted-printable, UTF-16, another letter case), for
+      also reports places that may hold it encoded (base64, also wrapped
+      across lines, every byte percent-encoded, quoted-printable, UTF-16,
+      another letter case), also in a file that holds the text itself, for
       the owner to have them checked; they are not removed (review of
       #197).
     - **Shown first.** Before anything changes the owner sees where the
@@ -1628,7 +1632,8 @@ change the source of truth, or the checks and history mean nothing.
       can take minutes on a large history. A rewrite that was never
       recorded stays listed as unfinished until the owner removes the
       same text again, which records it without rewriting; it is never
-      recorded under another text.
+      recorded under another text. Once recorded, the Git container drops
+      the keyed hash it knew the text by.
     - **(M2, v0.3.0)** purged M2's stored revisions, proposals and comments
       and stored the cleaned latest text as a new revision; GC-6 moved the
       catalog into Git and dropped those tables.

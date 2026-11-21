@@ -447,6 +447,14 @@ export interface RepositoryPurgePreview {
   alsoWrittenAs: { form: PurgeForm; places: number }[]
   /** Places that may hold it encoded (`PurgeEncoding`), which a purge does not reach. */
   mayAppearEncoded: { encoding: PurgeEncoding; places: number }[]
+  /**
+   * Paths the purge names apart from another page or folder of the
+   * history, which the text alone would rename onto (review of #197): the
+   * name the text alone gives (`plain`, holding `purged`, never the text)
+   * and the one given, at most `maxPurgePaths`.
+   */
+  renamedApart: { plain: string; path: string }[]
+  renamedApartMore: number
   /** Journal entries not stored yet that hold it (branch names of pushes). */
   journalEntries: number
 }
@@ -476,7 +484,10 @@ export interface RepositoryPurgeStatus {
   state: "running" | "done" | "failed" | "unknown"
   /** When `done`. */
   result?: RepositoryPurgeResult
-  /** When `failed`: why, never the text. */
+  /**
+   * When `failed`: why, never the text. When `running`: why it takes
+   * longer than it should (it failed after its swap and is being retried).
+   */
   message?: string
 }
 

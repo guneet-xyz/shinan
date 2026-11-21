@@ -32,11 +32,17 @@ function documentId(id: string): boolean {
  * an alias, a reference, a link): there by `purgeNameMarker`, as in the
  * page's path, so the ID stays an ID and still equals its path (review of
  * #197). Again until none is left, as `PurgeMatcher.replace`.
+ *
+ * `idName`, when given, names each such ID after the purge, from its plain
+ * form (the text replaced by `purgeNameMarker`): a page renamed to keep it
+ * apart from another (`machine/purged-box-2`) is referred to by its new
+ * name everywhere.
  */
 export function replaceKeepingIds(
   matcher: PurgeMatcher,
   value: string,
   marker: string,
+  idName?: (plain: string) => string,
 ): string {
   let result = value
   for (let pass = 0; ; pass++) {
@@ -46,10 +52,20 @@ export function replaceKeepingIds(
     let out = ""
     let from = 0
     for (const m of found) {
+      if (m.start < from) continue
       let left = m.start
       while (left > 0 && idCharacter.test(result[left - 1]!)) left--
       let right = m.end
       while (right < result.length && idCharacter.test(result[right]!)) right++
+      const plain =
+        idName && left >= from
+          ? matcher.replace(result.slice(left, right), purgeNameMarker)
+          : null
+      if (idName && plain !== null && documentId(plain)) {
+        out += result.slice(from, left) + idName(plain)
+        from = right
+        continue
+      }
       const asName = documentId(
         result.slice(left, m.start) +
           purgeNameMarker +
@@ -148,8 +164,17 @@ function encodingsOf(text: string): {
   const lowerText = Buffer.from(raw.toString("latin1").toLowerCase(), "latin1")
   return [
     {
+      // Also wrapped, as in mail or a certificate (76-character lines).
       encoding: "base64",
-      find: (bytes) => base64.some((b) => bytes.includes(b)),
+      find: (bytes) => {
+        if (base64.some((b) => bytes.includes(b))) return true
+        if (!bytes.includes(0x0a)) return false
+        const unwrapped = Buffer.from(
+          bytes.toString("latin1").replace(/\r?\n[ \t]*/g, ""),
+          "latin1",
+        )
+        return base64.some((b) => unwrapped.includes(b))
+      },
     },
     {
       encoding: "percent-every-byte",
@@ -159,7 +184,6 @@ function encodingsOf(text: string): {
       encoding: "quoted-printable",
       find: (bytes) =>
         bytes.includes("=\n") &&
-        !bytes.includes(raw) &&
         Buffer.from(
           bytes.toString("latin1").replace(/=\r?\n/g, ""),
           "latin1",
@@ -171,8 +195,7 @@ function encodingsOf(text: string): {
     },
     {
       encoding: "other-case",
-      find: (bytes, lower) =>
-        !bytes.includes(raw) && lower().includes(lowerText),
+      find: (bytes, lower) => lower().includes(lowerText),
     },
   ]
 }
@@ -320,13 +343,18 @@ export class PurgeScanner {
 
   /**
    * `value` with every occurrence replaced by `marker`; `value` itself when
-   * it holds none, so what does not hold the text keeps its bytes.
+   * it holds none, so what does not hold the text keeps its bytes. Catalog
+   * IDs are named by `idName` (`replaceKeepingIds`).
    */
-  replace(value: Buffer, marker: string): Buffer {
+  replace(
+    value: Buffer,
+    marker: string,
+    idName?: (plain: string) => string,
+  ): Buffer {
     const { matcher, value: v, utf8: isText } = this.view(value)
     if (!matcher.test(v)) return value
     const replaced = isText
-      ? replaceKeepingIds(matcher, v, marker)
+      ? replaceKeepingIds(matcher, v, marker, idName)
       : matcher.replace(v, marker)
     return Buffer.from(replaced, isText ? "utf8" : "latin1")
   }
@@ -360,10 +388,13 @@ export class PurgeScanner {
 
   /**
    * The encodings `value` may hold the text in (`PurgeEncoding`): what a
-   * purge leaves, to report. Checked only where the text itself is not.
+   * purge leaves, to report. Looked for in what is left once the text
+   * itself is removed, so a file holding both is reported too (review of
+   * #197).
    */
   encodingsIn(value: Uint8Array): PurgeEncoding[] {
-    const bytes = Buffer.from(value.buffer, value.byteOffset, value.byteLength)
+    const whole = Buffer.from(value.buffer, value.byteOffset, value.byteLength)
+    const bytes = this.holds(whole) ? this.replace(whole, "\u0000") : whole
     let lower: Buffer | undefined
     const lowered = () =>
       (lower ??= Buffer.from(bytes.toString("latin1").toLowerCase(), "latin1"))

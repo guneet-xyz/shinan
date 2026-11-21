@@ -111,6 +111,55 @@ async function history(gitDir: string) {
 }
 
 describe("rewriting a history", () => {
+  it("rewrites again only what the source gained, with the marks of the first run", async () => {
+    const source = await repository()
+    const first = await commitFiles(
+      git,
+      source,
+      { "a.md": "secret one\n" },
+      { ref: "refs/heads/main" },
+    )
+    const target = await repository()
+    const temporaryDir = folder()
+    const seen: string[] = []
+    const change = (item: HistoryItem): HistoryItem => {
+      if (item.kind === "commit") seen.push(item.oid)
+      return item.kind === "blob"
+        ? {
+            ...item,
+            data: Buffer.from(item.data.toString().replace("secret", "gone")),
+          }
+        : item
+    }
+    const once = await rewriteHistory(git, source, target, change, {
+      temporaryDir,
+    })
+    const second = await commitFiles(
+      git,
+      source,
+      { "b.md": "secret two\n" },
+      { ref: "refs/heads/main", parents: [first] },
+    )
+    seen.length = 0
+    const again = await rewriteHistory(git, source, target, change, {
+      temporaryDir,
+      again: true,
+    })
+    // Only the new commit was read, on top of the first one's rewrite.
+    expect(seen).toEqual([second])
+    expect([...again.commits.keys()]).toEqual([second])
+    const { stdout } = await git.run(
+      ["rev-list", "--parents", "-n", "1", again.commits.get(second)!],
+      { gitDir: target },
+    )
+    expect(stdout.toString().trim().split(" ")[1]).toBe(once.commits.get(first))
+    const shown = await git.run(
+      ["show", `${again.commits.get(second)!}:b.md`],
+      { gitDir: target },
+    )
+    expect(shown.stdout.toString()).toBe("gone two\n")
+  })
+
   it("keeps every commit's ID when nothing is changed, merges and odd names included", async () => {
     const source = await repository()
     const commits = await history(source)

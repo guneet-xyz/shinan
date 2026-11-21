@@ -272,6 +272,18 @@ export const rules = deepFreeze({
     reauthentication: true,
   },
   /**
+   * Follow a purge while it runs and see how it ended (review of #197):
+   * workspace owners, without signing in again, so a purge of minutes can
+   * be followed to its end; never agents. Counts only, never the text.
+   */
+  "catalog.purge-status": {
+    level: "workspace",
+    access: "read",
+    roles: ["owner"],
+    agents: "people",
+    reauthentication: false,
+  },
+  /**
    * Keep the agent index in step with the stored text: rebuild it, run the
    * daily round-trip check, and ask for rebuilds after the parser changed
    * (architecture §5.2, §5.3, §7). The worker and the operator's server

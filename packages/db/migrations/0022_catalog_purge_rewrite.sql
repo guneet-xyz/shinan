@@ -1,3 +1,8 @@
+CREATE TABLE "catalog_ref_fingerprint_keys" (
+	"workspace_id" uuid PRIMARY KEY NOT NULL,
+	"key" text DEFAULT gen_random_uuid()::text || gen_random_uuid()::text NOT NULL
+);
+--> statement-breakpoint
 CREATE TABLE "catalog_rewrites" (
 	"id" uuid PRIMARY KEY NOT NULL,
 	"workspace_id" uuid NOT NULL,
@@ -5,9 +10,11 @@ CREATE TABLE "catalog_rewrites" (
 	"journal_entry" bigint NOT NULL,
 	"rewritten_at" timestamp with time zone NOT NULL,
 	"refs" jsonb NOT NULL,
-	"counts" jsonb NOT NULL
+	"counts" jsonb NOT NULL,
+	"ids" jsonb DEFAULT '[]'::jsonb NOT NULL
 );
 --> statement-breakpoint
+ALTER TABLE "catalog_ref_fingerprint_keys" ADD CONSTRAINT "catalog_ref_fingerprint_keys_workspace_id_workspaces_id_fk" FOREIGN KEY ("workspace_id") REFERENCES "public"."workspaces"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "catalog_rewrites" ADD CONSTRAINT "catalog_rewrites_workspace_id_workspaces_id_fk" FOREIGN KEY ("workspace_id") REFERENCES "public"."workspaces"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "catalog_rewrites_workspace_rewritten_at" ON "catalog_rewrites" USING btree ("workspace_id","rewritten_at");
 --> statement-breakpoint

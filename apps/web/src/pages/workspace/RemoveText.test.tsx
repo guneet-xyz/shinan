@@ -30,6 +30,8 @@ const preview: CatalogPurgePreview = {
     structure: [{ path: "machine/daedalus.md", where: "alias" }],
     alsoWrittenAs: [],
     mayAppearEncoded: [],
+    renamedApart: [],
+    renamedApartMore: 0,
     journalEntries: 0,
   },
   pushLog: 2,
@@ -368,5 +370,81 @@ describe("removing text from the catalog's history", () => {
     )
     expect(screen.queryByText(/Those copies stay/)).toBeNull()
     expect(screen.queryByLabelText("Reason")).toBeNull()
+  })
+
+  it("lists the pages it numbers apart from another, and says why a removal takes longer", async () => {
+    let calls = 0
+    let finish!: () => void
+    const api = fakeApi({
+      catalogPurges: () => Promise.resolve([]),
+      previewCatalogPurge: () =>
+        Promise.resolve({
+          ...preview,
+          history: {
+            ...preview.history!,
+            renamedApart: [
+              {
+                plain: "machine/purged-box.md",
+                path: "machine/purged-box-2.md",
+              },
+            ],
+          },
+        }),
+      purgeCatalogText: () =>
+        Promise.resolve({ id: removal.id, state: "running" as const }),
+      catalogPurgeStatus: () => {
+        calls++
+        if (calls === 1)
+          return Promise.resolve({
+            id: removal.id,
+            state: "running" as const,
+            message: "Shinan could not finish recording it; it tries again",
+          })
+        return new Promise((resolve) => {
+          finish = () =>
+            resolve({ id: removal.id, state: "done" as const, purge: removal })
+        })
+      },
+    })
+    renderApp(path, api)
+    await userEvent.type(await screen.findByLabelText("Text to remove"), secret)
+    await userEvent.click(screen.getByRole("button", { name: "Find it" }))
+    expect(
+      await screen.findByText(
+        "Given a number, because another page or folder already has the name:",
+      ),
+    ).toBeTruthy()
+    expect(
+      screen.getByText(
+        "machine/purged-box-2.md (machine/purged-box.md is taken)",
+      ),
+    ).toBeTruthy()
+    await userEvent.type(screen.getByLabelText("Reason"), "A leak.")
+    await userEvent.type(
+      screen.getByLabelText("Type remove to confirm"),
+      "remove",
+    )
+    await userEvent.click(
+      screen.getByRole("button", { name: "Remove from Shinan's history" }),
+    )
+    expect(
+      await screen.findByText(
+        "Shinan could not finish recording it; it tries again",
+      ),
+    ).toBeTruthy()
+    finish()
+    expect(
+      await screen.findByText(/Removed from Shinan's history/),
+    ).toBeTruthy()
+    expect(
+      screen.getByText(
+        /A copy that was still downloading when the removal finished may hold it too\./,
+      ),
+    ).toBeTruthy()
+    expect(
+      screen.queryByText(
+        "Shinan could not finish recording it; it tries again",
+      ),
+    ).toBeNull()
   })
 })

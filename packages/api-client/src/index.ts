@@ -351,6 +351,9 @@ export interface CatalogPurgePreview {
     structure: { path: string; where: "id" | "alias" | "key" | "frontmatter" }[]
     alsoWrittenAs: { form: CatalogPurgeForm; places: number }[]
     mayAppearEncoded: { encoding: CatalogPurgeEncoding; places: number }[]
+    /** Paths named apart from another page: the name the text alone gives, and the one given. */
+    renamedApart: { plain: string; path: string }[]
+    renamedApartMore: number
     journalEntries: number
   } | null
   pushLog: number

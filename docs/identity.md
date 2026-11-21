@@ -1284,9 +1284,11 @@ kinds (**proposed**):
   "not a secret" or stops allowing it (its fingerprint only), and
   `catalog.unlogged-update` when a repository's branch is not where the
   push log says it should be (the commit found and the one logged, and the
-  branch by its fingerprint, `sha256:` of its name, since a name may hold
-  text a purge removes and the security log is never purged; review of
-  #197), and, at the installation's level, `catalog.journal-set-aside`
+  branch by its keyed fingerprint, `hmac-sha256:` of its name under a key
+  of the repository's kept in `catalog_ref_fingerprint_keys`, since a name
+  may hold text a purge removes, the security log is never purged, and a
+  guessed name must not be confirmable from the log; review of #197), and,
+  at the installation's level, `catalog.journal-set-aside`
   for a Git journal entry that could not be stored (its number, kind,
   workspace and reason, never its data). Fetches and pushes are recorded as the
   [Git-based catalog plan §2.14](build-plan-git-catalog.md#214-permissions-scopes-and-the-security-log)
@@ -1309,7 +1311,7 @@ kinds (**proposed**):
   `catalog_rewrites` (the rewrite the purge made: the branches after it),
   and each rewritten commit's first pusher row names the commit it
   replaces. No security-log entry holds a branch name
-  (`catalog.unlogged-update` keeps its fingerprint), and while a purge is
+  (`catalog.unlogged-update` keeps its keyed fingerprint), and while a purge is
   unfinished the minute check skips the repository.
 - **Decided (owner, O-47, N-8, N-13, [#25](https://github.com/guneet-xyz/shinan/issues/25)):**
   the security log is kept forever, and no security-log entry can ever be

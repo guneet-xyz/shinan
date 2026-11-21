@@ -113,7 +113,31 @@ function gitRole() {
     locks,
     log: () => {},
   })
-  purges = createPurges({ store, journal, records, push })
+  purges = createPurges({
+    store,
+    journal,
+    records,
+    push,
+    log: (line) => purgeLog.push(line),
+  })
+}
+
+/** The Git container's log lines about purges. */
+const purgeLog: string[] = []
+
+/**
+ * Runs `before` once, when the next purge takes the push lock: a push that
+ * lands while the purge read or rewrote the history without it.
+ */
+function beforeTheLock(before: () => Promise<void>) {
+  const exclusive = push.exclusive.bind(push)
+  push.exclusive = async (id, waitMs, holder) => {
+    if (holder === "purge") {
+      push.exclusive = exclusive
+      await before()
+    }
+    return exclusive(id, waitMs, holder)
+  }
 }
 
 beforeAll(async () => {
@@ -375,7 +399,8 @@ async function gitPart(purgeId: string, text: string) {
   await client.startPurge(workspaceId, { purgeId, text })
   for (;;) {
     const status = await client.purgeStatus(workspaceId, purgeId)
-    if (status.state !== "running") return status
+    // Running with a reason: it failed after its swap, and is retried.
+    if (status.state !== "running" || status.message) return status
     await new Promise((resolve) => setTimeout(resolve, 20))
   }
 }
@@ -748,7 +773,7 @@ describe(
       }
       const purgeId = "00000000-0000-4000-8000-000000000001"
       const failed = await gitPart(purgeId, secret)
-      expect(failed).toMatchObject({ state: "failed" })
+      expect(failed).toMatchObject({ state: "running" })
       expect(failed.message).toMatch(/could not finish recording it/)
       expect(records.purge(workspaceId, purgeId)?.phase).toBe("swapped")
       expect(await store.main(workspaceId)).not.toBe(old)
@@ -768,6 +793,10 @@ describe(
       records.addPurgedCommits = original
       await purges.recover()
       expect(records.purge(workspaceId, purgeId)?.phase).toBe("done")
+      // Its status says so, not the failure (review of #197).
+      expect(await client.purgeStatus(workspaceId, purgeId)).toMatchObject({
+        state: "done",
+      })
       expect(records.purgedCommits(workspaceId).has(old!)).toBe(true)
       const back = await pushAs("alpha", folder, `${old}:refs/heads/back`)
       expect(back.code).not.toBe(0)
@@ -791,6 +820,11 @@ describe(
       const purge = await remove(secret, "Finishing.")
       expect(purge.id).toBe(purgeId)
       expect(purge.counts.history?.commits).toBe(1)
+      // Recorded: its text's keyed hash is gone, and no text matches it.
+      expect(records.purge(workspaceId, purgeId)?.textHash).toBeUndefined()
+      expect(
+        await client.isPurgeText(workspaceId, { purgeId, text: secret }),
+      ).toBe(false)
       expect(await store.main(workspaceId)).toBe(main)
       expect(await volumeHolding(secret)).toEqual([])
       expect(await tablesHolding(secret)).toEqual([])
@@ -834,6 +868,170 @@ describe(
       const fixup = await pushAs("beta", fresh, "HEAD:refs/heads/main")
       expect(remote(fixup.stderr)).toEqual([])
       expect(fixup.code).toBe(0)
+    })
+
+    it("names a renamed page, folder and alias apart from existing ones, in every commit, and says so first", async () => {
+      const word = `quibble${Math.random().toString(36).slice(2, 8)}`
+      const original = page("machine/purged-crate", "I am the original page.")
+      const folder = await cloneAs("alpha")
+      await commit(
+        "alpha",
+        folder,
+        {
+          "machine/purged-crate.md": original,
+          [`machine/old-purged-${word.slice(-3)}.md`]: page(
+            `machine/old-purged-${word.slice(-3)}`,
+            "Another page.",
+          ),
+          [`machine/${word}-crate.md`]: page(
+            `machine/${word}-crate`,
+            "A crate.",
+          )
+            .replace(
+              "status: active",
+              `status: active\naliases: [machine/old-${word}-${word.slice(-3)}]`,
+            )
+            .concat(
+              `\nSee [itself](machine/${word}-crate) and [the other](machine/purged-crate).\n`,
+            ),
+        },
+        "Crates",
+      )
+      expect(
+        remote((await pushAs("alpha", folder, "HEAD:refs/heads/main")).stderr),
+      ).toEqual([])
+      await run("alpha", folder, "checkout", "--quiet", "-b", `notes-${word}`)
+      await commit("alpha", folder, {
+        [`notes/${word}/x.md`]: "Renamed.\n",
+        "notes/purged/x.md": "Kept.\n",
+      })
+      expect(
+        (await pushAs("alpha", folder, `HEAD:refs/heads/notes-${word}`)).code,
+      ).toBe(0)
+
+      const preview = await previewCatalogPurge(asOwner, client, workspaceId, {
+        text: word,
+      })
+      expect(preview.history!.renamedApart).toEqual(
+        expect.arrayContaining([
+          {
+            plain: "machine/purged-crate.md",
+            path: "machine/purged-crate-2.md",
+          },
+          { plain: "notes/purged/x.md", path: "notes/purged-2/x.md" },
+        ]),
+      )
+      expect(preview.history!.currentFiles.map((f) => f.path)).toContain(
+        "machine/purged-crate-2.md",
+      )
+      expect(JSON.stringify(preview)).not.toContain(word)
+
+      await remove(word, "A name that must go.")
+      const fresh = await cloneAs("beta")
+      expect(readFileSync(join(fresh, "machine/purged-crate.md"), "utf8")).toBe(
+        original,
+      )
+      const renamed = readFileSync(
+        join(fresh, "machine/purged-crate-2.md"),
+        "utf8",
+      )
+      expect(renamed).toContain("id: machine/purged-crate-2")
+      // The alias would have been the other page's ID: numbered too.
+      expect(renamed).toContain(
+        `aliases: [machine/old-purged-${word.slice(-3)}-2]`,
+      )
+      expect(renamed).toContain(
+        "See [itself](machine/purged-crate-2) and [the other](machine/purged-crate).",
+      )
+      // The original page is as it was in every commit that has it.
+      for (const c of (await run("beta", fresh, "rev-list", "--all")).split(
+        "\n",
+      )) {
+        const shown = await agentGit(
+          "beta",
+          ["show", `${c}:machine/purged-crate.md`],
+          fresh,
+        )
+        if (shown.code === 0) expect(shown.stdout).toBe(original)
+      }
+      await run("beta", fresh, "checkout", "--quiet", "notes-purged")
+      expect(readFileSync(join(fresh, "notes/purged/x.md"), "utf8")).toBe(
+        "Kept.\n",
+      )
+      expect(readFileSync(join(fresh, "notes/purged-2/x.md"), "utf8")).toBe(
+        "Renamed.\n",
+      )
+      // `main` still takes an unrelated push: no two pages share an ID.
+      await run("beta", fresh, "checkout", "--quiet", "main")
+      await commit("beta", fresh, {
+        "machine/unrelated-crate.md": page("machine/unrelated-crate", "More."),
+      })
+      const unrelated = await pushAs("beta", fresh, "HEAD:refs/heads/main")
+      expect(remote(unrelated.stderr)).toEqual([])
+      expect(unrelated.code).toBe(0)
+      expect(await volumeHolding(word)).toEqual([])
+    })
+
+    it('reads what was pushed during the scan: text found only there is removed, never "nothing"', async () => {
+      const word = `feijoa${Math.random().toString(36).slice(2, 8)}`
+      const folder = await cloneAs("alpha")
+      beforeTheLock(async () => {
+        await run("alpha", folder, "checkout", "--quiet", "-b", `fj/${word}`)
+        await commit("alpha", folder, {
+          "machine/feijoa.md": page("machine/feijoa", `It holds ${word}.`),
+        })
+        expect(
+          (await pushAs("alpha", folder, `HEAD:refs/heads/fj/${word}`)).code,
+        ).toBe(0)
+      })
+      const purge = await remove(word, "Pushed while it was read.")
+      expect(purge.counts.history).toMatchObject({ renamedBranches: 1 })
+      expect(await volumeHolding(word)).toEqual([])
+      expect(await tablesHolding(word)).toEqual([])
+    })
+
+    it("rewrites only what was pushed during the rewrite, with the lock held for that alone", async () => {
+      const word = `pitaya${Math.random().toString(36).slice(2, 8)}`
+      const folder = await cloneAs("alpha")
+      await commit("alpha", folder, {
+        "machine/pitaya.md": page("machine/pitaya", `First ${word}.`),
+      })
+      expect((await pushAs("alpha", folder, "HEAD:refs/heads/main")).code).toBe(
+        0,
+      )
+      beforeTheLock(async () => {
+        await commit("alpha", folder, {
+          "machine/pitaya-two.md": page("machine/pitaya-two", `Then ${word}.`),
+        })
+        expect(
+          (await pushAs("alpha", folder, "HEAD:refs/heads/main")).code,
+        ).toBe(0)
+        await run("alpha", folder, "checkout", "--quiet", "-b", `p/${word}`)
+        await commit("alpha", folder, {
+          "machine/pitaya-three.md": `${word}\n`,
+        })
+        expect(
+          (await pushAs("alpha", folder, `HEAD:refs/heads/p/${word}`)).code,
+        ).toBe(0)
+      })
+      const from = purgeLog.length
+      const purge = await remove(word, "Pushed while it was rewritten.")
+      expect(purge.counts.history).toMatchObject({ renamedBranches: 1 })
+      expect(purgeLog.slice(from).join("\n")).toMatch(
+        /what was pushed meanwhile \d+\.\d s/,
+      )
+      expect(await volumeHolding(word)).toEqual([])
+      expect(await tablesHolding(word)).toEqual([])
+      // The commit pushed meanwhile is on `main`, rewritten.
+      const fresh = await cloneAs("beta")
+      expect(
+        readFileSync(join(fresh, "machine/pitaya-two.md"), "utf8"),
+      ).toContain("Then (purged).")
+      expect(
+        (await run("beta", fresh, "branch", "-r"))
+          .split("\n")
+          .map((b) => b.trim()),
+      ).toContain("origin/p/purged")
     })
 
     it("refuses pushes at once while a purge holds the repository, saying why", async () => {

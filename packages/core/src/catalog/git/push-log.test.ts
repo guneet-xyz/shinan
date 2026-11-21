@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto"
+import { randomUUID } from "node:crypto"
 import { afterAll, beforeEach, describe, expect, it } from "vitest"
 
 import { and, eq, schema, sql } from "@shinan/db"
@@ -15,7 +15,11 @@ import type { Person } from "../../identity/people.js"
 import { createWorkspace } from "../../identity/workspaces.js"
 import type { JournalEntry, RepositoryRefs } from "./api.js"
 import type { GitClient } from "./client.js"
-import { checkCatalogRefs, storeCatalogJournal } from "./push-log.js"
+import {
+  checkCatalogRefs,
+  refFingerprint,
+  storeCatalogJournal,
+} from "./push-log.js"
 import type { PushCheckedData, PushConfirmedData } from "./push-log.js"
 
 const { db, pool } = testDatabase()
@@ -432,9 +436,17 @@ describe("checkCatalogRefs", () => {
         ),
       )
       .orderBy(schema.securityLog.id)
-    // The branch by its fingerprint only: the security log is never purged.
-    const fingerprint = (ref: string) =>
-      `sha256:${createHash("sha256").update(ref).digest("hex")}`
+    // The branch by its keyed fingerprint only: the security log is never
+    // purged, and a guessed name can't be checked without the key.
+    const [{ key }] = (await db
+      .select({ key: schema.catalogRefFingerprintKeys.key })
+      .from(schema.catalogRefFingerprintKeys)
+      .where(
+        eq(schema.catalogRefFingerprintKeys.workspaceId, workspaceId),
+      )) as [{ key: string }]
+    expect(key).toMatch(/^[0-9a-f-]{72}$/)
+    const fingerprint = (ref: string) => refFingerprint(key, ref)
+    expect(fingerprint("refs/heads/main")).toMatch(/^hmac-sha256:[0-9a-f]{64}$/)
     expect(entries.map((e) => e.details)).toEqual([
       {
         ref: fingerprint("refs/heads/main"),

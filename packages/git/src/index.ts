@@ -80,6 +80,7 @@ export type {
   HistoryChange,
   HistoryCommit,
   HistoryItem,
+  HistoryRange,
   HistoryReset,
   IdentityParts,
   RewrittenHistory,

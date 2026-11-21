@@ -21,7 +21,7 @@ beforeAll(() => {
 })
 afterAll(() => rmSync(work, { recursive: true, force: true }))
 
-function setup() {
+function setup(paused?: (workspaceId: string) => boolean) {
   const root = mkdtempSync(join(work, "catalog-"))
   const git = createGit()
   const store = createRepositoryStore({ root, git })
@@ -33,7 +33,7 @@ function setup() {
     locks,
   })
   const gate = createRepositoryGate()
-  const pruner = createPruner({ store, push, gate, log: () => {} })
+  const pruner = createPruner({ store, push, gate, paused, log: () => {} })
   return { store, git, locks, gate, pruner }
 }
 
@@ -98,6 +98,19 @@ describe("pruning repositories after pushes", () => {
     const leave = await gate.enter(workspaceId)
     expect(await pruner.run()).toEqual([])
     leave()
+    expect(await pruner.run()).toEqual([workspaceId])
+  })
+
+  it("leaves a repository a purge is reading for a later round", async () => {
+    let purging = true
+    const { store, pruner } = setup(() => purging)
+    await store.create(workspaceId, {
+      files: [{ path: "README.md", content: new TextEncoder().encode("Hi\n") }],
+      message: "First",
+    })
+    pruner.soon(workspaceId)
+    expect(await pruner.run()).toEqual([])
+    purging = false
     expect(await pruner.run()).toEqual([workspaceId])
   })
 

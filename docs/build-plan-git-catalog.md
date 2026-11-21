@@ -724,10 +724,15 @@ operator's to clean, and the secret is rotated.
     can't bring back a deleted branch's copy either.
   - **A job, mostly without the push lock** (review of #197): the Git
     container scans, rewrites and checks without the lock, then takes it
-    for the swap and what follows (seconds; done again under the lock if a
-    push moved a branch meanwhile). `web` follows the job and records it
-    when it ends; the screen polls. A repository holding no copy at all is
-    not rewritten.
+    for the swap and what follows (seconds: what a push added meanwhile is
+    rewritten then, alone, with the first run's marks; re-read too when the
+    scan found nothing). `web` follows the job and records it when it
+    ends; the screen polls. A repository holding no copy at all is not
+    rewritten.
+  - **New names never land on existing ones** (review of #197): paths,
+    folders and catalog IDs are planned before the rewrite and numbered
+    when taken (`machine/purged-box-2.md`), the same in every commit; the
+    preview lists them.
   - **The purge ID** is made by `web` for each attempt, and `catalog_purges`
     takes the ID of the rewrite it records. A rewrite never recorded stays
     listed until a purge of the same text (by an HMAC of it kept on the

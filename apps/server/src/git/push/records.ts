@@ -43,8 +43,14 @@ export interface PurgeRecord {
   purgeId: string
   phase: "swapping" | "swapped" | "done" | "abandoned"
   at: string
-  /** HMAC-SHA256 of the text under the volume's purge key (`Records.textHash`). */
-  textHash: string
+  /**
+   * HMAC-SHA256 of the text under the volume's purge key
+   * (`Records.textHash`), until `web` has recorded the purge: then dropped
+   * (review of #197), so the record can't confirm a guessed text.
+   */
+  textHash?: string
+  /** Catalog IDs named apart from another page's: plain form and new ID (`PathPlan`). */
+  ids?: [string, string][]
   /** Commits whose ID changed: the old ID and the new one. */
   rewritten: [string, string][]
   /** Commits the old repository held that the new one does not. */

@@ -404,6 +404,7 @@ async function runGit(env: Env): Promise<void> {
     store,
     gate,
     push: { exclusive: (id, waitMs) => push.exclusive(id, waitMs) },
+    paused: (id) => purges.running(id),
   })
   const push = createPushService({
     store,

@@ -71,6 +71,8 @@ const noHistory: RepositoryPurgePreview = {
   structure: [],
   alsoWrittenAs: [],
   mayAppearEncoded: [],
+  renamedApart: [],
+  renamedApartMore: 0,
   journalEntries: 0,
 }
 const jobs = { send: () => Promise.resolve(null) }
@@ -80,6 +82,8 @@ const gitJournal = {
   last: 0,
 }
 let gitPurge: (input: { purgeId: string }) => RepositoryPurgeResult
+/** The purges whose text's hash `web` told the Git container to drop. */
+const forgotten: string[] = []
 /** The stand-in's purges, by ID: their results and texts. */
 const gitPurges = new Map<
   string,
@@ -110,6 +114,10 @@ const git = refuseDuringTransactions(
       _workspaceId: string,
       input: { purgeId: string; text: string },
     ) => Promise.resolve(gitPurges.get(input.purgeId)?.text === input.text),
+    forgetPurgeText: (_workspaceId: string, purgeId: string) => {
+      forgotten.push(purgeId)
+      return Promise.resolve()
+    },
     readJournal: ({ after }: { after: number }) =>
       Promise.resolve({
         journalId: gitJournal.id,
@@ -606,7 +614,10 @@ describe("purging catalog text", { timeout: 60_000 }, () => {
       purge: rewrite,
       refs: [{ ref: "refs/heads/notes-purged", commit: now }],
       counts,
+      // The rewrite named a page apart from one that had its name.
+      ids: [["machine/purged-box", "machine/purged-box-2"]],
     })
+    const moved = await event(`Moved machine/${secret}-box`)
     await storeCatalogJournal({ db, actor: shinan, jobs }, git)
     expect(await tablesHolding(secret)).toEqual(
       expect.arrayContaining([
@@ -653,6 +664,14 @@ describe("purging catalog text", { timeout: 60_000 }, () => {
       id: rewrite,
       counts: { history: counts, pushLog: 2 },
     })
+    // Recorded, so the Git container drops its text's hash.
+    expect(forgotten).toContain(rewrite)
+    // The timeline names the page as the rewrite did.
+    const [named] = await db
+      .select({ summary: schema.events.summary })
+      .from(schema.events)
+      .where(eq(schema.events.id, moved))
+    expect(named!.summary).toBe("Moved machine/purged-box-2")
     expect(await tablesHolding(secret)).toEqual([])
     const [ref] = await db
       .select()

@@ -6,6 +6,7 @@ import {
   databaseErrorCode,
   desc,
   eq,
+  errorSummary,
   inArray,
   schema,
   sql,
@@ -326,15 +327,22 @@ export async function purgeCatalogText(
       rewritten: true,
       history: null,
     })
+    await forgetText(client, checked.workspace, purge.id)
     return { id: purge.id, state: "done", purge }
   }
 
   sweepFollowing()
-  if (
-    [...following.values()].some(
-      (f) =>
+  // One followed here is running until recorded: its record may be in the
+  // database a moment before this process marks it done.
+  const followed = [...following]
+    .filter(
+      ([, f]) =>
         f.workspaceId === checked.workspace && f.status.state === "running",
     )
+    .map(([id]) => id)
+  if (
+    followed.length > 0 &&
+    (await recordedOf(ctx, checked.workspace, followed)) < followed.length
   )
     throw busyRemoving()
   const purgeId = randomUUID()
@@ -353,7 +361,12 @@ export async function purgeCatalogText(
   const status: CatalogPurgeStatus = { id: purgeId, state: "running" }
   const entry = { workspaceId: checked.workspace, status, at: Date.now() }
   following.set(purgeId, entry)
-  void follow(ctx, client, checked, purgeId).then((outcome) => {
+  void follow(ctx, client, checked, purgeId, (message) => {
+    // Running longer than it should: the Git container says why.
+    entry.status = message
+      ? { id: purgeId, state: "running", message }
+      : { id: purgeId, state: "running" }
+  }).then((outcome) => {
     entry.status = outcome
     entry.at = Date.now()
   })
@@ -362,8 +375,9 @@ export async function purgeCatalogText(
 
 /**
  * Where a purge stands: recorded, followed by this process, a rewrite not
- * recorded, or the Git container's job. Counts only, never the text; any
- * member may ask, as for `listCatalogPurges`.
+ * recorded, or the Git container's job. Counts only, never the text;
+ * workspace owners only (`catalog.purge-status`), without signing in again,
+ * so a long purge can be followed to its end.
  */
 export async function getCatalogPurgeStatus(
   ctx: Context,
@@ -374,7 +388,7 @@ export async function getCatalogPurgeStatus(
   const found = await inWorkspace(
     ctx,
     workspaceId,
-    "workspace.read",
+    "catalog.purge-status",
     async (scope) => {
       if (!/^[0-9a-f-]{36}$/.test(purgeId)) throw new NotFoundError()
       const [row] = await scope.tx
@@ -414,6 +428,7 @@ async function follow(
   client: GitClient,
   checked: { workspace: string; text: string; reason: string },
   purgeId: string,
+  onRunning: (message?: string) => void,
 ): Promise<CatalogPurgeStatus> {
   let failures = 0
   let job: RepositoryPurgeStatus
@@ -431,6 +446,7 @@ async function follow(
       continue
     }
     if (job.state !== "running") break
+    onRunning(job.message)
   }
   if (job.state === "failed" || job.state === "unknown")
     return {
@@ -457,6 +473,9 @@ async function follow(
       rewritten: result.rewritten,
       history: result,
     })
+    // Not waited for: the purge is done once recorded, and a new one may
+    // start at once.
+    if (result.rewritten) void forgetText(client, checked.workspace, purgeId)
     return { id: purgeId, state: "done", purge }
   } catch (error) {
     if (error instanceof RuleViolationError)
@@ -476,6 +495,27 @@ async function follow(
   }
 }
 
+const forgetLog = createLimitedLog()
+
+/**
+ * Once a rewrite is recorded, the Git container drops its text's keyed
+ * hash (review of #197). If it can't now, the hash stays until the same
+ * text is removed again; the record is kept all the same.
+ */
+async function forgetText(
+  client: GitClient,
+  workspaceId: string,
+  purgeId: string,
+): Promise<void> {
+  try {
+    await client.forgetPurgeText(workspaceId, purgeId)
+  } catch (error) {
+    forgetLog(
+      `Purge ${purgeId}: the Git container could not drop its text's hash: ${errorSummary(error)}`,
+    )
+  }
+}
+
 function sweepFollowing(): void {
   for (const [id, f] of following)
     if (f.status.state !== "running" && Date.now() - f.at > outcomeMs)
@@ -487,6 +527,28 @@ function busyRemoving(): BusyError {
     "purge-running",
     "Text is already being removed from this catalog's history: try again in a few minutes",
     60,
+  )
+}
+
+/** How many of these purges are recorded. */
+async function recordedOf(
+  ctx: Context,
+  workspaceId: string,
+  ids: string[],
+): Promise<number> {
+  return inWorkspace(
+    ctx,
+    workspaceId,
+    "catalog.purge",
+    async (scope) => {
+      const p = schema.catalogPurges
+      const rows = await scope.tx
+        .select({ id: p.id })
+        .from(p)
+        .where(and(eq(p.workspaceId, scope.workspaceId), inArray(p.id, ids)))
+      return rows.length
+    },
+    snapshotRead,
   )
 }
 
@@ -572,9 +634,13 @@ async function recordPurge(
       const purge = row!
 
       const pushLog = await purgePushLog(tx, workspace, match)
-      const events = await purgeEvents(tx, workspace, match)
+      // Catalog IDs the rewrite named apart from another page's are named
+      // the same way here.
+      const named = new Map(rewrite?.ids ?? [])
+      const idName = (plain: string) => named.get(plain) ?? plain
+      const events = await purgeEvents(tx, workspace, match, idName)
       const index = await dropIndexRows(tx, workspace, match)
-      const moves = await purgeMoves(tx, workspace, match)
+      const moves = await purgeMoves(tx, workspace, match, idName)
       const historyCounts: CatalogPurgeHistoryCounts | undefined = rewrite
         ? rewrite.counts
         : history && history.journalEntries > 0
@@ -1094,8 +1160,9 @@ async function purgeMoves(
   tx: Transaction,
   workspaceId: string,
   match: PurgeMatcher,
+  idName?: (plain: string) => string,
 ): Promise<number> {
-  const plain = (s: string) => replaceKeepingIds(match, s, purgeMarker)
+  const plain = (s: string) => replaceKeepingIds(match, s, purgeMarker, idName)
   const rows = await movesHolding(tx, workspaceId, match)
   for (const row of rows)
     await tx
@@ -1116,9 +1183,10 @@ async function purgeEvents(
   tx: Transaction,
   workspaceId: string,
   match: PurgeMatcher,
+  idName?: (plain: string) => string,
 ): Promise<number[]> {
   const purged: number[] = []
-  const plain = (s: string) => replaceKeepingIds(match, s, purgeMarker)
+  const plain = (s: string) => replaceKeepingIds(match, s, purgeMarker, idName)
   for (const row of await eventCandidates(tx, workspaceId, match)) {
     await match.pause()
     if (!holdsJson({ summary: row.summary, data: row.data }, match)) continue

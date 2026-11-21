@@ -1321,7 +1321,10 @@ is in plain words, as an ordinary list: changes to the catalog (and how
 many only on agents' branches), changes' messages or authors, branch names,
 entries in Shinan's push records and on the timeline, the record of the
 catalog's move into Git; the pages that show it now, by title and path
-("Musashi (machine/musashi.md)"); places found across a line break, to
+("Musashi (machine/musashi.md)"), at the names they will have; the paths
+given a number because another page or folder already has their new name
+("machine/purged-box-2.md (machine/purged-box.md is taken)", review of
+#197); places found across a line break, to
 check; pages whose structure changes; and copies written another way (in a
 link, with HTML entities, escapes), each with **Find this form**. It says
 that agents get the new history on their next fetch and redo unpushed work
@@ -1333,7 +1336,9 @@ Shinan's history**. While it runs, the page says "**Removing…** This can
 take a few minutes on a large catalog. You can leave this page: it goes on,
 and it appears under Earlier removals when it's done. Agents can keep
 pushing, except for a few seconds near the end", and asks the server how it
-stands every 3 seconds. After "Pages that show it now", the preview says
+stands every 3 seconds; if the server says it is taking longer than it
+should (it failed after the swap and is being finished), the page shows why
+beneath. After "Pages that show it now", the preview says
 where the text may be encoded, which a removal doesn't reach: "**Shinan
 removes only the text exactly as written.** It may also be in the catalog
 encoded: base64 (1 place). Those copies stay. If it's a secret, changing it
@@ -1350,7 +1355,8 @@ the same text can). Afterwards, until the owner leaves the page, the top of
 the section says "Removed from Shinan's history (removal N). Now:" with
 three ordered steps: change the secret where it was issued; ask whoever
 runs each agent's machine to delete its copy and make a new one (step 2 of
-Set up an agent; old history is refused); tell your agents the history
+Set up an agent; old history is refused, and "A copy that was still
+downloading when the removal finished may hold it too."); tell your agents the history
 changed (the skill says what to do). Found nothing: "Shinan doesn't hold
 this text anywhere in this catalog. Nothing to remove." (Product review of
 #197.) The text stays only in the page's memory and is cleared once

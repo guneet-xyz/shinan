@@ -118,6 +118,12 @@ export function createPruner(options: {
   store: RepositoryStore
   push: Pick<PushService, "exclusive">
   gate: RepositoryGate
+  /**
+   * Whether a repository must not be pruned now: a purge is reading it,
+   * and its rewrite refers to the objects it read (`Purges.running`).
+   * Tried again on the next round.
+   */
+  paused?: (workspaceId: string) => boolean
   log?: LimitedLog
 }): Pruner {
   const { store, push, gate } = options
@@ -126,6 +132,7 @@ export function createPruner(options: {
   let round: Promise<string[]> | undefined
 
   const prune = async (workspaceId: string) => {
+    if (options.paused?.(workspaceId)) return false
     const release = await push.exclusive(workspaceId, 0)
     if (!release) return false
     try {

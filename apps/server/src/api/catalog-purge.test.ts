@@ -31,6 +31,8 @@ const history = {
   structure: [],
   alsoWrittenAs: [],
   mayAppearEncoded: [],
+  renamedApart: [],
+  renamedApartMore: 0,
   journalEntries: 0,
 }
 const gitClient = {
@@ -134,13 +136,16 @@ async function call<T>(
 
 purgeFollowing.intervalMs = 5
 
-/** Asks how a removal stands until it is no longer running. */
+/**
+ * Asks how a removal stands until it is no longer running, as the owner
+ * who started it, without signing in again.
+ */
 async function until(id: string): Promise<Api.CatalogPurgeStatus> {
   for (;;) {
     const status = await call<Api.CatalogPurgeStatus>(
       "GET",
       ws(`/purges/${id}`),
-      { who: contributor },
+      { reauthenticated: false },
     )
     expect(status.status).toBe(200)
     if (status.body.state !== "running") return status.body
@@ -200,6 +205,14 @@ describe("catalog purge over the API", () => {
     expect(started.status).toBe(202)
     expect(started.body.state).toBe("running")
     expect(started.text).not.toContain(secret)
+    // How it stands is the owners' (review of #197).
+    expect(
+      (
+        await call<Api.ErrorBody>("GET", ws(`/purges/${started.body.id}`), {
+          who: contributor,
+        })
+      ).status,
+    ).toBe(403)
     const purged = { body: (await until(started.body.id)).purge! }
     expect(purged.body).toMatchObject({
       number: 1,

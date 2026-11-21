@@ -21,6 +21,7 @@ import {
 import type { LimitedLog } from "@shinan/db"
 
 import { gitMessages, gitText } from "../git-text.js"
+import { resetConnection } from "../reset.js"
 import type { GitAppEnv } from "./app.js"
 import type { RepositoryGate } from "./prune.js"
 import { hookUrlVariable, nonceVariable } from "./push/service.js"
@@ -463,7 +464,7 @@ export function createSmartHttp(options: {
                 if (done) return
                 done = true
                 kill()
-                outgoing?.destroy()
+                resetConnection(outgoing)
                 controller.error(quietError("The client stopped reading"))
               }, answerStallMs)
             }
@@ -475,9 +476,11 @@ export function createSmartHttp(options: {
               if (done) return
               done = true
               if (!whole || timedOut || signal === "SIGKILL") {
-                // Cut short: the connection is closed rather than the
-                // answer ended, so the client sees it is incomplete.
-                outgoing?.destroy()
+                // Cut short: the connection is reset rather than the
+                // answer ended, so the client sees it is incomplete, and
+                // what is still on its way (in `web`'s buffers) is dropped
+                // rather than delivered, as after a purge's swap.
+                resetConnection(outgoing)
                 controller.error(quietError("Git was stopped"))
               } else {
                 controller.close()

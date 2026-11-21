@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs"
+import { existsSync, readFileSync, rmSync } from "node:fs"
 import { join } from "node:path"
 import type { Readable, Writable } from "node:stream"
 
@@ -449,19 +449,52 @@ async function ended(
   }
 }
 
-function exportProcess(git: Git, gitDir: string, timeoutMs?: number) {
+/** Which part of a history to read, and the marks of an earlier read. */
+export interface HistoryRange {
+  /**
+   * Revisions to read instead of every ref (`--all`), such as new tips and
+   * `^<an old tip>`: what is new since.
+   */
+  revisions?: string[]
+  /**
+   * fast-export's marks file: read first when it exists, so what it marks
+   * is not read again, and written after.
+   */
+  marksFile?: string
+}
+
+function exportProcess(
+  git: Git,
+  gitDir: string,
+  timeoutMs?: number,
+  range: HistoryRange = {},
+) {
+  for (const revision of range.revisions ?? [])
+    if (
+      !/^\^?(?:[0-9a-f]{40}|[0-9a-f]{64}|refs\/heads\/[^\s]+)$/.test(revision)
+    )
+      throw new Error("A history read was given a revision that is not one")
+  const marks = range.marksFile
+    ? [
+        ...(existsSync(range.marksFile)
+          ? [`--import-marks=${range.marksFile}`]
+          : []),
+        `--export-marks=${range.marksFile}`,
+      ]
+    : []
   // Every ref, with each object's ID; commit messages as they are stored
   // (`--reencode=no` keeps an `encoding` header), so commits nothing
   // changes keep their IDs.
   return git.spawn(
     [
       "fast-export",
-      "--all",
+      ...marks,
       "--show-original-ids",
       "--reencode=no",
       "--use-done-feature",
       "--signed-tags=strip",
       "--tag-of-filtered-object=drop",
+      ...(range.revisions ?? ["--all"]),
     ],
     { gitDir, timeoutMs },
   )
@@ -476,9 +509,9 @@ export async function readHistory(
   git: Git,
   gitDir: string,
   onItem: (item: HistoryItem) => Promise<void> | void,
-  options: { timeoutMs?: number } = {},
+  options: { timeoutMs?: number } & HistoryRange = {},
 ): Promise<void> {
-  const proc = exportProcess(git, gitDir, options.timeoutMs)
+  const proc = exportProcess(git, gitDir, options.timeoutMs, options)
   const stderr = errorsOf(proc)
   try {
     await parse(proc.child.stdout, onItem)
@@ -527,6 +560,11 @@ export interface RewrittenHistory {
  * with parents that kept theirs, keeps its ID. Returns each commit's new ID,
  * from fast-import's marks, and the new refs.
  *
+ * Both sides' marks are kept in `temporaryDir`, so a second call with
+ * `again` rewrites only what the source gained since (review of #197): the
+ * commits it returns are those, and the refs of `target` are left for the
+ * caller to set.
+ *
  * `change` must give each ref the same new name every time, and different
  * refs different names.
  */
@@ -535,11 +573,19 @@ export async function rewriteHistory(
   source: string,
   target: string,
   change: (item: HistoryItem) => Promise<HistoryItem> | HistoryItem,
-  options: { timeoutMs?: number; temporaryDir: string },
+  options: { timeoutMs?: number; temporaryDir: string; again?: boolean },
 ): Promise<RewrittenHistory> {
   const marksFile = join(options.temporaryDir, "marks")
+  const sourceMarks = join(options.temporaryDir, "source-marks")
+  if (!options.again) rmSync(sourceMarks, { force: true })
   const importer = git.spawn(
-    ["fast-import", "--quiet", "--done", `--export-marks=${marksFile}`],
+    [
+      "fast-import",
+      "--quiet",
+      "--done",
+      ...(options.again ? [`--import-marks=${marksFile}`] : []),
+      `--export-marks=${marksFile}`,
+    ],
     { gitDir: target, timeoutMs: options.timeoutMs },
   )
   const importErrors = errorsOf(importer)
@@ -563,7 +609,7 @@ export async function rewriteHistory(
         }
         await write(importer.child.stdin, serialize(changed), importer.ended)
       },
-      { timeoutMs: options.timeoutMs },
+      { timeoutMs: options.timeoutMs, marksFile: sourceMarks },
     )
     await write(importer.child.stdin, [Buffer.from("done\n")], importer.ended)
   } catch (error) {

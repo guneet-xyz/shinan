@@ -153,6 +153,8 @@ export interface GitClient {
     workspaceId: string,
     input: { purgeId: string; text: string },
   ): Promise<boolean>
+  /** Drops purge `purgeId`'s keyed hash, once `web` has recorded it. */
+  forgetPurgeText(workspaceId: string, purgeId: string): Promise<void>
 }
 
 type Json = Record<string, unknown>
@@ -168,7 +170,7 @@ export function createGitClient(options: GitClientOptions): GitClient {
   const timeoutMs = options.timeoutMs ?? 60_000
 
   async function call(
-    method: "GET" | "POST" | "PUT",
+    method: "GET" | "POST" | "PUT" | "DELETE",
     path: string,
     input: {
       query?: Record<string, string | undefined>
@@ -345,6 +347,12 @@ export function createGitClient(options: GitClientOptions): GitClient {
         "GET",
         repository(workspaceId, `/purges/${encodeURIComponent(purgeId)}`),
       )) as unknown as RepositoryPurgeStatus
+    },
+    async forgetPurgeText(workspaceId, purgeId) {
+      await call(
+        "DELETE",
+        repository(workspaceId, `/purges/${encodeURIComponent(purgeId)}/text`),
+      )
     },
     async isPurgeText(workspaceId, input) {
       const body = await call(

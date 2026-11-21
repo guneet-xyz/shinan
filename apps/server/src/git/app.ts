@@ -471,6 +471,12 @@ export function createGitApp(options: {
       options.purges.status(workspace(c), purgeId(c.req.param("purgeId"))),
     )
   })
+  // `web` recorded the purge: its text's keyed hash goes (review of #197).
+  app.delete("/repositories/:workspaceId/purges/:purgeId/text", (c) => {
+    if (!options.purges) return fail(c, 404, "not-found", "Not found")
+    options.purges.forgetText(workspace(c), purgeId(c.req.param("purgeId")))
+    return c.json({ forgotten: true })
+  })
   app.post(
     "/repositories/:workspaceId/purges/:purgeId/text",
     limit(64 * 1024),

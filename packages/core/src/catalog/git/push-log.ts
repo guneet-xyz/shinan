@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto"
+import { createHmac } from "node:crypto"
 
 import { and, databaseErrorCode, desc, eq, schema, sql } from "@shinan/db"
 import type { CatalogPurgeHistoryCounts, Transaction } from "@shinan/db"
@@ -106,6 +106,8 @@ export interface RepositoryPurgedData {
   purge: string
   refs: { ref: string; commit: string }[]
   counts: CatalogPurgeHistoryCounts
+  /** Catalog IDs named apart from another page's: plain form and new ID. */
+  ids?: [string, string][]
 }
 
 const objectId = /^([0-9a-f]{40}|[0-9a-f]{64})$/
@@ -591,6 +593,18 @@ async function storePurged(
     entry,
     "counts",
   )
+  const ids = data.ids ?? []
+  check(
+    Array.isArray(ids) &&
+      ids.every(
+        (pair) =>
+          Array.isArray(pair) &&
+          pair.length === 2 &&
+          pair.every((id) => typeof id === "string" && id.length <= 200),
+      ),
+    entry,
+    "IDs",
+  )
   const [inserted] = await scope.tx
     .insert(schema.catalogRewrites)
     .values({
@@ -601,6 +615,7 @@ async function storePurged(
       rewrittenAt: new Date(entry.recordedAt),
       refs: data.refs.map(({ ref, commit }) => ({ ref, commit })),
       counts: data.counts,
+      ids: ids.map(([plain, id]) => [plain, id] as [string, string]),
     })
     .onConflictDoNothing()
     .returning({ id: schema.catalogRewrites.id })
@@ -654,6 +669,12 @@ export async function checkCatalogRefs(
           repository.workspaceId,
           repository.firstCommit!,
         )
+        let key: string | undefined
+        const fingerprint = async (ref: string) =>
+          refFingerprint(
+            (key ??= await fingerprintKey(scope.tx, repository.workspaceId)),
+            ref,
+          )
         const actual = new Map(refs.refs.map((r) => [r.ref, r.commit]))
         let found = 0
         for (const ref of new Set([...expected.keys(), ...actual.keys()])) {
@@ -661,10 +682,11 @@ export async function checkCatalogRefs(
           const logged = expected.get(ref) ?? null
           if (commit === logged) continue
           // The security log is never purged (D-049), so a branch's name,
-          // which may hold text a purge removes, is kept as its
-          // fingerprint only (review of #197).
+          // which may hold text a purge removes, is kept as its keyed
+          // fingerprint only, which a guessed name can't be checked
+          // against without the repository's key (review of #197).
           const details = {
-            ref: `sha256:${createHash("sha256").update(ref).digest("hex")}`,
+            ref: await fingerprint(ref),
             commit,
             logged,
           }
@@ -695,6 +717,28 @@ export async function checkCatalogRefs(
     )
   }
   return { unlogged, setAside }
+}
+
+/** The repository's key of branch fingerprints, made when first needed. */
+async function fingerprintKey(
+  tx: Transaction,
+  workspaceId: string,
+): Promise<string> {
+  const k = schema.catalogRefFingerprintKeys
+  await tx.insert(k).values({ workspaceId }).onConflictDoNothing()
+  const [row] = await tx
+    .select({ key: k.key })
+    .from(k)
+    .where(eq(k.workspaceId, workspaceId))
+  return row!.key
+}
+
+/**
+ * A branch's fingerprint in the security log: HMAC-SHA256 of its name
+ * under the repository's key (`catalog_ref_fingerprint_keys`).
+ */
+export function refFingerprint(key: string, ref: string): string {
+  return `hmac-sha256:${createHmac("sha256", key).update(ref).digest("hex")}`
 }
 
 /**

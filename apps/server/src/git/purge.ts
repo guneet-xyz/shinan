@@ -40,6 +40,7 @@ import type { Git, HistoryCommit, HistoryItem } from "@shinan/git"
 
 import type { Journal } from "./journal.js"
 import type { RepositoryGate } from "./prune.js"
+import { PathPlan, PlanConflict } from "./purge-plan.js"
 import type { FirstPush, PurgeRecord, Records } from "./push/records.js"
 import type { PushService } from "./push/service.js"
 import type { RepositoryStore } from "./store.js"
@@ -94,8 +95,15 @@ export interface Purges {
     input: { purgeId: string; text: string },
   ): RepositoryPurgeStatus
   status(workspaceId: string, purgeId: string): RepositoryPurgeStatus
-  /** Whether `text` is purge `purgeId`'s text, by its keyed hash. */
+  /**
+   * Whether `text` is the text of purge `purgeId`, a rewrite `web` has not
+   * recorded yet, by its keyed hash.
+   */
   isText(workspaceId: string, purgeId: string, text: string): boolean
+  /** Drops a finished purge's keyed hash, once `web` has recorded it. */
+  forgetText(workspaceId: string, purgeId: string): void
+  /** Whether a purge is reading or rewriting the repository (no pruning meanwhile). */
+  running(workspaceId: string): boolean
   /** Runs a purge to its end (what `start` runs). */
   run(
     workspaceId: string,
@@ -142,6 +150,8 @@ export function createPurges(options: {
   const git = store.git
   const temporary = join(store.root, ".tmp")
   const folderOf = (purgeId: string) => join(temporary, `purge-${purgeId}`)
+  /** Repositories a purge is reading or rewriting: not pruned meanwhile. */
+  const running = new Set<string>()
   /** Purges running in this process, and recent outcomes. */
   const jobs = new Map<
     string,
@@ -166,6 +176,8 @@ export function createPurges(options: {
       structure: [],
       alsoWrittenAs: [],
       mayAppearEncoded: [],
+      renamedApart: [],
+      renamedApartMore: 0,
       journalEntries: 0,
     }
     const holding = new Set<number>()
@@ -190,6 +202,7 @@ export function createPurges(options: {
       return held
     }
     const refs = new Set<string>()
+    const paths = new Set<string>()
     await readHistory(
       git,
       gitDir,
@@ -201,6 +214,8 @@ export function createPurges(options: {
         }
         refs.add(item.ref)
         if (item.kind !== "commit") return
+        for (const c of item.changes)
+          if (c.op !== "deleteall") paths.add(c.path.toString("utf8"))
         const side = onMain.has(item.oid) ? "main" : "branches"
         const message = commitParts(item).some((part) => count(part))
         let held = message
@@ -211,7 +226,7 @@ export function createPurges(options: {
             change.op === "M" && holding.has(markNumber(change.dataref))
           if (!inName && !inContent) continue
           held = true
-          files[side].add(renamePath(scanner, change.path))
+          files[side].add(change.path.toString("utf8"))
         }
         if (message) result.messages[side]++
         if (held) result.commits[side]++
@@ -222,6 +237,9 @@ export function createPurges(options: {
       if (ref !== "refs/heads/main" && scanner.holds(Buffer.from(ref)))
         result.branchNames++
     }
+    // The names the purge would give, each apart from every other.
+    const plan = new PathPlan((name) => scanner.rename(name))
+    plan.add(paths)
     // A path on both sides counts on `main`.
     for (const path of files.main) files.branches.delete(path)
     result.files = { main: files.main.size, branches: files.branches.size }
@@ -237,7 +255,7 @@ export function createPurges(options: {
           await scanner.pause()
           const name = Buffer.from(path, "utf8")
           if (!scanner.holds(content) && !scanner.holds(name)) return
-          const shown = renamePath(scanner, name)
+          const shown = plan.path(path)
           current.push({
             path: shown,
             title: path.endsWith(".md") ? scanner.title(content) : null,
@@ -260,16 +278,28 @@ export function createPurges(options: {
       places,
     }))
     result.journalEntries = journalHolding(journal, workspaceId, scanner)
+    const apart = plan.renamedApart()
+    result.renamedApart = apart.slice(0, maxPurgePaths)
+    result.renamedApartMore = apart.length - result.renamedApart.length
     return result
   }
 
   /**
    * Step 1: whether anything the repository holds has the text, reachable
-   * or not. The history is read once as fast-export gives it (each blob and
-   * commit once, each path once); objects no branch reaches are read whole.
+   * or not, and every path its history holds (for the plan of new names).
+   * The history is read once as fast-export gives it (each blob and commit
+   * once, each path once); objects no branch reaches are read whole. With
+   * `revisions`, only what they add is read (a push during the scan).
    */
-  const holdsAnywhere = async (gitDir: string, scanner: PurgeScanner) => {
+  const holdsAnywhere = async (
+    gitDir: string,
+    scanner: PurgeScanner,
+    revisions?: string[],
+  ) => {
     let found = false
+    const paths = new Set<string>()
+    if (revisions && !revisions.some((r) => !r.startsWith("^")))
+      return { found, paths }
     const names = new Map<string, boolean>()
     const nameHolds = (name: Buffer) => {
       const key = name.toString("latin1")
@@ -281,6 +311,9 @@ export function createPurges(options: {
       git,
       gitDir,
       async (item) => {
+        if (item.kind === "commit")
+          for (const c of item.changes)
+            if (c.op !== "deleteall") paths.add(c.path.toString("utf8"))
         if (found) return
         await scanner.pause()
         if (item.kind === "blob") found = scanner.holds(item.data)
@@ -301,9 +334,16 @@ export function createPurges(options: {
                   .some((n) => nameHolds(Buffer.from(n, "latin1"))),
             )
       },
-      { timeoutMs: processMs },
+      { timeoutMs: processMs, revisions },
     )
-    if (found) return true
+    if (revisions) {
+      // New branch names, even of commits the history had.
+      for (const r of revisions)
+        if (r.startsWith("refs/heads/") && r !== "refs/heads/main")
+          found ||= nameHolds(Buffer.from(r))
+      return { found, paths }
+    }
+    if (found) return { found, paths }
     const all = await listObjects(git, gitDir, { timeoutMs: processMs })
     const reached = await reachableObjects(git, gitDir, {
       timeoutMs: processMs,
@@ -323,19 +363,16 @@ export function createPurges(options: {
       },
       { timeoutMs: processMs },
     )
-    return found
+    return { found, paths }
   }
 
-  /**
-   * Steps 2 and 3: the history rewritten into a new repository in
-   * `folder`, and checked.
-   */
-  const rewrite = async (
+  /** A new, empty repository in `folder` for a purge's rewrite, with its plan. */
+  const startRewrite = async (
     workspaceId: string,
-    target: string,
     folder: string,
     scanner: PurgeScanner,
-  ) => {
+    paths: Iterable<string>,
+  ): Promise<Rewrite> => {
     rmSync(folder, { recursive: true, force: true })
     mkdirSync(folder, { recursive: true, mode: 0o700 })
     writeFileSync(join(folder, "state.json"), JSON.stringify({ workspaceId }))
@@ -351,44 +388,102 @@ export function createPurges(options: {
     ])
     for (const [key, value] of repositoryConfiguration(store.hooksDirectory))
       await git.run(["config", key, value], { gitDir: fresh })
-    const branches = branchNames(await refsOf(git, target), (ref) =>
-      scanner.rename(ref),
+    const plan = new PathPlan((name) => scanner.rename(name))
+    plan.add(paths)
+    return {
+      folder,
+      fresh,
+      scanner,
+      plan,
+      branches: new Map(),
+      holding: new Set(),
+      counts: { commits: 0, files: new Set(), messages: 0 },
+      commits: new Map(),
+      checked: new Set(),
+      names: new Set(),
+      written: new Set(),
+      pathCache: new Map(),
+      source: [],
+      refs: [],
+    }
+  }
+
+  /**
+   * Steps 2 and 3: the history rewritten into the rewrite's repository, and
+   * checked. `again`: only what the repository gained since the last call,
+   * with the same marks, names and plan (review of #197), so a push during
+   * the rewrite costs seconds under the lock, not a whole rewrite. Throws
+   * `PlanConflict` when a pushed path needs a name the plan gave away.
+   */
+  const rewriteMore = async (
+    state: Rewrite,
+    target: string,
+    again: boolean,
+  ) => {
+    const { scanner, plan } = state
+    const source = await refsWithCommits(git, target)
+    extendBranchNames(
+      state.branches,
+      source.map((r) => r.ref),
+      (ref) => scanner.rename(ref),
     )
-    const counts = { commits: 0, files: new Set<string>(), messages: 0 }
-    const holding = new Set<number>()
-    const paths = new Map<string, Buffer | null>()
+    const idName = (plain: string) => plan.idName(plain)
     const change = async (item: HistoryItem): Promise<HistoryItem> => {
       await scanner.pause()
       if (item.kind === "blob") {
-        const data = scanner.replace(item.data, purgeMarker)
-        if (data !== item.data) holding.add(item.mark)
+        const data = scanner.replace(item.data, purgeMarker, idName)
+        if (data !== item.data) state.holding.add(item.mark)
         return { ...item, data }
       }
-      const ref = branches.get(item.ref) ?? item.ref
+      const ref = state.branches.get(item.ref) ?? item.ref
       if (item.kind === "reset") return { ...item, ref }
-      const changed = rewriteCommit(scanner, item, holding, counts.files, paths)
-      if (changed.messages) counts.messages++
-      if (changed.held) counts.commits++
+      const changed = rewriteCommit(scanner, item, state, idName)
+      if (changed.messages) state.counts.messages++
+      if (changed.held) state.counts.commits++
       return { ...changed.commit, ref }
     }
-    const written = await rewriteHistory(git, target, fresh, change, {
-      temporaryDir: folder,
+    const written = await rewriteHistory(git, target, state.fresh, change, {
+      temporaryDir: state.folder,
       timeoutMs: processMs,
+      again,
     })
-    // Step 3. Trees are made by fast-import from the paths written, so
-    // their names are checked as those paths' names, each once.
-    const objects = await listObjects(git, fresh, { timeoutMs: processMs })
-    const commits = new Set<string>()
-    const readable: string[] = []
-    for (const [oid, type] of objects) {
-      if (type === "commit") commits.add(oid)
-      if (type !== "tree") readable.push(oid)
+    for (const [old, now] of written.commits) state.commits.set(old, now)
+    if (again) {
+      // Each branch where the repository has it now, under its new name;
+      // branches deleted meanwhile go.
+      const lines: string[] = []
+      const kept = new Set<string>()
+      for (const { ref, commit } of source) {
+        const now = state.commits.get(commit)
+        const name = state.branches.get(ref)
+        if (!now || !name)
+          throw new Error("A purge's rewrite lost track of a branch")
+        kept.add(name)
+        lines.push(`update ${name} ${now}`)
+      }
+      for (const { ref } of await refsWithCommits(git, state.fresh))
+        if (!kept.has(ref)) lines.push(`delete ${ref}`)
+      await git.run(["update-ref", "--stdin"], {
+        gitDir: state.fresh,
+        input: `${lines.join("\n")}\n`,
+      })
     }
+    // Step 3, for what is new: every blob and commit, each path's names
+    // (trees are made by fast-import from them), and every branch name.
     const leftOver = () =>
       new Error("A purge's new repository still holds the text")
+    const objects = await listObjects(git, state.fresh, {
+      timeoutMs: processMs,
+    })
+    const readable: string[] = []
+    for (const [oid, type] of objects) {
+      if (state.checked.has(oid)) continue
+      state.checked.add(oid)
+      if (type !== "tree") readable.push(oid)
+    }
     await readObjects(
       git,
-      fresh,
+      state.fresh,
       readable,
       async (object) => {
         await scanner.pause()
@@ -401,24 +496,17 @@ export function createPurges(options: {
       },
       { timeoutMs: processMs },
     )
-    const checked = new Set<string>()
-    for (const [original, renamed] of paths)
-      for (const name of (renamed?.toString("latin1") ?? original).split("/")) {
-        if (checked.has(name)) continue
-        checked.add(name)
-        if (scanner.holds(Buffer.from(name, "latin1"))) throw leftOver()
+    for (const path of state.written)
+      for (const name of path.split("/")) {
+        if (state.names.has(name)) continue
+        state.names.add(name)
+        if (scanner.holds(Buffer.from(name, "utf8"))) throw leftOver()
       }
-    for (const { ref } of written.refs)
+    state.source = source
+    state.refs = await refsWithCommits(git, state.fresh)
+    for (const { ref } of state.refs)
       if (scanner.holds(Buffer.from(ref))) throw leftOver()
-    return {
-      fresh,
-      written,
-      branches,
-      commits,
-      counts,
-      rewritten: [...written.commits].filter(([old, now]) => old !== now),
-      renamedBranches: [...branches].filter(([a, b]) => a !== b).length,
-    }
+    state.objects = objects
   }
 
   /** Step 6, from the record alone: everything after the swap. */
@@ -460,6 +548,9 @@ export function createPurges(options: {
       purge: record.purgeId,
       refs: record.refs,
       counts: countsOf(record),
+      // Catalog IDs named apart from another page's: their plain form (the
+      // text as `purged`) and new ID, so `web` names them the same way.
+      ids: record.ids ?? [],
     })
     records.writePurge(workspaceId, { ...record, phase: "done" })
   }
@@ -544,7 +635,7 @@ export function createPurges(options: {
     // How long each part took, and how long pushes were held back: one
     // line of the log, without the text.
     const started = performance.now()
-    const times = { scan: 0, rewrite: 0, locked: 0 }
+    const times = { scan: 0, rewrite: 0, again: 0, locked: 0 }
     const seconds = (ms: number) => (ms / 1000).toFixed(1)
     const withLock = async <T>(work: () => Promise<T>): Promise<T> => {
       const release = await push.exclusive(workspaceId, lockWaitMs, "purge")
@@ -560,10 +651,7 @@ export function createPurges(options: {
         return await work()
       } finally {
         release()
-        times.locked = performance.now() - locked
-        log(
-          `Purge ${input.purgeId}: ${seconds(performance.now() - started)} s in all (scan ${seconds(times.scan)} s, rewrite ${seconds(times.rewrite)} s); pushes held back ${seconds(times.locked)} s`,
-        )
+        times.locked += performance.now() - locked
       }
     }
     /** Step 4, with the lock held. */
@@ -579,41 +667,83 @@ export function createPurges(options: {
       )
     }
 
-    const before = await refsWithCommits(git, target)
-    const scanned = await holdsAnywhere(target, scanner)
-    times.scan = performance.now() - started
-    if (!scanned) {
-      // Nothing holds it: no rewrite; the journal and the records only.
-      return withLock(() => {
-        cleanRecords()
-        return Promise.resolve(result)
-      })
-    }
-    let prepared: Awaited<ReturnType<typeof rewrite>> | undefined
+    running.add(workspaceId)
     try {
+      let before = await refsWithCommits(git, target)
+      const scan = await holdsAnywhere(target, scanner)
+      times.scan = performance.now() - started
+      const paths = scan.paths
+      if (!scan.found) {
+        // Nothing held it when read. Under the lock, what was pushed
+        // meanwhile is read too (review of #197): only if that holds none
+        // either is the answer "nothing".
+        const outcome = await withLock(async () => {
+          const now = await refsWithCommits(git, target)
+          if (refsKey(now) !== refsKey(before)) {
+            const more = await holdsAnywhere(
+              target,
+              scanner,
+              since(before, now),
+            )
+            for (const path of more.paths) paths.add(path)
+            if (more.found) return "rewrite"
+          }
+          cleanRecords()
+          return "none"
+        })
+        if (outcome === "none") return result
+        before = []
+      }
       const rewriting = performance.now()
-      prepared = await rewrite(workspaceId, target, folder, scanner)
+      let state: Rewrite | undefined
+      for (let attempt = 1; !state; attempt++) {
+        const made = await startRewrite(workspaceId, folder, scanner, paths)
+        try {
+          await rewriteMore(made, target, false)
+          state = made
+        } catch (error) {
+          if (!(error instanceof PlanConflict) || attempt >= 3) throw error
+          for (const path of (await holdsAnywhere(target, scanner)).paths)
+            paths.add(path)
+        }
+      }
       times.rewrite = performance.now() - rewriting
       return await withLock(async () => {
-        // A push moved a branch meanwhile: done again, now that none can.
-        if (refsKey(await refsWithCommits(git, target)) !== refsKey(before))
-          prepared = await rewrite(workspaceId, target, folder, scanner)
-        const p = prepared!
+        let p: Rewrite = state
+        // A push moved a branch meanwhile: only what it added is rewritten.
+        const again = performance.now()
+        if (refsKey(await refsWithCommits(git, target)) !== refsKey(p.source))
+          try {
+            await rewriteMore(p, target, true)
+            times.again = performance.now() - again
+          } catch (error) {
+            if (!(error instanceof PlanConflict)) throw error
+            // Rare: a pushed path keeps a name the plan gave away. Planned
+            // and rewritten again, whole, with the lock held.
+            for (const path of (await holdsAnywhere(target, scanner)).paths)
+              paths.add(path)
+            p = await startRewrite(workspaceId, folder, scanner, paths)
+            await rewriteMore(p, target, false)
+          }
         cleanRecords(p.branches)
+        const commits = new Set<string>()
+        for (const [oid, type] of p.objects ?? [])
+          if (type === "commit") commits.add(oid)
         const removed: string[] = []
         for (const [oid, type] of await listObjects(git, target, {
           timeoutMs: processMs,
         }))
-          if (type === "commit" && !p.commits.has(oid)) removed.push(oid)
+          if (type === "commit" && !commits.has(oid)) removed.push(oid)
         const record: PurgeRecord = {
           purgeId: input.purgeId,
           phase: "swapping",
           at: new Date().toISOString(),
           textHash: records.textHash(scanner.purgeText),
-          rewritten: p.rewritten,
+          rewritten: [...p.commits].filter(([old, now]) => old !== now),
           removed,
-          refs: p.written.refs.map(({ ref, commit }) => ({ ref, commit })),
-          renamedBranches: p.renamedBranches,
+          refs: p.refs,
+          renamedBranches: [...p.branches].filter(([a, b]) => a !== b).length,
+          ids: p.plan.renamedIds(),
           counts: {
             commits: p.counts.commits,
             files: p.counts.files.size,
@@ -647,6 +777,10 @@ export function createPurges(options: {
         }
       })
     } finally {
+      running.delete(workspaceId)
+      log(
+        `Purge ${input.purgeId}: ${seconds(performance.now() - started)} s in all (scan ${seconds(times.scan)} s, rewrite ${seconds(times.rewrite)} s${times.again ? `, what was pushed meanwhile ${seconds(times.again)} s` : ""}); pushes held back ${seconds(times.locked)} s`,
+      )
       // Kept only while its record needs it (`finishPending`).
       const record = records.purge(workspaceId, input.purgeId)
       if (record?.phase !== "swapping")
@@ -704,9 +838,15 @@ export function createPurges(options: {
     return status
   }
 
+  /**
+   * Where a purge stands. Its record goes first once it has one, so a
+   * purge that failed after its swap and was finished later (`keepFinishing`)
+   * says `done`, not the failure (review of #197); while it is unfinished it
+   * is `running`, with why it takes so long.
+   */
   const status: Purges["status"] = (workspaceId, purgeId) => {
     const job = jobs.get(purgeId)
-    if (job && job.workspaceId === workspaceId) return job.status
+    const followed = job?.workspaceId === workspaceId ? job.status : undefined
     const record = records.purge(workspaceId, purgeId)
     if (record?.phase === "done")
       return {
@@ -719,8 +859,10 @@ export function createPurges(options: {
         },
       }
     if (record?.phase === "swapping" || record?.phase === "swapped")
-      return { purgeId, state: "running" }
-    return { purgeId, state: "unknown" }
+      return followed?.state === "failed"
+        ? { purgeId, state: "running", message: followed.message }
+        : { purgeId, state: "running" }
+    return followed ?? { purgeId, state: "unknown" }
   }
 
   const recover = async () => {
@@ -790,16 +932,82 @@ export function createPurges(options: {
     start,
     status,
     isText: (workspaceId, purgeId, text) => {
+      // Only a rewrite `web` has not recorded keeps its text's hash.
       const record = records.purge(workspaceId, purgeId)
       return (
-        record !== undefined &&
+        record?.phase === "done" &&
+        record.textHash !== undefined &&
         record.textHash === records.textHash(new PurgeScanner(text).purgeText)
       )
     },
+    forgetText: (workspaceId, purgeId) => {
+      const record = records.purge(workspaceId, purgeId)
+      if (record?.phase !== "done" || record.textHash === undefined) return
+      const rest: PurgeRecord = { ...record }
+      delete rest.textHash
+      records.writePurge(workspaceId, rest)
+    },
+    running: (workspaceId) => running.has(workspaceId),
     run,
     recover,
     keepFinishing,
   }
+}
+
+/** A purge's rewrite in progress: its repository, plan and what it has done. */
+interface Rewrite {
+  folder: string
+  /** The new repository. */
+  fresh: string
+  scanner: PurgeScanner
+  plan: PathPlan
+  /** Each branch's new name. */
+  branches: Map<string, string>
+  /** Marks of blobs that held the text. */
+  holding: Set<number>
+  counts: { commits: number; files: Set<string>; messages: number }
+  /** Every commit rewritten, by its old ID, with its new one. */
+  commits: Map<string, string>
+  /** Objects of the new repository already checked. */
+  checked: Set<string>
+  /** Path names already checked. */
+  names: Set<string>
+  /** Every path written. */
+  written: Set<string>
+  /** Each path's new name (null: unchanged), by its bytes. */
+  pathCache: Map<string, Buffer | null>
+  /** The branches of the repository it was made from, at its last call. */
+  source: { ref: string; commit: string }[]
+  /** The branches of the new repository. */
+  refs: { ref: string; commit: string }[]
+  /** The new repository's objects, by type. */
+  objects?: Map<string, string>
+}
+
+/** What to read for what `now`'s branches add to `before`'s. */
+function since(
+  before: { ref: string; commit: string }[],
+  now: { ref: string; commit: string }[],
+): string[] {
+  const old = new Set(before.map((r) => r.commit))
+  const known = new Set(before.map((r) => `${r.ref} ${r.commit}`))
+  return [
+    ...now.filter((r) => !known.has(`${r.ref} ${r.commit}`)).map((r) => r.ref),
+    ...[...old].map((c) => `^${c}`),
+  ]
+}
+
+/** New branches' names, added to `names` (`branchNames`), never one already given. */
+function extendBranchNames(
+  names: Map<string, string>,
+  refs: readonly string[],
+  rename: (ref: string) => string,
+): void {
+  const fresh = refs.filter((r) => !names.has(r))
+  if (fresh.length === 0) return
+  const taken = new Set([...names.values(), ...names.keys(), ...refs])
+  for (const [ref, name] of branchNames(fresh, rename, taken))
+    names.set(ref, name)
 }
 
 function countsOf(record: PurgeRecord) {
@@ -863,13 +1071,6 @@ async function refsWithCommits(
     })
 }
 
-async function refsOf(git: Git, gitDir: string): Promise<string[]> {
-  const { stdout } = await git.run(["for-each-ref", "--format=%(refname)"], {
-    gitDir,
-  })
-  return stdout.toString("utf8").split("\n").filter(Boolean)
-}
-
 /**
  * Each ref's name after the purge: the text replaced in branch names
  * (`main` keeps its name whatever it holds), and a name that would be
@@ -878,9 +1079,9 @@ async function refsOf(git: Git, gitDir: string): Promise<string[]> {
 export function branchNames(
   refs: readonly string[],
   rename: (ref: string) => string,
+  taken: Set<string> = new Set(refs),
 ): Map<string, string> {
   const names = new Map<string, string>()
-  const taken = new Set(refs)
   for (const ref of refs) {
     if (ref === "refs/heads/main" || !ref.startsWith("refs/heads/")) {
       names.set(ref, ref)
@@ -905,15 +1106,6 @@ function markNumber(dataref: string): number {
   return /^:(\d+)$/.test(dataref) ? Number(dataref.slice(1)) : -1
 }
 
-/** A path with the text replaced in each of its names. */
-function renamePath(scanner: PurgeScanner, path: Buffer): string {
-  return path
-    .toString("utf8")
-    .split("/")
-    .map((part) => scanner.rename(part))
-    .join("/")
-}
-
 /** The parts of a commit that hold text: the message, and each identity's name and email. */
 function commitParts(commit: HistoryCommit): Buffer[] {
   const parts = [commit.message]
@@ -928,16 +1120,15 @@ function commitParts(commit: HistoryCommit): Buffer[] {
 
 /**
  * A commit with the text replaced; whether it held it, and in its message
- * or identities. `paths` keeps each path's new form, matched once however
- * many commits name it (null: unchanged); its keys and new forms are every
- * path the new repository holds.
+ * or identities. Each path gets its name from the plan (`PathPlan`),
+ * looked up once however many commits name it; the names written are kept
+ * (`written`) for the check.
  */
 function rewriteCommit(
   scanner: PurgeScanner,
   commit: HistoryCommit,
-  holding: ReadonlySet<number>,
-  files: Set<string>,
-  paths: Map<string, Buffer | null>,
+  state: Rewrite,
+  idName: (plain: string) => string,
 ): { commit: HistoryCommit; held: boolean; messages: boolean } {
   const identity = (value: Buffer | null) => {
     if (!value) return value
@@ -947,7 +1138,7 @@ function rewriteCommit(
     if (name === parts.name && email === parts.email) return value
     return joinIdentity({ name, email, when: parts.when })
   }
-  const message = scanner.replace(commit.message, purgeMarker)
+  const message = scanner.replace(commit.message, purgeMarker, idName)
   const author = identity(commit.author)
   const committer = identity(commit.committer)!
   const messages =
@@ -958,19 +1149,21 @@ function rewriteCommit(
   const changes = commit.changes.map((change) => {
     if (change.op === "deleteall") return change
     const key = change.path.toString("latin1")
-    let known = paths.get(key)
-    if (!known) {
-      const renamed = Buffer.from(renamePath(scanner, change.path), "utf8")
-      known = renamed.equals(change.path) ? null : renamed
-      paths.set(key, known)
+    let known = state.pathCache.get(key)
+    if (known === undefined) {
+      const original = change.path.toString("utf8")
+      const now = state.plan.path(original)
+      known = now === original ? null : Buffer.from(now, "utf8")
+      state.pathCache.set(key, known)
+      state.written.add(now)
     }
     const inName = known !== null
     const path = known ?? change.path
     const inContent =
-      change.op === "M" && holding.has(markNumber(change.dataref))
+      change.op === "M" && state.holding.has(markNumber(change.dataref))
     if (inName || inContent) {
       held = true
-      files.add(path.toString("utf8"))
+      state.counts.files.add(path.toString("utf8"))
     }
     return inName ? { ...change, path } : change
   })

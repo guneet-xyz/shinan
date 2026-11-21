@@ -1,5 +1,4 @@
 import { execFile } from "node:child_process"
-import { createHash } from "node:crypto"
 import {
   chmodSync,
   mkdirSync,
@@ -24,6 +23,7 @@ import {
   createCatalogRepository,
   createGitClient,
   createWorkspace,
+  refFingerprint,
   shinan,
   storeCatalogJournal,
 } from "@shinan/core"
@@ -1144,7 +1144,17 @@ describe("branches, main and the push log", () => {
       workspaceId,
       actorKind: "shinan",
       details: {
-        ref: `sha256:${createHash("sha256").update("refs/heads/sneaky").digest("hex")}`,
+        ref: refFingerprint(
+          (
+            await db
+              .select({ key: schema.catalogRefFingerprintKeys.key })
+              .from(schema.catalogRefFingerprintKeys)
+              .where(
+                eq(schema.catalogRefFingerprintKeys.workspaceId, workspaceId),
+              )
+          )[0]!.key,
+          "refs/heads/sneaky",
+        ),
         commit: firstCommit,
         logged: null,
       },

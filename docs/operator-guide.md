@@ -625,14 +625,19 @@ gc --prune=now`). Shinan refuses any push that brings an old commit
 
 A purge runs in the background: the owner's page shows "Removing…" and
 asks how it stands. The Git container reads and rewrites the history while
-pushes go on, then holds pushes back for the swap only (seconds: 1.3 s for
-a branch of 20,000 pages and 6,002 commits, measured on Daedalus; the
-whole purge took two minutes). Pushes meanwhile are refused with "Shinan is
-removing text from this catalog's history: wait a few minutes, fetch, then push again";
-a second purge of the same catalog is refused until the first ends. Clones
-and fetches running at the swap are ended, so nobody gets the old history
-afterwards. The Git container's log has one line per purge with how long
-it took and how long pushes were held back, never the text.
+pushes go on, then holds pushes back for the swap only: what was pushed
+meanwhile is rewritten then, alone. Measured on Daedalus, for a branch of
+20,000 pages and 6,002 commits: 69 s in all and pushes held back 1.2 s;
+with a push every 3 seconds throughout, 85 s and 3.6 s. Pushes meanwhile
+are refused with "Shinan is removing text from this catalog's history:
+wait a few minutes, fetch, then push again"; a second purge of the same
+catalog is refused until the first ends. Clones and fetches running at the
+swap are ended with a reset, so what was still in Shinan's buffers is
+dropped; what had already left (in the proxy's buffers or the network)
+still arrives, so a clone that was running then may hold some of the old
+history, and the owner is told so. The Git container's log has one line
+per purge with how long each part took and how long pushes were held
+back, never the text.
 
 If something fails after the swap (a full or failing disk, say), every push
 to that catalog stays refused until the Git container has written the

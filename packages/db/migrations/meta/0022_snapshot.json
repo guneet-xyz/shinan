@@ -1,5 +1,5 @@
 {
-  "id": "2210b03c-7a53-4f94-b19c-b0773ffd95af",
+  "id": "627a60c3-ba41-4bdb-b42b-911a62fd16d5",
   "prevId": "a8536f2c-b0e9-422c-a5ac-786a7a48aa26",
   "version": "7",
   "dialect": "postgresql",
@@ -2323,6 +2323,46 @@
       },
       "isRLSEnabled": false
     },
+    "public.catalog_ref_fingerprint_keys": {
+      "name": "catalog_ref_fingerprint_keys",
+      "schema": "",
+      "columns": {
+        "workspace_id": {
+          "name": "workspace_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "key": {
+          "name": "key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "gen_random_uuid()::text || gen_random_uuid()::text"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "catalog_ref_fingerprint_keys_workspace_id_workspaces_id_fk": {
+          "name": "catalog_ref_fingerprint_keys_workspace_id_workspaces_id_fk",
+          "tableFrom": "catalog_ref_fingerprint_keys",
+          "tableTo": "workspaces",
+          "columnsFrom": [
+            "workspace_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.catalog_repositories": {
       "name": "catalog_repositories",
       "schema": "",
@@ -2429,6 +2469,13 @@
           "type": "jsonb",
           "primaryKey": false,
           "notNull": true
+        },
+        "ids": {
+          "name": "ids",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
         }
       },
       "indexes": {
