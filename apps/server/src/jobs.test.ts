@@ -30,10 +30,10 @@ import type { Worker } from "./jobs.js"
 // check, the push log's minute job), so on the database the other test
 // files share they would ask for rebuilds of, and run index jobs for, those
 // files' workspaces.
-let own: TestDatabase
+let own: TestDatabase | undefined
 let databaseUrl: string
 let db: ReturnType<typeof createDatabase>["db"]
-let pool: ReturnType<typeof createDatabase>["pool"]
+let pool: ReturnType<typeof createDatabase>["pool"] | undefined
 
 beforeAll(async () => {
   vi.spyOn(console, "info").mockImplementation(() => {})
@@ -45,8 +45,10 @@ beforeAll(async () => {
 
 afterAll(async () => {
   vi.restoreAllMocks()
-  await pool.end()
-  await own.drop()
+  // If making the database failed, there is nothing to end, and the
+  // failure is reported as it is.
+  await pool?.end()
+  await own?.drop()
 })
 
 describe("migrate", () => {

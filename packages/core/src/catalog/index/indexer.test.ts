@@ -1301,17 +1301,17 @@ describe("rebuilds, catch-up and the round-trip check", () => {
 // test database that would be other test files' workspaces too (#200), so
 // these tests have a database of their own.
 describe("installation-wide maintenance, on a database of its own", () => {
-  let own: Awaited<ReturnType<typeof createTestDatabase>>
+  let own: Awaited<ReturnType<typeof createTestDatabase>> | undefined
   let ownDb: ReturnType<typeof createDatabase>["db"]
-  let ownPool: ReturnType<typeof createDatabase>["pool"]
+  let ownPool: ReturnType<typeof createDatabase>["pool"] | undefined
   let ownGit: MemoryGit
   let ownWorkspace: string
 
   beforeEach(async () => {
     own = await createTestDatabase()
-    ;({ db: ownDb, pool: ownPool } = createDatabase(own.url, {
-      refuseNested: true,
-    }))
+    let pool: ReturnType<typeof createDatabase>["pool"]
+    ;({ db: ownDb, pool } = createDatabase(own.url, { refuseNested: true }))
+    ownPool = pool
     const person = await newPerson(ownDb, "owner")
     ownWorkspace = (
       await createWorkspace(asPerson(ownDb, person), { name: "Own" })
@@ -1327,10 +1327,45 @@ describe("installation-wide maintenance, on a database of its own", () => {
       .where(eq(schema.catalogRepositories.workspaceId, ownWorkspace))
   }, 60_000)
 
+  // If making the database failed, there is nothing to end, and the
+  // failure is reported as it is.
   afterEach(async () => {
-    await ownPool.end()
-    await own.drop()
+    await ownPool?.end()
+    await own?.drop()
+    ownPool = undefined
+    own = undefined
   })
+
+  /** Holds every write of a document row of the index for 2 seconds. */
+  async function pauseIndexWrites() {
+    await ownPool!.query(`
+      create function pause_index_build() returns trigger language plpgsql as $$
+      begin perform pg_sleep(2); return new; end $$;
+      create trigger pause_index_build after insert on catalog_index_documents
+        for each row execute function pause_index_build()`)
+  }
+
+  /** Until a build is held by `pauseIndexWrites`, holding its index's lock. */
+  async function whilePaused() {
+    await vi.waitFor(
+      async () => {
+        const { rows } = await ownPool!.query<{ n: number }>(
+          "select count(*)::int as n from pg_stat_activity where datname = current_database() and wait_event = 'PgSleep'",
+        )
+        expect(rows[0]!.n).toBe(1)
+      },
+      { timeout: 20_000, interval: 50 },
+    )
+  }
+
+  /** The workspace's index state now. */
+  async function ownState() {
+    const [state] = await ownDb
+      .select()
+      .from(schema.catalogIndexState)
+      .where(eq(schema.catalogIndexState.workspaceId, ownWorkspace))
+    return state!
+  }
 
   it("does not compare an index that is not at main, and queues its update", async () => {
     await updateWorkspaceIndex(ownDb, ownGit, ownWorkspace)
@@ -1383,21 +1418,9 @@ describe("installation-wide maintenance, on a database of its own", () => {
     // Holds the first build's write open, after it has locked the index
     // state's row: the moment a catch-up finds the index never built
     // (its commit still null) and waits on that row.
-    await ownPool.query(`
-      create function pause_index_build() returns trigger language plpgsql as $$
-      begin perform pg_sleep(2); return new; end $$;
-      create trigger pause_index_build after insert on catalog_index_documents
-        for each row execute function pause_index_build()`)
+    await pauseIndexWrites()
     const building = updateWorkspaceIndex(ownDb, ownGit, ownWorkspace)
-    await vi.waitFor(
-      async () => {
-        const { rows } = await ownPool.query<{ n: number }>(
-          "select count(*)::int as n from pg_stat_activity where datname = current_database() and wait_event = 'PgSleep'",
-        )
-        expect(rows[0]!.n).toBe(1)
-      },
-      { timeout: 20_000, interval: 50 },
-    )
+    await whilePaused()
     const jobs = recordingJobs()
     const [asked, built] = await Promise.all([
       requestCatalogIndexRebuilds({ ...asShinan(ownDb), jobs }),
@@ -1408,17 +1431,83 @@ describe("installation-wide maintenance, on a database of its own", () => {
     // could look: nothing to ask for.
     expect(asked).toEqual([])
     expect(jobs.sent).toEqual([])
-    const [state] = await ownDb
-      .select()
-      .from(schema.catalogIndexState)
-      .where(eq(schema.catalogIndexState.workspaceId, ownWorkspace))
-    expect(state!.rebuildRequestedAt).toBeNull()
+    expect((await ownState()).rebuildRequestedAt).toBeNull()
     const [checked] = await checkCatalogIndexes(asShinan(ownDb), ownGit, {
       workspaceIds: [ownWorkspace],
     })
     expect(checked).toMatchObject({ outcome: "matched", documents: 1 })
-    await ownPool.query(
-      "drop trigger pause_index_build on catalog_index_documents; drop function pause_index_build()",
-    )
+  }, 60_000)
+
+  it("leaves an index whose stale rows a rebuild replaced while a catch-up waited as it is", async () => {
+    // Built, then its document rows left by an older parser, as after a
+    // rollback: the index's state is current, its rows are not.
+    await updateWorkspaceIndex(ownDb, ownGit, ownWorkspace)
+    await ownDb
+      .update(schema.catalogIndexDocuments)
+      .set({ parserVersion: parserVersion - 1 })
+      .where(eq(schema.catalogIndexDocuments.workspaceId, ownWorkspace))
+    // The update that rebuilds them is held while it writes them, and the
+    // catch-up finds the stale rows and waits for the index's lock.
+    await pauseIndexWrites()
+    const rebuilding = updateWorkspaceIndex(ownDb, ownGit, ownWorkspace)
+    await whilePaused()
+    const jobs = recordingJobs()
+    const [asked, rebuilt] = await Promise.all([
+      requestCatalogIndexRebuilds({ ...asShinan(ownDb), jobs }),
+      rebuilding,
+    ])
+    expect(rebuilt).toMatchObject({ outcome: "rebuilt", documents: 1 })
+    // Once it could look, no row was stale any more: nothing to ask for.
+    expect(asked).toEqual([])
+    expect(jobs.sent).toEqual([])
+    expect((await ownState()).rebuildRequestedAt).toBeNull()
+    const [checked] = await checkCatalogIndexes(asShinan(ownDb), ownGit, {
+      workspaceIds: [ownWorkspace],
+    })
+    expect(checked).toMatchObject({ outcome: "matched", documents: 1 })
+  }, 60_000)
+
+  it("still asks for the rebuild of stale rows once the index's lock is free, when nothing fixed them", async () => {
+    await updateWorkspaceIndex(ownDb, ownGit, ownWorkspace)
+    await ownDb
+      .update(schema.catalogIndexDocuments)
+      .set({ parserVersion: parserVersion - 1 })
+      .where(eq(schema.catalogIndexDocuments.workspaceId, ownWorkspace))
+    // The lock held by a transaction that changes nothing.
+    const holder = await ownPool!.connect()
+    let asking: Promise<unknown> | undefined
+    const jobs = recordingJobs()
+    try {
+      await holder.query("begin")
+      await holder.query(
+        "select 1 from catalog_index_state where workspace_id = $1 for update",
+        [ownWorkspace],
+      )
+      const { rows: me } = await holder.query<{ pid: number }>(
+        "select pg_backend_pid() as pid",
+      )
+      // Its outcome taken at once, so a failure while it waits is reported
+      // by the expectation below, never as an unhandled rejection.
+      asking = requestCatalogIndexRebuilds({ ...asShinan(ownDb), jobs }).then(
+        (asked) => asked,
+        (error: unknown) => error,
+      )
+      await vi.waitFor(
+        async () => {
+          const { rows } = await ownPool!.query<{ n: number }>(
+            "select count(*)::int as n from pg_stat_activity where $1 = any(pg_blocking_pids(pid))",
+            [me[0]!.pid],
+          )
+          expect(rows[0]!.n).toBe(1)
+        },
+        { timeout: 20_000, interval: 50 },
+      )
+    } finally {
+      await holder.query("rollback")
+      holder.release()
+    }
+    expect(await asking).toEqual([ownWorkspace])
+    expect(jobs.sent).toContainEqual({ workspaceId: ownWorkspace })
+    expect((await ownState()).rebuildRequestedAt).not.toBeNull()
   }, 60_000)
 })

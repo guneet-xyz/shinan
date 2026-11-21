@@ -15,6 +15,7 @@ import type { IndexFailureReason } from "./failure.js"
 import {
   compareWorkspaceIndex,
   hasStaleRows,
+  lockIndexState,
   recordFailure,
   stateBehind,
   updateWorkspaceIndex,
@@ -119,7 +120,7 @@ export async function requestCatalogIndexRebuilds(
         .where(
           and(
             isNotNull(r.firstCommit),
-            sql`(${s.workspaceId} is null or ${s.commit} is null or ${s.parserVersion} <> ${parserVersion} or ${s.rulesVersion} <> ${indexRulesVersion} or ${s.rebuildRequestedAt} is not null or exists (select 1 from ${schema.catalogIndexDocuments} d where d.workspace_id = ${r.workspaceId} and (d.parser_version <> ${parserVersion} or d.rules_version <> ${indexRulesVersion})))`,
+            sql`(${s.workspaceId} is null or ${needsRebuild})`,
           ),
         )
       workspaceIds = rows.map((r) => r.workspaceId)
@@ -147,8 +148,15 @@ export async function requestCatalogIndexRebuilds(
 }
 
 /**
+ * Whether the index of the workspace whose state row is in scope needs a
+ * rebuild: never built, built by another parser or rules version, a
+ * rebuild already asked for, or any of its document rows built so.
+ */
+const needsRebuild = sql`(${schema.catalogIndexState.commit} is null or ${schema.catalogIndexState.parserVersion} <> ${parserVersion} or ${schema.catalogIndexState.rulesVersion} <> ${indexRulesVersion} or ${schema.catalogIndexState.rebuildRequestedAt} is not null or exists (select 1 from ${schema.catalogIndexDocuments} d where d.workspace_id = ${schema.catalogIndexState.workspaceId} and (d.parser_version <> ${parserVersion} or d.rules_version <> ${indexRulesVersion})))`
+
+/**
  * Asks for the workspace's rebuild, unless `onlyIfNeeded` and its index,
- * as it stands once its row is locked, no longer needs one. Says whether
+ * as it stands once its lock is taken, no longer needs one. Says whether
  * it asked.
  */
 async function markRebuild(
@@ -157,28 +165,24 @@ async function markRebuild(
   options: { onlyIfNeeded: boolean },
 ): Promise<boolean> {
   const s = schema.catalogIndexState
-  const rows = await tx
-    .insert(s)
-    .values({
-      workspaceId,
-      parserVersion,
-      rulesVersion: indexRulesVersion,
-      rebuildRequestedAt: sql`now()`,
-    })
-    .onConflictDoUpdate({
-      target: s.workspaceId,
-      set: {
-        rebuildRequestedAt: sql`coalesce(${s.rebuildRequestedAt}, now())`,
-      },
-      // Judged on the row as it stands after any transaction that held it.
-      ...(options.onlyIfNeeded
-        ? {
-            setWhere: sql`${s.commit} is null or ${s.parserVersion} <> ${parserVersion} or ${s.rulesVersion} <> ${indexRulesVersion} or ${s.rebuildRequestedAt} is not null or exists (select 1 from ${schema.catalogIndexDocuments} d where d.workspace_id = ${s.workspaceId} and (d.parser_version <> ${parserVersion} or d.rules_version <> ${indexRulesVersion}))`,
-          }
-        : {}),
-    })
-    .returning({ workspaceId: s.workspaceId })
-  return rows.length > 0
+  // The index's lock first, waiting for a build that holds it. The need is
+  // judged after, in a statement of its own: in read committed it sees
+  // everything that build committed, its document rows too, where a
+  // condition in the locking statement would read them as they were
+  // before the wait (#200).
+  await lockIndexState(tx, workspaceId)
+  if (options.onlyIfNeeded) {
+    const [state] = await tx
+      .select({ needed: sql<boolean>`${needsRebuild}` })
+      .from(s)
+      .where(eq(s.workspaceId, workspaceId))
+    if (!state!.needed) return false
+  }
+  await tx
+    .update(s)
+    .set({ rebuildRequestedAt: sql`coalesce(${s.rebuildRequestedAt}, now())` })
+    .where(eq(s.workspaceId, workspaceId))
+  return true
 }
 
 /**
