@@ -192,8 +192,9 @@ describe("dropping M2's catalog tables", { timeout: 60_000 }, () => {
   })
 
   it("leaves the migrations after it in the same run without its lock time-out", async () => {
-    // This release's migrations, and one more after the drop that records
-    // the lock_timeout it runs with, all applied in one transaction.
+    // This release's migrations, and one more at the end that records the
+    // lock_timeout it runs with, all applied after the drop in one
+    // transaction.
     const folder = await mkdtemp(join(tmpdir(), "shinan-migrations-"))
     try {
       await cp(migrationsFolder, folder, { recursive: true })
@@ -201,8 +202,9 @@ describe("dropping M2's catalog tables", { timeout: 60_000 }, () => {
       const journal = JSON.parse(await readFile(path, "utf8")) as {
         entries: { idx: number; when: number; tag: string }[]
       }
+      // After the drop, and after whatever this release adds after it.
+      expect(journal.entries.map((e) => e.tag)).toContain(m2DropMigration)
       const last = journal.entries.at(-1)!
-      expect(last.tag).toBe(m2DropMigration)
       journal.entries.push({
         ...last,
         idx: last.idx + 1,
