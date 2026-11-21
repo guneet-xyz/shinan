@@ -6,6 +6,10 @@ phase**. Read these before doing anything else:
 - [High-level plan](docs/plan.md)
 - [Build plan](docs/build-plan.md): milestones, code layout, tooling and how work
   is split and reviewed.
+- The [Git-based catalog plan](docs/build-plan-git-catalog.md), which replaced
+  M2's catalog: the catalog is a Git repository per workspace, changed by
+  pushes with no approval, and called "catalog", never "wiki", in the UI and
+  the documents.
 - The [decision log](docs/decisions/README.md) and the documents your work
   implements.
 

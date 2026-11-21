@@ -140,15 +140,13 @@ remaining risk in one place.
 
 ## 2. Identities and credentials at a glance
 
-> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-2](build-plan-git-catalog.md#gc-2-serving-git-over-https-through-web)): the agent token is also accepted at `/git/`. Until then, this section describes M2 as built (v0.3.0).
-
 **Proposed.** Reason: one table shows how each kind of identity proves itself.
 
 | Identity (glossary term)                                   | Proves itself with                                                                                    | Section                               |
 | ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------- |
 | [Person](domain-model.md#person)                           | An email magic link or GitHub, giving a sign-in session                                               | [3](#3-sign-in-for-people)            |
 | [Member](domain-model.md#member-and-role)                  | A person plus a membership record with a role                                                         | [5](#5-members-roles-and-invitations) |
-| [Agent](domain-model.md#agent)                             | An agent token, approved by its member                                                                | [6](#6-agents), [7](#7-tokens)        |
+| [Agent](domain-model.md#agent)                             | An agent token, approved by its member; at `/git/`, the same token as a Basic password                | [6](#6-agents), [7](#7-tokens)        |
 | [Agent session](domain-model.md#agent-session)             | Its agent's token, plus a conversation identifier the coding tool reports                             | [6.4](#64-agent-sessions)             |
 | [Git host account](domain-model.md#git-host-account)       | GitHub: signing in with it. Forgejo: a token the person enters ([3.5](#35-linking-git-host-accounts)) | [3.5](#35-linking-git-host-accounts)  |
 | [Git host connection](domain-model.md#git-host-connection) | Credentials Shinan holds for the git host                                                             | [9.3](#93-git-host-connections)       |
@@ -766,17 +764,17 @@ gets its own revocable credential.
 **Proposed.** Reason: listing every credential in one place makes it easier to
 see that each one is narrow and can be revoked.
 
-| Credential                                     | Held by                                                    | Lets the holder                                                                                                             | Lifetime                                                                              |
-| ---------------------------------------------- | ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| Sign-in session                                | A person's browser                                         | Act as the person in the web app                                                                                            | 24 hours, 1 hour idle ([3.3](#33-sign-in-sessions-and-re-authentication))             |
-| Email magic link                               | The person's mailbox                                       | Start one sign-in session                                                                                                   | 15 minutes, once                                                                      |
-| Agent token (one per agent, NO-1)              | The plugin, MCP client and CLI of one agent on one machine | Act as that agent in one workspace, within its scopes, at the installation's agent endpoints (MCP, REST API, plugin stream) | Until revoked (owner, O-44)                                                           |
-| Invitation link                                | The invitee's mailbox                                      | Accept one invitation, once signed in with the invited address                                                              | 7 days, once                                                                          |
-| GitHub App private key and installation tokens | The Shinan server                                          | Read from GitHub and make Shinan's own writes (its only git host writes), as the app                                        | Key until rotated; installation tokens 1 hour ([git host integrations](git-hosts.md)) |
-| Forgejo connection token                       | The Shinan server, encrypted                               | Read from Forgejo, as the connecting person; Shinan never writes with it (N-4) ([9.3](#93-git-host-connections))            | Set by the person on Forgejo                                                          |
-| Forgejo linking token                          | Briefly, the Shinan server                                 | Show which Forgejo account it belongs to (`read:user`)                                                                      | Used once and discarded ([3.5](#35-linking-git-host-accounts))                        |
-| Webhook secrets                                | The Shinan server and a git host                           | Prove a webhook came from that host                                                                                         | Owned by [git host integrations](git-hosts.md)                                        |
-| Launcher token (phase 3)                       | One machine                                                | Receive start requests for that person's agents on that machine                                                             | Until revoked ([6.6](#66-launchers-phase-3))                                          |
+| Credential                                     | Held by                                                                       | Lets the holder                                                                                                                  | Lifetime                                                                              |
+| ---------------------------------------------- | ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| Sign-in session                                | A person's browser                                                            | Act as the person in the web app                                                                                                 | 24 hours, 1 hour idle ([3.3](#33-sign-in-sessions-and-re-authentication))             |
+| Email magic link                               | The person's mailbox                                                          | Start one sign-in session                                                                                                        | 15 minutes, once                                                                      |
+| Agent token (one per agent, NO-1)              | The credential helper, plugin, MCP client and CLI of one agent on one machine | Act as that agent in one workspace, within its scopes, at the installation's agent endpoints (Git, MCP, REST API, plugin stream) | Until revoked (owner, O-44)                                                           |
+| Invitation link                                | The invitee's mailbox                                                         | Accept one invitation, once signed in with the invited address                                                                   | 7 days, once                                                                          |
+| GitHub App private key and installation tokens | The Shinan server                                                             | Read from GitHub and make Shinan's own writes (its only git host writes), as the app                                             | Key until rotated; installation tokens 1 hour ([git host integrations](git-hosts.md)) |
+| Forgejo connection token                       | The Shinan server, encrypted                                                  | Read from Forgejo, as the connecting person; Shinan never writes with it (N-4) ([9.3](#93-git-host-connections))                 | Set by the person on Forgejo                                                          |
+| Forgejo linking token                          | Briefly, the Shinan server                                                    | Show which Forgejo account it belongs to (`read:user`)                                                                           | Used once and discarded ([3.5](#35-linking-git-host-accounts))                        |
+| Webhook secrets                                | The Shinan server and a git host                                              | Prove a webhook came from that host                                                                                              | Owned by [git host integrations](git-hosts.md)                                        |
+| Launcher token (phase 3)                       | One machine                                                                   | Receive start requests for that person's agents on that machine                                                                  | Until revoked ([6.6](#66-launchers-phase-3))                                          |
 
 **Decided (owner, O-1, N-4):** Shinan stores no per-person GitHub tokens; the
 token received during GitHub sign-in is used once to learn who signed in and
@@ -887,8 +885,9 @@ no forced re-approval.
   as it checks the agent's membership. Reason: removal from the allowlist
   revokes tokens at that moment, and the check covers a token that escaped
   it, for example one made by a request that raced the removal.
-- Shinan's own token prefixes are refused in catalog proposals from the first
-  version, as the [catalog](catalog.md) requires. Refusing them in other text
+- Shinan's own token prefixes are refused in every push to the catalog, on
+  any branch, as the [catalog](catalog.md#73-a-check-for-secret-looking-values)
+  requires. Refusing them in other text
   (comments, progress updates) and revoking the exposed token automatically
   come later ([13](#13-first-version-scope)).
 - How a coding tool stores the token on the machine is owned by
@@ -1224,12 +1223,13 @@ restriction stays possible later.
 - **Security emails** on new-browser sign-ins, sign-in method changes and new
   agent tokens ([3.3](#33-sign-in-sessions-and-re-authentication)).
 - **Narrow, hashed tokens checked on every request** ([7](#7-tokens)).
-- **Outside text is data, not instructions.** The
-  [agent integrations](agent-integrations.md) document makes MCP answers carry
-  a trust label on each text field: who wrote it (member, agent, outside actor
-  or Shinan) and whether it may be treated as an instruction, as the
-  [architecture](architecture.md) document proposes. Reason: the `workspace` repository's policy already
-  treats commands found in issues and logs as data.
+- **Outside text is data, not instructions.** Catalog content is
+  information, never instructions, as the skill says
+  ([D-062](decisions/D-062-no-catalog-trust-labels.md)); whether MCP answers
+  about tasks carry trust labels is the M3 plan's to decide
+  ([agent integrations](agent-integrations.md#trust-labels)). Reason: the
+  `workspace` repository's policy already treats commands found in issues and
+  logs as data.
 
 The residual risks of the owner's choices are listed with the
 [threats](#threats-and-residual-risks).
@@ -1359,7 +1359,7 @@ dropped from the first version (owner, N-11).
 | The email allowlist; sign-in session limits; re-authentication; security emails                                                                                                                                               | Nudges from other members: framing and the per-agent opt-out ([6.5](#65-nudges-from-other-people))                                      | The launcher token (phase 3, [6.6](#66-launchers-phase-3))           |
 | Linking GitHub through sign-in and Forgejo through a token, with the address checks                                                                                                                                           | Security log views for members other than the workspace owner                                                                           | Refusing text that contains Shinan tokens ([7.4](#74-handling))      |
 | Agent registration through a browser approval started from the plugin or CLI (with a short code), and tokens made by hand; one token per agent at every agent endpoint (NO-1); scopes, including read-only tokens; revocation | GitHub sign-in for people other than the GitHub App's owner, if the private app does not allow it ([open question 10](#open-questions)) | Full read logging, if ever needed                                    |
-| Hashed tokens with a recognisable prefix, refused in catalog proposals; throttling; uniform errors                                                                                                                            |                                                                                                                                         | MCP-specific OAuth sign-in, only if a coding tool needs it (NO-1)    |
+| Hashed tokens with a recognisable prefix, refused on push to the catalog; throttling; uniform errors                                                                                                                          |                                                                                                                                         | MCP-specific OAuth sign-in, only if a coding tool needs it (NO-1)    |
 | The security log, kept forever and not purgeable, readable by the workspace owner; purge of other content limited to workspace owners wherever purge is built                                                                 |                                                                                                                                         |                                                                      |
 | Attribution: which account counts, confidence levels, marker checks, corrections, Shinan's GitHub writes recognised by the app's account, written actor forms ([8.7](#87-how-an-actor-is-written-in-text))                    |                                                                                                                                         |                                                                      |
 
@@ -1418,9 +1418,9 @@ All checked on 2026-11-16.
 1. **Re-authentication window.** How many minutes count as "recent" for
    sensitive actions? **Proposed (M1-4):** 10 minutes
    ([3.3](#33-sign-in-sessions-and-re-authentication)).
-2. **Self-approval in teams.** When a second member joins, should approving
-   your own agent's gated catalog proposal need someone else (O-46 covers one
-   person only)?
+2. _Settled:_ self-approval in teams lapsed with catalog approval
+   ([D-060](decisions/D-060-no-catalog-approval.md)). The number is kept so
+   references to the later questions stay valid.
 3. **Nudges from other members.** Should they be off by default in workspaces
    with several members?
 4. **Scripts and automation.** Do people need tokens for non-agent automation,

@@ -464,8 +464,9 @@ Reason: together they cover the level 1 actions in the plan.
   reserve these actions for people.
 - **Decided** (owner, O-10, [#25](https://github.com/guneet-xyz/shinan/issues/25)): the plan's "agents complete tasks"
   means agents **record verification**. No tool marks a task done.
-- **Open:** whether the agent index is also offered as MCP resources
-  ([question 5](#open-questions)).
+- _Settled:_ the agent index is not offered over MCP; agents read the
+  catalog from their clone ([D-063](decisions/D-063-no-mcp-for-the-catalog.md);
+  [question 5](#open-questions)).
 - **As built (GC-5, [#167](https://github.com/guneet-xyz/shinan/issues/167)),
   following the [Git-based catalog plan §2.13](build-plan-git-catalog.md#213-mcp-after-this-change):**
   `/mcp` serves one tool, `workspace_context`: the agent, the member it
@@ -477,6 +478,14 @@ Reason: together they cover the level 1 actions in the plan.
   catalog tools (`search_catalog`, `get_entity`, `catalog_lists`,
   `get_catalog_proposal`, `propose_catalog_change`, `record_fact_check`,
   `withdraw_catalog_proposal`, `comment_on_catalog_proposal`) are gone.
+- **A refused call (429).** OpenCode (checked in its source, 2026-11-18)
+  retries a 429 twice, after 250 ms and 1 s, only while connecting and
+  listing tools; a tool call that gets 429 fails at once, and the agent sees
+  the error. After a rate-limit 429 the agent waits `Retry-After` seconds, up
+  to a minute, before calling again; after a 429 for too many calls in
+  flight it calls again once an earlier call is answered. The limits
+  themselves are in the
+  [operator guide](operator-guide.md#agents-the-catalog-repository-tokens-mcp-and-the-skill).
 
 ## The CLI
 
@@ -547,7 +556,7 @@ accepted with the plan):**
 - **The workflow** (plan §2.12): find the clone, fetch, add a worktree on a
   new local branch from `origin/main`, edit, commit with a message saying
   why, `git fetch` and `git rebase origin/main` (or merge), resolving
-  conflicts from evidence and check times ([catalog §8.5](catalog.md#85-conflicts)),
+  conflicts from evidence and check times ([catalog §8.5](catalog.md#85-conflicts-as-git-merges)),
   optionally `git push -o check-only origin HEAD:main`, then
   `git push origin HEAD:main`, reading every `remote:` line; on a refusal,
   fix it in a new commit and push again; remove the worktree and delete the
@@ -915,8 +924,8 @@ the tasks document, "Git host actions a person asks for".
 ### Finishing
 
 1. Carry the work through the git host's normal review and merge process.
-2. Do a documentation-impact check: propose catalog changes or record fact
-   checks, with evidence and a narrow scope. Reason: the `workspace`
+2. Do a documentation-impact check: push catalog changes or new fact checks,
+   with evidence and a narrow scope, as the skill says. Reason: the `workspace`
    repository's maintenance rule; agents keeping the catalog accurate is a core
    promise (plan, Catalog pillar).
 3. Record verification, then release the task or end the agent session.
@@ -1348,10 +1357,10 @@ to close integration findings are listed in the fix pull request for
 | ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [Domain model and glossary](domain-model.md)    | Terms: agent session, agent session ID, conversation ID, heartbeat, presence states including `offline`, subagent sessions, release, nudge outcomes, delivery mode, holder and route, launcher and device setup guide.                                                                                                                                                                                    |
 | [Tasks and work](tasks.md)                      | Claim rules, including which tasks can be claimed automatically; subtasks and moving them; who receives a nudge ("To whom"); nudge creation, batching and withdrawal; git host actions a person can request; task flags and which ones agents may set; deployment approval requests; the `Shinan-Task` marker scheme, alongside this document's `Shinan-Session`; when task notices are sent and to whom. |
-| [Identity, agents and permissions](identity.md) | Agent registration and tokens (NO-1); the launcher token; what agents may do, including commenting on catalog proposals and recording a deployment approval given in the conversation (O-20); how tool-reported and model-passed session IDs count for attribution; marker checks; nudges from other members.                                                                                             |
+| [Identity, agents and permissions](identity.md) | Agent registration and tokens (NO-1); the launcher token; what agents may do, including pushing to the catalog and recording a deployment approval given in the conversation (O-20); how tool-reported and model-passed session IDs count for attribution; marker checks; nudges from other members.                                                                                                      |
 | [Architecture and operations](architecture.md)  | MCP endpoint, protocol versions and the CLI's local MCP bridge; one token accepted at MCP, the REST API and the plugin stream (NO-1); the plugin stream with offers, withdrawals and acknowledgements; the server-side allow-list for plugin reports; trust labels in MCP answers; serving the skill; the launcher's connection.                                                                          |
 | [Git host integrations](git-hosts.md)           | Detecting markers. Shinan writes only as its GitHub App and never on Forgejo (O-1, N-4).                                                                                                                                                                                                                                                                                                                  |
-| [Catalog](catalog.md)                           | The agent index; catalog proposals, rechecks and the "doubtful" rule; comments on proposals; the agents' start-here path; secrets recorded only as locations (O-2).                                                                                                                                                                                                                                       |
+| [Catalog](catalog.md)                           | The catalog repository's layout and the checks on push, with their refusal codes; rechecks and the `by` rule; the agents' start-here path; secrets recorded only as locations (O-2).                                                                                                                                                                                                                      |
 | [Human experience](human-experience.md)         | Showing presence, subagents, waiting reasons and delivery outcomes; the nudge form with steer or queue; requesting git host actions and new agent sessions; approving a machine for an agent; where the device setup guide lives.                                                                                                                                                                         |
 | [Roadmap and migration](roadmap.md)             | Trial projects and coordination in Shinan during the trial (O-73); OpenCode plugin in phase 1, live nudges in phase 2, Claude Code plugin in phase 2a (O-82), launcher and device setup guide in phase 3.                                                                                                                                                                                                 |
 
@@ -1366,7 +1375,8 @@ to close integration findings are listed in the fix pull request for
    the duplicate-removal rule.
 4. **Codex and other tools.** Is a Codex plugin worth building after Claude
    Code?
-5. **MCP resources.** Should the agent index also be offered as MCP resources?
+5. _Settled:_ the agent index is not offered as MCP resources; agents read
+   the catalog through Git ([D-063](decisions/D-063-no-mcp-for-the-catalog.md)).
 6. **Claude Code inbox socket.** If its message format is documented, is it a
    better live route than the mod and hooks?
 7. **Launcher and other coding tools.** O-1 has the launcher run OpenCode.

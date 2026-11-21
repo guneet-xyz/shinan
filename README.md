@@ -1,35 +1,41 @@
 # Shinan
 
-Shinan (指南, "guidance") is a host-neutral home for the story of work across
-repositories and git hosts, and for the shared, agent-maintained context that
-people and coding agents rely on. It keeps a catalog of projects, machines and
-services, tracks tasks and the work linked to them on GitHub and Forgejo, and
-shows which agents are working on what. It is a private product exploration,
-now in its build phase.
+Shinan (指南, "guidance") helps people and their coding agents work from the
+same picture. Today it keeps each workspace's **catalog**: what you run
+(projects, machines, services) and how sure you are of each fact, written and
+kept up to date by agents. The catalog is a Git repository Shinan hosts.
+Agents clone it, change it and push; people read it in the browser. Next,
+Shinan will track tasks and the work linked to them on GitHub and Forgejo,
+and which agents are working on what. It is in its build phase.
 
 ## Documents
 
 - [High-level plan](docs/plan.md) and [product overview](docs/product-overview.md)
-- [Build plan](docs/build-plan.md): milestones, code layout and how work is done
+- [Build plan](docs/build-plan.md): milestones, code layout and how work is done;
+  the [Git-based catalog plan](docs/build-plan-git-catalog.md) revises M2
 - [Architecture](docs/architecture.md) and the [roadmap](docs/roadmap.md)
-- [Domain model and glossary](docs/domain-model.md)
+- [Domain model and glossary](docs/domain-model.md) and the
+  [product principles](docs/product-principles.md)
 - [Operator guide](docs/operator-guide.md): running Shinan yourself
-- [Trial guide](docs/trial.md): starting and running the trial on Shinan's own projects
+- [Trial guide](docs/trial.md): the trial on Shinan's own projects (paused
+  until v0.4.0 is deployed)
 - [Decision log](docs/decisions/README.md)
 - [Agent instructions](AGENTS.md)
 
 ## Code layout
 
-| Path                  | What it holds                                                                   |
-| --------------------- | ------------------------------------------------------------------------------- |
-| `apps/server`         | The Node.js program (Hono): the `web` and `worker` roles and `migrate` command  |
-| `apps/web`            | The React single-page app (Vite), served by `apps/server` in production         |
-| `packages/core`       | Application modules, permissions and rules                                      |
-| `packages/db`         | Drizzle schema and migrations                                                   |
-| `packages/email`      | The email sender interface, the SES sender and an SMTP sender for development   |
-| `packages/api-client` | Typed client for the REST API                                                   |
-| `packages/skill`      | The agent skill, served at `/skills/`                                           |
-| `deploy/`             | The production image, the reference Compose file and local development services |
+| Path                  | What it holds                                                                                     |
+| --------------------- | ------------------------------------------------------------------------------------------------- |
+| `apps/server`         | The Node.js program (Hono): the `web`, `worker` and `git` roles and `migrate`                     |
+| `apps/web`            | The React single-page app (Vite), served by `apps/server` in production                           |
+| `packages/core`       | Application modules, permissions and rules                                                        |
+| `packages/db`         | Drizzle schema and migrations                                                                     |
+| `packages/email`      | The email sender interface, the SES sender and an SMTP sender for development                     |
+| `packages/api-client` | Typed client for the REST API                                                                     |
+| `packages/git`        | Runs Git safely for the `git` role: reading, writing and walking repositories, and Shinan's hooks |
+| `packages/markdown`   | The one Markdown configuration the server and the web app both use                                |
+| `packages/skill`      | The agent skill, served at `/skills/`                                                             |
+| `deploy/`             | The production image, the reference Compose file and local development services                   |
 
 The [build plan](docs/build-plan.md#2-code-layout-proposed) describes each part.
 
@@ -99,15 +105,16 @@ instead be read from a file: set `NAME_FILE` to its path rather than `NAME`
 | `GITHUB_CLIENT_SECRET`         | none                                                 | The GitHub App's client secret (secret)                                                                 |
 | `SIGN_IN_SESSION_IDLE_MINUTES` | `60`                                                 | A sign-in session ends after this long without activity                                                 |
 | `SIGN_IN_SESSION_MAX_HOURS`    | `24`                                                 | A sign-in session ends after this long in any case                                                      |
-| `SHINAN_GIT_URL`               | none (required in production, for `worker`)          | The Git container's internal address, such as `http://git:3000`                                         |
-| `SHINAN_GIT_SERVICE_TOKEN`     | none (required by the `git` role)                    | The service token the Git container accepts; at least 32 characters (secret)                            |
+| `SHINAN_GIT_URL`               | none (required in production)                        | The Git container's internal address, such as `http://git:3000`, for `web`, `worker` and `migrate`      |
+| `SHINAN_GIT_SERVICE_TOKEN`     | none (required with `SHINAN_GIT_URL`, and by `git`)  | The service token the Git container accepts and the other roles send; at least 32 characters (secret)   |
 | `SHINAN_CATALOG_DIR`           | `/var/lib/shinan/catalog`                            | The `git` role's folder of repositories and its journal; mode `0700`, owned by the role's user          |
 
 The `git` role (the Git container, [architecture 3.2](docs/architecture.md#32-process-model))
 runs from the image: its push hook starts `/nodejs/bin/node`, and the role
 refuses to start unless that hook runs. Without `SHINAN_GIT_URL` and
-`SHINAN_GIT_SERVICE_TOKEN`, a development worker leaves new workspaces'
-repositories waiting; the reference Compose file
+`SHINAN_GIT_SERVICE_TOKEN`, development `web` and `worker` still start: new
+workspaces' repositories wait, the Git endpoint answers 503 and the catalog
+pages have no history; the reference Compose file
 ([operator guide](docs/operator-guide.md)) runs all roles together, and the
 tests run the `git` role's API against temporary folders.
 
@@ -192,9 +199,10 @@ how each is tested. In short:
   A refusal is 429 with `Retry-After` (seconds left in the window).
 - Every answer carries security headers and a strict Content Security Policy
   (no inline scripts or styles; `apps/server/src/security.ts`).
-- Agent endpoints (`/api/agent`, and `/mcp` from M2-6) take an agent token
-  only as `Authorization: Bearer`, never in the address and never with a
-  cookie. They are the only routes outside the same-origin check above. Make a token by hand under Your account, Your agents, then check
+- Agent endpoints (`/api/agent`, `/mcp`, and `/git/`, where Git sends the
+  token as an HTTP Basic password) take an agent token only in the
+  `Authorization` header, never in the address and never with a cookie.
+  They are the only routes outside the same-origin check above. Make a token by hand under Your account, Your agents, then check
   it with `curl -H "Authorization: Bearer $(cat token-file)"
 http://localhost:5173/api/agent`. Only its SHA-256 hash is stored, and it
   is bound to `SHINAN_URL`.

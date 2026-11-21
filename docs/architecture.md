@@ -6,8 +6,8 @@ and the integration review in [issue #26](https://github.com/guneet-xyz/shinan/i
 
 This document describes how Shinan is built and run: the technology stack
 (D-020), the parts of the system and how they talk, where data lives, how the
-catalog's Markdown and its agent index stay in sync (D-006), how
-git host events come in, how agents and plugins reach Shinan, email and
+catalog's Git repositories and its agent index stay in sync (D-006, D-059),
+how git host events come in, how agents and plugins reach Shinan, email and
 notifications, the task address, security
 for a public app with sign-in (D-015), deployment on Musashi at
 `shinan.guneet.dev` (D-016), self-hosting (D-012), observability, and the
@@ -44,34 +44,34 @@ action was taken.
 
 ## Summary
 
-| Area                    | Position                                                                                                                                                                                                                                                                                        |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Stack                   | **Decided:** TypeScript, with a plain Node.js server and a React single-page app (owner, O-60, O-61).                                                                                                                                                                                           |
-| Shape                   | One codebase and one container image, run as two processes: `web` (pages, API, MCP endpoint, webhook intake, live streams) and `worker` (background jobs).                                                                                                                                      |
-| Storage                 | PostgreSQL for everything, including the job queue. No Redis, no file storage in the first version.                                                                                                                                                                                             |
-| Catalog (D-006)         | **Decided:** each revision's Markdown text is the source of truth, stored in PostgreSQL only; no Git mirror for now (owner, O-11, O-12, N-5). Changes are applied as text edits; the index is built only from stored text.                                                                      |
-| Git hosts               | Webhooks are verified, stored and acknowledged at once, then processed by the worker. Reconciliation catches anything missed. Shinan writes to GitHub only as its app and never writes to Forgejo (owner, O-1, O-51, N-4).                                                                      |
-| Agents                  | A remote MCP endpoint at `/mcp`, a REST API for the CLI and plugins, and a server-sent event stream for nudge offers. One long-lived token per agent, obtained by a browser approval and accepted at every agent endpoint (owner, O-44, NO-1). All connections go out from the agent's machine. |
-| Email and notifications | **Decided:** Shinan sends email from the first version (magic links, invitations, security alerts) through the AWS SES SDK (owner, O-41, O-48, N-6). This document owns sending notifications, email first (owner, NO-3).                                                                       |
-| Security                | Threat model and controls for a public app holding infrastructure details, with the owner's accepted risks stated plainly.                                                                                                                                                                      |
-| Musashi                 | A new `shinan` stack following Musashi's rules; deployed as needed, each deployment with its own approval (owner, O-83).                                                                                                                                                                        |
-| Backups                 | **Decided:** none built in, no backup target and no recovery objectives for now; an accepted risk (owner, O-62 to O-64).                                                                                                                                                                        |
+| Area                    | Position                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Stack                   | **Decided:** TypeScript, with a plain Node.js server and a React single-page app (owner, O-60, O-61).                                                                                                                                                                                                                                                                                                       |
+| Shape                   | One codebase and one container image, run as three roles: `web` (pages, API, the Git endpoint and MCP endpoint, webhook intake, live streams), `worker` (background jobs) and `git` (the catalog's repositories, in a container of its own, D-065); a one-shot `migrate` command runs before each start.                                                                                                    |
+| Storage                 | PostgreSQL for everything but the catalog's text, including the job queue; the catalog's Git repositories on the `git` role's volume (D-059). No Redis, no other file storage in the first version.                                                                                                                                                                                                         |
+| Catalog (D-006)         | **Decided:** one Git repository per workspace, hosted by Shinan; the documents on `main` are the source of truth (D-059). Agents push; every push is checked before Git keeps it, with no catalog approval (D-060). The index is built only from `main`'s text.                                                                                                                                             |
+| Git hosts               | Webhooks are verified, stored and acknowledged at once, then processed by the worker. Reconciliation catches anything missed. Shinan writes to GitHub only as its app and never writes to Forgejo (owner, O-1, O-51, N-4).                                                                                                                                                                                  |
+| Agents                  | The catalog over Git at `/git/` (HTTPS, agent token as the Basic password, D-061), a remote MCP endpoint at `/mcp` for tasks, a REST API for the CLI and plugins, and a server-sent event stream for nudge offers. One long-lived token per agent, accepted at every agent endpoint (owner, O-44, NO-1); made by hand until browser approval arrives (M4). All connections go out from the agent's machine. |
+| Email and notifications | **Decided:** Shinan sends email from the first version (magic links, invitations, security alerts) through the AWS SES SDK (owner, O-41, O-48, N-6). This document owns sending notifications, email first (owner, NO-3).                                                                                                                                                                                   |
+| Security                | Threat model and controls for a public app holding infrastructure details, with the owner's accepted risks stated plainly.                                                                                                                                                                                                                                                                                  |
+| Musashi                 | A new `shinan` stack following Musashi's rules; deployed as needed, each deployment with its own approval (owner, O-83).                                                                                                                                                                                                                                                                                    |
+| Backups                 | **Decided:** none built in, no backup target and no recovery objectives for now; an accepted risk (owner, O-62 to O-64).                                                                                                                                                                                                                                                                                    |
 
 ## 1. Requirements that shape the architecture
 
-| Requirement                                                                                         | Source                  | Effect here                                                                           |
-| --------------------------------------------------------------------------------------------------- | ----------------------- | ------------------------------------------------------------------------------------- |
-| Catalog Markdown is the source of truth; the agent index is generated from it                       | D-006; owner, O-11, N-5 | [Section 5](#5-catalog-markdown-and-agent-index)                                      |
-| Every fact has a state, source and last-checked time                                                | D-007                   | Stored in the Markdown; indexed for freshness queries                                 |
-| Task status is calculated from linked work and recorded events                                      | D-005; owner, O-4       | Recalculated by the worker; never typed in                                            |
-| Agents connect from outside; no model runs in Shinan                                                | D-008                   | Shinan is an ordinary web service                                                     |
-| GitHub and Forgejo first                                                                            | D-009                   | Webhook intake and reconciliation designed for both                                   |
-| Self-hostable                                                                                       | D-012                   | One image plus PostgreSQL ([section 12](#12-self-hosting))                            |
-| MCP and skill, plugins, launcher later                                                              | D-014                   | [Section 8](#8-how-agents-the-mcp-server-and-plugins-reach-shinan)                    |
-| Public internet, sign-in required                                                                   | D-015                   | [Section 10](#10-security)                                                            |
-| Runs on Musashi; every deployment approved by the owner                                             | D-016; owner, O-83      | [Section 11](#11-deployment-on-musashi)                                               |
-| Shinan starts empty; the `workspace` repository's catalog stays the source of truth until migration | D-018                   | Data loss before migration is survivable; see [section 14](#14-backups-accepted-risk) |
-| Workspaces and invitations from the start                                                           | D-019                   | Workspace-owned records carry their workspace ([3.4](#34-workspace-isolation))        |
+| Requirement                                                                                         | Source                    | Effect here                                                                               |
+| --------------------------------------------------------------------------------------------------- | ------------------------- | ----------------------------------------------------------------------------------------- |
+| Catalog Markdown is the source of truth; the agent index is generated from it                       | D-006; owner, O-11; D-059 | [Section 5](#5-catalog-markdown-and-agent-index)                                          |
+| Every fact has a state, source and last-checked time                                                | D-007                     | Stored in the Markdown; indexed for freshness queries                                     |
+| Task status is calculated from linked work and recorded events                                      | D-005; owner, O-4         | Recalculated by the worker; never typed in                                                |
+| Agents connect from outside; no model runs in Shinan                                                | D-008                     | Shinan is an ordinary web service                                                         |
+| GitHub and Forgejo first                                                                            | D-009                     | Webhook intake and reconciliation designed for both                                       |
+| Self-hostable                                                                                       | D-012                     | One image plus PostgreSQL and the Git container's volume ([section 12](#12-self-hosting)) |
+| Git and the skill for the catalog, MCP and the skill for tasks, plugins, launcher later             | D-014, D-063              | [Section 8](#8-how-agents-the-mcp-server-and-plugins-reach-shinan)                        |
+| Public internet, sign-in required                                                                   | D-015                     | [Section 10](#10-security)                                                                |
+| Runs on Musashi; every deployment approved by the owner                                             | D-016; owner, O-83        | [Section 11](#11-deployment-on-musashi)                                                   |
+| Shinan starts empty; the `workspace` repository's catalog stays the source of truth until migration | D-018                     | Data loss before migration is survivable; see [section 14](#14-backups-accepted-risk)     |
+| Workspaces and invitations from the start                                                           | D-019                     | Workspace-owned records carry their workspace ([3.4](#34-workspace-isolation))            |
 
 ## 2. Technology stack
 
@@ -124,12 +124,14 @@ Next.js's [CVE-2025-29927](https://github.com/vercel/next.js/security/advisories
 
 These hold regardless of library choices (**Proposed**):
 
-- **PostgreSQL** as the only stateful component. Reason: one thing to monitor
-  and upgrade; the owner already runs PostgreSQL for mon, Walls, Drawspace and
-  easyshell on Musashi.
-- **One container image, two process roles** (`web` and `worker`). Reason: one
-  person maintains it, one artifact is easy to self-host, and slow git host
-  calls and email sending never delay pages or webhook responses.
+- **PostgreSQL** as the only database. Reason: one thing to monitor and
+  upgrade; the owner already runs PostgreSQL for mon, Walls, Drawspace and
+  easyshell on Musashi. The catalog's Git repositories are the one other
+  store (D-059, [4.1](#41-postgresql-holds-everything)).
+- **One container image, three process roles** (`web`, `worker` and `git`).
+  Reason: one person maintains it, one artifact is easy to self-host, and
+  slow git host calls and email sending never delay pages or webhook
+  responses; Git runs apart from everything else (D-065).
 - **Server-sent events (SSE)** for live updates to browsers and plugins. Reason:
   one-way push over HTTPS is enough (clients send with normal requests), and
   Caddy flushes `text/event-stream` responses immediately
@@ -153,8 +155,6 @@ log.
 
 ### 3.1 Components
 
-> **Changing with the [Git-based catalog](build-plan-git-catalog.md):** the Git container joined the components in GC-1 ([D-065](decisions/D-065-git-container-and-service-token.md)); `web` reaches it in GC-2, and the catalog's text moved out of PostgreSQL into its repositories in GC-6 (`migrate` reaches it for that move). Until GC-11, the rest of this section describes M2 as built (v0.3.0).
-
 ```mermaid
 flowchart LR
   subgraph OUT[Outside]
@@ -173,6 +173,7 @@ flowchart LR
     subgraph WEB[web process]
       UI[Pages]
       API[REST API]
+      GE[Git endpoint /git/]
       MCP[MCP endpoint /mcp]
       AUTH[Sign-in]
       WH[Webhook intake]
@@ -183,13 +184,15 @@ flowchart LR
     GIT[git process: catalog repositories]
   end
   B --> C
+  CT -->|Git over HTTPS, /git/| C
   CT -->|MCP over HTTPS| C
   PL -->|reports, stream| C
   CLI --> C
   GH -->|webhooks| C
   FJ -->|webhooks| C
-  C --> UI & API & MCP & AUTH & WH & SSE
-  UI & API & MCP & AUTH & WH & SSE --> DB
+  C --> UI & API & GE & MCP & AUTH & WH & SSE
+  UI & API & GE & MCP & AUTH & WH & SSE --> DB
+  GE & UI -->|service token| GIT
   WK --> DB
   WK -->|service token| GIT
   WK -->|API calls, reconciliation| GH
@@ -197,20 +200,21 @@ flowchart LR
   WK -->|magic links, invitations| SES
 ```
 
-| Component      | Role                                                                                                                                                   | Status                                                                             |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------- |
-| Pages          | The catalog pages, task pages, timeline, board and settings ([human experience](human-experience.md)).                                                 | Proposed                                                                           |
-| REST API       | JSON over HTTPS for the CLI, plugins and the pages.                                                                                                    | Proposed. Reason: one API for every client keeps behavior consistent.              |
-| MCP endpoint   | Agent actions over MCP ([8.1](#81-mcp-server)).                                                                                                        | Decided that it exists (D-014); location proposed.                                 |
-| Sign-in        | GitHub sign-in and email magic links; agent registration ([identity](identity.md)).                                                                    | Methods decided (owner, N-7); design owned by identity                             |
-| Webhook intake | Receives git host webhooks ([section 6](#6-git-host-intake-webhooks-and-reconciliation)).                                                              | Decided that webhooks are used (plan, Integration points).                         |
-| Live streams   | SSE for browsers (timeline updates) and plugins (nudge offers).                                                                                        | Proposed                                                                           |
-| Worker         | Background jobs, including email ([section 7](#7-background-jobs)).                                                                                    | Proposed                                                                           |
-| PostgreSQL     | All data ([section 4](#4-storage)).                                                                                                                    | Proposed                                                                           |
-| Git container  | The catalog's Git repositories, one per workspace, on its own volume; answers only the other roles, with the service token ([3.2](#32-process-model)). | Decided (owner, GQ-1, [D-065](decisions/D-065-git-container-and-service-token.md)) |
+| Component      | Role                                                                                                                                                         | Status                                                                             |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------- |
+| Pages          | The catalog pages, task pages, timeline, board and settings ([human experience](human-experience.md)).                                                       | Proposed                                                                           |
+| REST API       | JSON over HTTPS for the CLI, plugins and the pages.                                                                                                          | Proposed. Reason: one API for every client keeps behavior consistent.              |
+| Git endpoint   | Agents clone, fetch and push the catalog at `/git/<workspace ID>.git`; `web` authenticates them and forwards to the Git container ([8.5](#85-git-endpoint)). | Decided (owner, GD-1, GQ-1; D-059, D-065)                                          |
+| MCP endpoint   | Agent actions over MCP ([8.1](#81-mcp-server)): for tasks; one tool, `workspace_context`, until M3.                                                          | Decided that it exists (D-014), not for the catalog (D-063); location proposed.    |
+| Sign-in        | GitHub sign-in and email magic links; agent registration ([identity](identity.md)).                                                                          | Methods decided (owner, N-7); design owned by identity                             |
+| Webhook intake | Receives git host webhooks ([section 6](#6-git-host-intake-webhooks-and-reconciliation)).                                                                    | Decided that webhooks are used (plan, Integration points).                         |
+| Live streams   | SSE for browsers (timeline updates) and plugins (nudge offers).                                                                                              | Proposed                                                                           |
+| Worker         | Background jobs, including email ([section 7](#7-background-jobs)).                                                                                          | Proposed                                                                           |
+| PostgreSQL     | All data ([section 4](#4-storage)).                                                                                                                          | Proposed                                                                           |
+| Git container  | The catalog's Git repositories, one per workspace, on its own volume; answers only the other roles, with the service token ([3.2](#32-process-model)).       | Decided (owner, GQ-1, [D-065](decisions/D-065-git-container-and-service-token.md)) |
 
-**Proposed:** pages, REST API and MCP endpoint all call one shared application
-layer, which enforces permissions, applies the rules other documents set (for
+**Proposed:** pages, REST API, the Git endpoint and the MCP endpoint all call
+one shared application layer, which enforces permissions, applies the rules other documents set (for
 example which sources may create nudges) and writes events. Reason: an action
 must behave and be credited the same through every path, and a rule enforced in
 one place cannot be bypassed through another.
@@ -251,10 +255,12 @@ no shell. As built (GC-1b,
   only with `Authorization: Bearer <service token>`, compared in constant
   time; any other request gets `401` and nothing else, the context header
   unread. Calls go one way: `web`, `worker` and `migrate` call it; it calls
-  nobody and writes nothing to PostgreSQL. In GC-1b only `worker` calls it
-  (to create repositories); `web` joins in GC-7 (to read a page's
-  history, its source, the README and Recent changes, at the index's commit) and GC-2 (the
-  Git endpoint), and `migrate` in GC-6. A person holds at most 2 of
+  nobody and writes nothing to PostgreSQL. `worker` calls it to create
+  repositories, read `main` for the index and store its journal; `web` to
+  forward agents' Git requests ([8.5](#85-git-endpoint)), read a page's
+  history, its source, the README and Recent changes (at the index's
+  commit), store the journal after each push and run a purge; `migrate`
+  only for the move into Git on the upgrade to 0.4. A person holds at most 2 of
   `web`'s reads for the catalog pages at once (4 per network address), so
   one browser can't take the container's 4 reads from the index updates.
   History and Recent changes page by cursors `web` signs (HMAC with the
@@ -273,8 +279,9 @@ no shell. As built (GC-1b,
   `GET`/`PUT /repositories/<workspace ID>` (`main`'s commit; create with a
   first commit by Shinan, once), `GET …/tree`, `POST …/documents`,
   `GET …/diff` and `GET …/history` of `main` or a full commit ID, and
-  `GET /journal` and `POST /journal/acknowledge`. The smart HTTP paths join
-  it in GC-2. A context header (`Shinan-Git-Context`, base64url JSON, at most
+  `GET /journal` and `POST /journal/acknowledge`; the smart HTTP paths of
+  [8.5](#85-git-endpoint) and the purge API (`POST …/purges`,
+  [4.4](#44-purge)). A context header (`Shinan-Git-Context`, base64url JSON, at most
   64 KiB and 100 allowed values) is read only after the token is checked.
 - **One request stays small, whatever a repository holds:**
   - **Documents** are streamed, one at a time as the reader takes them, at
@@ -343,6 +350,7 @@ no shell. As built (GC-1b,
 | Caller              | Endpoint                                    | Credential                                                          | Status                                                                              |
 | ------------------- | ------------------------------------------- | ------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
 | Person in a browser | Pages, REST API, live stream                | Sign-in session cookie, after GitHub sign-in or an email magic link | Methods decided (owner, N-7)                                                        |
+| Coding tool (Git)   | `/git/<workspace ID>.git`                   | Agent token as the password of HTTP Basic, from a credential helper | Decided (owner, GD-4; D-061) ([8.5](#85-git-endpoint))                              |
 | Coding tool (MCP)   | `/mcp`                                      | Agent token as `Authorization: Bearer`                              | Decided (owner, O-44, NO-1) ([8.1](#81-mcp-server))                                 |
 | CLI, plugin         | REST API, plugin stream                     | The same agent token                                                | Decided (owner, NO-1)                                                               |
 | GitHub              | Webhook intake, one app-level URL           | The GitHub App's webhook secret                                     | Proposed ([6.1](#61-webhook-intake))                                                |
@@ -446,7 +454,14 @@ its shape to this document and [human experience](human-experience.md).
 
 ### 4.1 PostgreSQL holds everything
 
-> **Changing with the [Git-based catalog](build-plan-git-catalog.md):** the catalog moves to Git repositories on the Git container's volume (D-059). As built (GC-1b): that volume (`SHINAN_CATALOG_DIR`) is the one other store. It holds one bare repository per workspace, made with the workspace and a first commit by Shinan holding `README.md`, and the Git container's journal ([4.2](#42-kinds-of-data)); only the Git container mounts it ([3.2](#32-process-model)). The catalog's text moves into the repositories in GC-6; until then, the rest of this section describes M2 as built (v0.3.0).
+PostgreSQL holds everything except the catalog's text. **Decided** (owner,
+GD-1, [D-059](decisions/D-059-catalog-in-git-hosted-by-shinan.md)): the
+catalog lives in Git, on the Git container's volume (`SHINAN_CATALOG_DIR`),
+the one other store. It holds one bare repository per workspace, made with
+the workspace with a first commit by Shinan holding `README.md`, and the Git
+container's journal ([4.2](#42-kinds-of-data)); only the Git container mounts
+it ([3.2](#32-process-model)). From v0.4.0 the catalog's text is no longer
+in PostgreSQL (GC-6).
 
 **Proposed.** Search uses PostgreSQL full-text search
 ([docs](https://www.postgresql.org/docs/current/textsearch.html)) at first.
@@ -463,25 +478,24 @@ needs uploads; catalog pages are text and work items are links. **Open** until
 
 ### 4.2 Kinds of data
 
-> **Changed with the [Git-based catalog](build-plan-git-catalog.md):** catalog documents are Git objects in the workspaces' repositories since the move (GC-6), and the push log joins the records (GC-3). The rows marked GC-1b and GC-6 are built.
-
-| Data                                                                                                                                                                                                                                                                                                             | Rebuildable if lost?                                                                                                | Retention                          | Status                                                                                                        |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| M2's catalog revisions (the Markdown text) and catalog proposals: **dropped in v0.4.0** once moved into the repositories (GC-6)                                                                                                                                                                                  | No ([14](#14-backups-accepted-risk))                                                                                | Until v0.4.0                       | As built (GC-6)                                                                                               |
-| The record of each workspace's move into Git (GC-6, `catalog_moves`): M2's revision, the documents moved, the first commit, when it was verified, the proposals left waiting (numbers and IDs) and the problems reported (codes and IDs)                                                                         | No                                                                                                                  | Forever                            | As built (GC-6)                                                                                               |
-| Agent index and all other catalog-derived data                                                                                                                                                                                                                                                                   | Yes, from `main` of the workspace's repository ([5.3](#53-how-sync-works))                                          | Replaced on each revision          | Proposed                                                                                                      |
-| Catalog repositories (GC-1b): one bare Git repository per workspace, on the Git container's volume; `catalog_repositories` in PostgreSQL records each one's first commit                                                                                                                                         | No; clones hold partial copies ([Git-based catalog plan §2.11](build-plan-git-catalog.md#211-backups-and-recovery)) | Forever, except purge              | Decided (owner, GD-1)                                                                                         |
-| The Git container's journal (GC-1b): entries for PostgreSQL, one file each, beside the repositories ; numbers never reused; a damaged entry ends a read page after the good entries before it, and the next read and any acknowledgement stop at its number (an error, never a skip); it is kept for an operator | Not needed once `web` has stored and acknowledged them                                                              | Deleted when acknowledged          | Decided with the plan ([§2.6](build-plan-git-catalog.md#26-the-push-log-and-events))                          |
-| Tasks, subtasks, comments, progress updates, manual states, task flag definitions                                                                                                                                                                                                                                | No                                                                                                                  | Forever                            | Proposed                                                                                                      |
-| Workspaces, people, members, invitations, email allowlist, agents, token hashes                                                                                                                                                                                                                                  | No                                                                                                                  | Until deleted                      | Proposed                                                                                                      |
-| Events (the timeline)                                                                                                                                                                                                                                                                                            | Partly: git host events can be re-read by reconciliation within what each host's API returns                        | Forever, except purge              | Proposed                                                                                                      |
-| Security log                                                                                                                                                                                                                                                                                                     | No                                                                                                                  | Forever (**Decided**, owner, O-47) | No entry can ever be purged (**Decided**, owner, N-8, N-13); see [4.4](#44-purge)                             |
-| Repositories and work items (cached state)                                                                                                                                                                                                                                                                       | Yes, by reconciliation                                                                                              | Kept while covered                 | Proposed                                                                                                      |
-| Raw webhook deliveries                                                                                                                                                                                                                                                                                           | Not needed after processing                                                                                         | 14 days, then deleted              | Proposed. Reason: long enough to replay after a bug fix; follows "link, don't copy" (D-001).                  |
-| Presence                                                                                                                                                                                                                                                                                                         | No, but short-lived by nature                                                                                       | Current state plus presence events | Proposed                                                                                                      |
-| Job records, including sent email metadata                                                                                                                                                                                                                                                                       | Not needed                                                                                                          | 7 days after completion            | Proposed. Reason: enough to debug recent failures.                                                            |
-| Notification records (what was sent to whom, when, outcome; no message body)                                                                                                                                                                                                                                     | Not needed                                                                                                          | 90 days                            | Proposed. Reason: a person can see why they received something; long enough to explain a missed notification. |
-| GitHub App private key, webhook secrets, Forgejo tokens                                                                                                                                                                                                                                                          | No (must be re-entered)                                                                                             | Until removed                      | Proposed; encrypted, see [10.3](#103-secrets-and-credentials)                                                 |
+| Data                                                                                                                                                                                                                                                                                                                                                                          | Rebuildable if lost?                                                                                                | Retention                          | Status                                                                                                        |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| M2's catalog revisions (the Markdown text) and catalog proposals: **dropped in v0.4.0** once moved into the repositories (GC-6)                                                                                                                                                                                                                                               | No ([14](#14-backups-accepted-risk))                                                                                | Dropped by v0.4.0                  | As built (GC-6)                                                                                               |
+| The record of each workspace's move into Git (GC-6, `catalog_moves`): M2's revision, the documents moved, the first commit, when it was verified, the proposals left waiting (numbers and IDs) and the problems reported (codes and IDs)                                                                                                                                      | No                                                                                                                  | Forever                            | As built (GC-6)                                                                                               |
+| Agent index and all other catalog-derived data                                                                                                                                                                                                                                                                                                                                | Yes, from `main` of the workspace's repository ([5.3](#53-how-sync-works))                                          | Updated after each push to `main`  | As built (GC-4)                                                                                               |
+| Catalog repositories (GC-1b): one bare Git repository per workspace, on the Git container's volume; `catalog_repositories` in PostgreSQL records each one's first commit                                                                                                                                                                                                      | No; clones hold partial copies ([Git-based catalog plan §2.11](build-plan-git-catalog.md#211-backups-and-recovery)) | Forever, except purge              | Decided (owner, GD-1); as built (GC-1b)                                                                       |
+| The Git container's journal (GC-1b): entries for PostgreSQL, one file each, beside the repositories ; numbers never reused; a damaged entry ends a read page after the good entries before it, and the next read and any acknowledgement stop at its number (an error, never a skip); it is kept for an operator                                                              | Not needed once `web` has stored and acknowledged them                                                              | Deleted when acknowledged          | Decided with the plan ([§2.6](build-plan-git-catalog.md#26-the-push-log-and-events))                          |
+| The push log (GC-3): every push that reached the hook (`catalog_pushes`), its refs (`catalog_push_refs`), each commit's first push (`catalog_commit_first_pushes`), when commits reached `main` (`catalog_main_arrivals`); the values owners allowed as "not a secret" (`catalog_allowed_values`, fingerprints only); history rewrites (`catalog_rewrites`, `catalog_purges`) | No                                                                                                                  | Forever, except purge              | As built (GC-3, GC-8; [identity §11](identity.md#11-audit))                                                   |
+| Tasks, subtasks, comments, progress updates, manual states, task flag definitions                                                                                                                                                                                                                                                                                             | No                                                                                                                  | Forever                            | Proposed                                                                                                      |
+| Workspaces, people, members, invitations, email allowlist, agents, token hashes                                                                                                                                                                                                                                                                                               | No                                                                                                                  | Until deleted                      | Proposed                                                                                                      |
+| Events (the timeline)                                                                                                                                                                                                                                                                                                                                                         | Partly: git host events can be re-read by reconciliation within what each host's API returns                        | Forever, except purge              | Proposed                                                                                                      |
+| Security log                                                                                                                                                                                                                                                                                                                                                                  | No                                                                                                                  | Forever (**Decided**, owner, O-47) | No entry can ever be purged (**Decided**, owner, N-8, N-13); see [4.4](#44-purge)                             |
+| Repositories and work items (cached state)                                                                                                                                                                                                                                                                                                                                    | Yes, by reconciliation                                                                                              | Kept while covered                 | Proposed                                                                                                      |
+| Raw webhook deliveries                                                                                                                                                                                                                                                                                                                                                        | Not needed after processing                                                                                         | 14 days, then deleted              | Proposed. Reason: long enough to replay after a bug fix; follows "link, don't copy" (D-001).                  |
+| Presence                                                                                                                                                                                                                                                                                                                                                                      | No, but short-lived by nature                                                                                       | Current state plus presence events | Proposed                                                                                                      |
+| Job records, including sent email metadata                                                                                                                                                                                                                                                                                                                                    | Not needed                                                                                                          | 7 days after completion            | Proposed. Reason: enough to debug recent failures.                                                            |
+| Notification records (what was sent to whom, when, outcome; no message body)                                                                                                                                                                                                                                                                                                  | Not needed                                                                                                          | 90 days                            | Proposed. Reason: a person can see why they received something; long enough to explain a missed notification. |
+| GitHub App private key, webhook secrets, Forgejo tokens                                                                                                                                                                                                                                                                                                                       | No (must be re-entered)                                                                                             | Until removed                      | Proposed; encrypted, see [10.3](#103-secrets-and-credentials)                                                 |
 
 ### 4.3 Events
 
@@ -503,9 +517,9 @@ The glossary and the [catalog](catalog.md) call this operation **purge**.
 their workspace (raw webhook deliveries, job records); installation operators
 cannot purge (**Decided**, owner, O-50).
 
-**How (Proposed):** one narrow operation for events, catalog revisions,
-comments, progress updates, raw webhook deliveries and job records of one
-workspace:
+**How (Proposed):** one narrow operation for events, the catalog's history
+(below), comments, progress updates, raw webhook deliveries and job records
+of one workspace:
 
 - The content is replaced by a marker. The record stays, with its time, kind,
   actor and subjects, so history keeps its shape.
@@ -514,9 +528,10 @@ workspace:
 - Derived data (search text, agent index rows) is rebuilt. Since the
   catalog moved into Git, its history is rewritten on the server (below;
   owner, GD-11).
-- Copies outside Shinan's control are reported, not assumed clean: workspace
-  exports downloaded earlier ([5.5](#55-export-and-import)), and the host's own
-  backups, if any. The purge screen says so.
+- Copies outside Shinan's control are reported, not assumed clean: agents'
+  clones of the catalog, workspace exports downloaded earlier
+  ([5.5](#55-export-and-import)), and the host's own backups, if any. The
+  purge screen says so.
 - **Security log:** kept forever (owner, O-47), and no entry, installation-level
   or workspace-level, can ever be purged (**Decided**, owner, N-8, N-13,
   [#25](https://github.com/guneet-xyz/shinan/issues/25)). A person's deletion
@@ -731,66 +746,59 @@ the Git container is never called inside a database transaction:
 
 ## 5. Catalog Markdown and agent index
 
-> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-3](build-plan-git-catalog.md#gc-3-push-checks-and-the-push-log)): the invariant holds for `main`'s files, and checks run on push instead of in a proposal. The agent index is built from `main` already ([5.3](#53-how-sync-works), "As built (GC-4)"), and pushes are checked and logged ("As built (GC-3a)"); the checks of `main` come with GC-3b. The rest of this section describes M2 as built (v0.3.0).
-
-The [catalog document](catalog.md) owns the schema, fact format, catalog
-proposals and their operations, conflict rules, approval classes (owner, O-3)
-and the index format. This section owns how the text and the index are kept in
-step.
+The [catalog document](catalog.md) owns the schema, fact format, the checks
+on push and the index format. This section owns how the repositories, the
+checks and the index are kept in step.
 
 ### 5.1 Decided
 
-- Each catalog revision's Markdown text is the source of truth; everything else
-  is rebuilt from it (**Decided**, owner, O-11). Revisions live in
-  **PostgreSQL only**: there is no Git mirror for now; it is left for later
-  (**Decided**, owner, N-5, [#25](https://github.com/guneet-xyz/shinan/issues/25)). This replaces O-11's "always-on mirror".
-- Catalog proposals and review happen inside Shinan (**Decided**, owner, O-12).
+- The Markdown text of the documents on `main` of each workspace's catalog
+  repository is the source of truth; everything else is rebuilt from it
+  (**Decided**, owner, O-11). The repositories are Git, hosted by Shinan
+  (**Decided**, owner, GD-1, [D-059](decisions/D-059-catalog-in-git-hosted-by-shinan.md),
+  replacing N-5's "PostgreSQL only, no Git mirror for now").
+- Agents change the catalog by pushing; Shinan checks every push before Git
+  keeps it, and there is no catalog approval (**Decided**, owner, GD-2,
+  GD-10, [D-060](decisions/D-060-no-catalog-approval.md), replacing O-12's
+  review inside Shinan). Pushes are authenticated by the agent token and
+  recorded in a push log ([D-061](decisions/D-061-push-authentication-and-push-log.md),
+  [D-066](decisions/D-066-by-names-the-first-pusher.md)).
 - Custom entity types are allowed in the first version; the eight built-in
   types are defaults (**Decided**, owner, O-17).
 
 ### 5.2 The invariant
 
-**Proposed**; reason: this is what O-11 means in a system where changes arrive
-as operations.
+**Proposed**; reason: this is what O-11 means in a system where agents push
+text.
 
-1. **The stored Markdown text of each revision is the source of truth. Nothing
-   else is authoritative.** Every applied catalog revision is a set of Markdown
-   documents. The agent index, search text, relation lists, freshness queries,
-   the catalog pages' rendering and workspace exports are derived from that text.
-2. **Operations are applied as text edits.** Applying a catalog proposal's
-   operation edits the previous revision's text, changing only the bytes it
-   targets and leaving every other byte as it was. Shinan never renders a
-   document anew from structured rows. Reason: otherwise the rows would be the
-   real source of truth.
-3. **The index is built only from stored text,** by parsing the full new text,
-   never from the operations themselves.
-4. **One transaction.** Writing the new text, replacing the entity's index rows,
-   running the catalog's per-operation conflict check (including its check for
-   secret-looking values) and appending the event happen in one database
-   transaction. If any step
-   fails, nothing is applied.
+1. **The files on `main` are the source of truth. Nothing else is
+   authoritative.** The agent index, search text, relation lists, freshness
+   queries and the catalog pages' rendering are derived from that text.
+2. **Shinan never writes a document from structured rows.** Documents change
+   only by commits: agents' pushes, and Shinan's own commits (a repository's
+   first commit, the move into Git and a purge's rewrite). Reason: otherwise
+   the rows would be the real source of truth.
+3. **The index is built only from `main`'s text,** by parsing it.
+4. **Checked before kept.** A push is checked in Git's `pre-receive` hook
+   while its objects wait in quarantine; one blocking problem refuses the
+   whole push, and nothing of it is kept. The push log and the index follow
+   the accepted update through the Git container's journal, so a push Git
+   applied is recorded even if `web` stopped meanwhile.
 5. **Round-trip test.** Automated tests, and a daily job on real data, check
-   that text → parse → apply no operations → text is byte-for-byte unchanged,
-   and that text → parse → index equals the stored index. Differences are
-   reported as a metric and to the installation operator.
+   that text → parse → index equals the stored index. Differences are
+   reported in the log and to the installation operator.
 6. **Only the indexer writes the index.**
 
-Because every revision keeps its full text, a Git mirror can be added later
-(N-9) by generating commits from stored revisions, without changing this
-invariant (**Proposed**).
-
-Custom entity types (O-17) do not change this: a workspace's type definitions
-are themselves stored data that the same parser reads when validating and
-indexing (**Proposed**).
+Custom entity types (O-17) do not change this: a workspace's type schema
+documents are themselves files on `main` that the same parser reads when
+validating and indexing (**Proposed**).
 
 ### 5.3 How sync works
 
-- **Every change is a new revision.** A revision stores the full text of each
-  entity it changed, its author (actor and attribution), the catalog proposal
-  it came from and the revision it was based on. The "based on" revision is for
-  history and display; conflicts are decided per operation by the catalog's
-  rules. **Proposed.** Reason: revision-level conflicts would make two agents
-  rechecking different facts of one entity conflict all the time.
+- **Every change is a commit.** Git keeps each version; the push log records
+  which agent and person first pushed each commit and when it reached `main`
+  ([D-061](decisions/D-061-push-authentication-and-push-log.md)). Conflicts
+  are Git merges ([catalog §8.5](catalog.md#85-conflicts-as-git-merges)).
 - **Parser versions and rebuilds.** Each index row records the parser version
   that produced it. When a release changes the parser, the worker rebuilds the
   index from `main`, and the agent index reports that it is behind until done.
@@ -940,113 +948,21 @@ indexing (**Proposed**).
     word provenance replayed, which the index no longer does.) Reason: a job
     waiting seconds delays sign-in links and invitations; yields are cheaper
     and simpler than moving the work to a worker thread.
-- **As built (M2-4, [#86](https://github.com/guneet-xyz/shinan/issues/86)),
-  decided (owner, 2026-11-19, M2-Q17):**
-  - **Proposals and revisions.** A catalog proposal is stored with its
-    operations, author, explanation, approval classes and state. A
-    revision records the proposal it applied, the revision that proposal
-    was made against and, when it needed catalog approval, the approving
-    person. These revision columns are nullable: revisions are never
-    edited, so they could not be filled in for revisions stored before them.
-  - **Turns, then a short write.** Making or approving a proposal takes
-    a turn in its workspace's queue, first come first served. In its turn
-    it reads the latest revision (its number and each document's revision)
-    in a short read, the catalog worker applies, validates and classifies
-    the operations with no transaction open, and a short transaction takes
-    the workspace's index lock, then the proposal row, checks that no other
-    revision came first and stores the result. Within a process nothing
-    else stores a revision during a turn, so no proposal works on a
-    revision that is already out of date, and proposals are served in the
-    order they came (measured: six agents proposing as fast as they could
-    each had the same number applied, every one on the revision it read).
-    A revision stored by another process meanwhile makes the turn start
-    over, up to five times, then the author is told to send it again. A
-    proposal never holds a database connection or a lock while it waits
-    for or runs in the worker; per-operation expectations decide conflicts
-    (catalog §8.5).
-  - **Catalog workers.** Parsing, applying (`applyOperations`),
-    validation and approval classes run in worker threads (security
-    checklist 10.8), one by default (`SHINAN_CATALOG_WORKERS`). Each keeps
-    one workspace's catalog parsed, by document and revision; turns take
-    the workers first come first served across workspaces, and a workspace
-    without a worker takes over the one least recently used. Numbers, all
-    **decided** (owner,
-    2026-11-19, M2-Q16):
-    - **Loading is not charged to a proposal.** Stored texts a worker has
-      not parsed (after a start, a restart, a switch of workspace or a
-      change) are read in short reads of 100 and parsed in batches of at
-      most 512 KiB of text, each with its own 60-second limit, and kept as
-      they come. Then the latest revision is validated, with a 60-second
-      limit of its own: every document after a start, only what another
-      process's revision can affect otherwise. A proposal's 20-second limit
-      starts after that.
-    - **A proposal past its limit** stops only its own workspace's worker;
-      the next proposal there loads that catalog again.
-    - **Kept validation** ([#116](https://github.com/guneet-xyz/shinan/issues/116)).
-      Each worker also keeps the validation of its workspace's latest
-      revision, so a proposal validates only the documents it can affect
-      (catalog §8.3, "Cost"), and the secret check's findings for each
-      document text, by its SHA-256, so a document validated again (an
-      entity of a type whose schema changed, a referrer) is not scanned
-      again; scanning is most of validating long prose. A proposal ready to
-      store leaves its parsed documents and the validation of the catalog
-      it would make; the next proposal keeps them if it finds them stored,
-      telling so by the stored text, never by revision numbers, and drops
-      them otherwise (the proposal waits for approval, its transaction
-      rolled back, or another process stored a revision first and the turn
-      starts over). Any revision's validation gives the same result, so
-      keeping the latest only saves work. Scans are kept only for the texts
-      of the kept validations. All of it is dropped with the worker (a time
-      limit, out of memory, a new workspace taking it over), when documents
-      are evicted for the cache's budget, and by `CatalogWorkers.forget`,
-      which purge needs because it rewrites stored text in place (to call
-      within the workspace's turn). A new parser or rules version comes with
-      new code, so with new processes and empty workers.
-    - **Memory.** `estimatedBytes` estimates each document: parsed, 3 ×
-      text bytes + 1,792 × facts + 2,048 × fact check groups + 256 × body
-      sections + 128 × body links + 8 KiB; and what its validation keeps,
-      256 × problems + 384 × secrets found + 256 × names referenced, from
-      the counts of the validations a proposal makes. Both are above the
-      heap measured for every shape tried (the least an entity holds, small
-      and typical entities, 100 long-form facts in one check group or each
-      in its own, 365 short facts, prose with and without dead links, 2,000
-      dead links to one name or each to its own, 1,000 suspected secrets),
-      by 1.25 to 2.75 times. Each worker's parse cache is limited to
-      384 MiB of parsed documents. The worker's heap is limited to 768 MiB
-      (`resourceLimits`, `SHINAN_CATALOG_WORKER_HEAP_MB`, at least 640 MiB);
-      one out of memory is stopped like one out of time. A workspace's
-      catalog is limited to 20,000 documents, 50 MiB of text and an
-      estimate of 320 MiB with its validation (catalog §8.2). Measured on
-      Daedalus under a load of 6 to 10 on 2 cores, at those limits:
-      validating the latest revision while loading took 1 to 6 s; a
-      one-field change 0.1 to 2 s, most of it applying the operations, which
-      reads the catalog's entities twice; extending the type of every
-      document 0.1 to 1.3 s; and every shape ran within a 384 MiB heap,
-      keeping 65 to 263 MiB. Through the database, after a restart, 20,000
-      small documents took 27 s to the first proposal, almost all of it
-      reading and parsing, and 1,000 documents of 49 KB of prose 7 s to
-      extend their type.
-    - **A catalog that no longer fits** (only if the estimate were wrong)
-      makes proposals there fail with `catalog-too-large`; the `web` log
-      and the workspace's security log say so, and the operator raises the
-      heap until the workspace shrinks its catalog (operator guide).
-    - **Queues.** At most 8 requests per workspace and 32 in all may run
-      or wait; beyond that a request is refused at once as busy, to send
-      again in a few seconds. Agents also have a proposal rate limit
-      (60 in 10 minutes), counted when a proposal's turn comes, so a
-      refusal as busy does not count.
-    - Results come back as the new texts, already parsed, which the indexer
-      reuses.
-- **Fact checks.** A recheck that changes only the last-checked time is still a
-  text edit and a new revision, and also an event. **Proposed.** Reason: no fact
-  data may live outside the text.
+- **M2's write path is gone (GC-5, v0.4.0).** M2 (v0.3.0) applied catalog
+  proposals as text edits in a pool of catalog worker threads
+  (`SHINAN_CATALOG_WORKERS`, `SHINAN_CATALOG_WORKER_HEAP_MB`) and stored each
+  revision's text in PostgreSQL; the [M2 build plan](build-plan-m2.md) and
+  this document's history describe it. Its parser, validation and secret
+  check are kept and run on push (below).
+- **Fact checks.** A recheck that changes only the last-checked time is a
+  commit like any other, and an event once it reaches `main`. Reason: no
+  fact data may live outside the text.
 
-**Expected volume (estimate, not a measurement).** The `workspace` repository's
-catalog is 36 files, about 124 KB, with 73 commits touching it in its first 10
-days (read 2026-11-16). If each change rewrote two entities of about 4 KB, that
-is under 25 MB of revision text a year; ten times more, from frequent rechecks,
-is still well under a gigabyte. **Proposed:** store full text per revision; revisit
-only if measured growth requires it.
+**Expected volume (estimate, not a measurement).** The `workspace`
+repository's catalog is 36 files, about 124 KB, with 73 commits touching it
+in its first 10 days (read 2026-11-16). Git stores each version compressed,
+so years of such changes stay well under the repository limit of 1 GiB
+([Git-based catalog plan §2.10](build-plan-git-catalog.md#210-limits)).
 
 - **As built (GC-3a, [#165](https://github.com/guneet-xyz/shinan/issues/165)):
   changes arrive as pushes, checked in the Git container** ([plan §2.5,
@@ -1178,8 +1094,8 @@ only if measured growth requires it.
 ### 5.4 Importing the `workspace` repository's catalog
 
 **Proposed:** a one-time importer reads a folder of Markdown with frontmatter,
-such as the `workspace` repository's catalog, and creates catalog proposals for
-review. Each imported document gets the `imported_from` field (source path and
+such as the `workspace` repository's catalog, and writes it to the catalog
+repository as Shinan's own commit, checked as a push would be. Each imported document gets the `imported_from` field (source path and
 revision) that [catalog](catalog.md) §2.3 defines; the importer sets it once and
 nothing changes it afterwards. When the `workspace` repository moves over is
 owned by the [roadmap](roadmap.md) (D-018).
@@ -1188,41 +1104,41 @@ owned by the [roadmap](roadmap.md) (D-018).
 
 A full export of a workspace (catalog, tasks and their records) and import back
 into an empty workspace are in the first version (**Decided**, owner, O-75; the
-[roadmap](roadmap.md) needs them for its exit and rollback criterion).
-**Proposed** machinery:
+[roadmap](roadmap.md) needs them for its exit and rollback criterion). Not
+built yet (cut line, before G2). The catalog's part is its repository
+([catalog §2.2](catalog.md#22-the-repository-the-exit-path)). **Proposed**
+machinery:
 
 - **Started by a workspace owner** after re-authentication ([identity](identity.md)
   §3.3), built by the worker, and offered as a single download behind sign-in.
   The export is recorded in the security log.
 - **Format:** one archive file. At its top, a generated `manifest.json` names
-  the export format version, the installation, the workspace, the catalog
-  revision and the time it was taken. **Proposed.** Reason: an importer must
+  the export format version, the installation, the workspace, the commit of
+  `main` and the time it was taken. **Proposed.** Reason: an importer must
   know what it is reading before it reads it.
-- **The catalog part** is the `catalog/` folder, written exactly in the layout
-  [catalog](catalog.md) §2.2 defines, including `catalog/history.jsonl`. This
-  document does not restate that layout. The entity files are the stored text of
-  the latest revision, byte for byte ([5.2](#52-the-invariant)), and
-  `history.jsonl` is written from the stored revisions.
-- **Everything else** sits beside `catalog/` as JSON Lines files, one record per
-  line: catalog proposals; tasks with their subtasks, work links and comments;
-  and events. **Proposed.** Reason: the same machine-readable form as
-  `catalog/history.jsonl`, and easy to read without Shinan.
+- **The catalog part** is a Git bundle of the catalog repository, with the
+  push log beside it, so the documents and their whole history come out
+  byte for byte ([5.2](#52-the-invariant)).
+- **Everything else** sits beside it as JSON Lines files, one record per
+  line: tasks with their subtasks, work links and comments; and events.
+  **Proposed.** Reason: easy to read without Shinan.
 - **Not included:** git host credentials, webhook secrets and token hashes,
   which are set up again after an import.
 - **Import** recreates the workspace in an empty one, on the same or another
   installation, started by a workspace owner of the empty workspace after
-  re-authentication. It rebuilds the catalog's revisions from
-  `catalog/history.jsonl`, so the catalog and its history come back exactly, as
-  catalog §2.2 requires; `imported_from` values are kept as they were. It then
-  runs the round-trip test ([5.2](#52-the-invariant)) and checks that the entity
-  files match the last revision in the history.
-- Reason: with no Git mirror (N-5) and no backups (O-62), a recent export is the
-  only copy of a workspace that a person can take off the machine
-  ([section 14](#14-backups-accepted-risk)).
+  re-authentication. It restores the catalog repository from the bundle as
+  Shinan's own commits, not as an agent's push (the `by` rule would refuse
+  old fact checks), so the catalog and its history come back exactly;
+  `imported_from` values are kept as they were. It then runs the round-trip
+  test ([5.2](#52-the-invariant)).
+- Reason: with no backups (O-62), a recent export is the only copy of a
+  workspace's tasks that a person can take off the machine; for the catalog,
+  agents' clones are partial copies too ([section 14](#14-backups-accepted-risk)).
 
-A Git store or mirror was considered and set aside: storing text only in a Git
-repository would need two stores kept consistent, and the always-on mirror was
-dropped for now (**Decided**, owner, N-5, [#25](https://github.com/guneet-xyz/shinan/issues/25)).
+Storing the catalog in Git was first set aside (N-5) and then decided by the
+owner (GD-1, [D-059](decisions/D-059-catalog-in-git-hosted-by-shinan.md)):
+the repositories are the only store of the catalog's text, so there are not
+two stores to keep consistent.
 
 ## 6. Git host intake: webhooks and reconciliation
 
@@ -1295,8 +1211,6 @@ slow, and a click or an MCP call should not fail because of them.
 
 ## 7. Background jobs
 
-> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-3](build-plan-git-catalog.md#gc-3-push-checks-and-the-push-log)): reading the Git container's journal. The agent index's jobs are built (GC-4).
-
 **Proposed:** a PostgreSQL-backed job queue with these properties:
 
 - Jobs are added in the same transaction as the change that needs them.
@@ -1305,32 +1219,34 @@ slow, and a click or an MCP call should not fail because of them.
   operator, with a manual "retry".
 - Scheduled jobs run once across all worker copies.
 
-| Job                                                                                     | Trigger                                                                                                                                                 | Owner of the rules                                                                                        |
-| --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| Process webhook delivery                                                                | Webhook stored                                                                                                                                          | [Git hosts](git-hosts.md)                                                                                 |
-| Reconciliation layers                                                                   | Schedule, startup gap, on demand                                                                                                                        | [Git hosts](git-hosts.md)                                                                                 |
-| Recalculate task status, including subtasks at any depth (owner, O-21, N-1)             | New event on linked work, a subtask or an agent session                                                                                                 | [Tasks](tasks.md)                                                                                         |
-| Create a task from an outside issue                                                     | Normalized issue event                                                                                                                                  | [Tasks](tasks.md)                                                                                         |
-| Write back to GitHub (never Forgejo, N-4)                                               | Task or work link change                                                                                                                                | [Git hosts](git-hosts.md)                                                                                 |
-| Presence timeouts (`unresponsive`, `offline`, release after silence; owner, O-32)       | Every minute                                                                                                                                            | [Agent integrations](agent-integrations.md)                                                               |
-| Offer and withdraw nudge deliveries, including git host actions a person asks for (N-3) | A nudge is created or withdrawn                                                                                                                         | [Tasks](tasks.md), [agent integrations](agent-integrations.md)                                            |
-| Build a workspace export; run an import                                                 | A workspace owner asks                                                                                                                                  | This document ([5.5](#55-export-and-import))                                                              |
-| Bring the agent index up to `main` (an update from the diff, or a rebuild)              | An accepted update of `main` (queued in the same transaction), a new repository, worker start (catch-up, and rebuilds after a parser change), on demand | This document ([5.3](#53-how-sync-works))                                                                 |
-| Verify the agent index (round-trip check)                                               | Daily at 03:40 UTC                                                                                                                                      | This document ([5.2](#52-the-invariant), [5.3](#53-how-sync-works))                                       |
-| Send email (magic links, invitations, security alerts)                                  | Sign-in, invitation, or a security event identity names                                                                                                 | This document ([section 9](#9-email-and-notifications)); content by [identity](identity.md)               |
-| Build notifications (phase 2)                                                           | A new event that human experience's rules turn into a notification                                                                                      | This document ([9.3](#93-notifications-phase-2)); what is sent by [human experience](human-experience.md) |
-| Send daily notification summaries (phase 2)                                             | Daily, per person, at their chosen hour                                                                                                                 | This document ([9.3](#93-notifications-phase-2))                                                          |
-| Automatic fact checks by Shinan, if adopted                                             | Schedule                                                                                                                                                | [Catalog](catalog.md), [git hosts](git-hosts.md)                                                          |
-| Prune raw webhooks, old job records and old notification records                        | Daily                                                                                                                                                   | This document ([4.2](#42-kinds-of-data))                                                                  |
+| Job                                                                                                 | Trigger                                                                                                                                                 | Owner of the rules                                                                                        |
+| --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| Process webhook delivery                                                                            | Webhook stored                                                                                                                                          | [Git hosts](git-hosts.md)                                                                                 |
+| Reconciliation layers                                                                               | Schedule, startup gap, on demand                                                                                                                        | [Git hosts](git-hosts.md)                                                                                 |
+| Recalculate task status, including subtasks at any depth (owner, O-21, N-1)                         | New event on linked work, a subtask or an agent session                                                                                                 | [Tasks](tasks.md)                                                                                         |
+| Create a task from an outside issue                                                                 | Normalized issue event                                                                                                                                  | [Tasks](tasks.md)                                                                                         |
+| Write back to GitHub (never Forgejo, N-4)                                                           | Task or work link change                                                                                                                                | [Git hosts](git-hosts.md)                                                                                 |
+| Presence timeouts (`unresponsive`, `offline`, release after silence; owner, O-32)                   | Every minute                                                                                                                                            | [Agent integrations](agent-integrations.md)                                                               |
+| Offer and withdraw nudge deliveries, including git host actions a person asks for (N-3)             | A nudge is created or withdrawn                                                                                                                         | [Tasks](tasks.md), [agent integrations](agent-integrations.md)                                            |
+| Create a workspace's catalog repository through the Git container, retrying while it is down        | A new workspace (queued in the same transaction)                                                                                                        | This document ([3.2](#32-process-model))                                                                  |
+| Store the Git container's journal (the push log, events) and compare its branches with the push log | Every minute, besides `web` storing it after each push                                                                                                  | This document ([5.3](#53-how-sync-works)); [identity §11](identity.md#11-audit)                           |
+| Build a workspace export; run an import                                                             | A workspace owner asks                                                                                                                                  | This document ([5.5](#55-export-and-import))                                                              |
+| Bring the agent index up to `main` (an update from the diff, or a rebuild)                          | An accepted update of `main` (queued in the same transaction), a new repository, worker start (catch-up, and rebuilds after a parser change), on demand | This document ([5.3](#53-how-sync-works))                                                                 |
+| Verify the agent index (round-trip check)                                                           | Daily at 03:40 UTC                                                                                                                                      | This document ([5.2](#52-the-invariant), [5.3](#53-how-sync-works))                                       |
+| Send email (magic links, invitations, security alerts)                                              | Sign-in, invitation, or a security event identity names                                                                                                 | This document ([section 9](#9-email-and-notifications)); content by [identity](identity.md)               |
+| Build notifications (phase 2)                                                                       | A new event that human experience's rules turn into a notification                                                                                      | This document ([9.3](#93-notifications-phase-2)); what is sent by [human experience](human-experience.md) |
+| Send daily notification summaries (phase 2)                                                         | Daily, per person, at their chosen hour                                                                                                                 | This document ([9.3](#93-notifications-phase-2))                                                          |
+| Automatic fact checks by Shinan, if adopted                                                         | Schedule                                                                                                                                                | [Catalog](catalog.md), [git hosts](git-hosts.md)                                                          |
+| Prune raw webhooks, old job records and old notification records                                    | Daily                                                                                                                                                   | This document ([4.2](#42-kinds-of-data))                                                                  |
 
 ## 8. How agents, the MCP server and plugins reach Shinan
-
-> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-5](build-plan-git-catalog.md#gc-5-remove-the-m2-write-path)): the catalog MCP tools and trust labels on catalog content are removed (D-062, D-063). Until then, this section describes M2 as built (v0.3.0). The Git endpoint, `/git/`, is built ([8.5](#85-git-endpoint), GC-2).
 
 The [agent integrations](agent-integrations.md) document owns tools, the skill,
 presence and nudge semantics; [identity](identity.md) owns agent registration,
 scopes and revocation. This section owns transport, how tokens reach the
-endpoints, and network shape.
+endpoints, and network shape. Agents read and change the catalog through the
+Git endpoint ([8.5](#85-git-endpoint)) and act on tasks through MCP
+([8.1](#81-mcp-server); [D-063](decisions/D-063-no-mcp-for-the-catalog.md)).
 
 **Proposed:** every agent-side component makes **outgoing HTTPS connections** to
 Shinan; Shinan never connects into an agent's machine. Reason: agent machines
@@ -1369,8 +1285,9 @@ sit behind NAT, firewalls or tailnets. The agent-facing parts of
     web app after re-authentication, sees it once, and places it on the machine,
     for example as an environment variable the coding tool sends as a header.
   - **One token per agent, accepted at every agent endpoint** of the
-    installation: `/mcp`, the REST API and the plugin stream. It is not accepted
-    by any other installation.
+    installation: `/git/` (as the Basic password, [8.5](#85-git-endpoint)),
+    `/mcp`, the REST API and the plugin stream. It is not accepted by any
+    other installation.
   - **No MCP-specific OAuth sign-in in the first version.** It may come later,
     only if a coding tool needs it.
   - **Transport (Proposed):** the token is sent as an `Authorization: Bearer`
@@ -1394,18 +1311,19 @@ sit behind NAT, firewalls or tailnets. The agent-facing parts of
 - **Required checks.** Validate the `Origin` header and check that
   `MCP-Protocol-Version`, `Mcp-Method` and `Mcp-Name` match the request body, as
   the 2026-07-28 transport requires; reject tokens in query strings.
-- **Trust labels on text (Proposed).** Every text field an MCP answer returns
-  carries a machine-readable field saying who wrote it (member, agent, outside
-  actor, Shinan) and whether it may be treated as an instruction. Field names
-  and skill wording are owned by [agent integrations](agent-integrations.md).
+- **Trust labels on text.** Not on catalog content, which is information,
+  never instructions (**Decided**, owner, GD-5,
+  [D-062](decisions/D-062-no-catalog-trust-labels.md)); M2's labels went with
+  the catalog MCP tools (GC-5). Whether task text carries labels is the M3
+  plan's to decide ([agent integrations](agent-integrations.md#trust-labels)).
 - **As built (M2-6, [#87](https://github.com/guneet-xyz/shinan/issues/87)),
   decided (owner, 2026-11-19, M2-Q17):** `/mcp` uses the official TypeScript SDK's v2 packages
   (`@modelcontextprotocol/server` 2.4), whose `createMcpHandler` serves the
   2026-07-28 revision and, statelessly, the 2025 `initialize` handshake from
   one per-request server. Each request passes, in order: the per-address
   request limit (as `/api/agent`), at most 16 requests in flight per
-  address (an IPv6 address by its /64), a 512 KB body limit (larger than the API's 64 KB, because one
-  catalog proposal may hold 256 KiB of JSON), the `Origin` check (a request
+  address (an IPv6 address by its /64), a 512 KB body limit (larger than the
+  API's 64 KB; set for M2's catalog proposals and kept, M2-Q16), the `Origin` check (a request
   carrying any `Origin` but the installation's own is refused with 403),
   `requireAgent`, and at most 8 requests in flight per token; over either
   in-flight cap the answer is 429 before the body is read, and Node gives a
@@ -1433,11 +1351,11 @@ sit behind NAT, firewalls or tailnets. The agent-facing parts of
   is logged by name, code and stack frames, and the process keeps serving;
   an uncaught exception is logged the same way and ends the process, for
   the container to restart.
-  The write tools (M2-6, second PR) call M2-4's `proposeCatalogChange`, so
-  every proposal from MCP is applied in a catalog worker with its time
-  limit ([5.3](#53-how-sync-works)), like one from the web app; a full
-  queue is a `busy` tool error the agent retries with the same idempotency
-  key.
+  Since GC-5a it serves one tool, `workspace_context` (who the agent acts
+  for, what its token allows and the catalog repository's address, without
+  catalog content); M2's catalog tools are gone
+  ([D-063](decisions/D-063-no-mcp-for-the-catalog.md),
+  [Git-based catalog plan §2.13](build-plan-git-catalog.md#213-mcp-after-this-change)).
   Checked with OpenCode v2.3.0 on Daedalus against a local server: with the
   default `protocol` it connects over 2025-11-25, and with
   `"protocol": "auto"` over 2026-07-28 (`server/discover`); both call the
@@ -1748,16 +1666,14 @@ owner's accepted risks.
 
 ### 10.1 Threats and controls
 
-> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-3](build-plan-git-catalog.md#gc-3-push-checks-and-the-push-log)): controls on what pushes may change. Serving Git and the Git container are built (GC-1b, GC-2; the last two rows).
-
 | Threat                                                       | Controls                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Status                                                                                                                                                                                                                                |
 | ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | A person's account is taken over                             | Sign-in by GitHub or email magic link only, with no second factor and no passwords (**Decided**, owner, N-7, [#25](https://github.com/guneet-xyz/shinan/issues/25)). Controls here: an email allowlist (O-48); throttling of magic-link requests; short-lived single-use links (identity); sign-in session cookies `HttpOnly`, `Secure`, `SameSite`; uniform answers                                                                                                                                                                                                                                                                                                                                                          | **Accepted risk:** one compromised mailbox or GitHub account opens the account                                                                                                                                                        |
 | An agent token is stolen from a machine                      | Long-lived until revoked (**Decided**, owner, O-44). Controls: hashes only in storage; a recognizable prefix for leak scanning; per-machine agents (O-40) so one machine is revoked alone; "last used" shown; never logged; header only                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | **Accepted risk:** a stolen token works until someone notices and revokes it                                                                                                                                                          |
 | Forged or replayed webhooks                                  | HMAC verified before parsing, unique delivery IDs, size limits ([6.1](#61-webhook-intake))                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Proposed                                                                                                                                                                                                                              |
 | One workspace sees another's data                            | [3.4](#34-workspace-isolation)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Proposed                                                                                                                                                                                                                              |
-| Text written by strangers steers an agent (prompt injection) | Outside issues become tasks automatically (D-003), so text from anyone reaches agents through MCP. Controls: (1) outside text never creates nudges ([tasks](tasks.md)), enforced in the shared application layer; (2) machine-readable trust labels ([8.1](#81-mcp-server)); (3) an agent cannot claim a task in `triage` until a member accepts it ([tasks](tasks.md) §10); agents may still suggest a triage action in a progress update; (4) the skill tells agents to treat outside text as data. Mentions by outside accounts are ignored (owner, O-25)                                                                                                                                                                  | (1), (3) adopted in [tasks](tasks.md); (4) in [agent integrations](agent-integrations.md); (2) proposed here                                                                                                                          |
-| An agent is steered into leaking what it reads               | Every member, and so every member's agent, can read the whole workspace (owner, O-2, O-43). Injected text could get an agent to post infrastructure details on a public issue with its own git host credentials. Controls: read-only tokens (the two `read` scopes) where writing is not needed ([identity](identity.md) §7.2); bulk reads in the security log; trust labels; no secrets in the catalog (owner, O-2; the catalog only records where a secret lives)                                                                                                                                                                                                                                                           | Residual risk while agents share their person's git host account (D-017)                                                                                                                                                              |
+| Text written by strangers steers an agent (prompt injection) | Outside issues become tasks automatically (D-003), so text from anyone reaches agents through MCP. Controls: (1) outside text never creates nudges ([tasks](tasks.md)), enforced in the shared application layer; (2) catalog content is information, never instructions, as the skill says ([D-062](decisions/D-062-no-catalog-trust-labels.md)), and the M3 plan decides trust labels for task text; (3) an agent cannot claim a task in `triage` until a member accepts it ([tasks](tasks.md) §10); agents may still suggest a triage action in a progress update; (4) the skill tells agents to treat outside text as data. Mentions by outside accounts are ignored (owner, O-25)                                        | (1), (3) adopted in [tasks](tasks.md); (4) in [agent integrations](agent-integrations.md); (2) proposed here                                                                                                                          |
+| An agent is steered into leaking what it reads               | Every member, and so every member's agent, can read the whole workspace (owner, O-2, O-43). Injected text could get an agent to post infrastructure details on a public issue with its own git host credentials. Controls: read-only tokens (the two `read` scopes) where writing is not needed ([identity](identity.md) §7.2); each token's catalog fetches summarized in the security log (`catalog.fetched`); no secrets in the catalog, with a secret check on every push (owner, O-2; the catalog only records where a secret lives)                                                                                                                                                                                     | Residual risk while agents share their person's git host account (D-017)                                                                                                                                                              |
 | A Forgejo token with broad rights leaks                      | Shinan accepts any Forgejo token (**Decided**, owner, O-54) and only reads with it (**Decided**, owner, N-4, [#25](https://github.com/guneet-xyz/shinan/issues/25)). A token is not limited by how Shinan uses it: a site administrator's broad token can act as any user on that Forgejo, and the owner is a site administrator of `git.guneet.dev`. Controls: encrypted at rest, usable only by the worker ([10.3](#103-secrets-and-credentials)), never shown again, never logged, never given to agents; the connect screen suggests a read-only token                                                                                                                                                                    | **Accepted risk:** whoever gets the database and the worker's key gets whatever the token allows                                                                                                                                      |
 | A workspace export leaks                                     | Only workspace owners can export; recorded in the security log; no credentials in the export; no secrets in the catalog (O-2)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Proposed; a downloaded file is outside Shinan's control                                                                                                                                                                               |
 | Email is abused                                              | Magic links only to allowlisted addresses; messages only to verified account addresses; throttling; uniform answers ([9.2](#92-how-shinan-sends))                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | Proposed                                                                                                                                                                                                                              |
@@ -1919,10 +1835,12 @@ From the `workspace` repository's catalog and `infra/musashi` (read 2026-11-16):
   unused `10.88.0.0/16` range, recorded in the machine entry at deployment.
 - **Proposed** starting memory limits: web 512 MiB, worker 384 MiB, PostgreSQL
   512 MiB; estimates to be measured during the proof of concept.
-  **Decided (owner, 2026-11-19, M2-Q15):** web 1,536 MiB, for its one catalog worker (heap up to 768 MiB, §5.3); the
-  `infra/musashi` stack's change is drafted for the M2 deployment request
-  ([infra/musashi#130](https://git.guneet.dev/infra/musashi/issues/130),
-  draft PR [#131](https://git.guneet.dev/infra/musashi/pulls/131); M2-12).
+  **Decided (owner, 2026-11-19, M2-Q15):** web 1,536 MiB, for M2's catalog
+  worker ([infra/musashi#130](https://git.guneet.dev/infra/musashi/issues/130),
+  [#131](https://git.guneet.dev/infra/musashi/pulls/131); M2-12). The
+  catalog worker is gone (GC-5); the reference Compose file keeps 1,536 MiB
+  for `web` and gives `git` 1,024 MiB until GC-11 measures both under the
+  push checks.
 - **Proposed:** containers hardened as in [10.1](#101-threats-and-controls); the
   same image and reference Compose layout self-hosters get, adapted to
   Musashi's rules. Reason: proves the self-hosting path by using it.
@@ -2075,7 +1993,7 @@ licensing (D-013); this section makes sure nothing blocks it. All **proposed**:
   (PostgreSQL, migrate, web, worker, git), an operator guide, and the CLI and plugin
   with published checksums and attestations. As built (M1-7):
   [`deploy/Dockerfile`](../deploy/Dockerfile) (distroless Node.js, unprivileged
-  user, one image for `web`, `worker`, `migrate` and `health`),
+  user, one image for `web`, `worker`, `git`, `migrate` and `health`),
   [`deploy/compose.yml`](../deploy/compose.yml) with secrets as files, and the
   [operator guide](operator-guide.md). `deploy/test/first-start.mjs` starts
   the reference Compose file from nothing and claims the installation; CI runs
@@ -2142,13 +2060,12 @@ licensing (D-013); this section makes sure nothing blocks it. All **proposed**:
 - **Installation operator:** see [3.5](#35-shinan-installation).
 - **No telemetry:** a self-hosted installation never contacts the Shinan project.
 - **Backups:** none built in (owner, O-62); the operator guide says plainly that
-  the operator must back up PostgreSQL and the encryption keys.
+  the operator must back up PostgreSQL, the catalog volume and the
+  encryption keys.
 - **Upgrades:** `migrate` runs on every upgrade; release notes state the minimum
   version that can be upgraded from directly.
 
 ## 13. Observability
-
-> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-10](build-plan-git-catalog.md#gc-10-documents-catalog-everywhere-and-what-no-package-owns)): pushes, refusals and the Git container's health. Until then, this section describes M2 as built (v0.3.0).
 
 **Proposed:**
 
@@ -2166,7 +2083,9 @@ licensing (D-013); this section makes sure nothing blocks it. All **proposed**:
   separate internal listener (`INTERNAL_HOST`, default `127.0.0.1`, and
   `INTERNAL_PORT`, default `3001`), which the reverse proxy never routes to.
   The image's container health check (M1-7) runs `shinan health` inside the
-  container, which asks `/readyz`; `worker` and `migrate` turn it off;
+  container, which asks `/readyz`; `worker` and `migrate` turn it off; the
+  `git` role answers it on its own internal listener, ready while its volume
+  is writable (GC-1b);
   the public listener answers 404 to any spelling of those paths. Reason: they need no credentials,
   and a readiness answer tells an outsider when the database is down. The
   public `/api/status` stays as the minimal check
@@ -2176,7 +2095,7 @@ licensing (D-013); this section makes sure nothing blocks it. All **proposed**:
 - **Metrics:** Prometheus-format metrics on an unpublished internal port,
   scraped by Musashi's monitoring agent into VictoriaMetrics and Grafana
   (**Decided**, owner, O-69). Key metrics: request rates and errors by route type
-  (pages, API, MCP, sign-in, webhooks), webhooks received and rejected per
+  (pages, API, Git, MCP, sign-in, webhooks), pushes accepted and refused, webhooks received and rejected per
   connection, time since the last webhook and reconciliation per connection,
   job queue depth and oldest job age, dead-lettered jobs, email sent and failed,
   open plugin streams, agent sessions by presence state, round-trip test
@@ -2188,6 +2107,11 @@ licensing (D-013); this section makes sure nothing blocks it. All **proposed**:
   by ID (the commit of `main` it stands at, whether behind, last round-trip
   check), at
   `/api/installation/catalog-index`; no screen yet.
+- **Pushes and refusals** are records, not only logs: the push log holds
+  every push, refused ones with their codes (never text); the security log
+  holds pushes refused for a secret, each token's fetches summarized, and any
+  update of a repository the push log cannot explain
+  (`catalog.unlogged-update`) ([identity §11](identity.md#11-audit)).
 - **External uptime:** a website tile for `shinan.guneet.dev` on the private mon
   board.
 - **Alerting: Open.** The fleet has no alerting yet.
@@ -2196,19 +2120,23 @@ licensing (D-013); this section makes sure nothing blocks it. All **proposed**:
 
 ## 14. Backups: accepted risk
 
-> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-11](build-plan-git-catalog.md#gc-11-security-review-and-deployment-preparation)): the Git volume joins PostgreSQL, and clones are partial copies. Until then, this section describes M2 as built (v0.3.0).
+> **GC-11** ([plan](build-plan-git-catalog.md#gc-11-security-review-and-deployment-preparation)) adds Musashi's specifics and how to recreate a lost repository from a clone.
 
 **Decided (owner, O-62, O-63, O-64):** no built-in backups, no backup target and
 no recovery objectives for now. Shinan relies on host-level backups, which are
-currently paused on Musashi. There is also no Git mirror for now (**Decided**, owner, N-5, [#25](https://github.com/guneet-xyz/shinan/issues/25)).
-This is an accepted risk.
+currently paused on Musashi. This is an accepted risk.
 
 What it means today:
 
-- **Everything is in one place.** Shinan's database lives only on Musashi's
-  data disk. If that disk is lost, everything in it is lost: the catalog's
-  revisions and proposals, tasks, comments, members, agents and the security
-  log.
+- **Everything is in one place.** Shinan's database and the catalog's
+  repositories live only on Musashi's data disk. If that disk is lost, they
+  are lost: the catalog and its history, the push log, tasks, comments,
+  members, agents and the security log.
+- **Clones are partial copies, not backups.** Every agent's clone holds the
+  catalog's `main` up to its last fetch. Nothing checks them, but a lost
+  repository can be recreated from the freshest one, and the push log (if
+  the database survived) shows what it missed
+  ([Git-based catalog plan §2.11](build-plan-git-catalog.md#211-backups-and-recovery)).
 - **What comes back:** git host data, through reconciliation within what each
   host's API still returns; and whatever was in the most recent workspace export
   ([5.5](#55-export-and-import)), if someone downloaded one. Nothing else. Git host
@@ -2266,7 +2194,7 @@ What it means today:
 3. **Alerting.** How does the owner learn about email failures or stalled
    reconciliation while the fleet has no alerting?
    ([section 13](#13-observability))
-4. **Resource use.** Real memory, disk and revision growth on Musashi, measured
+4. **Resource use.** Real memory, disk and repository growth on Musashi, measured
    during the proof of concept. ([11.2](#112-shinan-stack), [5.3](#53-how-sync-works))
 5. **CI cost.** GitHub Actions minutes for ARM64 builds in a private repository.
    Note (owner, 2026-11-19): the repository is public

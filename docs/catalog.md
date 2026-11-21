@@ -4,12 +4,13 @@ Status: **approved by the owner on 2026-11-16** ([issue #5](https://github.com/g
 The owner's answers in [#25] and the integration review findings in [#26] are applied.
 
 This document owns the catalog: entity types and type schemas, facts and fact
-states, provenance, editing and approval, and what the catalog pages and the agent index
-must contain. It uses the terms of the [domain model and glossary](domain-model.md)
-exactly. It does not choose technology ([architecture](architecture.md),
-D-020), design screens ([human experience](human-experience.md)), name MCP
-tools ([agent integrations](agent-integrations.md)) or decide who may approve
-([identity](identity.md)).
+states, provenance, how the catalog is changed, and what the catalog pages and
+the agent index must contain. It uses the terms of the
+[domain model and glossary](domain-model.md) exactly. It does not choose
+technology ([architecture](architecture.md), D-020), design screens
+([human experience](human-experience.md)), write the conventions agents follow
+([agent integrations](agent-integrations.md), the skill) or decide who may do
+what ([identity](identity.md)).
 
 ## How to read this document
 
@@ -36,15 +37,14 @@ reason says so. A full mapping is in
 
 ## Summary
 
-> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-10](build-plan-git-catalog.md#gc-10-documents-catalog-everywhere-and-what-no-package-owns)): the catalog is stored in Git, on `main` of one repository per workspace, and changed by pushes with no catalog approval (D-059, D-060). Until then, this section describes M2 as built (v0.3.0).
-
 - A workspace's catalog is a set of Markdown documents, one per catalog entity,
-  each with structured fields at the top (frontmatter) and prose below. Every
-  applied catalog revision **is** a set of Markdown documents; the catalog pages, the
-  agent index and every query table are derived from them and can be rebuilt
-  from them alone. Revisions are stored in PostgreSQL only; there is no Git
-  mirror for now. A workspace's catalog can be exported as a folder of these
-  Markdown files and imported back without loss.
+  each with structured fields at the top (frontmatter) and prose below. They
+  are the files on `main` of the workspace's **catalog repository**, one Git
+  repository per workspace hosted by Shinan
+  ([D-059](decisions/D-059-catalog-in-git-hosted-by-shinan.md)); the catalog
+  pages, the agent index and every query table are derived from them and can
+  be rebuilt from them alone. Any clone of the repository is a readable copy
+  of the catalog and its history.
 - Structured fields hold **facts**, grouped under the **fact check** that last
   checked them. A fact check records when, by whom, what exactly was checked,
   what was not, and the source (D-007). Each fact has a fact state
@@ -56,30 +56,29 @@ reason says so. A full mapping is in
   owns. It links to owning sources for everything else, and never holds
   secrets: it records where a secret lives.
 - Everyone in a workspace sees the whole catalog.
-- Every change is a catalog proposal, made and reviewed inside Shinan. Routine
-  changes apply on their own; only high-risk (gated) changes need a person's
-  catalog approval.
+- Agents change the catalog by pushing commits to its repository. Every push
+  that passes Shinan's checks applies at once; there is no catalog approval
+  ([D-060](decisions/D-060-no-catalog-approval.md)). Shinan's push log
+  records which agent and person pushed what
+  ([D-061](decisions/D-061-push-authentication-and-push-log.md)); undo is
+  `git revert`.
 
 ## 1. Principles
 
-> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-10](build-plan-git-catalog.md#gc-10-documents-catalog-everywhere-and-what-no-package-owns)): P1 reads "the files on `main`" instead of "every applied catalog revision" (D-059). Until then, this section describes M2 as built (v0.3.0).
-
 | #   | Principle                                                                                                                                                                                                                                                         | Status and reason                                                                                                                                                                                                                                                                                                                                          |
 | --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| P1  | The Markdown documents are the source of truth. Every applied catalog revision is a set of Markdown documents; the catalog pages, the agent index, exports and all query tables are derived and rebuildable from them alone, and never edited directly.           | **Decided** (D-006: people must be able to read it), and the "rebuildable from Markdown alone" reading confirmed (owner, O-11, [#25]).                                                                                                                                                                                                                     |
+| P1  | The Markdown documents are the source of truth. The files on `main` of the catalog repository are the catalog; the catalog pages, the agent index and all query tables are derived and rebuildable from them alone, and never edited directly.                    | **Decided** (D-006: people must be able to read it), and the "rebuildable from Markdown alone" reading confirmed (owner, O-11, [#25]); stored in Git (D-059).                                                                                                                                                                                              |
 | P2  | Every fact records its state, source and last-checked time.                                                                                                                                                                                                       | **Decided** (D-007: trust is the main differentiator).                                                                                                                                                                                                                                                                                                     |
 | P3  | Link, don't copy. A fact owned by another system is linked, not copied.                                                                                                                                                                                           | **Decided** (plan, "What Shinan does not do").                                                                                                                                                                                                                                                                                                             |
 | P4  | `unknown` is a valid answer. Missing, unreachable and not checked are recorded, never filled with guesses.                                                                                                                                                        | **Proposed**. Reason: the `workspace` repository's rule; a guessed fact is worse than a known gap because nobody rechecks it.                                                                                                                                                                                                                              |
 | P5  | Intended and observed facts are kept apart, and disagreements are recorded, not resolved by default.                                                                                                                                                              | **Proposed** (glossary discrepancy rule). Reason: hiding drift is how catalogs lose trust.                                                                                                                                                                                                                                                                 |
 | P6  | Catalog content is context, not authorization. A runbook, a fact or an approval rule never by itself permits an agent to deploy, connect to a machine or change anything outside the catalog. An incomplete catalog does not permit scanning machines to fill it. | **Proposed**. Reason: the `workspace` repository's access policy says the same; Backstage gives the same warning for its ownership relation ("not to be used by automated processes to for example assign authorization", [Backstage well-known relations](https://backstage.io/docs/features/software-catalog/well-known-relations), checked 2026-11-16). |
-| P7  | Nothing is lost. Changes create new revisions; retired entities stay readable.                                                                                                                                                                                    | **Proposed**. Reason: history explains why things are the way they are; see [section 9](#9-history-and-purge).                                                                                                                                                                                                                                             |
+| P7  | Nothing is lost. Every change is a commit; retired entities stay readable.                                                                                                                                                                                        | **Proposed**. Reason: history explains why things are the way they are; see [section 9](#9-history-and-purge).                                                                                                                                                                                                                                             |
 | P8  | The catalog never holds secret values or task status. It records where a secret lives.                                                                                                                                                                            | **Decided** for secrets (owner, O-2, [#25]): managing secrets is the team's job with a secrets manager such as Obscuro or Infisical. **Proposed** for task status. Reason: task status is derived on tasks (D-005) and would go stale if copied.                                                                                                           |
 
 ## 2. Entity documents
 
 ### 2.1 One document per entity, and what "source of truth" means
-
-> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-10](build-plan-git-catalog.md#gc-10-documents-catalog-everywhere-and-what-no-package-owns)): the documents are files on `main` of the catalog repository, a document's path being its ID plus `.md`, instead of revisions in PostgreSQL (D-059). Until then, this section describes M2 as built (v0.3.0).
 
 Each catalog entity is one Markdown document: frontmatter in YAML between `---`
 lines, then a Markdown body.
@@ -87,33 +86,35 @@ lines, then a Markdown body.
 - **Decided:** Markdown with structured fields at the top is the source of
   truth, and the agent index is generated from it (D-006).
 - **Decided (owner, O-11, [#25]):** the D-006 invariant:
-  1. Every applied catalog revision is the full Markdown text of the
-     documents it changed. Nothing about the catalog's content (facts, fact
-     checks, relations, entity fields, body, type schemas) exists only
-     outside that text.
-  2. Changes are applied by producing new Markdown from the latest revision.
-     Validation runs on the resulting Markdown, not on the operations that
-     produced it.
-  3. The catalog pages, the agent index, search, exports and every list or table used
+  1. The files on `main` are the catalog. Nothing about the catalog's
+     content (facts, fact checks, relations, entity fields, body, type
+     schemas) exists only outside that text.
+  2. Changes are commits pushed to the repository. Validation runs on the
+     resulting documents on `main` ([8.3](#83-validation-on-push)).
+  3. The catalog pages, the agent index, search and every list or table used
      for queries are derived. Deleting them all and re-parsing the
      Markdown rebuilds them exactly.
 
   Reason: D-006 rejected "a structured-data-first catalog, with pages
   generated from a database"; these three rules keep the Markdown the real
-  record even though it is stored in a database.
+  record.
 
-- **Decided (owner, O-11 as changed by N-5 and N-9, [#25]):** revisions are
-  stored in **PostgreSQL only**. There is **no Git mirror for now**; it is left
-  for later. How revisions are stored is owned by
-  [architecture](architecture.md).
-- **Decided (owner, O-12, [#25]):** catalog proposals and review happen inside
-  Shinan ([8.7](#87-only-pushes-change-the-catalog)).
-- Catalog proposals, approvals, comments and events are not catalog content.
-  They are separate records about changes to it, like pull requests beside a
-  repository, and are not expected to be rebuildable from the Markdown.
-  **Proposed.** Reason: they describe the process, not the things in the
-  catalog; the [glossary](domain-model.md#event) already makes events their
-  own record.
+- **Decided (owner, GD-1, [D-059](decisions/D-059-catalog-in-git-hosted-by-shinan.md),
+  replacing O-11's storage, N-5 and N-9):** the documents are stored in Git,
+  one repository per workspace, hosted by Shinan. Its `main` branch is the
+  catalog; agents may push other branches, which are never indexed or shown.
+  A document's path is its ID plus `.md` (`machine/musashi.md`), a type
+  schema is `schema/<type>.md`, the start-here document is `start-here.md`,
+  and a `README.md` may sit at the root ([8.1](#81-pushes)). How the
+  repositories are stored and served is owned by
+  [architecture](architecture.md) (§4.1, §8.5).
+- **Decided (owner, O-12, [#25]; adapted by D-059):** the catalog changes only
+  by pushes to its repository in Shinan ([8.7](#87-only-pushes-change-the-catalog)).
+- The push log and events are not catalog content. They are records about
+  changes to it, kept in Shinan's database, and are not expected to be
+  rebuildable from the Markdown. **Proposed.** Reason: they describe who did
+  what, not the things in the catalog; the
+  [glossary](domain-model.md#event) already makes events their own record.
 - **Proposed:** YAML, limited to plain maps, lists, strings, numbers,
   booleans, dates and `null` (no anchors, tags or multi-document files).
   Reason: YAML frontmatter is what the `workspace` repository and most Markdown
@@ -136,7 +137,7 @@ lines, then a Markdown body.
   attribute named like a JavaScript object member (`__proto__`,
   `constructor`; fact keys and schema keys since
   [#113](https://github.com/guneet-xyz/shinan/issues/113)). Reason: every
-  reader (the index, the export, a person) then agrees on what the text
+  reader (the index, an agent, a person) then agrees on what the text
   says, and code that keeps keys in plain objects cannot be misled.
 - **Decided (owner, 2026-11-19, M2-Q17; M2-1):** limits on what Shinan reads, checked before anything
   else. A document is at most 64 KiB of UTF-8 (65,536 bytes); the largest
@@ -170,11 +171,9 @@ lines, then a Markdown body.
   `body-invalid`). Reason: the limits were set when the body model used a
   Markdown parser (micromark) whose time grows with the square of these
   shapes on hostile input (a 64 KB body of nested lists took over a minute),
-  and every proposal, MCP write and index rebuild reads documents. The scan
-  cannot be proven complete, so proposal and MCP text is also read off the
-  main event loop with a time limit
-  ([security checklist 10.8](security-checklist.md#10-features-not-built-yet);
-  M2-4, M2-6).
+  and every push check and index rebuild reads documents. The scan cannot be
+  proven complete, so the checks of `main` read documents in a worker thread
+  with a time limit ([8.3](#83-validation-on-push), "Cost").
 
 - **Decided (owner, 2026-11-19, M2-Q17; M2-1b, [#102](https://github.com/guneet-xyz/shinan/issues/102)):**
   the body is read with markdown-it, in one shared configuration
@@ -205,46 +204,35 @@ lines, then a Markdown body.
     loads images only from Shinan itself; and leaves `javascript:`,
     `vbscript:`, `file:` and `data:` destinations as text.
 
-### 2.2 Export: the exit path
+### 2.2 The repository: the exit path
 
-> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-10](build-plan-git-catalog.md#gc-10-documents-catalog-everywhere-and-what-no-package-owns)): the catalog's exit path is its repository (a clone or a bundle); `history.jsonl` is no longer needed. Until then, this section describes M2 as built (v0.3.0).
+**Decided ([D-059](decisions/D-059-catalog-in-git-hosted-by-shinan.md);
+[Git-based catalog plan §2.11](build-plan-git-catalog.md#211-backups-and-recovery)):**
+the catalog's exit path is its repository. A clone of it, or a Git bundle,
+holds every document and the whole history of `main` (and of any branch
+fetched), readable without Shinan; every agent's clone is such a copy
+already. There is no separate catalog export and no `history.jsonl`.
 
-Without a Git mirror, the way to get the catalog out of Shinan, as plain files
-to read, keep or move elsewhere, is the **workspace export**: one full export
-of a workspace (catalog, tasks and their records), in the first version
-(owner, O-75, [#25]). There is no separate catalog-only export. A workspace
-owner starts it and downloads it ([architecture §5.5](architecture.md#55-export-and-import),
-[identity](identity.md)). Its overall format is owned by
-[architecture](architecture.md); the catalog's part of it is **proposed**
-here:
-
-| Path in the export          | Content                                                                                                                                                 |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `catalog/README.md`         | Generated: what the export is, the workspace, the catalog revision it was taken at, and that changes are made only through catalog proposals in Shinan. |
-| `catalog/start-here.md`     | The [start-here document](#11-start-here).                                                                                                              |
-| `catalog/schemas/<type>.md` | One [type schema document](#39-custom-types-and-type-schema-documents) per custom type, and per built-in type the workspace has extended.               |
-| `catalog/<type>/<slug>.md`  | One file per entity, so the entity ID `machine/musashi` is the path `catalog/machine/musashi.md`.                                                       |
-| `catalog/history.jsonl`     | Every catalog revision: the document's ID, its full Markdown, the time, the author, the approver (if any) and the catalog proposal it came from.        |
-
-- The Markdown files are exactly the latest revision's text, so they read like
-  the `workspace` repository's catalog does today. **Proposed.** Reason: the
-  exit path should not need Shinan to be readable.
-- History is included as one machine-readable file rather than as Git
-  commits. **Proposed.** Reason: nothing is lost on exit (P7), without
-  building the mirror the owner left for later.
-- Importing an export into an empty workspace reproduces the catalog
-  exactly, including its history. **Proposed.** Reason: this is the rollback
-  path that roadmap criterion R15 tests.
-- An export holds everything in the catalog, because everyone in a workspace
-  sees everything (owner, O-2, [#25]); it is exactly as sensitive as the
-  workspace. Only workspace owners may export, as [identity](identity.md)
-  sets out.
-- While there are no built-in backups (owner, O-62 to O-64, [#25]), the
-  catalog exists only in Shinan's PostgreSQL database unless someone exports
-  it. An export can serve as a manual copy; whether to take them regularly
-  belongs to the roadmap's backup review before migration.
-- If a Git mirror is added later, it should use this same layout, so exports
-  and the mirror stay interchangeable. **Proposed.**
+- **What the repository does not hold:** the push log (which agent and
+  person pushed what), events and the security log. They stay in Shinan's
+  database.
+- **The workspace export** of tasks and their records (owner, O-75, [#25]) is
+  not built yet: it is on the roadmap's cut line, before G2. Its format is
+  owned by [architecture §5.5](architecture.md#55-export-and-import); its
+  catalog part will be the repository. Importing a repository into a new
+  workspace is designed with it, not done by an ordinary push: the `by` rule
+  ([8.3](#83-validation-on-push)) would refuse old fact checks, since the
+  importer would be the first pusher of every commit.
+- **Clones are copies, not backups.** Nothing checks them, they may be
+  behind, and a purge leaves them holding the purged text
+  ([section 9](#9-history-and-purge)). Whether to keep regular copies off
+  the server belongs to the roadmap's
+  [backup review](roadmap.md#backups-before-migration).
+- **Who can clone:** any agent with the `catalog:read` scope in the
+  workspace ([identity §7.2](identity.md#72-scopes)). A clone holds
+  everything in the catalog, because everyone in a workspace sees
+  everything (owner, O-2, [#25]); it is exactly as sensitive as the
+  workspace.
 
 ### 2.3 Entity fields
 
@@ -297,8 +285,7 @@ are not facts about the world, so they carry no fact state.
   target is an ID, such as `[Musashi](machine/musashi)`, is a reference.
   References must resolve; validation blocks broken ones. **Proposed.** Reason:
   the `workspace` repository's checker catches missing link targets, which has
-  kept its entries consistent. The same links also work as relative paths in
-  an [export](#22-export-the-exit-path).
+  kept its entries consistent.
 - **Decided (owner, 2026-11-19, M2-Q17; M2-1):** a body link, image or link definition is a reference
   when its destination has no scheme (such as `https:`) and does not start
   with `/`, `.`, `#` or `?`; a `#section` part is ignored, so
@@ -330,7 +317,7 @@ section conventions.
   prevents, because the fact check pins the source revision it came from, so
   the copy can be compared with its source at any time.
 - Generated sections (relations in both directions, unknowns, discrepancies,
-  pending catalog proposals, related tasks) are added by the catalog pages and are not
+  related tasks) are added by the catalog pages and are not
   written in the body. **Proposed.** Reason: the `workspace` repository writes
   "Known unknowns" and location tables by hand; generating them from facts
   removes a second copy.
@@ -579,11 +566,11 @@ catalog".
 - **Body:** the rule; why; what it covers and does not; exceptions.
 - **Reason:** the `workspace` repository's policies (maintenance, access and
   safety, collaboration) are what agents most need, and they currently live
-  outside the catalog. As entities they gain owners, history and approval, and
+  outside the catalog. As entities they gain owners and history, and
   the agent index can return "the policies that apply to this machine".
 - **Open:** whether Shinan itself enforces any policy beyond its own settings
-  (for example catalog approval rules, which are workspace settings owned by
-  [identity](identity.md), and which a policy entity may describe for readers).
+  (for example workspace settings owned by [identity](identity.md), which a
+  policy entity may describe for readers).
 
 ### person
 
@@ -622,7 +609,7 @@ with the "small and legible over configurable" principle (owner, O-86,
 [#25]).
 
 A **type schema document** is a Markdown document like an entity, with the ID
-`schema/<type>`, stored in the catalog (and in exports). Its frontmatter
+`schema/<type>`, stored in the catalog as `schema/<type>.md`. Its frontmatter
 lists the keys; its body explains the type for people and agents.
 
 ```markdown
@@ -674,19 +661,21 @@ Rules (all **proposed**):
   `machine.ups` key. It cannot remove built-in keys or change their options.
   Reason: Shinan's own features rely on built-in keys such as `checkout-on`
   and `runs-on`.
-- **Changing a schema needs catalog approval** (a gated class,
-  [8.2](#82-no-catalog-approval)). Adding keys or making a key
-  multi-valued is always safe. Removing a key, or making a multi-valued key
-  single-valued, is blocked while any current entity would break the new rule;
-  the proposal lists the affected entities. Reason: a schema change affects
-  every entity of the type and how agents read them.
+- **Changing a schema** is checked on push like any change
+  ([8.3](#83-validation-on-push), "Type schema changes"). Adding keys or
+  making a key multi-valued is always safe. Removing a key, or making a
+  multi-valued key single-valued, is refused while any current entity would
+  break the new rule; the refusal lists the affected entities. Reason: a
+  schema change affects every entity of the type and how agents read them.
 - **Retiring a type** is allowed only when it has no active entities.
   **Decided (owner, 2026-11-19, M2-Q17; M2-1):** nor deprecated ones, which are still in use; retired
   entities may keep a retired type ([8.3](#83-validation-on-push)).
-- **Agents read schemas** through the agent index, so an agent creating a
-  `domain` entity knows its keys.
+- **Agents read schemas** in their clone (`schema/<type>.md`, and the
+  skill's list of built-in types), so an agent creating a `domain` entity
+  knows its keys.
 - Keys outside a type's schema are still allowed (treated as single-valued)
-  but flagged in review, so needs show up before schemas grow. **Proposed.**
+  but warned about on push, so needs show up before schemas grow.
+  **Proposed.**
 
 ### Types that are not entity types
 
@@ -769,8 +758,8 @@ known.
 
 **The fact identity key** (**decided**, owner, 2026-11-19, M2-Q17; M2-1): every fact gets one line of
 text naming its identity, derived when the document is read and never
-written in it. Operations, proposals, the agent index, MCP tools and the web
-editor name a fact by it. It is the key, the state, then `name=value` parts,
+written in it. The agent index and the catalog pages name a fact by it (as
+M2's operations, MCP tools and editor did). It is the key, the state, then `name=value` parts,
 joined by `|`:
 
 | Kind of key                   | Identity key                                                                       |
@@ -781,17 +770,18 @@ joined by `|`:
 
 Relation attributes follow the order of the schema's `identified_by`. Values
 are written as text (`128`, `true`); `%`, `|` and line breaks inside a part
-are written `%25`, `%7C`, `%0A` and `%0D`. Reason: agents and the editor can
-name the fact an operation replaces or removes without rebuilding these
-rules, and the key changes exactly when the identity does (for example when a
+are written `%25`, `%7C`, `%0A` and `%0D`. Reason: anything that names a
+fact can do so without rebuilding these rules, and the key changes exactly
+when the identity does (for example when a
 schema makes a key single-valued).
 
-**Current facts.** The current facts are exactly the facts in the latest
-applied revision. Earlier values live in [history](#9-history-and-purge).
+**Current facts.** The current facts are exactly the facts in the documents
+on `main`. Earlier values live in [history](#9-history-and-purge).
 
-**Replace or add beside.** When a catalog proposal writes a fact, it
-**replaces** the current fact with the same identity, and is **added beside**
-the others otherwise. So:
+**Replace or add beside.** A new fact **replaces** the current fact with the
+same identity (the agent changes or moves that fact), and is **added beside**
+the others otherwise; two current facts with one identity are refused on
+push ([8.3](#83-validation-on-push)). So:
 
 - a new observation of a single-valued key by the same means replaces the old
   one (Musashi's disk size seen again with `df`);
@@ -799,7 +789,7 @@ the others otherwise. So:
   which can make a discrepancy;
 - an `observed` fact is added beside an `intended` fact for the same key;
 - a new value of a multi-valued key is added; a value that no longer holds is
-  removed by an explicit remove operation, never by omission.
+  removed explicitly, never by omission.
 
 Reason: "the same source replaces, a different source adds" needs a source
 that can be compared reliably; free-text sources cannot, so `via` names it.
@@ -829,11 +819,11 @@ facts:
   `key: {value: ..., via: ..., note: ..., task: ..., remove: true}`.
   A multi-valued key holds a list. In an `unknown` list the value is a short
   note saying why it is unknown.
-- **No check IDs.** A fact check is identified by its group. Catalog
-  proposals carry their fact checks inline, and Shinan writes them into the
-  Markdown when it applies them, merging a new check into an existing group
-  only when every field matches. Reason: invented local IDs such as `c5`
-  collide when two proposals add checks at once.
+- **No check IDs.** A fact check is identified by its group. Agents write
+  their groups themselves, and add a fact to an existing group only when it
+  is their own check and every field matches (its `by` names whoever first
+  pushed it, [8.3](#83-validation-on-push)). Reason: invented local IDs such
+  as `c5` collide when two agents add checks at once.
 - A fact appears in exactly one group. A recheck moves it to the new group.
   Groups left empty are dropped from the current document and remain in
   history.
@@ -844,7 +834,7 @@ facts:
   is never named like a fact check's field (`checked`, `by`, `scope`,
   `source`, `limits`); such a fact is invalid. Reason: `{ to: …, by: guneet,
 checked: 2020-01-01 }` under an agent's own fact check would read, in the
-  text or an export, as if someone else had checked it. A key that is not a relation has only
+  text, as if someone else had checked it. A key that is not a relation has only
   `value`, `via`, `note`, `task`, `remove` and `accepted`. `remove: true` is
   only for `planned` facts. `task` holds a task ID (`T-12`) or the ID of an
   accepted `decision` entity. `planned` facts are in a group with no fact
@@ -859,7 +849,7 @@ trial in [2.6](#26-example)), and facts checked together sit together.
 
 The four states are **decided** (plan, Catalog pillar), with `proposed`
 renamed to **`planned`** (owner, O-5, [#25]; reason: "proposed" already means
-a catalog proposal and a document status). Their meanings follow the
+a catalog proposal in M2, and a document status). Their meanings follow the
 glossary's [fact state test](domain-model.md#fact-state): if the owning source
 declares something now, it is `intended`, even if not yet applied; if it is
 agreed but not yet in the owning source, it is `planned`. The rules for each
@@ -1036,7 +1026,7 @@ Rules (**proposed**; reason: P5 and the `workspace` repository's practice):
   returned with the entity in the agent index.
 - A discrepancy is resolved by one of: changing the world (a task, then a new
   check); changing the owning source (then a new `intended` check); removing
-  an observation shown to be wrong, with a note in the proposal; or recording
+  an observation shown to be wrong, with the reason in the commit message; or recording
   that the difference is accepted, with a `note` and an owner. An accepted
   discrepancy stays visible but is not flagged as needing attention.
   **Decided (owner, 2026-11-19, M2-Q17; M2-1):** acceptance is written on the facts: each fact of the
@@ -1048,20 +1038,18 @@ Rules (**proposed**; reason: P5 and the `workspace` repository's practice):
   operation removes `accepted` from all its facts and the discrepancy needs
   accepting again. Reason: it keeps the acceptance in the text with the
   evidence; a routine recheck of an accepted difference (such as Musashi's
-  lagging metadata) does not come back for approval every time, while new
-  evidence is looked at again.
-  **Decided (owner, 2026-11-19, M2-Q17; M2-2, [#84](https://github.com/guneet-xyz/shinan/issues/84),
-  raised in review of [#108](https://github.com/guneet-xyz/shinan/pull/108)):** `accepted` is never sent
-  with a fact. Shinan writes it, as it writes `by`: an `accept-discrepancy`
-  operation names the discrepancy's facts and the reason, and applies only
-  when a person approves the proposal (or makes the edit themselves where
-  [8.2](#82-no-catalog-approval) applies it at once); `accepted`
-  then names that person's `person` entity. It never comes from the person
-  an agent acts for. An operation that sends `accepted` is refused. The
-  reason replaces each fact's earlier `note`, so the approval should show
-  the earlier notes. Reason: accepting a discrepancy is the approving
-  person's decision, so an agent (or anyone) must not be able to write it
-  on someone else's behalf.
+  lagging metadata) does not come back as a disagreement every time, while
+  new evidence is looked at again.
+  **With the Git-based catalog** (no catalog approval,
+  [D-060](decisions/D-060-no-catalog-approval.md)), the agent writes
+  `accepted` in the document like any field, and only when the person it
+  names told it so, in the task; never on its own judgment (the skill,
+  `references/facts.md`). Validation checks that `accepted` names a `person`
+  entity ([8.3](#83-validation-on-push)). M2's `accept-discrepancy`
+  operation, which applied only with that person's approval (M2-2,
+  [#84](https://github.com/guneet-xyz/shinan/issues/84)), is gone with
+  catalog proposals. Reason: accepting a discrepancy stays the person's
+  decision; the commit history and the push log show who wrote it.
 - A `planned` fact that differs from current facts is a plan, not a
   discrepancy.
 - **Open:** whether to flag gaps between the `intended` and `observed` values
@@ -1174,7 +1162,7 @@ cannot be compared that way and invites running outdated instructions.
 
 **Decided (owner, O-2 and O-43, [#25]):** there is no restricted level in the
 catalog. Every member of a workspace, and every agent acting for one, can read
-the whole catalog, its history, its proposals and any export of it.
+the whole catalog, its history and every clone of its repository.
 Consequences:
 
 - Sensitive but non-secret details, such as internal addresses and host key
@@ -1209,29 +1197,29 @@ catalog records **where a secret lives**, not the secret.
 
 ### 7.3 A check for secret-looking values
 
-> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-3](build-plan-git-catalog.md#gc-3-push-checks-and-the-push-log)): the check runs on every push, near-certain credentials refuse it, and owners can allow a value as "not a secret" (D-060). **As built for pushes (GC-3a):** "On every push" at the end of this section. The rest describes M2 as built (v0.3.0), whose proposals are gone.
-
-Even with no secrets allowed, a value can slip in by mistake. Once applied,
+Even with no secrets allowed, a value can slip in by mistake. Once pushed,
 it is shown to every member of the workspace, sent to the model provider of
-every agent that reads it (which cannot be recalled), kept in revision history
-until someone purges it, and copied into any export taken meanwhile. A light
-check before applying is much cheaper than cleaning up afterwards.
-**Proposed:**
+every agent that reads it (which cannot be recalled), kept in the
+repository's history until a workspace owner removes it, and copied into
+every clone that fetches it. A light check before a push is kept is much
+cheaper than cleaning up afterwards. **Decided (owner, GD-10, GQ-2,
+[D-060](decisions/D-060-no-catalog-approval.md)):**
 
-- **Block** a catalog proposal when any of its text (fact values, `note`,
-  fact check `scope`, `source` and `limits`, entity fields, the body, the
-  proposal's explanation) contains a value that is almost certainly a
-  credential: a private key block, a token with a known prefix (including
-  Shinan's own tokens, per [identity](identity.md)), or a URL with a password
-  in it. False alarms here are rare.
+- **Refuse a push**, on any branch, when anything it brings (files, commit
+  messages, author and committer lines, branch names) contains a value
+  that is almost certainly a credential: a private key block, a token with
+  a known prefix (including Shinan's own tokens, per [identity](identity.md)),
+  or a URL with a password in it. False alarms here are rare.
 - **Warn** on weaker signs, such as `password=` or a long random-looking
-  string: the proposal is held for catalog approval, with the matching text
-  pointed out, so a person confirms it is not a secret.
+  string: the push's answer points the text out, and the push still
+  applies. Nobody approves pushes.
+- **"Not a secret":** a workspace owner can allow one exact value the check
+  refused or warned about (below).
 - The check is a safety net, not a guarantee; secrets stay the team's job.
 - **Decided (owner, 2026-11-19, M2-Q17; M2-1, [#82](https://github.com/guneet-xyz/shinan/issues/82)):**
-  what is matched. The whole text of every document a proposal writes is
-  checked (frontmatter and body), and the proposal's other text. Frontmatter
-  values and keys are also checked as read, so a secret written with YAML
+  what is matched. The whole text of every file a push brings is checked
+  (for a document, frontmatter and body), and the push's other text.
+  Frontmatter values and keys are also checked as read, so a secret written with YAML
   escapes (such as `\x41` for `A`) is found too.
   - **Blocked:** private key blocks (`-----BEGIN … PRIVATE KEY-----`), also in base64 as Kubernetes secrets hold them, even after a certificate in the same bundle, and
     `age` secret keys; Shinan agent tokens (the prefix from
@@ -1242,34 +1230,34 @@ check before applying is much cheaper than cleaning up afterwards.
     prefixes; JSON Web Tokens; Slack and Discord webhook URLs; URLs with a
     password (`scheme://user:pw@`, the user may be empty), unless the
     password is a placeholder such as `****` or `${PASSWORD}`.
-  - **Held for approval:** `password`, `secret`, `token`, `api_key` and
+  - **Warnings:** `password`, `secret`, `token`, `api_key` and
     similar words, also inside names such as `DB_PASSWORD` or
     `AWS_SECRET_ACCESS_KEY`, followed by `=` or `:` and a value of four or
     more characters that is not a placeholder; strings of 32 or more letters,
     digits, `_`, `-`, `+` or `=` that mix upper and lower case with digits
     and look random (about 4 bits of entropy per character). Prose such as
-    "The password: stored in Obscuro" is held too; a person confirms it.
+    "The password: stored in Obscuro" is warned about too.
   - **Not flagged:** SSH public keys, and fingerprints, digests and
     subresource-integrity hashes (`SHA256:…`, `sha512-…`), whole, since host
     key fingerprints may be recorded ([7.1](#71-everyone-in-a-workspace-sees-everything)).
   - A finding names the kind and shows only the first few characters. Every
     validation message is cut the same way wherever it would repeat a
     secret-looking value (for example a token typed as a `type` or `by`), so
-    validation results, which are stored with the proposal, never repeat
+    the push's answer, which agents and their logs keep, never repeats
     one. A near-certain secret is cut from every message; a weaker sign only
     from messages about the text where it was found, so an ordinary word
     after `token:` is not cut elsewhere; and each message is checked itself
     before it is returned.
-  - Each document and each proposal text is at most 64 KiB of UTF-8
-    ([2.1](#21-one-document-per-entity-and-what-source-of-truth-means));
-    longer text is refused, so the check always reads all of it.
+  - Each document on `main` is at most 64 KiB of UTF-8
+    ([2.1](#21-one-document-per-entity-and-what-source-of-truth-means)),
+    and any file of up to 1 MiB is read whole, so the check always reads
+    all of it.
 
 Reason: blocking only near-certain matches costs almost nothing, while one
-leaked secret would have to be purged, rotated at its source, and chased
-through any exports (see [section 9](#9-history-and-purge)).
+leaked secret would have to be removed from the history, rotated at its
+source, and chased through every clone (see [section 9](#9-history-and-purge)).
 
-**On every push (as built, GC-3a; Git-based catalog plan §2.5, check 3,
-GQ-2):**
+**As built (GC-3a; Git-based catalog plan §2.5, check 3, GQ-2):**
 
 - **What is read:** every file, commit message (and author and committer
   line) and branch name a push brings that no branch held before, on any
@@ -1395,7 +1383,7 @@ how the rules are applied.
   reference broken by removing an ID without keeping it as an alias).
   Reason: one old mistake must not block every later change, and a warning a
   person already accepted (a key outside the schema, a value confirmed not to
-  be a secret) must not gate every later recheck ([8.2](#82-no-catalog-approval)).
+  be a secret) must not come back on every later recheck.
   Secret warnings are compared by the value found, not the message, so a new
   value is never taken for an accepted one. A document the change does not
   write is compared with its earlier, identical text, so even a document
@@ -1431,14 +1419,14 @@ how the rules are applied.
   has no current `member` fact naming one ([2.3](#23-entity-fields)). The
   `member` fact holds the person's handle.
 - **Task status in facts: a warning, and narrow** (**decided**, owner,
-  2026-11-19, M2-Q17). A fact is held for approval when its key ends in `status`
+  2026-11-19, M2-Q17). A fact is warned about when its key ends in `status`
   or `state` and its value is a task workflow word of
   [tasks §7.2](tasks.md#72-statuses) that means little outside a task:
   `triage`, `to do`, `in progress`, `in review` or `verifying`. `done` and
   `cancelled` are left out. Reason: `subscription.status: cancelled` or
   `registration.state: done` are real facts, and a false alarm must never
   block a correct change.
-- **Size.** A document or proposal text longer than 64 KiB of UTF-8 is refused
+- **Size.** A document longer than 64 KiB of UTF-8 is refused
   (`too-large`), as [2.1](#21-one-document-per-entity-and-what-source-of-truth-means)
   sets for documents. Reason: it bounds the work of every check, and no
   catalog document needs more.
@@ -1538,7 +1526,7 @@ proposals, review list and comments are gone (GC-5).
 only by pushes to its repository in Shinan, checked as [8.1](#81-pushes)
 says; nothing else writes `main` except Shinan's own commits (a
 repository's first commit, the migration's and a purge's rewrite). Editing
-an export changes nothing in Shinan. Reason: there must be one path to
+a clone changes nothing in Shinan until it is pushed. Reason: there must be one path to
 change the source of truth, or the checks and history mean nothing.
 
 ## 9. History and purge
@@ -1642,12 +1630,13 @@ change the source of truth, or the checks and history mean nothing.
 
 ## 10. The catalog pages
 
-> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-7](build-plan-git-catalog.md#gc-7-the-catalog-ui), [GC-10](build-plan-git-catalog.md#gc-10-documents-catalog-everywhere-and-what-no-package-owns)): people browse `main` as a file tree, rendered pages, search, "needs attention" and commit history; type index pages, pending proposals and the approval lists go (D-064). Until then, this section describes M2 as built (v0.3.0).
-
-The catalog pages are the catalog shown to people (called "the wiki" until
-the owner renamed it, [D-064](decisions/D-064-catalog-not-wiki.md)). Its layout, navigation and editing
-screens are owned by [human experience](human-experience.md). The catalog
-requires it to show (**proposed**; reason: these are what make the catalog
+The catalog pages are the catalog shown to people: `main` as a file tree,
+rendered pages, search and the commit history, with no editing in the
+browser for now (**decided**, owner, GD-7 to GD-9, GQ-6,
+[D-064](decisions/D-064-catalog-not-wiki.md), which renamed "the wiki" to
+"the catalog"). Their layout and navigation are owned by
+[human experience](human-experience.md#the-catalog). The catalog requires
+them to show (**proposed**; reason: these are what make the catalog
 trustworthy at a glance, per D-007):
 
 - the body, rendered;
@@ -1655,42 +1644,43 @@ trustworthy at a glance, per D-007):
   where they apply (owner, O-19, [#25]), and its fact check's source, scope and
   limits;
 - discrepancies, prominently, with both sides' evidence;
-- generated sections: inverse relations, known unknowns (and, separately,
-  not-yet-recorded keys), pending catalog proposals, related tasks, the entity
-  timeline;
-- index pages per entity type, built-in and custom, from `title`, `summary`,
-  `status` and `owner` (replacing the hand-written tables in the `workspace`
-  repository's catalog README files), with each type's schema document;
-- workspace-wide lists: discrepancies, facts due for recheck, known unknowns,
-  recent changes, and catalog proposals waiting for catalog approval;
-- for workspace owners, a link to the workspace export
-  ([2.2](#22-export-the-exit-path)).
+- generated parts: inverse relations, the policies and runbooks that apply,
+  and later related tasks;
+- who last changed a page and its history, from `main`'s commits and the
+  push log;
+- workspace-wide: "Needs attention" (discrepancies, facts due for recheck,
+  known unknowns, files that cannot be read) and Recent changes, `main`'s
+  commit history with the agent and person that first pushed each commit
+  (GQ-6).
+
+Type index pages are gone (D-064: people browse by folder, not by type); a
+type's schema is a page in the `schema` folder.
 
 ## 11. Start here
 
-> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-10](build-plan-git-catalog.md#gc-10-documents-catalog-everywhere-and-what-no-package-owns)): the start-here document is `start-here.md` and changes by a push like any document; "changed only with catalog approval" lapsed (D-060). Until then, this section describes M2 as built (v0.3.0).
-
 A new person or a new agent needs a short path through the catalog. The plan
-names a "start here" path (the "Wiki and onboarding" pillar, now the catalog
-pages, owned by
-[human experience](human-experience.md)); this section defines its content.
+names a "start here" path (its "Wiki and onboarding" pillar, now the catalog
+pages, [D-064](decisions/D-064-catalog-not-wiki.md); shown as
+[human experience](human-experience.md#start-here-and-onboarding) says);
+this section defines its content.
 
 **Decided (owner, O-18, [#25]):** each workspace has one **start-here
 document** with two paths, one for people and one for agents, built from the
-same catalog pages and changed only with catalog approval. Details
-(**proposed**):
+same catalog pages. Its "changed only with catalog approval" lapsed with
+[D-060](decisions/D-060-no-catalog-approval.md): it changes by a push like
+any document. Details (**proposed**):
 
-- It is written in Markdown like an entity and changed through catalog
-  proposals, but is not an entity type and holds no facts. Reason: the path is
-  a curated route, not a thing in the world; keeping it in the catalog gives it
-  history and approval.
+- It is the file `start-here.md` in the catalog repository, written in
+  Markdown like an entity, but it is not an entity type and holds no facts.
+  Reason: the path is a curated route, not a thing in the world; keeping it
+  in the catalog gives it history.
 - Each path is an ordered list of entity references with a sentence on each:
   - **for people:** what the workspace covers, the main projects, machines and
     services, the policies that matter, who owns what;
   - **for agents:** the policies to follow first (for example safety and
     deployment approval), how to find context for a task, the
     documentation-impact obligation ([8.4](#84-agents-documentation-impact-obligation)),
-    and where to propose changes.
+    and how this workspace wants catalog changes made.
 
   Reason: the `workspace` repository has the same split today: its README
   "Start here" for people and `AGENTS.md` plus `docs/agent-entrypoint.md` for
@@ -1729,13 +1719,15 @@ same catalog pages and changed only with catalog approval. Details
   still names it reads as a problem (`start-here-invalid`), and the parser's
   version changed with it (GC-4).
 
-- Generic rules that every Shinan agent follows in every workspace (how to use
-  the MCP tools, how to report presence) are not in this document; they ship
-  with the skill ([agent integrations](agent-integrations.md)). The agents'
-  path contains only this workspace's rules. Reason: separates product
-  conventions from team policy.
-- How agents receive the agents' path (for example when an agent session
-  starts, through the skill or MCP): [agent integrations](agent-integrations.md).
+- Generic rules that every Shinan agent follows in every workspace (how to
+  read and push the catalog, how to report presence) are not in this
+  document; they ship with the skill ([agent integrations](agent-integrations.md)).
+  The agents' path contains only this workspace's rules. Reason: separates
+  product conventions from team policy.
+- Agents read the agents' path in their clone: the skill tells them to fetch
+  and read `start-here.md` on `origin/main` before they start
+  ([agent integrations, the skill](agent-integrations.md#the-skill)). The
+  catalog pages show the people's path.
 - **Open:** whether larger workspaces need more than one path (per team or
   per role).
 
@@ -1803,9 +1795,9 @@ and known unknowns.
 ### 12.3 Automatic fact checks by Shinan
 
 Some facts can be checked by Shinan itself through its git host connections,
-for example that a `repository` exists and is reachable. Such checks are fact
-checks with Shinan as the actor and go through the same catalog proposals.
-**Proposed.** Reason: cheap, reliable rechecks of routing facts keep the
+for example that a `repository` exists and is reachable. Such checks would
+be fact checks with Shinan as the actor, written to the catalog repository
+and checked like any push. **Proposed.** Reason: cheap, reliable rechecks of routing facts keep the
 catalog fresher without agent effort. The roadmap proposes them for phase 2a;
 which facts is owned with [git hosts](git-hosts.md). Shinan never connects to
 machines to check facts (P6).
@@ -1928,8 +1920,8 @@ checked when only one fact was verified", and D-007):
 - **Unknowns.** Values written `unknown` and "Known unknowns" items become
   `unknown` facts; "Verification limits" sections become `limits` on the
   matching fact checks.
-- **The importer** (person or agent session) is the author of the catalog
-  proposal, not the checker. Last-checked times are never refreshed by the
+- **The importer** (person or agent session) is the author of the import,
+  not the checker. Last-checked times are never refreshed by the
   import.
 - **Original paths.** The importer sets `imported_from` on every document it
   creates, including policies and the start-here document, with a section
@@ -1963,25 +1955,26 @@ checked when only one fact was verified", and D-007):
 | `docs/forgejo-setup.md`                                                                     | Its setup checklist becomes facts on `service/forgejo`: items the owner reported become `observed` facts with the owner's statement as source; pending items become `unknown` facts, or `planned` facts if a task exists. Its "verified CLI usage" section becomes a `runbook` if agents still need it after Shinan's git host connections exist; otherwise it is left in the archived repository. |
 | `README.md` "Start here", `AGENTS.md`, `docs/agent-entrypoint.md`                           | The start-here document; product-wide parts move to the skill ([agent integrations](agent-integrations.md))                                                                                                                                                                                                                                                                                        |
 | `docs/skills.md`, `.opencode/skills/*` (workspace-navigate, -maintain, -task, -audit)       | Not imported. Replaced by Shinan's skill ([agent integrations](agent-integrations.md)); any workspace-specific rule they contain becomes a `policy`                                                                                                                                                                                                                                                |
-| `integrations/opencode/*`                                                                   | Not imported. Replaced by setup instructions for Shinan's MCP server, skill and plugin ([agent integrations](agent-integrations.md))                                                                                                                                                                                                                                                               |
-| `scripts/check.py`, tests                                                                   | Replaced by validation on every catalog proposal; not imported                                                                                                                                                                                                                                                                                                                                     |
-| Pull requests changing catalog files; `CHANGELOG.md`                                        | Catalog proposals; revisions and events. The changelog and Git history stay in the archived repository.                                                                                                                                                                                                                                                                                            |
+| `integrations/opencode/*`                                                                   | Not imported. Replaced by Shinan's agent setup (credential helper, clone and skill) and plugin ([agent integrations](agent-integrations.md))                                                                                                                                                                                                                                                       |
+| `scripts/check.py`, tests                                                                   | Replaced by the checks on every push; not imported                                                                                                                                                                                                                                                                                                                                                 |
+| Pull requests changing catalog files; `CHANGELOG.md`                                        | Not imported: from cutover, changes are pushes, with the push log and events. The changelog and Git history stay in the archived repository.                                                                                                                                                                                                                                                       |
 | Forgejo issues                                                                              | Tasks ([tasks](tasks.md))                                                                                                                                                                                                                                                                                                                                                                          |
 
 Extracting facts from prose cannot be fully automatic. **Proposed:** import
 each entry with its prose as body and the facts that can be extracted
 reliably, then extract the rest gradually, entity by entity, through ordinary
-catalog proposals. Reason: a lossless first import, then improvement through
+pushes. Reason: a lossless first import, then improvement through
 the normal flow, avoids a risky one-shot conversion.
 
 ### 13.3 Mapping back, for a rollback
 
 The roadmap allows a rollback during the window after cutover: the catalog is
-taken from a workspace export back into a `workspace` repository pull request
+taken from a clone of the catalog repository back into a `workspace`
+repository pull request
 ([roadmap §6.7](roadmap.md#67-rollback-and-emergency-access), which owns the
-process and links here for every mapping rule). The export's layout
-([2.2](#22-export-the-exit-path)) is not the `workspace` repository's, so a
-**rollback converter** turns the export's catalog back into files that
+process and links here for every mapping rule). The catalog repository's
+layout ([2.2](#22-the-repository-the-exit-path)) is not the `workspace`
+repository's, so a **rollback converter** turns its documents back into files that
 repository's checker, `scripts/check.py`, accepts. This section is the
 complete rule set. All of it is **proposed**. Reason: a rollback must land in
 the format the `workspace` repository's people, agents and checker already
@@ -1998,9 +1991,9 @@ frontmatter with `id` equal to the file name, `status` of `active`,
 
 #### Which documents are written
 
-1. **Unchanged documents are left alone.** A document with no catalog
-   revision after the migration import (in `catalog/history.jsonl`) keeps its
-   file at the frozen cutover revision; the converter does not touch it.
+1. **Unchanged documents are left alone.** A document no commit on `main`
+   changed after the migration import keeps its file at the frozen cutover
+   revision; the converter does not touch it.
    Reason: a rewrite would turn an untouched entry into a large, meaningless
    diff.
 2. **Changed and new documents are converted** to their old path:
@@ -2009,13 +2002,13 @@ frontmatter with `id` equal to the file name, `status` of `active`,
    - a document created after cutover goes to its type's folder below, using
      its slug as the file name.
 
-| Export                       | Old path                     |
-| ---------------------------- | ---------------------------- |
-| `catalog/project/<slug>.md`  | `catalog/projects/<slug>.md` |
-| `catalog/machine/<slug>.md`  | `catalog/machines/<slug>.md` |
-| `catalog/service/<slug>.md`  | `catalog/services/<slug>.md` |
-| `catalog/runbook/<slug>.md`  | `runbooks/<slug>.md`         |
-| `catalog/decision/<slug>.md` | `decisions/<slug>.md`        |
+| Catalog repository   | Old path                     |
+| -------------------- | ---------------------------- |
+| `project/<slug>.md`  | `catalog/projects/<slug>.md` |
+| `machine/<slug>.md`  | `catalog/machines/<slug>.md` |
+| `service/<slug>.md`  | `catalog/services/<slug>.md` |
+| `runbook/<slug>.md`  | `runbooks/<slug>.md`         |
+| `decision/<slug>.md` | `decisions/<slug>.md`        |
 
 3. **Documents with no old place are not converted:** `policy`, `person` and
    `agent` entities; entities of custom types; type schema documents; the
@@ -2044,7 +2037,7 @@ frontmatter with `id` equal to the file name, `status` of `active`,
 | The body                                                                | Kept as written in Shinan                                                                                                                                                                                                                                                                                                                                           |
 | References to converted documents, such as `[Musashi](machine/musashi)` | Relative links to their old paths, such as `[Musashi](../machines/musashi.md)`                                                                                                                                                                                                                                                                                      |
 | References to documents that are not converted                          | Plain text: the title with the ID in code, so no link is broken                                                                                                                                                                                                                                                                                                     |
-| `catalog/history.jsonl` and the export file                             | Not committed. Kept with the export archive, which the PR description names, so the history since cutover is not lost                                                                                                                                                                                                                                               |
+| The catalog repository's history                                        | Not committed. A bundle of the repository is kept beside the rollback, which the PR description names, so the history since cutover is not lost                                                                                                                                                                                                                     |
 
 - The page fields never claim a whole-page check: they describe one fact
   check, and every other fact carries its own date in the generated section.
@@ -2056,7 +2049,7 @@ frontmatter with `id` equal to the file name, `status` of `active`,
 
 After converting, the converter runs `scripts/check.py` on the result.
 **Proposed:** every document that has no old place (rule 3) or still fails the
-check is committed **unchanged, in the export's format**, under a clearly
+check is committed **unchanged, in the catalog repository's format**, under a clearly
 marked folder `shinan-export/` at the top of the repository, with a
 `README.md` saying it is a copy from Shinan awaiting manual merging. The same
 rollback PR adds `shinan-export` to the ignored directories in
@@ -2078,23 +2071,23 @@ and that the unchanged entity produces no diff.
 
 What this document still needs from other documents:
 
-| Document                                        | What this document needs                                                                                                                                                                                                                                                                                                                                                     |
-| ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [Domain model and glossary](domain-model.md)    | The terms used here, including workspace export, recent changes feed and strict setting.                                                                                                                                                                                                                                                                                     |
-| [Architecture and operations](architecture.md)  | Revisions stored as Markdown text and the index built from it (the D-006 invariant); per-operation conflicts; purge; the check for secret-looking values; type schema documents in the parser and index. Its workspace export ([§5.5](architecture.md#55-export-and-import)) writes the catalog in the layout of [2.2](#22-export-the-exit-path), including `history.jsonl`. |
-| [Identity, agents and permissions](identity.md) | Who may approve and switch the strict setting; workspace owners only for export and purge; the written form of an actor in a fact check's `by` ([identity §8.7](identity.md#87-how-an-actor-is-written-in-text)); Shinan's token prefixes for the secret check.                                                                                                              |
-| [Agent integrations](agent-integrations.md)     | MCP and CLI tools to read the index and type schemas, send catalog proposals and rechecks, and comment on proposals; delivering the agents' start-here path; the recheck-before-acting and documentation-impact conventions.                                                                                                                                                 |
-| [Human experience](human-experience.md)         | Catalog pages, freshness, discrepancies, the editor, review list and recent changes feed, start-here presentation, pages for custom types and their schema documents, and the workspace export link for owners.                                                                                                                                                              |
-| [Tasks and work](tasks.md)                      | Links between tasks and catalog entities; promoting task decisions to `decision` entities; telling the catalog when a task behind a `planned` fact is cancelled ([4.4](#44-fact-states)); whether the documentation-impact obligation is part of "done" ([8.4](#84-agents-documentation-impact-obligation)).                                                                 |
-| [Git host integrations](git-hosts.md)           | Repository identity for `project` facts; which facts Shinan can check automatically, by reading only (owner, N-4, [#25]).                                                                                                                                                                                                                                                    |
-| [Roadmap and migration](roadmap.md)             | The rollback process, which uses the converter in [13.3](#133-mapping-back-for-a-rollback), and the rehearsal run of it (R14).                                                                                                                                                                                                                                               |
+| Document                                        | What this document needs                                                                                                                                                                                                                                                                                                                                                      |
+| ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [Domain model and glossary](domain-model.md)    | The terms used here, including catalog repository, push, push log and workspace export.                                                                                                                                                                                                                                                                                       |
+| [Architecture and operations](architecture.md)  | The catalog repositories, how Git is served and the checks on push; the index built from `main` (the D-006 invariant); purge as a history rewrite; type schema documents in the parser and index. Its workspace export ([§5.5](architecture.md#55-export-and-import)) writes the catalog in the layout of [2.2](#22-the-repository-the-exit-path), including `history.jsonl`. |
+| [Identity, agents and permissions](identity.md) | Who may clone and push (scopes); workspace owners only for "not a secret" values, export and purge; the push log; the written form of an actor in a fact check's `by` ([identity §8.7](identity.md#87-how-an-actor-is-written-in-text)); Shinan's token prefixes for the secret check.                                                                                        |
+| [Agent integrations](agent-integrations.md)     | The skill and agent setup for reading and pushing the catalog; delivering the agents' start-here path; the recheck-before-acting and documentation-impact conventions.                                                                                                                                                                                                        |
+| [Human experience](human-experience.md)         | Catalog pages, freshness, discrepancies, Recent changes and page history, start-here presentation, schema pages, and the workspace export link for owners.                                                                                                                                                                                                                    |
+| [Tasks and work](tasks.md)                      | Links between tasks and catalog entities; promoting task decisions to `decision` entities; telling the catalog when a task behind a `planned` fact is cancelled ([4.4](#44-fact-states)); whether the documentation-impact obligation is part of "done" ([8.4](#84-agents-documentation-impact-obligation)).                                                                  |
+| [Git host integrations](git-hosts.md)           | Repository identity for `project` facts; which facts Shinan can check automatically, by reading only (owner, N-4, [#25]).                                                                                                                                                                                                                                                     |
+| [Roadmap and migration](roadmap.md)             | The rollback process, which uses the converter in [13.3](#133-mapping-back-for-a-rollback), and the rehearsal run of it (R14).                                                                                                                                                                                                                                                |
 
 ## Proposed in this document
 
 1. [Principles](#1-principles) P4 to P7, including "catalog content is context,
    not authorization".
-2. A limited YAML subset for frontmatter; the catalog's
-   [export layout, with history](#22-export-the-exit-path); [entity fields](#23-entity-fields) as bookkeeping, not
+2. A limited YAML subset for frontmatter; the
+   [repository as the exit path](#22-the-repository-the-exit-path); [entity fields](#23-entity-fields) as bookkeeping, not
    facts.
 3. [Body rules](#25-body): current-state claims become facts; dated history
    stays in prose; generated sections are not hand-written.
@@ -2111,14 +2104,14 @@ What this document still needs from other documents:
 9. The [hold-versus-link split](#6-link-dont-copy).
 10. [Where secrets live](#72-where-secrets-live) and a
     [light check for secret-looking values](#73-a-check-for-secret-looking-values).
-11. [Every change is a catalog proposal of operations](#81-pushes);
-    the [strict setting and bulk approval](#82-no-catalog-approval);
-    [validation](#83-validation-on-push); [per-operation conflict checks](#85-conflicts-as-git-merges);
-    [agent review comments](#86-who-sees-work-in-progress).
+11. [Changes are pushes](#81-pushes), with
+    [no catalog approval](#82-no-catalog-approval) (decided, D-060);
+    [validation on push](#83-validation-on-push); [conflicts as Git merges](#85-conflicts-as-git-merges);
+    [work in progress on branches](#86-who-sees-work-in-progress).
 12. The [documentation-impact obligation](#84-agents-documentation-impact-obligation)
     for agents.
-13. [History](#9-history-and-purge): revisions, reverts, retired entities, and
-    purge warnings about copies outside Shinan.
+13. [History](#9-history-and-purge): Git's history, reverts, retired entities,
+    and purge warnings about copies outside Shinan.
 14. [Catalog page requirements](#10-the-catalog-pages), [start-here](#11-start-here) details and
     the [agent index](#12-the-agent-index) content, rules and
     [format](#124-the-index-format).
