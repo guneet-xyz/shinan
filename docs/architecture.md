@@ -567,8 +567,7 @@ the Git container is never called inside a database transaction:
      stops the purge before the swap.
 
    **With the push lock** (pushes meanwhile are refused at once: "Shinan is
-   removing text from this catalog's history: push again in a few
-   minutes"): if a push moved a branch during the first part, the rewrite
+   removing text from this catalog's history: wait a few minutes, fetch, then push again"): if a push moved a branch during the first part, the rewrite
    and its check are done again. Then, with the text: the journal entries
    not yet acknowledged, the first-pusher record and earlier purges'
    records get the new branch names, and the record of fact check groups

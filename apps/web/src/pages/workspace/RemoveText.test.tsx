@@ -279,32 +279,38 @@ describe("removing text from the catalog's history", () => {
     expect(screen.queryByLabelText("Text to remove")).toBeNull()
   })
 
-  it("says what may be left encoded, offers to finish an earlier removal, and shows why a removal failed", async () => {
+  it("says what may be left encoded after the pages, says a removal goes on, and shows why it failed", async () => {
+    let answer!: (status: {
+      id: string
+      state: "unfinished"
+      message: string
+    }) => void
     const api = fakeApi({
       catalogPurges: () => Promise.resolve([]),
       previewCatalogPurge: () =>
         Promise.resolve({
-          ...nowhere,
+          ...preview,
           mayAppearEncoded: [{ encoding: "base64", places: 2 }],
           unfinished: 1,
           finishesUnfinished: true,
         }),
       purgeCatalogText: () =>
         Promise.resolve({ id: removal.id, state: "running" as const }),
-      catalogPurgeStatus: () =>
-        Promise.resolve({
-          id: removal.id,
-          state: "unfinished" as const,
-          message: "The removal was not recorded: remove the same text again",
-        }),
+      catalogPurgeStatus: () => new Promise((resolve) => (answer = resolve)),
     })
     renderApp(path, api)
     await userEvent.type(await screen.findByLabelText("Text to remove"), secret)
     await userEvent.click(screen.getByRole("button", { name: "Find it" }))
+    const encoded = await screen.findByText(
+      /It may also be in the catalog encoded: base64 \(2 places\)\. Those copies stay\. If it's a secret, changing it where it was issued makes them harmless\. Otherwise, ask an agent for the encoded form and remove that here as well\./,
+    )
+    expect(encoded.textContent).toMatch(
+      /^Shinan removes only the text exactly as written\./,
+    )
+    // What is removed first, then what isn't.
+    const pages = screen.getByText("Pages that show it now:")
     expect(
-      await screen.findByText(
-        /It may also appear encoded, which Shinan does not remove: base64 \(2 places\)/,
-      ),
+      pages.compareDocumentPosition(encoded) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy()
     expect(
       screen.getByText("an earlier removal of this text that didn't finish"),
@@ -317,10 +323,44 @@ describe("removing text from the catalog's history", () => {
     await userEvent.click(
       screen.getByRole("button", { name: "Remove from Shinan's history" }),
     )
+    const removing = await screen.findByText(/This can take a few minutes/)
+    expect(removing.textContent).toBe(
+      "Removing… This can take a few minutes on a large catalog. You can leave this page: it goes on, and it appears under Earlier removals when it's done. Agents can keep pushing, except for a few seconds near the end.",
+    )
+    answer({
+      id: removal.id,
+      state: "unfinished",
+      message: "The removal was not recorded: remove the same text again",
+    })
     expect(
       await screen.findByText(
         "The removal was not recorded: remove the same text again",
       ),
     ).toBeTruthy()
+    expect(screen.queryByText(/This can take a few minutes/)).toBeNull()
+  })
+
+  it("says what may be left encoded when the text itself is nowhere", async () => {
+    const api = fakeApi({
+      catalogPurges: () => Promise.resolve([]),
+      previewCatalogPurge: () =>
+        Promise.resolve({
+          ...nowhere,
+          mayAppearEncoded: [
+            { encoding: "base64", places: 1 },
+            { encoding: "other-case", places: 3 },
+          ],
+        }),
+    })
+    renderApp(path, api)
+    await userEvent.type(await screen.findByLabelText("Text to remove"), secret)
+    await userEvent.click(screen.getByRole("button", { name: "Find it" }))
+    expect(await screen.findByText(/Nothing to remove\./)).toBeTruthy()
+    expect(
+      screen.getByText(
+        /encoded: base64 \(1 place\), in another letter case \(3 places\)\. Those copies stay\./,
+      ),
+    ).toBeTruthy()
+    expect(screen.queryByLabelText("Reason")).toBeNull()
   })
 })

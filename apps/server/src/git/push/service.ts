@@ -528,7 +528,7 @@ export function createPushService(options: {
         code: "busy",
         where: "",
         message:
-          "Shinan is removing text from this catalog's history: push again in a few minutes",
+          "Shinan is removing text from this catalog's history: wait a few minutes, fetch, then push again",
       })
     } else if (!release) {
       problems.push({

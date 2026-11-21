@@ -641,6 +641,29 @@ describe(
         by: labels.alpha,
         replaces: later,
       })
+      // And when it reached `main` (#196): the arrival of the commit it
+      // replaces, through `replaces_commit`; the arrivals hold commit IDs
+      // and times only.
+      const arrivals = sql<string>`(
+        with recursive chain ("current", depth) as (
+          select ${mainNow}::text, 0
+          union all
+          select f.replaces_commit, chain.depth + 1 from chain
+          join catalog_commit_first_pushes f
+            on f.workspace_id = ${workspaceId} and f.commit = chain."current"
+          where f.replaces_commit is not null and chain.depth < 50
+        )
+        select min(a.reached_main_at)::text from chain
+        join catalog_main_arrivals a
+          on a.workspace_id = ${workspaceId} and a.commit = chain."current"
+      )`
+      const [{ inherited: arrived, original }] = (
+        await db.execute<{ inherited: string | null; original: string | null }>(
+          sql`select ${arrivals} as inherited, (select reached_main_at::text from catalog_main_arrivals where workspace_id = ${workspaceId} and commit = ${later}) as original`,
+        )
+      ).rows as [{ inherited: string | null; original: string | null }]
+      expect(original).not.toBeNull()
+      expect(arrived).toBe(original)
 
       // The push log agrees with the rewritten branches.
       expect(
@@ -736,7 +759,7 @@ describe(
         const refused = await pushAs("alpha", folder, refspec)
         expect(refused.code).not.toBe(0)
         expect(remote(refused.stderr).join("\n")).toContain(
-          "Shinan is removing text from this catalog's history: push again in a few minutes",
+          "Shinan is removing text from this catalog's history: wait a few minutes, fetch, then push again",
         )
       }
       expect((await client.listRefs(workspaceId))?.busy).toBe(true)
@@ -824,7 +847,7 @@ describe(
         const refused = await pushAs("alpha", folder, "HEAD:refs/heads/w")
         expect(Date.now() - started).toBeLessThan(10_000)
         expect(remote(refused.stderr).join("\n")).toContain(
-          "Shinan is removing text from this catalog's history: push again in a few minutes",
+          "Shinan is removing text from this catalog's history: wait a few minutes, fetch, then push again",
         )
       } finally {
         release()

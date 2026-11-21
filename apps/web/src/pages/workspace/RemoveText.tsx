@@ -208,18 +208,8 @@ function RemoveForm(props: { onRemoved: () => void }) {
             ` ${plural(preview.unfinished, "earlier removal")} didn't finish: remove the same text again to finish ${preview.unfinished === 1 ? "it" : "each"}.`}
         </Notice>
       )}
-      {preview && preview.mayAppearEncoded.length > 0 && (
-        <Notice>
-          It may also appear encoded, which Shinan does not remove:{" "}
-          {preview.mayAppearEncoded
-            .map(
-              (e) =>
-                `${encodingNames[e.encoding]} (${plural(e.places, "place")})`,
-            )
-            .join(", ")}
-          . Shinan removes only the text as written; ask an agent to look at
-          those files.
-        </Notice>
+      {preview && places.length === 0 && (
+        <EncodedCopies encodings={preview.mayAppearEncoded} />
       )}
       {preview && preview.alsoWrittenAs.length > 0 && (
         <div className="flex flex-col gap-2 text-sm">
@@ -282,6 +272,7 @@ function RemoveForm(props: { onRemoved: () => void }) {
               </ul>
             </div>
           )}
+          <EncodedCopies encodings={preview.mayAppearEncoded} />
           {preview.acrossLines > 0 && (
             <p>
               Found across a line break in{" "}
@@ -361,13 +352,40 @@ function RemoveForm(props: { onRemoved: () => void }) {
       )}
       {remove.pending && (
         <Notice>
-          Removing… On a large catalog this takes a few minutes; you can leave
-          this page, and the removal goes on.
+          <strong>Removing…</strong> This can take a few minutes on a large
+          catalog. You can leave this page: it goes on, and it appears under
+          Earlier removals when it's done. Agents can keep pushing, except for a
+          few seconds near the end.
         </Notice>
       )}
       {remove.error !== undefined && <ErrorMessage error={remove.error} />}
       {failure !== undefined && <ErrorAlert>{failure}</ErrorAlert>}
     </Section>
+  )
+}
+
+/**
+ * Places that may hold the text encoded, which a removal doesn't reach
+ * (review of #197). The preview counts them but doesn't know their pages,
+ * so none are named.
+ */
+function EncodedCopies(props: {
+  encodings: CatalogPurgePreview["mayAppearEncoded"]
+}) {
+  if (props.encodings.length === 0) return null
+  return (
+    <p className="text-sm">
+      <strong>Shinan removes only the text exactly as written.</strong> It may
+      also be in the catalog encoded:{" "}
+      {props.encodings
+        .map(
+          (e) => `${encodingNames[e.encoding]} (${plural(e.places, "place")})`,
+        )
+        .join(", ")}
+      . Those copies stay. If it's a secret, changing it where it was issued
+      makes them harmless. Otherwise, ask an agent for the encoded form and
+      remove that here as well.
+    </p>
   )
 }
 
@@ -522,7 +540,7 @@ const encodingNames: Record<
   "percent-every-byte": "percent-encoded byte by byte",
   "quoted-printable": "quoted-printable",
   "utf-16": "UTF-16",
-  "other-case": "in other letter case",
+  "other-case": "in another letter case",
 }
 
 const structureNames: Record<

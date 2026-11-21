@@ -628,7 +628,7 @@ asks how it stands. The Git container reads and rewrites the history while
 pushes go on, then holds pushes back for the swap only (seconds: 1.3 s for
 a branch of 20,000 pages and 6,002 commits, measured on Daedalus; the
 whole purge took two minutes). Pushes meanwhile are refused with "Shinan is
-removing text from this catalog's history: push again in a few minutes";
+removing text from this catalog's history: wait a few minutes, fetch, then push again";
 a second purge of the same catalog is refused until the first ends. Clones
 and fetches running at the swap are ended, so nobody gets the old history
 afterwards. The Git container's log has one line per purge with how long

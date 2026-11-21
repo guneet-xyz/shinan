@@ -155,6 +155,13 @@
       "when": 1795204042364,
       "tag": "0021_catalog_main_arrivals",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1795237553881,
+      "tag": "0022_catalog_purge_rewrite",
+      "breakpoints": true
     }
   ]
 }
