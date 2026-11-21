@@ -93,7 +93,8 @@ Read them when the step needs them:
   reading documents, freshness, discrepancies and unknowns.
 - [references/facts.md](references/facts.md): fact states, writing fact
   checks by hand, provenance and where secrets live.
-- [references/changing.md](references/changing.md): the Git workflow, an
-  example change, and every reason Shinan refuses a push.
+- [references/changing.md](references/changing.md): the Git workflow, what
+  to do after a purge, an example change, and every reason Shinan refuses a
+  push.
 - [references/types.md](references/types.md): the built-in types' keys and
   recheck intervals.
