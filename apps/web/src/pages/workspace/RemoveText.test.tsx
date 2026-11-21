@@ -340,7 +340,7 @@ describe("removing text from the catalog's history", () => {
     expect(screen.queryByText(/This can take a few minutes/)).toBeNull()
   })
 
-  it("says what may be left encoded when the text itself is nowhere", async () => {
+  it("says what may be left encoded when the text itself is nowhere as written", async () => {
     const api = fakeApi({
       catalogPurges: () => Promise.resolve([]),
       previewCatalogPurge: () =>
@@ -355,12 +355,18 @@ describe("removing text from the catalog's history", () => {
     renderApp(path, api)
     await userEvent.type(await screen.findByLabelText("Text to remove"), secret)
     await userEvent.click(screen.getByRole("button", { name: "Find it" }))
-    expect(await screen.findByText(/Nothing to remove\./)).toBeTruthy()
     expect(
-      screen.getByText(
-        /encoded: base64 \(1 place\), in another letter case \(3 places\)\. Those copies stay\./,
+      await screen.findByText(
+        "Shinan doesn't hold this text as written anywhere in this catalog.",
       ),
     ).toBeTruthy()
+    // Not "Nothing to remove": the encoded copy may need removing.
+    expect(screen.queryByText(/Nothing to remove/)).toBeNull()
+    const encoded = screen.getByText(/so ask an agent for the encoded form/)
+    expect(encoded.textContent).toBe(
+      "It may be in the catalog encoded: base64 (1 place), in another letter case (3 places). Shinan removes only text exactly as written, so ask an agent for the encoded form and remove that here.",
+    )
+    expect(screen.queryByText(/Those copies stay/)).toBeNull()
     expect(screen.queryByLabelText("Reason")).toBeNull()
   })
 })

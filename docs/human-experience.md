@@ -1333,14 +1333,18 @@ Shinan's history**. While it runs, the page says "**Removing…** This can
 take a few minutes on a large catalog. You can leave this page: it goes on,
 and it appears under Earlier removals when it's done. Agents can keep
 pushing, except for a few seconds near the end", and asks the server how it
-stands every 3 seconds. After "Pages that show it now", and on its own when
-the exact text is nowhere, the preview says where the text may be encoded,
-which a removal doesn't reach: "**Shinan removes only the text exactly as
-written.** It may also be in the catalog encoded: base64 (1 place). Those
-copies stay. If it's a secret, changing it where it was issued makes them
-harmless. Otherwise, ask an agent for the encoded form and remove that here
-as well." It names no pages, since the preview counts those places without
-knowing their pages (product re-check of #197). The list of places also
+stands every 3 seconds. After "Pages that show it now", the preview says
+where the text may be encoded, which a removal doesn't reach: "**Shinan
+removes only the text exactly as written.** It may also be in the catalog
+encoded: base64 (1 place). Those copies stay. If it's a secret, changing it
+where it was issued makes them harmless. Otherwise, ask an agent for the
+encoded form and remove that here as well." When the text is nowhere as
+written but may be encoded, the page says "Shinan doesn't hold this text as
+written anywhere in this catalog." and "**It may be in the catalog
+encoded:** base64 (1 place). Shinan removes only text exactly as written,
+so ask an agent for the encoded form and remove that here.", never "Nothing
+to remove". It names no pages, since the preview counts those places
+without knowing their pages (product re-checks of #197). The list of places also
 says when removing this text finishes an earlier removal that didn't (only
 the same text can). Afterwards, until the owner leaves the page, the top of
 the section says "Removed from Shinan's history (removal N). Now:" with

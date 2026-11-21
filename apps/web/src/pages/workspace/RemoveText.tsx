@@ -202,14 +202,15 @@ function RemoveForm(props: { onRemoved: () => void }) {
       {find.error !== undefined && <ErrorMessage error={find.error} />}
       {preview && places.length === 0 && (
         <Notice>
-          Shinan doesn't hold this text anywhere in this catalog. Nothing to
-          remove.
+          {preview.mayAppearEncoded.length > 0
+            ? "Shinan doesn't hold this text as written anywhere in this catalog."
+            : "Shinan doesn't hold this text anywhere in this catalog. Nothing to remove."}
           {preview.unfinished > 0 &&
             ` ${plural(preview.unfinished, "earlier removal")} didn't finish: remove the same text again to finish ${preview.unfinished === 1 ? "it" : "each"}.`}
         </Notice>
       )}
       {preview && places.length === 0 && (
-        <EncodedCopies encodings={preview.mayAppearEncoded} />
+        <EncodedCopies encodings={preview.mayAppearEncoded} only />
       )}
       {preview && preview.alsoWrittenAs.length > 0 && (
         <div className="flex flex-col gap-2 text-sm">
@@ -367,24 +368,30 @@ function RemoveForm(props: { onRemoved: () => void }) {
 /**
  * Places that may hold the text encoded, which a removal doesn't reach
  * (review of #197). The preview counts them but doesn't know their pages,
- * so none are named.
+ * so none are named. `only`: the text itself is nowhere as written.
  */
 function EncodedCopies(props: {
   encodings: CatalogPurgePreview["mayAppearEncoded"]
+  only?: boolean
 }) {
   if (props.encodings.length === 0) return null
+  const where = props.encodings
+    .map((e) => `${encodingNames[e.encoding]} (${plural(e.places, "place")})`)
+    .join(", ")
+  if (props.only)
+    return (
+      <p className="text-sm">
+        <strong>It may be in the catalog encoded:</strong> {where}. Shinan
+        removes only text exactly as written, so ask an agent for the encoded
+        form and remove that here.
+      </p>
+    )
   return (
     <p className="text-sm">
       <strong>Shinan removes only the text exactly as written.</strong> It may
-      also be in the catalog encoded:{" "}
-      {props.encodings
-        .map(
-          (e) => `${encodingNames[e.encoding]} (${plural(e.places, "place")})`,
-        )
-        .join(", ")}
-      . Those copies stay. If it's a secret, changing it where it was issued
-      makes them harmless. Otherwise, ask an agent for the encoded form and
-      remove that here as well.
+      also be in the catalog encoded: {where}. Those copies stay. If it's a
+      secret, changing it where it was issued makes them harmless. Otherwise,
+      ask an agent for the encoded form and remove that here as well.
     </p>
   )
 }
