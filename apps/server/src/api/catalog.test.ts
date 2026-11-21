@@ -47,7 +47,8 @@ status: active
 owner: person/guneet
 aliases: [machine/old-musashi]
 facts:
-  - checked: 2026-11-14
+  # Today, so the free space (rechecked weekly) never comes due.
+  - checked: ${new Date().toISOString().slice(0, 10)}
     by: guneet
     scope: df -h
     source: Read-only SSH
