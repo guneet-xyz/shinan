@@ -259,9 +259,12 @@ describe("health", () => {
 })
 
 describe("a migration's refusal", () => {
-  it("shows the drop's own message, explains a lock waited for too long, and nothing else", () => {
-    const drizzle = (cause: unknown) =>
-      Object.assign(new Error("Failed query: …"), { cause })
+  it("shows the drop's own message, explains its lock waited for too long, and nothing else", () => {
+    // As Drizzle's error: the statement that failed, PostgreSQL's under it.
+    const drizzle = (
+      cause: unknown,
+      query = 'LOCK TABLE "catalog_page_visits", "workspaces" IN ACCESS EXCLUSIVE MODE;',
+    ) => Object.assign(new Error("Failed query: …"), { query, cause })
     expect(
       migrationRefusal(
         drizzle(
@@ -282,6 +285,17 @@ describe("a migration's refusal", () => {
     ).toBe(
       "M2's catalog tables are kept: the drop waited 15 seconds for them while another session held them (is 0.3's web or worker still running?). Stop it and run migrate again; the moves already made are kept.",
     )
+    // Another migration's lock time-out is not the drop's.
+    expect(
+      migrationRefusal(
+        drizzle(
+          Object.assign(new Error("canceling statement due to lock timeout"), {
+            code: "55P03",
+          }),
+          'ALTER TABLE "people" ADD COLUMN "x" text;',
+        ),
+      ),
+    ).toBeNull()
     expect(
       migrationRefusal(
         drizzle(

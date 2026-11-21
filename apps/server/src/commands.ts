@@ -561,24 +561,36 @@ async function runMigrate(env: Env): Promise<number> {
 /**
  * Why a migration refused to run, to show the operator, or null for any
  * other failure: its own `RAISE EXCEPTION` (SQLSTATE P0001), whose message
- * is Shinan's, never a value; or a lock it waited for past its
- * `lock_timeout` (55P03), the drop of M2's tables (0020_m2_dropped).
+ * is Shinan's, never a value; or the drop of M2's tables (0020_m2_dropped)
+ * waiting past its `lock_timeout` (55P03) at its lock, the one statement
+ * that waits for locks there. Another migration's lock time-out is not
+ * explained so.
  */
 export function migrationRefusal(error: unknown): string | null {
   let current: unknown = error
+  let query = ""
   for (let depth = 0; depth < 5 && current; depth++) {
-    const { code, message, cause } = current as {
+    const step = current as {
       code?: unknown
       message?: unknown
       cause?: unknown
+      query?: unknown
     }
-    if (code === "P0001" && typeof message === "string") return message
-    if (code === "55P03")
-      return "M2's catalog tables are kept: the drop waited 15 seconds for them while another session held them (is 0.3's web or worker still running?). Stop it and run migrate again; the moves already made are kept."
-    current = cause
+    // Drizzle's error carries the statement that failed.
+    if (typeof step.query === "string") query = step.query
+    if (step.code === "P0001" && typeof step.message === "string")
+      return step.message
+    if (step.code === "55P03")
+      return m2DropLockStatement.test(query)
+        ? "M2's catalog tables are kept: the drop waited 15 seconds for them while another session held them (is 0.3's web or worker still running?). Stop it and run migrate again; the moves already made are kept."
+        : null
+    current = step.cause
   }
   return null
 }
+
+/** The drop of M2's tables' lock statement (0020_m2_dropped). */
+const m2DropLockStatement = /LOCK TABLE "catalog_page_visits"/
 
 function waitForShutdown(): Promise<NodeJS.Signals> {
   return new Promise((resolve) => {

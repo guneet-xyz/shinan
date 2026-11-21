@@ -1,3 +1,6 @@
+import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 
 import {
@@ -147,6 +150,9 @@ describe("dropping M2's catalog tables", { timeout: 60_000 }, () => {
         await holder.query("select 1 from catalog_page_visits limit 1")
         const started = Date.now()
         await expect(migrateDatabase(url)).rejects.toMatchObject({
+          query: expect.stringContaining(
+            'LOCK TABLE "catalog_page_visits"',
+          ) as unknown,
           cause: { code: "55P03" },
         })
         expect(Date.now() - started).toBeGreaterThanOrEqual(14_000)
@@ -160,6 +166,66 @@ describe("dropping M2's catalog tables", { timeout: 60_000 }, () => {
       await migrateDatabase(url)
       expect(await tables(pool)).toEqual([])
     })
+  })
+
+  it("times out at its first lock for a session that only read workspaces, too", async () => {
+    await before(async (url, pool) => {
+      for (const state of (await m2State(pool)).values())
+        await move(pool, state)
+      const holder = await pool.connect()
+      try {
+        await holder.query("begin")
+        await holder.query("select 1 from workspaces limit 1")
+        // At the lock, so migrate's message is the right one, never later at
+        // the drop of workspaces.catalog_strict.
+        await expect(migrateDatabase(url)).rejects.toMatchObject({
+          query: expect.stringContaining(
+            'LOCK TABLE "catalog_page_visits"',
+          ) as unknown,
+          cause: { code: "55P03" },
+        })
+      } finally {
+        await holder.query("rollback")
+        holder.release()
+      }
+    })
+  })
+
+  it("leaves the migrations after it in the same run without its lock time-out", async () => {
+    // This release's migrations, and one more after the drop that records
+    // the lock_timeout it runs with, all applied in one transaction.
+    const folder = await mkdtemp(join(tmpdir(), "shinan-migrations-"))
+    try {
+      await cp(migrationsFolder, folder, { recursive: true })
+      const path = join(folder, "meta", "_journal.json")
+      const journal = JSON.parse(await readFile(path, "utf8")) as {
+        entries: { idx: number; when: number; tag: string }[]
+      }
+      const last = journal.entries.at(-1)!
+      expect(last.tag).toBe(m2DropMigration)
+      journal.entries.push({
+        ...last,
+        idx: last.idx + 1,
+        when: last.when + 1,
+        tag: "9999_after_the_drop",
+      })
+      await writeFile(path, JSON.stringify(journal))
+      await writeFile(
+        join(folder, "9999_after_the_drop.sql"),
+        "CREATE TABLE after_the_drop AS SELECT current_setting('lock_timeout') AS lock_timeout;",
+      )
+      await before(async (url, pool) => {
+        for (const state of (await m2State(pool)).values())
+          await move(pool, state)
+        await migrateDatabase(url, folder)
+        const { rows } = await pool.query<{ lock_timeout: string }>(
+          "select lock_timeout from after_the_drop",
+        )
+        expect(rows).toEqual([{ lock_timeout: "0" }])
+      })
+    } finally {
+      await rm(folder, { recursive: true, force: true })
+    }
   })
 
   it("runs on an installation that never had M2 documents", async () => {

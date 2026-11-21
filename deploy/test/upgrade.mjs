@@ -345,9 +345,15 @@ async function run() {
   const refusal = compose("logs", "--no-color", "migrate")
   check(
     inspect("migrate", "{{.State.ExitCode}}") === "1" &&
-      refusal.includes(
+      // The guard's refusal; or, on a slow runner where the late write took
+      // longer than the drop's 15 seconds of waiting, its lock's time-out:
+      // as safe, M2's tables kept either way.
+      (refusal.includes(
         "M2's catalog tables are kept: a workspace's catalog was not moved into Git, or changed after it was moved",
-      ) &&
+      ) ||
+        refusal.includes(
+          "M2's catalog tables are kept: the drop waited 15 seconds for them",
+        )) &&
       inspect("web", "{{.State.Status}}") !== "running",
     "with the catalog written to after its move, the drop refuses: migrate exits 1 and web does not start",
   )
