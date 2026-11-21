@@ -469,13 +469,9 @@ with the token in the `Authorization` header, for tasks
   most 8 requests may be in flight at once per token and 16 per address (an
   IPv6 address by its /64); more get 429 with `Retry-After: 1`, before their
   bodies are read.
-  OpenCode (checked in its source, 2026-11-18) retries a 429 twice, after
-  250 ms and 1 s, only while connecting and listing tools; a tool call that
-  gets 429 fails at once, and the agent sees the error. After a rate-limit
-  429 it should wait `Retry-After` seconds, up to a minute, before calling
-  again; after an in-flight 429 it can call again once an earlier call is
-  answered.
-  Normal use, a few tool calls at a time, stays well below the cap.
+  Normal use, a few tool calls at a time, stays well below the caps; how
+  agents handle a 429 is in
+  [agent integrations](agent-integrations.md#tool-set).
   `/mcp` serves one tool for now, `workspace_context`, which says who an
   agent acts for, what its token allows and where the catalog repository
   is; agents read and change the catalog through Git

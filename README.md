@@ -1,13 +1,12 @@
 # Shinan
 
-Shinan (指南, "guidance") is a host-neutral home for the story of work across
-repositories and git hosts, and for the shared, agent-maintained context that
-people and coding agents rely on. It keeps a catalog of projects, machines and
-services, tracks tasks and the work linked to them on GitHub and Forgejo, and
-shows which agents are working on what. Each workspace's catalog is a Git
-repository that Shinan hosts: agents clone it, change it and push, and
-people read it in the browser. It is a product exploration, now in its
-build phase.
+Shinan (指南, "guidance") helps people and their coding agents work from the
+same picture. Today it keeps each workspace's **catalog**: what you run
+(projects, machines, services) and how sure you are of each fact, written and
+kept up to date by agents. The catalog is a Git repository Shinan hosts.
+Agents clone it, change it and push; people read it in the browser. Next,
+Shinan will track tasks and the work linked to them on GitHub and Forgejo,
+and which agents are working on what. It is in its build phase.
 
 ## Documents
 

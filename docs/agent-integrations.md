@@ -478,6 +478,14 @@ Reason: together they cover the level 1 actions in the plan.
   catalog tools (`search_catalog`, `get_entity`, `catalog_lists`,
   `get_catalog_proposal`, `propose_catalog_change`, `record_fact_check`,
   `withdraw_catalog_proposal`, `comment_on_catalog_proposal`) are gone.
+- **A refused call (429).** OpenCode (checked in its source, 2026-11-18)
+  retries a 429 twice, after 250 ms and 1 s, only while connecting and
+  listing tools; a tool call that gets 429 fails at once, and the agent sees
+  the error. After a rate-limit 429 the agent waits `Retry-After` seconds, up
+  to a minute, before calling again; after a 429 for too many calls in
+  flight it calls again once an earlier call is answered. The limits
+  themselves are in the
+  [operator guide](operator-guide.md#agents-the-catalog-repository-tokens-mcp-and-the-skill).
 
 ## The CLI
 
