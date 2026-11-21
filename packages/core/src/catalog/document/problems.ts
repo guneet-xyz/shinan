@@ -1,15 +1,14 @@
 import type { Range } from "./source.js"
 
 /**
- * Whether a problem stops a catalog proposal from applying (`blocking`) or
- * holds it for catalog approval with the reason shown (`warning`), as catalog
- * §8.3 sets out.
+ * Whether a problem refuses a push (`blocking`) or is shown as a warning
+ * with the push accepted (`warning`), as catalog §8.3 sets out.
  */
 export type Severity = "blocking" | "warning"
 
 /** What a problem is about. Codes are stable: tests, the API and the screens use them. */
 export type ProblemCode =
-  /** A document or proposal text is longer than Shinan reads (catalog §2.1). */
+  /** A document or other text is longer than Shinan reads (catalog §2.1). */
   | "too-large"
   /**
    * A file on `main` whose name Shinan cannot read (a control character,

@@ -6,8 +6,8 @@ import type { Range } from "./source.js"
 
 /**
  * The check for secret-looking values (catalog §7.3): a safety net, not a
- * guarantee. Near-certain credentials block a catalog proposal; weaker signs
- * hold it for catalog approval.
+ * guarantee. Near-certain credentials refuse a push; weaker signs are
+ * warnings.
  *
  * Every pattern runs in time linear in the text: each has a fixed or
  * bounded start, so no run of characters can be retried from every
@@ -36,9 +36,9 @@ export interface SecretMatch extends SecretFinding {
 }
 
 /**
- * The most text the check reads from one document or proposal text.
+ * The most text the check reads from one document or other text.
  * Validation refuses longer text (`too-large`), so nothing past it is ever
- * applied unchecked.
+ * accepted unchecked.
  */
 export const maxCheckedLength = 512 * 1024
 

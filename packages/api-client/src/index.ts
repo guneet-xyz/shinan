@@ -737,7 +737,7 @@ export function createApiClient(options: ApiClientOptions = {}) {
         `${workspace(workspaceId)}/security-log${query(page)}`,
       ),
 
-    // The catalog, read for the wiki (M2-7).
+    // The catalog, read for the catalog pages.
     catalogEntity: (workspaceId: string, id: string) =>
       request<CatalogEntityAnswer>(
         "GET",

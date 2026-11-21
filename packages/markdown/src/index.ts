@@ -3,7 +3,7 @@ import type { MarkdownIt, Token } from "markdown-it"
 
 /**
  * The one Markdown configuration Shinan reads catalog bodies with: the
- * server's body model (sections, anchors, links) and the wiki's renderer
+ * server's body model (sections, anchors, links) and the catalog pages' renderer
  * use it alike, so they agree on what is a heading and what is a link
  * (catalog §2.5, human experience: an entity page).
  *

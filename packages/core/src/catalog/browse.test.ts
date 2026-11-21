@@ -6,13 +6,13 @@ import { createMemoryGit } from "../../test/memory-git.js"
 import { InvalidInputError, NotFoundError } from "../errors.js"
 import type { Person } from "../identity/people.js"
 import { createWorkspace } from "../identity/workspaces.js"
-import { readDocumentId } from "./document/parse.js"
-import { updateWorkspaceIndex } from "./index/indexer.js"
 import {
   getCatalogState,
   listCatalogTree,
   listCatalogTypeIndex,
-} from "./wiki.js"
+} from "./browse.js"
+import { readDocumentId } from "./document/parse.js"
+import { updateWorkspaceIndex } from "./index/indexer.js"
 
 const { db, pool } = testDatabase()
 
