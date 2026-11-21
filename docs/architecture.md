@@ -1688,6 +1688,8 @@ owner's accepted risks.
 | Undetected misuse                                            | Every write is an event credited to an actor; the security log, kept forever (owner, O-47)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Log owned by identity                                                                                                                                                                                                                 |
 | Git is reached with more than it should                      | Only `web`, `worker` and `migrate` reach the Git container, on an internal network, with the service token, and only `web` forwards agents' requests ([8.5](#85-git-endpoint)). `web` forwards only the four smart HTTP requests, after the agent token, the permission and the limits, and never the agent's own `Authorization` header or cookies. `git http-backend` runs with an environment built from nothing (no service token), Shinan's settings on its command line (`core.hooksPath` first, dumb HTTP off), a cap of 4 processes and 10 minutes each                                                                                                                                                               | Implemented (GC-2)                                                                                                                                                                                                                    |
 | Git, which parses what agents send, is compromised           | Git runs in its own container with only the repositories and the service token: no database address, no other secret, no internet access, no published port ([3.2](#32-process-model), [D-065](decisions/D-065-git-container-and-service-token.md))                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Implemented (GC-1b); a compromised Git still reaches every workspace's repository on the volume                                                                                                                                       |
+| `web` is compromised and talks to Git                        | `web` holds the Git service token ([D-065](decisions/D-065-git-container-and-service-token.md)), so it could send the Git container any request context: any workspace, any pusher, any push permission. **Accepted** (D-065, rerun in GC-11): a compromised `web` already holds the database address, the session secret and every row; the Git container still has no database, secret or internet access to give it, and the push log and first-pusher records are written by the Git container, not by `web`                                                                                                                                                                                                              |
+| Text that should be gone is still read                       | A deleted branch's commits stay readable by full commit ID through the Git container's read API until the pruner removes them, 20 seconds to 10 minutes after pushes go quiet; only `web` reaches that API, and only for commits it was given. A clone in progress when a purge swaps the repository may still receive what had already left `web`; a later fetch cannot. Database dumps hold `catalog_ref_fingerprint_keys`, so whoever has a dump can confirm a guessed branch name offline: dumps are written readable only by their owner ([operator guide, backups](operator-guide.md#backups-your-responsibility)). **Accepted** for v0.4.0 (GC-11, [security checklist](security-checklist.md#v040-rerun-2026-11-21))  |
 
 **Proposed:** a written security checklist covering this table must pass before
 the first public deployment, and again before the `workspace` repository's
@@ -1812,35 +1814,37 @@ From the `workspace` repository's catalog and `infra/musashi` (read 2026-11-16):
 
 ### 11.2 Shinan stack
 
-> **Changing with the [Git-based catalog](build-plan-git-catalog.md):** the `shinan-git` service, its folder, network and secret ([plan §4.3](build-plan-git-catalog.md#43-deployment-changes-on-musashi)), as the rows marked "Git-based catalog" say. The reference Compose file has them since GC-1b ([12](#12-self-hosting)); GC-11 prepares Musashi's stack. Otherwise this section describes M2 as built (v0.3.0).
+| Service          | Role                                                                                                                    | Networks                                                 |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| `shinan-db`      | PostgreSQL, data in `./postgres` (stack-local, ignored by Git)                                                          | `shinan-backend`                                         |
+| `shinan-migrate` | One-shot: runs migrations, then exits                                                                                   | `shinan-backend`                                         |
+| `shinan-web`     | Pages, API, MCP, sign-in, webhooks, streams                                                                             | `caddy-public-shinan`, `shinan-backend`, `shinan-egress` |
+| `shinan-worker`  | Jobs, reconciliation, email                                                                                             | `shinan-backend`, `shinan-egress`                        |
+| `shinan-git`     | The catalog's repositories, in `./catalog` (stack-local, owned by 65532, mode `0700`); only the service token as secret | `shinan-git` only                                        |
 
-| Service                          | Role                                                                                                                    | Networks                                                 |
-| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
-| `shinan-db`                      | PostgreSQL, data in `./postgres` (stack-local, ignored by Git)                                                          | `shinan-backend`                                         |
-| `shinan-migrate`                 | One-shot: runs migrations, then exits                                                                                   | `shinan-backend`                                         |
-| `shinan-web`                     | Pages, API, MCP, sign-in, webhooks, streams                                                                             | `caddy-public-shinan`, `shinan-backend`, `shinan-egress` |
-| `shinan-worker`                  | Jobs, reconciliation, email                                                                                             | `shinan-backend`, `shinan-egress`                        |
-| `shinan-git` (Git-based catalog) | The catalog's repositories, in `./catalog` (stack-local, owned by 65532, mode `0700`); only the service token as secret | `shinan-git` only                                        |
-
-| Network                          | Created by         | Subnet                            | Outgoing internet       | Members                                                                                                 |
-| -------------------------------- | ------------------ | --------------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------- |
-| `caddy-public-shinan`            | Public Caddy stack | Fixed `/24`, chosen at deployment | Docker default          | `caddy-public`, `shinan-web`                                                                            |
-| `shinan-backend`                 | `shinan` stack     | Fixed `/24`                       | None (`internal: true`) | All four services                                                                                       |
-| `shinan-egress`                  | `shinan` stack     | Fixed `/24`                       | Yes                     | `shinan-web` (GitHub sign-in), `shinan-worker` (git host APIs, SES API)                                 |
-| `shinan-git` (Git-based catalog) | `shinan` stack     | Fixed `/24`, chosen in GC-11      | None (`internal: true`) | `shinan-git`, and the roles that call it: `shinan-worker`, `shinan-web` (GC-2), `shinan-migrate` (GC-6) |
+| Network               | Created by         | Subnet                            | Outgoing internet       | Members                                                                                   |
+| --------------------- | ------------------ | --------------------------------- | ----------------------- | ----------------------------------------------------------------------------------------- |
+| `caddy-public-shinan` | Public Caddy stack | Fixed `/24`, chosen at deployment | Docker default          | `caddy-public`, `shinan-web`                                                              |
+| `shinan-backend`      | `shinan` stack     | Fixed `/24`                       | None (`internal: true`) | `shinan-db`, `shinan-migrate`, `shinan-web`, `shinan-worker`                              |
+| `shinan-egress`       | `shinan` stack     | Fixed `/24`                       | Yes                     | `shinan-web` (GitHub sign-in), `shinan-worker` (git host APIs, SES API)                   |
+| `shinan-git`          | `shinan` stack     | Fixed `/24`                       | None (`internal: true`) | `shinan-git`, and the roles that call it: `shinan-web`, `shinan-worker`, `shinan-migrate` |
 
 - `shinan-backend` is internal, with no internet access (**Decided**, owner,
   O-67); mon-public uses the same internal-plus-egress pattern.
-- **Proposed:** names follow Musashi's rules; three fixed `/24` subnets from the
+- **Proposed:** names follow Musashi's rules; fixed `/24` subnets from the
   unused `10.88.0.0/16` range, recorded in the machine entry at deployment.
 - **Proposed** starting memory limits: web 512 MiB, worker 384 MiB, PostgreSQL
   512 MiB; estimates to be measured during the proof of concept.
   **Decided (owner, 2026-11-19, M2-Q15):** web 1,536 MiB, for M2's catalog
   worker ([infra/musashi#130](https://git.guneet.dev/infra/musashi/issues/130),
   [#131](https://git.guneet.dev/infra/musashi/pulls/131); M2-12). The
-  catalog worker is gone (GC-5); the reference Compose file keeps 1,536 MiB
-  for `web` and gives `git` 1,024 MiB until GC-11 measures both under the
-  push checks.
+  catalog worker is gone (GC-5). GC-11 measured the v0.4.0 image under
+  realistic and hostile load ([security checklist, v0.4.0
+  rerun](security-checklist.md#v040-rerun-2026-11-21)): `web` at most
+  257 MiB, `git` at most 1,023 MiB of its 1,024 MiB (534 MiB anonymous,
+  the rest page cache) in the worst case within the limits, `worker`
+  207 MiB of 384 MiB. `git` keeps 1,024 MiB; lowering `web` to 768 MiB is
+  proposed to the owner with the v0.4.0 deployment request.
 - **Proposed:** containers hardened as in [10.1](#101-threats-and-controls); the
   same image and reference Compose layout self-hosters get, adapted to
   Musashi's rules. Reason: proves the self-hosting path by using it.
@@ -1853,6 +1857,15 @@ From the `workspace` repository's catalog and `infra/musashi` (read 2026-11-16):
   that one address rather than the bridge's whole range, which would include
   its gateway. The bridge's `ip_range` (`10.88.14.128/25`) keeps Docker from
   handing that address to `shinan-web` while Caddy is stopped.
+- **Prepared (GC-11, not deployed):** the `shinan-git` service in a draft
+  `infra/musashi` pull request for v0.4.0, awaiting deployment approval:
+  `./catalog` owned by 65532 with mode `0700`, the internal `shinan-git`
+  network on `10.88.18.0/24` (the next free one after Shinan's three and
+  `caddy-public-guneet-dev`'s `10.88.17.0/24`), `SHINAN_GIT_SERVICE_TOKEN`
+  in the `shinan` Obscuro namespace for `shinan-git`, `shinan-web`,
+  `shinan-worker` and `shinan-migrate`, and `SHINAN_GIT_URL`
+  (`http://shinan-git:3000`) for the three roles that call it. `migrate`
+  starts after `shinan-git` is healthy; `web` and `worker` after `migrate`.
 - **Proposed:** on Musashi, `web` and `worker` take their secrets as
   environment variables from Obscuro, each container only its own (the SES key
   only in `worker`; the session secret and GitHub client secret only in
@@ -1964,25 +1977,25 @@ From the `workspace` repository's catalog and `infra/musashi` (read 2026-11-16):
 
 ### 11.6 What needs deployment approval
 
-> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-11](build-plan-git-catalog.md#gc-11-security-review-and-deployment-preparation)): the Git container's deployment. Until then, this section describes M2 as built (v0.3.0).
-
 Each item changes a real deployment or a live credential and needs the owner's
 approval before it happens (**Decided** for deployments, D-016, O-83; the list
 is **Proposed**). None of it is done by this document.
 
-| Item                                                                       | Kind                                        |
-| -------------------------------------------------------------------------- | ------------------------------------------- |
-| First start of the stack and every later deployment                        | Deployment                                  |
-| DNS record `shinan.guneet.dev`                                             | DNS change through Terraform                |
-| Public Caddy route and `caddy-public-shinan` bridge (one Caddy recreation) | Deployment                                  |
-| `shinan-backend` internal network (approved in principle, O-67)            | Deployment                                  |
-| Obscuro namespace `shinan` and its secrets (the owner types the values)    | Credentials                                 |
-| Public registry project and push key in GitHub secrets (D-054)             | Credentials                                 |
-| Registering the GitHub App and installing it on `guneet-xyz`               | Credentials ([git hosts](git-hosts.md))     |
-| GitHub sign-in credentials                                                 | Credentials ([identity](identity.md))       |
-| Forgejo token (read-only use) and webhook                                  | Credentials ([git hosts](git-hosts.md))     |
-| SES IAM user and access key                                                | Credentials ([9.4](#94-on-shinanguneetdev)) |
-| Metrics scraping by Musashi's monitoring agent (O-69)                      | Deployment of the monitoring stack          |
+| Item                                                                               | Kind                                        |
+| ---------------------------------------------------------------------------------- | ------------------------------------------- |
+| First start of the stack and every later deployment                                | Deployment                                  |
+| DNS record `shinan.guneet.dev`                                                     | DNS change through Terraform                |
+| Public Caddy route and `caddy-public-shinan` bridge (one Caddy recreation)         | Deployment                                  |
+| `shinan-backend` internal network (approved in principle, O-67)                    | Deployment                                  |
+| Obscuro namespace `shinan` and its secrets (the owner types the values)            | Credentials                                 |
+| The `shinan-git` service, its `./catalog` folder and `shinan-git` network (v0.4.0) | Deployment                                  |
+| `SHINAN_GIT_SERVICE_TOKEN` in the `shinan` namespace (the owner types it)          | Credentials                                 |
+| Public registry project and push key in GitHub secrets (D-054)                     | Credentials                                 |
+| Registering the GitHub App and installing it on `guneet-xyz`                       | Credentials ([git hosts](git-hosts.md))     |
+| GitHub sign-in credentials                                                         | Credentials ([identity](identity.md))       |
+| Forgejo token (read-only use) and webhook                                          | Credentials ([git hosts](git-hosts.md))     |
+| SES IAM user and access key                                                        | Credentials ([9.4](#94-on-shinanguneetdev)) |
+| Metrics scraping by Musashi's monitoring agent (O-69)                              | Deployment of the monitoring stack          |
 
 ## 12. Self-hosting
 
@@ -2120,8 +2133,6 @@ licensing (D-013); this section makes sure nothing blocks it. All **proposed**:
 
 ## 14. Backups: accepted risk
 
-> **GC-11** ([plan](build-plan-git-catalog.md#gc-11-security-review-and-deployment-preparation)) adds Musashi's specifics and how to recreate a lost repository from a clone.
-
 **Decided (owner, O-62, O-63, O-64):** no built-in backups, no backup target and
 no recovery objectives for now. Shinan relies on host-level backups, which are
 currently paused on Musashi. This is an accepted risk.
@@ -2137,6 +2148,16 @@ What it means today:
   repository can be recreated from the freshest one, and the push log (if
   the database survived) shows what it missed
   ([Git-based catalog plan §2.11](build-plan-git-catalog.md#211-backups-and-recovery)).
+  The [operator guide](operator-guide.md#backups-your-responsibility) says
+  how: a bundle of the clone's `origin/main`, fetched into a new bare
+  repository on the volume with Shinan's settings (rehearsed in GC-11). The
+  first-pusher records of the lost repository's commits are gone with it,
+  so those commits show no pusher; new pushes are recorded as before.
+- **On Musashi** the repositories are in the stack's `./catalog` folder,
+  beside `./postgres`, on the same data disk. Each deployment's root-only
+  database dump goes to `/var/lib/infra/shinan-deployments/<timestamp>`; a
+  deployment that changes the catalog copies `./catalog` there too. Both are
+  on the same disk, so they are rollback points, not backups.
 - **What comes back:** git host data, through reconciliation within what each
   host's API still returns; and whatever was in the most recent workspace export
   ([5.5](#55-export-and-import)), if someone downloaded one. Nothing else. Git host
