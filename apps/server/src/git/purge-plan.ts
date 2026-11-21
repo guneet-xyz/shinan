@@ -28,8 +28,11 @@ export class PathPlan {
   private readonly pageIds = new Set<string>()
   /** Plain IDs already answered as themselves, which a later path must not take. */
   private readonly answered = new Set<string>()
-  /** Renamed paths whose name had to be made unique: their plain path and new path. */
-  private readonly apart = new Map<string, string>()
+  /**
+   * Files and folders whose new name had to be numbered, by their new
+   * path: the name the text alone would give, and whether it is a folder.
+   */
+  private readonly apart = new Map<string, { plain: string; folder: boolean }>()
 
   constructor(private readonly rename: (name: string) => string) {}
 
@@ -46,12 +49,14 @@ export class PathPlan {
     const depth = Math.max(...fresh.map((p) => p.length))
     for (let level = 0; level < depth; level++) {
       const wanted = new Map<string, Set<string>>()
+      const folders = new Set<string>()
       for (const parts of fresh) {
         if (parts.length <= level) continue
         const parent = parts.slice(0, level).join("/")
         let names = wanted.get(parent)
         if (!names) wanted.set(parent, (names = new Set()))
         names.add(parts[level]!)
+        if (parts.length > level + 1) folders.add(`${parent}/${parts[level]!}`)
       }
       for (const [parent, names] of wanted) {
         const folder = this.folder(parent)
@@ -70,6 +75,13 @@ export class PathPlan {
           for (let n = 2; folder.taken.has(next); n++) next = numbered(plain, n)
           folder.names.set(name, next)
           folder.taken.add(next)
+          if (next !== plain) {
+            const under = parent === "" ? "" : `${this.path(parent)}/`
+            this.apart.set(`${under}${next}`, {
+              plain: `${under}${plain}`,
+              folder: folders.has(`${parent}/${name}`),
+            })
+          }
         }
       }
     }
@@ -90,10 +102,7 @@ export class PathPlan {
       this.ids.add(id)
       if (plain === original) continue
       this.pageIds.add(plainId)
-      if (plain !== now) {
-        this.idNames.set(plainId, id)
-        this.apart.set(plain, now)
-      }
+      if (plain !== now) this.idNames.set(plainId, id)
     }
   }
 
@@ -153,10 +162,13 @@ export class PathPlan {
     return next
   }
 
-  /** Paths renamed apart from another one: the name the text alone would give, and the one given. */
-  renamedApart(): { plain: string; path: string }[] {
+  /**
+   * Files and folders named with a number, because the name the text alone
+   * would give them (`plain`) is taken: a folder once, not each file in it.
+   */
+  renamedApart(): { plain: string; path: string; folder: boolean }[] {
     return [...this.apart]
-      .map(([plain, path]) => ({ plain, path }))
+      .map(([path, { plain, folder }]) => ({ plain, path, folder }))
       .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
   }
 

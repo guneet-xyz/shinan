@@ -12,7 +12,11 @@ describe("the plan of a purge's new names", () => {
     expect(plan.path("machine/quibble-box.md")).toBe("machine/purged-box-2.md")
     expect(plan.idName("machine/purged-box")).toBe("machine/purged-box-2")
     expect(plan.renamedApart()).toEqual([
-      { plain: "machine/purged-box.md", path: "machine/purged-box-2.md" },
+      {
+        plain: "machine/purged-box.md",
+        path: "machine/purged-box-2.md",
+        folder: false,
+      },
     ])
     expect(plan.renamedIds()).toEqual([
       ["machine/purged-box", "machine/purged-box-2"],
@@ -25,6 +29,10 @@ describe("the plan of a purge's new names", () => {
     expect(plan.path("notes/quibble/x.md")).toBe("notes/purged-2/x.md")
     expect(plan.path("notes/quibble/y.md")).toBe("notes/purged-2/y.md")
     expect(plan.path("notes/purged/x.md")).toBe("notes/purged/x.md")
+    // Said once, for the folder, not for each file in it.
+    expect(plan.renamedApart()).toEqual([
+      { plain: "notes/purged", path: "notes/purged-2", folder: true },
+    ])
   })
 
   it("keeps two renamed names apart from each other, and leaves what doesn't clash", () => {

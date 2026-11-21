@@ -774,7 +774,9 @@ describe(
       const purgeId = "00000000-0000-4000-8000-000000000001"
       const failed = await gitPart(purgeId, secret)
       expect(failed).toMatchObject({ state: "running" })
-      expect(failed.message).toMatch(/could not finish recording it/)
+      expect(failed.message).toBe(
+        "The text is already gone from the catalog's history. Shinan is still finishing its own records and tries again every minute; agents' pushes wait until then. You can leave this page.",
+      )
       expect(records.purge(workspaceId, purgeId)?.phase).toBe("swapped")
       expect(await store.main(workspaceId)).not.toBe(old)
 
@@ -917,8 +919,15 @@ describe(
           {
             plain: "machine/purged-crate.md",
             path: "machine/purged-crate-2.md",
+            folder: false,
+            title: "machine/purged-crate-2",
           },
-          { plain: "notes/purged/x.md", path: "notes/purged-2/x.md" },
+          {
+            plain: "notes/purged",
+            path: "notes/purged-2",
+            folder: true,
+            title: null,
+          },
         ]),
       )
       expect(preview.history!.currentFiles.map((f) => f.path)).toContain(

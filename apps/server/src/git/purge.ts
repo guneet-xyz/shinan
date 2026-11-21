@@ -258,7 +258,9 @@ export function createPurges(options: {
           const shown = plan.path(path)
           current.push({
             path: shown,
-            title: path.endsWith(".md") ? scanner.title(content) : null,
+            title: path.endsWith(".md")
+              ? scanner.title(content, (plain) => plan.idName(plain))
+              : null,
           })
           for (const where of scanner.structure(content))
             result.structure.push({ path: shown, where })
@@ -278,7 +280,12 @@ export function createPurges(options: {
       places,
     }))
     result.journalEntries = journalHolding(journal, workspaceId, scanner)
-    const apart = plan.renamedApart()
+    // A page on `main` is named by its title, as in the list above.
+    const titles = new Map(current.map((c) => [c.path, c.title]))
+    const apart = plan.renamedApart().map((r) => ({
+      ...r,
+      title: r.folder ? null : (titles.get(r.path) ?? null),
+    }))
     result.renamedApart = apart.slice(0, maxPurgePaths)
     result.renamedApartMore = apart.length - result.renamedApart.length
     return result
@@ -829,7 +836,7 @@ export function createPurges(options: {
             error instanceof StoreError
               ? error.message
               : records.unfinishedPurge(workspaceId)
-                ? "The history was rewritten, but Shinan could not finish recording it; it tries again every minute, and pushes wait until then"
+                ? "The text is already gone from the catalog's history. Shinan is still finishing its own records and tries again every minute; agents' pushes wait until then. You can leave this page."
                 : "Shinan could not remove the text: nothing was changed; try again",
         }
         job.at = Date.now()

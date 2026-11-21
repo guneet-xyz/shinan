@@ -448,12 +448,17 @@ export interface RepositoryPurgePreview {
   /** Places that may hold it encoded (`PurgeEncoding`), which a purge does not reach. */
   mayAppearEncoded: { encoding: PurgeEncoding; places: number }[]
   /**
-   * Paths the purge names apart from another page or folder of the
-   * history, which the text alone would rename onto (review of #197): the
-   * name the text alone gives (`plain`, holding `purged`, never the text)
-   * and the one given, at most `maxPurgePaths`.
+   * Files and folders the purge names with a number, because the name the
+   * text alone gives them (`plain`, holding `purged`, never the text) is
+   * taken (review of #197): a folder once, a page on `main` with its title
+   * as the catalog will show it; at most `maxPurgePaths`.
    */
-  renamedApart: { plain: string; path: string }[]
+  renamedApart: {
+    plain: string
+    path: string
+    folder: boolean
+    title: string | null
+  }[]
   renamedApartMore: number
   /** Journal entries not stored yet that hold it (branch names of pushes). */
   journalEntries: number

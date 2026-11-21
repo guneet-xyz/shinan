@@ -153,6 +153,10 @@ function RemoveForm(props: { onRemoved: () => void }) {
   }
 
   const preview = found?.text === text ? found.preview : undefined
+  // A page's ID holding the text only gives it a new name, which the
+  // lists above show.
+  const reads =
+    preview?.history?.structure.filter((s) => s.where !== "id") ?? []
   const places = preview ? placesOf(preview) : []
 
   return (
@@ -281,15 +285,20 @@ function RemoveForm(props: { onRemoved: () => void }) {
           {preview.history && preview.history.renamedApart.length > 0 && (
             <div className="flex flex-col gap-1">
               <p className="font-medium">
-                Given a number, because another page or folder already has the
-                name:
+                Renamed with a number, because the plain name is taken:
               </p>
               <ul className="list-disc pl-5 wrap-anywhere">
-                {preview.history.renamedApart.map((r) => (
-                  <li key={r.path}>
-                    {r.path} ({r.plain} is taken)
-                  </li>
-                ))}
+                {preview.history.renamedApart.map((r) => {
+                  const end = r.folder ? "/" : ""
+                  const taken = `(${r.plain}${end} already exists)`
+                  return (
+                    <li key={r.path}>
+                      {r.title === null
+                        ? `${r.path}${end} ${taken}`
+                        : `${r.title} becomes ${r.path} ${taken}`}
+                    </li>
+                  )
+                })}
                 {preview.history.renamedApartMore > 0 && (
                   <li>and {preview.history.renamedApartMore} more</li>
                 )}
@@ -304,14 +313,14 @@ function RemoveForm(props: { onRemoved: () => void }) {
               hold what you mean.
             </p>
           )}
-          {preview.history && preview.history.structure.length > 0 && (
+          {reads.length > 0 && (
             <div className="flex flex-col gap-1">
               <p className="font-medium">
                 Removing it changes how these pages read; an agent can fix them
                 afterwards:
               </p>
               <ul className="list-disc pl-5 wrap-anywhere">
-                {preview.history.structure.map((s) => (
+                {reads.map((s) => (
                   <li key={`${s.path} ${s.where}`}>
                     {s.path}: {structureNames[s.where]}
                   </li>
@@ -378,8 +387,11 @@ function RemoveForm(props: { onRemoved: () => void }) {
         <Notice>
           <strong>Removing…</strong> This can take a few minutes on a large
           catalog. You can leave this page: it goes on, and it appears under
-          Earlier removals when it's done. Agents can keep pushing, except for a
-          few seconds near the end.
+          Earlier removals when it's done.
+          {/* Pushes wait while the server finishes after a failure: then
+              its reason says so instead. */}
+          {delay === undefined &&
+            " Agents can keep pushing, except for a few seconds near the end."}
         </Notice>
       )}
       {remove.pending && delay !== undefined && <Notice>{delay}</Notice>}
@@ -454,7 +466,7 @@ function AfterRemoval(props: { removal: CatalogPurge }) {
             Set up an agent
           </Link>{" "}
           page). Shinan refuses any push of the old history. A copy that was
-          still downloading when the removal finished may hold it too.
+          still downloading when the removal finished may hold the text too.
         </li>
         <li>
           <span className="font-medium">

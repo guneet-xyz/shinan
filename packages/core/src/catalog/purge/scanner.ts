@@ -408,7 +408,10 @@ export class PurgeScanner {
    * text replaced by `purgeMarker`), or null if it has none or is not a
    * catalog document.
    */
-  title(content: Uint8Array): string | null {
+  title(
+    content: Uint8Array,
+    idName?: (plain: string) => string,
+  ): string | null {
     let text: string
     try {
       text = utf8.decode(content)
@@ -418,7 +421,7 @@ export class PurgeScanner {
     const title = parseCatalogDocument(text).title
     if (title === null || title.trim() === "") return null
     return this.text.test(title)
-      ? replaceKeepingIds(this.text, title, purgeMarker)
+      ? replaceKeepingIds(this.text, title, purgeMarker, idName)
       : title
   }
 

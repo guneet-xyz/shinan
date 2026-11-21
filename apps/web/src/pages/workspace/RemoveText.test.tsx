@@ -386,7 +386,19 @@ describe("removing text from the catalog's history", () => {
               {
                 plain: "machine/purged-box.md",
                 path: "machine/purged-box-2.md",
+                folder: false,
+                title: "Box dl",
               },
+              {
+                plain: "notes/purged",
+                path: "notes/purged-2",
+                folder: true,
+                title: null,
+              },
+            ],
+            structure: [
+              { path: "machine/purged-box-2.md", where: "id" },
+              { path: "machine/daedalus.md", where: "alias" },
             ],
           },
         }),
@@ -398,7 +410,8 @@ describe("removing text from the catalog's history", () => {
           return Promise.resolve({
             id: removal.id,
             state: "running" as const,
-            message: "Shinan could not finish recording it; it tries again",
+            message:
+              "The text is already gone from the catalog's history. Shinan is still finishing its own records and tries again every minute; agents' pushes wait until then. You can leave this page.",
           })
         return new Promise((resolve) => {
           finish = () =>
@@ -411,12 +424,26 @@ describe("removing text from the catalog's history", () => {
     await userEvent.click(screen.getByRole("button", { name: "Find it" }))
     expect(
       await screen.findByText(
-        "Given a number, because another page or folder already has the name:",
+        "Renamed with a number, because the plain name is taken:",
       ),
     ).toBeTruthy()
     expect(
       screen.getByText(
-        "machine/purged-box-2.md (machine/purged-box.md is taken)",
+        "Box dl becomes machine/purged-box-2.md (machine/purged-box.md already exists)",
+      ),
+    ).toBeTruthy()
+    expect(
+      screen.getByText("notes/purged-2/ (notes/purged/ already exists)"),
+    ).toBeTruthy()
+    // A new name is said once: not again as a change to how the page reads.
+    expect(
+      screen.queryByText(
+        /machine\/purged-box-2\.md: the text is in the page's ID/,
+      ),
+    ).toBeNull()
+    expect(
+      screen.getByText(
+        /machine\/daedalus\.md: the text is in one of its old IDs/,
       ),
     ).toBeTruthy()
     await userEvent.type(screen.getByLabelText("Reason"), "A leak.")
@@ -428,23 +455,23 @@ describe("removing text from the catalog's history", () => {
       screen.getByRole("button", { name: "Remove from Shinan's history" }),
     )
     expect(
-      await screen.findByText(
-        "Shinan could not finish recording it; it tries again",
-      ),
+      await screen.findByText(/Shinan is still finishing its own records/),
     ).toBeTruthy()
+    // Pushes wait meanwhile, so the page doesn't say they go on.
+    expect(
+      screen.getByText(/This can take a few minutes/).textContent,
+    ).not.toMatch(/Agents can keep pushing/)
     finish()
     expect(
       await screen.findByText(/Removed from Shinan's history/),
     ).toBeTruthy()
     expect(
       screen.getByText(
-        /A copy that was still downloading when the removal finished may hold it too\./,
+        /A copy that was still downloading when the removal finished may hold the text too\./,
       ),
     ).toBeTruthy()
     expect(
-      screen.queryByText(
-        "Shinan could not finish recording it; it tries again",
-      ),
+      screen.queryByText(/Shinan is still finishing its own records/),
     ).toBeNull()
   })
 })
