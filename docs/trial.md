@@ -460,7 +460,7 @@ the map entry that the owning source contradicted (a trial finding,
 
 ### 5.4 Limits an agent may hit
 
-As built in M2 (catalog §8 and the [operator guide](operator-guide.md#agents-the-mcp-endpoint-tokens-and-the-skill)).
+As built in M2 (catalog §8 and the [operator guide](operator-guide.md#agents-the-catalog-repository-tokens-mcp-and-the-skill)).
 Seeding 17 entities, one proposal or a few per entity, stays far below all of
 them; they matter for a session that tries to do everything in one call.
 
@@ -477,7 +477,7 @@ them; they matter for a session that tries to do everything in one call.
 For either 429, OpenCode retries twice (after 250 ms and 1 s) only while
 connecting and listing tools; a **tool call** that gets 429 fails at once,
 and the agent sees the error and decides when to call again
-([operator guide](operator-guide.md#agents-the-mcp-endpoint-tokens-and-the-skill)).
+([operator guide](operator-guide.md#agents-the-catalog-repository-tokens-mcp-and-the-skill)).
 The skill tells agents how to handle `busy`
 (`references/changing.md` in [`packages/skill`](../packages/skill/skill/shinan/)).
 A `busy` error or a 429 is not a trial finding by itself; repeated ones that

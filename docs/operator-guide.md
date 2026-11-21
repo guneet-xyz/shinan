@@ -166,14 +166,14 @@ compress the rest (Caddy's `encode zstd gzip`, nginx's `gzip on` with
 **Agents' requests at `/mcp`.** Don't buffer its answers, and don't time them
 out in under a few minutes. A request in the 2025-11-25 form, which OpenCode
 uses by default, is answered as a short event stream (`text/event-stream`)
-that closes after the result; the 2026-07-28 form gets plain JSON. Either can
-take minutes: a catalog proposal may wait in its workspace's queue, and for
-the catalog to load after a restart. Caddy's `reverse_proxy` needs nothing
+that closes after the result; the 2026-07-28 form gets plain JSON. Answers
+are quick today (one tool, `workspace_context`), but leave room for task
+tools to come (M3). Caddy's `reverse_proxy` needs nothing
 (it flushes event streams at once and sets no response timeout). With nginx,
 set `proxy_buffering off` and `proxy_read_timeout 300s` for `/mcp`; its
 default of 60 seconds would cut a slow answer off. Don't limit request bodies
 below 512 KB: Shinan limits them itself, before reading them (64 KB on the
-API, 512 KB on `/mcp` and catalog proposals), gives a client 30 seconds to
+API, 512 KB on `/mcp`), gives a client 30 seconds to
 send a whole request, and answers 429 to more than a few `/mcp` requests in
 flight at once from one token or address.
 
@@ -413,7 +413,7 @@ you upgrade:
   token (600 a minute); a rate-limited request gets 429 with `Retry-After`
   set to the seconds left in the minute. Each agent may send 60 catalog
   proposals and 60 comments in 10 minutes
-  ([agents](#agents-the-mcp-endpoint-tokens-and-the-skill)).
+  ([agents](#agents-the-catalog-repository-tokens-mcp-and-the-skill)).
 - **Migrations** `0005` to `0012` only add tables, columns, indexes and
   triggers; `0012` replaces the append-only triggers on events and revision
   text with ones that let a purge's own transaction change their text, and
@@ -436,21 +436,30 @@ you upgrade:
   ([the agent index](#the-agent-index)); a rebuild gives the event loop back
   every 50 ms, so email is not held up.
 
-## Agents: the MCP endpoint, tokens and the skill
+## Agents: the catalog repository, tokens, MCP and the skill
 
-> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-9](build-plan-git-catalog.md#gc-9-the-skill-and-agent-setup), [GC-11](build-plan-git-catalog.md#gc-11-security-review-and-deployment-preparation)): agents push to `/git/`; the MCP endpoint stays for tasks. Until then, this section describes M2 as built (v0.3.0).
-
-Coding agents reach Shinan at `https://<your host>/mcp`, with an agent token
-in the `Authorization` header, and load the agent skill from
-`https://<your host>/skills/`
-([agent integrations](agent-integrations.md#mcp-server-and-tools)).
+Coding agents clone, fetch and push each workspace's catalog at
+`https://<your host>/git/<workspace ID>.git`, with their agent token as the
+password a Git credential helper supplies
+([architecture §8.5](architecture.md#85-git-endpoint)); they load the agent
+skill from `https://<your host>/skills/`; and they reach `https://<your host>/mcp`
+with the token in the `Authorization` header, for tasks
+([agent integrations](agent-integrations.md#setting-up-an-agent-with-a-hand-made-token)).
 
 - **Tokens** are made by members, by hand, for their own agents (Your agents,
-  then **Set up an agent** for the steps). Each is shown once and stored only
+  then **Set up an agent** for the steps: the token file, the credential
+  helper, the clone and the skill). Each is shown once and stored only
   as a hash. A token is read-only or full, works only in the workspace it was
   made for, and is bound to `SHINAN_URL`. Members revoke their own tokens;
   workspace owners can revoke any token in the workspace. Each new token
   emails its member, and is recorded in the workspace's security log.
+- **Pushes are checked before Git keeps them.** A push that breaks a rule
+  is refused with every reason in `git push`'s output; nobody approves
+  pushes. Each push is recorded in the push log with its agent and person;
+  a push refused for a secret is also in the workspace's security log
+  ([catalog §8](catalog.md#8-changing-the-catalog)).
+  An agent may push 60 times in 10 minutes; the request limits and caps in
+  flight below apply to `/git/` too ([reverse proxy](#reverse-proxy)).
 - **`/mcp` refuses sign-in cookies**, a token in the address and requests
   from other sites, so a browser can't be used to call it. Requests are rate
   limited per address (300 a minute, shared with `/api` from that address;
@@ -477,14 +486,16 @@ in the `Authorization` header, and load the agent skill from
 
 ## Backups: your responsibility
 
-> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-11](build-plan-git-catalog.md#gc-11-security-review-and-deployment-preparation)): back up the Git volume as well as PostgreSQL; clones are partial copies. Until then, this section describes M2 as built (v0.3.0).
+> **GC-11** ([plan](build-plan-git-catalog.md#gc-11-security-review-and-deployment-preparation)) adds how to back up the `catalog` volume and how to recreate a lost repository from an agent's clone.
 
 Shinan has **no built-in backups**. The owner's own installation accepts that
 risk for now ([D-038](decisions/D-038-no-built-in-backups.md),
 [architecture §14](architecture.md#14-backups-accepted-risk)); for yours, it is
 your decision. If you lose the `postgres` volume without a backup, you lose
-everything in it: workspaces, the catalog, tasks, members and the security log.
-Git host data comes back through reconciliation, nothing else does.
+everything in it: workspaces, the push log, tasks, members and the security
+log. If you lose the `catalog` volume, you lose the catalog's repositories;
+agents' clones hold copies of `main` up to their last fetch. Git host data
+comes back through reconciliation, nothing else does.
 
 Back up:
 

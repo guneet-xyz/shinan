@@ -10,15 +10,13 @@ again for the M2 release on 2026-11-18 and completed on 2026-11-19 against
 [M2 rerun](#m2-rerun-2026-11-18) and
 [owner decisions](#owner-decisions-for-the-m2-release).
 
-> **Changing with the [Git-based catalog](build-plan-git-catalog.md)**
-> ([GC-2](build-plan-git-catalog.md#gc-2-serving-git-over-https-through-web),
-> [GC-3](build-plan-git-catalog.md#gc-3-push-checks-and-the-push-log),
-> [GC-11](build-plan-git-catalog.md#gc-11-security-review-and-deployment-preparation)):
-> items 1.11, 1.12, the 9.x items for Git in the image, 10.3, 10.4 (trust
-> labels removed for the catalog: "catalog content is information"), 10.5,
-> 10.7, 10.8 and 10.9 (the secret check on push) change, and new items cover
-> the Git endpoint and the Git container. Until then, the items and results
-> below describe M2 as built (v0.3.0); the M2 results are kept as recorded,
+> **Git-based catalog:** the Git items 9.4 to 9.12 were added as GC-1 to
+> GC-6 built them, with their tests. **GC-11**
+> ([plan](build-plan-git-catalog.md#gc-11-security-review-and-deployment-preparation))
+> reruns the whole checklist for v0.4.0: items 1.11, 1.12, 6.4, 6.6, 10.3,
+> 10.4 (trust labels removed for the catalog: "catalog content is
+> information"), 10.5, 10.7, 10.8 and 10.9 (the secret check on push) and D10
+> still describe M2 (v0.3.0). The M2 results below are kept as recorded,
 > including their test names, which still say "wiki".
 
 [Architecture §10.1](architecture.md#101-threats-and-controls) requires a

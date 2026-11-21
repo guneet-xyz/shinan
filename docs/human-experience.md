@@ -28,7 +28,7 @@ depends on it.
   - **Proposed**: suggested here, with a reason.
   - **Open**: not settled; listed under [open questions](#open-questions).
 - Where a rule belongs to another document (for example when a nudge is
-  created, or which catalog changes need approval), this document only says how
+  created, or which pushes the catalog refuses), this document only says how
   the screen shows it and lists the dependency.
 - No external product facts are relied on in this document, so none needed
   checking.
@@ -50,8 +50,8 @@ This document owns (plan, section 8):
 It also covers the screens that pull these together: the
 [Now screen](#the-now-screen), the [agents view](#agents-view) (the glossary
 gives Human experience ownership of how presence is displayed),
-[triage](#triage), [unlinked work](#unlinked-work), catalog
-[review and recent changes](#reviewing-catalog-changes), and the person's side
+[triage](#triage), [unlinked work](#unlinked-work), the catalog's
+[Recent changes](#a-page), and the person's side
 of [notifications](#notifications).
 
 It does not cover:
@@ -60,7 +60,7 @@ It does not cover:
   These belong to [Tasks and work](tasks.md).
 - How nudges reach a running agent session, or how presence is reported and
   timed out. These belong to [Agent integrations](agent-integrations.md).
-- Catalog entity types, fact rules and which catalog changes need approval.
+- Catalog entity types, fact rules and the checks on push.
   These belong to the [Catalog](catalog.md) document.
 - Sign-in, roles, tokens and access rules. These belong to
   [Identity, agents and permissions](identity.md).
@@ -135,8 +135,6 @@ happen yet.
 
 ## Map of the app
 
-> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-7](build-plan-git-catalog.md#gc-7-the-catalog-ui)): the catalog's screens follow the plan's §3; catalog review goes. The navigation below is built (GC-7's first PR); the table's catalog rows change with GC-7's later PRs.
-
 **Navigation: one left sidebar for the whole app. Decided (owner,
 2026-11-20, [answers on #183](https://github.com/guneet-xyz/shinan/issues/183#issuecomment-7029973618));
 as built in GC-7 ([#169](https://github.com/guneet-xyz/shinan/issues/169)).**
@@ -182,19 +180,18 @@ details (D-015), so a hard boundary is the simplest to keep safe. Inside a
 workspace every member sees everything, including work from private
 repositories. **Decided** (owner, O-43, [#25]).
 
-| Place                                                  | What it is for                                                                                                               | Phase   |
-| ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- | ------- |
-| [Now](#the-now-screen)                                 | What needs me, what is being worked on, what changed                                                                         | 1       |
-| [Tasks](#task-list-and-board)                          | Task list (phase 1) and board (phase 2)                                                                                      | 1 and 2 |
-| [Task page](#task-page)                                | The story of one task, and steering it                                                                                       | 1       |
-| [Timeline](#timelines)                                 | Everything that happened in the workspace                                                                                    | 1       |
-| [Catalog](#the-catalog)                                | The catalog for people, including [start here](#start-here-and-onboarding)                                                   | 1       |
-| [Catalog review](#reviewing-catalog-changes)           | Removed (GC-5, [D-060](decisions/D-060-no-catalog-approval.md)): no catalog approval; GC-7 rewrites the map                  | 1       |
-| [Agents](#agents-view)                                 | Agent sessions and their presence                                                                                            | 1       |
-| [Triage](#triage)                                      | A filtered task list in phase 1; the full triage inbox in phase 2                                                            | 1 and 2 |
-| [Unlinked work](#unlinked-work)                        | Branches and PRs with no task ID                                                                                             | 1       |
-| [Workspace settings](#workspace-and-member-management) | Members, invitations, agents, git host connections, task flags, catalog settings, security log, data (export, import, purge) | 1       |
-| [Your account](#your-account)                          | Sign-in, git host accounts, your agents, your machines (phase 3), workspaces, notification settings (phase 2)                | 1       |
+| Place                                                  | What it is for                                                                                                                                                                      | Phase   |
+| ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| [Now](#the-now-screen)                                 | What needs me, what is being worked on, what changed                                                                                                                                | 1       |
+| [Tasks](#task-list-and-board)                          | Task list (phase 1) and board (phase 2)                                                                                                                                             | 1 and 2 |
+| [Task page](#task-page)                                | The story of one task, and steering it                                                                                                                                              | 1       |
+| [Timeline](#timelines)                                 | Everything that happened in the workspace                                                                                                                                           | 1       |
+| [Catalog](#the-catalog)                                | The catalog for people: its pages, [start here](#start-here-and-onboarding), Recent changes and Needs attention                                                                     | 1       |
+| [Agents](#agents-view)                                 | Agent sessions and their presence                                                                                                                                                   | 1       |
+| [Triage](#triage)                                      | A filtered task list in phase 1; the full triage inbox in phase 2                                                                                                                   | 1 and 2 |
+| [Unlinked work](#unlinked-work)                        | Branches and PRs with no task ID                                                                                                                                                    | 1       |
+| [Workspace settings](#workspace-and-member-management) | Members, invitations, agents, the catalog (address for agents, values that aren't secrets, removing text), git host connections, task flags, security log, data (export and import) | 1       |
+| [Your account](#your-account)                          | Sign-in, git host accounts, your agents, your machines (phase 3), workspaces, notification settings (phase 2)                                                                       | 1       |
 
 Phases follow the plan (section 10): the board, nudges, the triage inbox and
 notifications are phase 2; starting agents from the website is phase 3.
@@ -228,19 +225,18 @@ line what is needed and opens the place to act. Items for you come first; a
 second group shows items waiting on any person in the workspace, so nothing is
 missed when nobody is assigned.
 
-| Item                                | Shown when                                                                                                                                                                                        | One-step action                                                                                | Phase |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | ----- |
-| Deployment approval                 | A task has `awaiting deployment approval`                                                                                                                                                         | Opens the task's [deployment approval panel](#deployment-approval-panel)                       | 1     |
-| Task needs a person                 | A task has `needs a person`, or a [workspace flag](#task-flags) set to appear here                                                                                                                | Opens the task's [needs a person panel](#needs-a-person-panel), or the task                    | 1     |
-| Agent session `waiting`             | A plugin-reported agent session is waiting for a person, with its reason (`permission` or `question`) and short label                                                                             | Opens the agent session, which says on which machine and coding tool to answer                 | 1     |
-| Agent session silent on a task      | An attached agent session is `unresponsive`, or sends no heartbeats and is [overdue](#when-an-agent-session-goes-quiet)                                                                           | Opens the task with options to [start a new agent session](#when-no-agent-session-is-attached) | 1     |
-| Work link to confirm                | An unconfirmed work link is waiting: from an outside actor's marker (only a person can confirm it), or from a member's closing reference to an `origin` issue that no agent session has confirmed | Opens the task's [work](#work) with **Confirm** and **Dismiss**                                | 1     |
-| Tasks in triage                     | One or more tasks are in `triage`                                                                                                                                                                 | Phase 1: the task list filtered to `triage`. Phase 2: the [triage inbox](#triage)              | 1     |
-| Catalog change waiting for approval | Removed (GC-5, [D-060](decisions/D-060-no-catalog-approval.md)): catalog changes no longer wait for approval                                                                                      | Opens [catalog review](#reviewing-catalog-changes)                                             | 1     |
-| Git host connection failing         | A connection's health is failing                                                                                                                                                                  | Opens the connection's settings                                                                | 1     |
-| Invitation for you                  | You have a pending invitation to another workspace                                                                                                                                                | Accept or decline                                                                              | 1     |
-| Workspace setup checklist           | The workspace is new and setup is not finished                                                                                                                                                    | Opens the [setup checklist](#first-run-for-a-new-workspace)                                    | 1     |
-| Nudge not received                  | A delivery of your nudge is `undeliverable`, or still `pending` to an agent session that has gone silent                                                                                          | Opens the comment with delivery options                                                        | 2     |
+| Item                           | Shown when                                                                                                                                                                                        | One-step action                                                                                | Phase |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | ----- |
+| Deployment approval            | A task has `awaiting deployment approval`                                                                                                                                                         | Opens the task's [deployment approval panel](#deployment-approval-panel)                       | 1     |
+| Task needs a person            | A task has `needs a person`, or a [workspace flag](#task-flags) set to appear here                                                                                                                | Opens the task's [needs a person panel](#needs-a-person-panel), or the task                    | 1     |
+| Agent session `waiting`        | A plugin-reported agent session is waiting for a person, with its reason (`permission` or `question`) and short label                                                                             | Opens the agent session, which says on which machine and coding tool to answer                 | 1     |
+| Agent session silent on a task | An attached agent session is `unresponsive`, or sends no heartbeats and is [overdue](#when-an-agent-session-goes-quiet)                                                                           | Opens the task with options to [start a new agent session](#when-no-agent-session-is-attached) | 1     |
+| Work link to confirm           | An unconfirmed work link is waiting: from an outside actor's marker (only a person can confirm it), or from a member's closing reference to an `origin` issue that no agent session has confirmed | Opens the task's [work](#work) with **Confirm** and **Dismiss**                                | 1     |
+| Tasks in triage                | One or more tasks are in `triage`                                                                                                                                                                 | Phase 1: the task list filtered to `triage`. Phase 2: the [triage inbox](#triage)              | 1     |
+| Git host connection failing    | A connection's health is failing                                                                                                                                                                  | Opens the connection's settings                                                                | 1     |
+| Invitation for you             | You have a pending invitation to another workspace                                                                                                                                                | Accept or decline                                                                              | 1     |
+| Workspace setup checklist      | The workspace is new and setup is not finished                                                                                                                                                    | Opens the [setup checklist](#first-run-for-a-new-workspace)                                    | 1     |
+| Nudge not received             | A delivery of your nudge is `undeliverable`, or still `pending` to an agent session that has gone silent                                                                                          | Opens the comment with delivery options                                                        | 2     |
 
 **Proposed.** Reasons: deployment approval comes first because it is the only
 workflow-level approval gate in the `workspace` repository's practice, and each
@@ -482,8 +478,9 @@ and tell attached agent sessions (phase 2). **Proposed.** Reason: intent and
 acceptance criteria are the main way the owner steers, and an agent working
 from old criteria wastes work.
 
-Each decision has a **Record as a `decision` entity** action, which creates a
-catalog proposal. **Proposed**, following the glossary.
+Each decision has a **Record as a `decision` entity** action, which asks the
+task's agent to write it to the catalog (people don't edit the catalog in the
+browser, [D-064](decisions/D-064-catalog-not-wiki.md)). **Proposed** (M3).
 
 ### Subtasks
 
@@ -530,7 +527,7 @@ that work item.
 ### Related
 
 Related tasks (depends on, depended on by), related catalog entities, and
-catalog proposals made during this task. **Proposed.**
+changes pushed to the catalog during this task. **Proposed** (M3).
 
 ### Task timeline and comment box
 
@@ -870,15 +867,14 @@ Registering agents and revoking their tokens is under
 
 ## The catalog
 
-> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-7](build-plan-git-catalog.md#gc-7-the-catalog-ui)): people browse `main` as a file tree, rendered pages, search, "needs attention" and commit history, with no editing (D-064). [A page](#a-page) and [moving around the catalog](#moving-around-the-catalog) are as built in GC-7; the introduction below describes M2 (v0.3.0).
-
-The catalog pages show the catalog to people as readable pages (called "the
-wiki" until the owner renamed it, [D-064](decisions/D-064-catalog-not-wiki.md)). **Decided** (D-006).
-Each catalog revision's Markdown text is the source of truth and is stored in
-Shinan's database only; there is no Git mirror for now. Catalog proposals and
-review happen inside Shinan. **Decided** (owner, O-11, O-12, N-5, [#25]). The entity types, facts and rules are owned by the
-[Catalog](catalog.md) document; this section is how they look and how people
-move around them.
+The catalog pages show the catalog to people as readable pages. **Decided**
+(D-006; "wiki" renamed "catalog", [D-064](decisions/D-064-catalog-not-wiki.md)).
+The catalog is the `main` branch of the workspace's catalog repository,
+which agents change by pushing; people read it here, with no editing in the
+browser for now, and ask their agents for changes. **Decided** (owner, GD-1,
+GD-7 to GD-9, [D-059](decisions/D-059-catalog-in-git-hosted-by-shinan.md)).
+The entity types, facts and rules are owned by the [Catalog](catalog.md)
+document; this section is how they look and how people move around them.
 
 ### A page
 
@@ -1122,12 +1118,13 @@ UI shows what changed (GC-7); undo is `git revert`.
 
 ## Start here and onboarding
 
-> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-7](build-plan-git-catalog.md#gc-7-the-catalog-ui)): `start-here.md` is rendered as a page; "preview as agent" is removed. Until then, this section describes M2 as built (v0.3.0).
-
-"Start here" is one special catalog document with two ordered paths, one for
-people and one for agents, built from the same catalog pages and changed only
-with catalog approval. **Decided** (owner, O-18, [#25]). Its content rules are
-owned by the [Catalog](catalog.md) document; this section is how it is shown.
+"Start here" is one special catalog document, `start-here.md`, with two
+ordered paths, one for people and one for agents, built from the same
+catalog pages. **Decided** (owner, O-18, [#25]); it changes by a push like
+any document ([D-060](decisions/D-060-no-catalog-approval.md)). Its content
+rules are owned by the [Catalog](catalog.md#11-start-here) document; this
+section is how it is shown ([moving around the catalog](#moving-around-the-catalog)
+has the page as built).
 
 ### Start here for people
 
@@ -1155,8 +1152,9 @@ owned by the [Catalog](catalog.md) document; this section is how it is shown.
   person, and what needs deployment approval. This replaces today's
   `agent-entrypoint.md` in the `workspace` repository; rules that apply to
   every workspace ship with the skill (Agent integrations).
-- Agents receive the path through the MCP server and skill. How is owned by
-  [Agent integrations](agent-integrations.md).
+- Agents read the path in their clone of the catalog (`start-here.md` on
+  `origin/main`), as the skill tells them. How is owned by
+  [Agent integrations](agent-integrations.md#the-skill).
 - **Removed (GC-5):** **Preview as agent** and the size of the agents' path
   with its warning (M2-7). They showed the path as MCP's
   `workspace_context` gave it, which no longer carries catalog content
@@ -1270,10 +1268,6 @@ details (D-015).
 
 ### Workspace settings
 
-> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-7](build-plan-git-catalog.md#gc-7-the-catalog-ui)): the "Catalog" screen holds the clone URL, "not a secret" values and purge (GC-5 removed the strict setting). Until then, this section describes M2 as built (v0.3.0).
->
-> **As built in GC-7 ([#169](https://github.com/guneet-xyz/shinan/issues/169)):** a **Catalog** tab, for every member, between Agents and Security log. It holds "Address for agents": the address agents clone the catalog from (`https://<installation>/git/<workspace ID>.git`), shown whole (it wraps on a phone), with a Copy button, and "Agents clone the catalog from here. Set up an agent →". For workspace owners, it also holds **"Values that aren't secrets"** (GQ-2): one line ("If Shinan refused a push because something looked like a secret but isn't, add it here so the next push goes through."), one masked field for the value or the fingerprint the refusal showed, with a Show button to check what was pasted, and the list, one row each: "Allowed Nov 20 by Guneet · sha256:3f9a1c2d4e5f…" on the left, Remove on the right. Only text that starts with `sha256:` is a fingerprint (a mistyped one is refused with a line saying so); anything else is a value, whose fingerprint the page works out itself (SHA-256, in the browser), so the value never leaves the page: 64 hexadecimal characters on their own are what a key looks like, so they are a value too (review of #196). The API takes a fingerprint only with its `sha256:` prefix. Shinan keeps only fingerprints, so the list never shows a value. Allowing and removing ask for a recent sign-in, and each is in the security log. Removing text from the catalog's history (GC-8, below) is a page of its own, behind a quiet owners-only link at the bottom of the tab (agreed on [#170](https://github.com/guneet-xyz/shinan/issues/170)); M2's Data tab is gone, and its address leads there.
-
 For workspace owners. Contributors see three of these screens read only:
 General, Members and Security log (only the entries they made or that are
 about them, as [Identity](identity.md) section 11 allows), with no actions.
@@ -1281,7 +1275,9 @@ The other screens are not shown to them. **Proposed.** Reason: every member
 already sees everything in the workspace (owner, O-43, [#25]), so who the
 members and owners are is no secret, and a contributor needs somewhere to
 leave the workspace and to read their own security log. Actions their role
-does not allow are still not offered.
+does not allow are still not offered. As built, the tabs are General,
+Members, Invitations, Agents, Catalog and Security log; Git host
+connections and task flags come with M3, and export and import later.
 
 | Screen               | Shows                                                                                                                                                                 | Actions                                                                                                                                             |
 | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -1289,13 +1285,16 @@ does not allow are still not offered.
 | Members              | Each member: name, role (workspace owner or contributor), joined, invited by, linked git host accounts, their agents, last active                                     | Change role; remove member. The last workspace owner cannot be removed or made a contributor                                                        |
 | Invitations          | Pending, expired and declined invitations with role and who invited                                                                                                   | Invite; resend; withdraw                                                                                                                            |
 | Agents               | Every agent: name (person, coding tool and machine), member it acts for, state, last agent session seen, its token (created, last used, full or read-only)            | Disable an agent; revoke its token                                                                                                                  |
+| Catalog              | The address agents clone the catalog from; for owners, the values that aren't secrets                                                                                 | Copy the address; allow or remove a value that isn't a secret; remove text from the catalog's history (owners, typed confirmation)                  |
 | Git host connections | Each connection: git host, account used, repositories covered, each repository's "turn new issues into tasks" setting, who set it up, health, last successful contact | Add; reconnect; change repositories covered; turn new issues into tasks on or off per repository; import existing issues into triage; remove        |
 | Task flags           | Built-in and workspace-defined flags, each with its description, whether it shows in Needs you, and how many tasks have it                                            | Add; edit; remove                                                                                                                                   |
 | Security log         | Security-relevant events, kept forever and never purged                                                                                                               | Read only                                                                                                                                           |
-| Data                 | The time of the last export; what can be purged, including operational records about this workspace                                                                   | Export the workspace; import an export into an empty workspace; purge (typed confirmation). Security-log entries are never offered for purge        |
+| Data                 | The time of the last export (not built yet)                                                                                                                           | Export the workspace; import an export into an empty workspace. Purging the catalog is under Catalog; security-log entries are never purged         |
+
+**Catalog (as built in GC-7, [#169](https://github.com/guneet-xyz/shinan/issues/169)):** a **Catalog** tab, for every member, between Agents and Security log. It holds "Address for agents": the address agents clone the catalog from (`https://<installation>/git/<workspace ID>.git`), shown whole (it wraps on a phone), with a Copy button, and "Agents clone the catalog from here. Set up an agent →". For workspace owners, it also holds **"Values that aren't secrets"** (GQ-2): one line ("If Shinan refused a push because something looked like a secret but isn't, add it here so the next push goes through."), one masked field for the value or the fingerprint the refusal showed, with a Show button to check what was pasted, and the list, one row each: "Allowed Nov 20 by Guneet · sha256:3f9a1c2d4e5f…" on the left, Remove on the right. Only text that starts with `sha256:` is a fingerprint (a mistyped one is refused with a line saying so); anything else is a value, whose fingerprint the page works out itself (SHA-256, in the browser), so the value never leaves the page: 64 hexadecimal characters on their own are what a key looks like, so they are a value too (review of #196). The API takes a fingerprint only with its `sha256:` prefix. Shinan keeps only fingerprints, so the list never shows a value. Allowing and removing ask for a recent sign-in, and each is in the security log. Removing text from the catalog's history (GC-8, below) is a page of its own, behind a quiet owners-only link at the bottom of the tab (agreed on [#170](https://github.com/guneet-xyz/shinan/issues/170)); M2's Data tab is gone, and its address leads there.
 
 **Proposed** screen set, based on these answers: task flags managed per
-workspace (owner, O-8, [#25]); the strict setting (O-3); the security log is
+workspace (owner, O-8, [#25]); the security log is
 kept forever (O-47) and no security-log entry can ever be purged (N-13,
 D-049); only workspace owners can purge, and installation operators cannot
 (O-50); a full workspace export and import are in the first version (O-75);
@@ -1371,9 +1370,10 @@ remove text. Exports come with a later milestone.
 
 Screen details:
 
-- **Catalog settings:** removed with the strict setting (GC-5,
-  [D-060](decisions/D-060-no-catalog-approval.md)). The tab returns for
-  the owner's "not a secret" values (GC-7).
+- **Catalog:** M2's strict setting is gone (GC-5,
+  [D-060](decisions/D-060-no-catalog-approval.md)); the tab holds the
+  address for agents, the values that aren't secrets and removing text
+  (GC-7, GC-8; above).
 - **Task ID prefix.** Changing it keeps every earlier prefix working as an
   alias forever, and it is never given to another workspace; the screen says
   so before saving. Old task IDs keep their old prefix. **Proposed**, following
@@ -1484,8 +1484,6 @@ The rules are [Identity](identity.md) §3.4's.
 
 ### Your agents
 
-> **Changing with the [Git-based catalog](build-plan-git-catalog.md)** ([GC-7](build-plan-git-catalog.md#gc-7-the-catalog-ui), [GC-9](build-plan-git-catalog.md#gc-9-the-skill-and-agent-setup)): "Set up OpenCode" becomes "Set up an agent". Until then, this section describes M2 as built (v0.3.0).
-
 An agent is per person, coding tool and machine, for example "Guneet's
 OpenCode on Daedalus". **Decided** (owner, O-40, [#25]). Agents belong to one
 workspace.
@@ -1493,8 +1491,9 @@ workspace.
 **Connecting an agent** starts on the machine, not in the web app:
 
 1. The person installs the plugin, or the CLI for tools without a plugin.
-   Installing the plugin also sets up the MCP server and skill (owner, O-36,
-   [#25]). The instructions per coding tool are owned by
+   Installing the plugin also sets up the skill, the catalog's clone and,
+   for tasks, the MCP server (owner, O-36, [#25];
+   [D-063](decisions/D-063-no-mcp-for-the-catalog.md)). The instructions per coding tool are owned by
    [Agent integrations](agent-integrations.md) and linked from **Your agents**.
 2. The plugin or CLI starts a browser approval: it opens Shinan's approval page,
    or, on a machine without a browser, shows a short code that the person
@@ -1506,8 +1505,8 @@ workspace.
    **read-only token** (only the `read` scopes), then approves. A read-only
    token is a choice of scopes, not a role.
 4. The token goes straight to the plugin or CLI. It is one token per agent,
-   accepted at every agent endpoint (MCP, REST API and the plugin stream), and
-   it lasts until revoked.
+   accepted at every agent endpoint (the catalog repository at `/git/`, MCP,
+   the REST API and the plugin stream), and it lasts until revoked.
 5. **Waiting for first contact:** the approval page waits until the agent's
    first agent session reaches Shinan and then confirms what is working. Phase
    1: "Presence: plugin-reported" or "Presence: self-reported only (no
@@ -1557,8 +1556,8 @@ as built until browser approval arrives (M4):**
   will not be shown again and should stay open until the setup command asks
   for it, and a link to set the agent up (GC-9).
 - **Decided (owner, 2026-11-19, M2-Q17; M2-9, [#90](https://github.com/guneet-xyz/shinan/issues/90)):**
-  **Set up an agent** (`/account/agents/setup`, "Set up OpenCode" until
-  GC-9), linked from the top of Your agents and from the token shown once
+  **Set up an agent** (`/account/agents/setup`; "Set up OpenCode" in M2),
+  linked from the top of Your agents and from the token shown once
   (in a new tab, so the token stays on screen, filled in for that agent):
   four steps of one sentence each (create a token for this machine, run one
   command on the machine and paste the token when it asks, add Shinan to
@@ -1625,7 +1624,7 @@ What this document relies on other documents for.
 | [Tasks and work](tasks.md)                      | Status rules behind each explanation; required fields for `needs a person` and deployment approval requests, what makes an approval stale, and the "contributors may give deployment approval" setting; when nudges and task notices are created and where they go; batching of waiting nudges; releasing an agent session by hand; triage actions and the "turn new issues into tasks" setting; unlinked work; unconfirmed links; rules for workspace-defined flags, including "show in Needs you"; task ID prefixes and their aliases; which git host actions a person can ask for. |
 | [Agent integrations](agent-integrations.md)     | Presence thresholds (`unresponsive`, the 30-minute display threshold, the 24-hour release, the 30-day end); waiting reasons; delivery holders and outcomes for nudges and task notices; the "reply to nudge" tool; delivering git host action requests; the ready-made start prompt; connect instructions per coding tool; the device setup guide's content and the launcher (phase 3); whether an agent session can be stopped from Shinan.                                                                                                                                          |
 | [Identity, agents and permissions](identity.md) | What each role may do, including who may give deployment approval and which actions need re-authentication; the token approval flow and read-only tokens; removal effects; who may create workspaces; the email allowlist and invitations; nudges from other members and the per-agent opt-out; who may export, import and purge.                                                                                                                                                                                                                                                     |
-| [Catalog](catalog.md)                           | Gated classes and the strict setting; validation results shown in the editor; rechecks as catalog proposals; recheck intervals; type schema documents; the start-here document; workspace-wide lists; revert; comparing revisions.                                                                                                                                                                                                                                                                                                                                                    |
+| [Catalog](catalog.md)                           | The checks on push and their warnings; recheck intervals; type schema documents; the start-here document; the lists under Needs attention; history and purge.                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | [Git host integrations](git-hosts.md)           | Connection health and reconciliation thresholds; how unconfirmed links and mentions are detected; where the list of automated accounts lives; the "turn new issues into tasks" setting; the origin-issue reminder.                                                                                                                                                                                                                                                                                                                                                                    |
 | [Architecture and operations](architecture.md)  | How screens update while open; the task address (section 3.6); sending notifications and security emails; export and import (section 5.5); purge of operational records.                                                                                                                                                                                                                                                                                                                                                                                                              |
 | [Roadmap and migration](roadmap.md)             | Which phase 1 screens are in the first release.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |

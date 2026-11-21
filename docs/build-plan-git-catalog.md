@@ -11,6 +11,11 @@ The owner refined the answer GQ-3 on 2026-11-20
 owner also decided that GC-7 builds one left sidebar for the whole app
 ([answers on #183](https://github.com/guneet-xyz/shinan/issues/183#issuecomment-7029973618), [section 3](#3-the-catalog-ui)).
 
+**Progress (2026-11-21):** GC-0 to GC-10 are built and merged, with the pull
+requests listed in [section 5](#5-work-packages); GC-11 (security review,
+release v0.4.0 and the deployment request) and GC-12 (the trial restart)
+remain. Nothing of v0.4.0 is deployed yet.
+
 M2, the catalog, is built and deployed as v0.3.0 at `shinan.guneet.dev`
 ([M2 build plan](build-plan-m2.md)). On 2026-11-19 the owner decided that it
 is not working and that the catalog moves to Git: one repository per
@@ -106,7 +111,7 @@ documents together, in packages [GC-5](#gc-5-remove-the-m2-write-path),
 
 **Decided (owner, GD-1):** one repository per workspace, hosted by Shinan.
 **Proposed** layout, the one the export was going to use
-([catalog §2.2](catalog.md#22-export-the-exit-path)), so a clone reads like
+([catalog §2.2](catalog.md#22-the-repository-the-exit-path)), so a clone reads like
 the `workspace` repository's catalog does today:
 
 | Path               | Content                                                                                                                                           |
@@ -819,7 +824,7 @@ in memory.
   ([roadmap, backups before migration](roadmap.md#backups-before-migration)).
 - **The export's catalog part** becomes the repository itself (a clone or a
   bundle); `history.jsonl` is no longer needed
-  ([catalog §2.2](catalog.md#22-export-the-exit-path)).
+  ([catalog §2.2](catalog.md#22-the-repository-the-exit-path)).
 
 ### 2.12 Agents: setup on a machine, and the skill
 
@@ -1261,21 +1266,21 @@ builds. Sizes: **S** under about 500 changed lines, **M** up to about 1,500,
 **L** larger, which is split into PRs of M size or less. Deletions count as
 easy to review but are kept in their own PRs.
 
-| #     | Package                                                   | Size                   | Depends on                                                 |
-| ----- | --------------------------------------------------------- | ---------------------- | ---------------------------------------------------------- |
-| GC-0  | This plan and its decision records                        | —                      | —                                                          |
-| GC-1  | Git in the image, and the Git container                   | L (GC-1a, GC-1b)       | GC-0                                                       |
-| GC-2  | Serving Git over HTTPS through `web`                      | M                      | GC-1b                                                      |
-| GC-3  | Push checks and the push log                              | L (GC-3a, GC-3b)       | GC-2                                                       |
-| GC-4  | The index from `main`                                     | M                      | GC-1b                                                      |
-| GC-5  | Remove the M2 write path                                  | L, deletion (GC-5a, b) | GC-0                                                       |
-| GC-6  | Move the M2 catalog into Git and drop M2's tables         | S to M                 | GC-1b, GC-3b                                               |
-| GC-7  | The catalog UI                                            | M                      | GC-4, GC-5b; "not a secret" settings after GC-3a           |
-| GC-8  | Purge as a history rewrite                                | M                      | GC-3a, GC-4                                                |
-| GC-9  | The skill and agent setup                                 | M                      | Drafted after GC-0; done after GC-3b and GC-7's setup page |
-| GC-10 | Documents: "catalog" everywhere, and what no package owns | S to M                 | GC-0; finished last                                        |
-| GC-11 | Security review and deployment preparation                | M                      | All above                                                  |
-| GC-12 | Trial restart kit                                         | S                      | GC-9; steps after deployment                               |
+| #     | Package                                                   | Size                   | Depends on                                                 | Status                                                                                                                                                                                                                           |
+| ----- | --------------------------------------------------------- | ---------------------- | ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GC-0  | This plan and its decision records                        | —                      | —                                                          | Done: [#162](https://github.com/guneet-xyz/shinan/pull/162); D-066 [#179](https://github.com/guneet-xyz/shinan/pull/179), [#180](https://github.com/guneet-xyz/shinan/pull/180)                                                  |
+| GC-1  | Git in the image, and the Git container                   | L (GC-1a, GC-1b)       | GC-0                                                       | Done: GC-1a [#177](https://github.com/guneet-xyz/shinan/pull/177), GC-1b [#185](https://github.com/guneet-xyz/shinan/pull/185)                                                                                                   |
+| GC-2  | Serving Git over HTTPS through `web`                      | M                      | GC-1b                                                      | Done: [#189](https://github.com/guneet-xyz/shinan/pull/189)                                                                                                                                                                      |
+| GC-3  | Push checks and the push log                              | L (GC-3a, GC-3b)       | GC-2                                                       | Done: GC-3a [#191](https://github.com/guneet-xyz/shinan/pull/191), GC-3b [#193](https://github.com/guneet-xyz/shinan/pull/193)                                                                                                   |
+| GC-4  | The index from `main`                                     | M                      | GC-1b                                                      | Done: [#186](https://github.com/guneet-xyz/shinan/pull/186), [#188](https://github.com/guneet-xyz/shinan/pull/188), [#205](https://github.com/guneet-xyz/shinan/pull/205)                                                        |
+| GC-5  | Remove the M2 write path                                  | L, deletion (GC-5a, b) | GC-0                                                       | Done: GC-5a [#178](https://github.com/guneet-xyz/shinan/pull/178), GC-5b [#182](https://github.com/guneet-xyz/shinan/pull/182)                                                                                                   |
+| GC-6  | Move the M2 catalog into Git and drop M2's tables         | S to M                 | GC-1b, GC-3b                                               | Done: [#198](https://github.com/guneet-xyz/shinan/pull/198), [#199](https://github.com/guneet-xyz/shinan/pull/199)                                                                                                               |
+| GC-7  | The catalog UI                                            | M                      | GC-4, GC-5b; "not a secret" settings after GC-3a           | Done: [#190](https://github.com/guneet-xyz/shinan/pull/190), [#192](https://github.com/guneet-xyz/shinan/pull/192), [#194](https://github.com/guneet-xyz/shinan/pull/194), [#196](https://github.com/guneet-xyz/shinan/pull/196) |
+| GC-8  | Purge as a history rewrite                                | M                      | GC-3a, GC-4                                                | Done: [#197](https://github.com/guneet-xyz/shinan/pull/197)                                                                                                                                                                      |
+| GC-9  | The skill and agent setup                                 | M                      | Drafted after GC-0; done after GC-3b and GC-7's setup page | Done: [#176](https://github.com/guneet-xyz/shinan/pull/176); after a purge [#206](https://github.com/guneet-xyz/shinan/pull/206) (open)                                                                                          |
+| GC-10 | Documents: "catalog" everywhere, and what no package owns | S to M                 | GC-0; finished last                                        | Done: [#175](https://github.com/guneet-xyz/shinan/pull/175) and the final sweep ([#172](https://github.com/guneet-xyz/shinan/issues/172))                                                                                        |
+| GC-11 | Security review and deployment preparation                | M                      | All above                                                  | Open ([#173](https://github.com/guneet-xyz/shinan/issues/173))                                                                                                                                                                   |
+| GC-12 | Trial restart kit                                         | S                      | GC-9; steps after deployment                               | Open ([#174](https://github.com/guneet-xyz/shinan/issues/174))                                                                                                                                                                   |
 
 There is no GC-13: M2's tables are dropped in v0.4.0 by GC-6 (owner, GQ-5).
 
@@ -1638,6 +1643,13 @@ By document:
 | [Operator guide](operator-guide.md)         | What you need; setting up; upgrading 0.3 to 0.4; agents; backups; the agent index; catalog workers (removed); catalog purge                       | GC-1, GC-4, GC-5, GC-6, GC-8, GC-11 |
 | [Plan](plan.md)                             | "Later changes to this plan's text": §4 and §5                                                                                                    | GC-10                               |
 | [M2 build plan](build-plan-m2.md)           | A note at the top (in this PR); otherwise kept as the record of what M2 built                                                                     | GC-0                                |
+
+**Done (2026-11-21):** each package updated its sections, and GC-10's
+final sweep ([#172](https://github.com/guneet-xyz/shinan/issues/172))
+updated the rest and removed the "Changing with the Git-based catalog"
+notes, except those on what GC-11 and GC-12 still change (architecture
+§11.2, §11.6 and §14's recovery steps, the operator guide's backups, the
+security checklist and the trial guide).
 
 **Roadmap and trial, marked in this plan's pull request:** the trial is paused; the catalog
 part restarts on the Git setup after v0.4.0 is deployed; M3 starts after

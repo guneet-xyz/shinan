@@ -308,11 +308,12 @@ Related terms (owner: Agent integrations):
 ### Connection level
 
 - **Definition:** how deeply an agent session is connected to Shinan (D-014):
-  1. **MCP and skill** (any agent): actions such as reading the catalog or
-     updating a task. MCP (Model Context Protocol) is a standard way for coding
-     tools to call outside tools. A skill is an instruction file that tells the
-     agent how to use them. A CLI (command-line program) offers the same
-     actions.
+  1. **Git, MCP and skill** (any agent): the catalog through Git (a clone,
+     pushed back to Shinan) and the skill; tasks through MCP and the skill,
+     such as updating a task. MCP (Model Context Protocol) is a standard way
+     for coding tools to call outside tools. A skill is an instruction file
+     that tells the agent how to work with Shinan. A CLI (command-line
+     program) offers the same task actions.
   2. **Plugin** (per coding tool, OpenCode first): reports presence from inside
      the tool and delivers nudges live. Installing the plugin also sets up MCP
      and the skill.
@@ -324,8 +325,10 @@ Related terms (owner: Agent integrations):
 - **Owner:** Agent integrations; Identity, agents and permissions (launcher
   token).
 - **Status:** **Decided** (D-014: MCP alone depends on the agent choosing to
-  report and cannot reach an idle or crashed session). Plugin sets up MCP and
-  skill: **Decided** (owner, [O-36][o]). Launcher on the person's own hardware
+  report and cannot reach an idle or crashed session); for the catalog, the
+  first level is Git and the skill, not MCP
+  ([D-063](decisions/D-063-no-mcp-for-the-catalog.md), amending D-014).
+  Plugin sets up MCP and skill: **Decided** (owner, [O-36][o]). Launcher on the person's own hardware
   with a setup guide: **Decided** (owner, [O-1][o]). Launcher token
   **proposed** by Identity; reason: a launcher starts agents, so it needs its
   own credential that can be revoked separately.
@@ -841,8 +844,8 @@ person` (owner, [O-7][o]); the separate `awaiting deployment approval` flag
   branches allowed and `main` the catalog
   ([D-059](decisions/D-059-catalog-in-git-hosted-by-shinan.md), replacing
   O-11, O-12 and N-5's database revisions and "no Git mirror"). The layout,
-  `main`'s rules and the branch limit are **proposed** in the
-  [Git-based catalog plan §2.1, §2.8](build-plan-git-catalog.md#21-the-repository-layout-and-rules).
+  `main`'s rules and the branch limit are built as
+  [catalog §8.1](catalog.md#81-pushes) says (GC-3).
 
 ### Catalog entity
 
@@ -863,8 +866,8 @@ person` (owner, [O-7][o]); the separate `awaiting deployment approval` flag
   single-valued or multi-valued, which keys are relations, any recheck
   intervals, and its body sections. A **type schema document** (ID
   `schema/<type>`) defines a custom type, or extends a built-in type with extra
-  keys. Built-in keys cannot be removed or changed, and any schema change is a
-  gated change.
+  keys. Built-in keys cannot be removed or changed, and a schema change that
+  would break current entities is refused on push.
 - **Attributes:** entity ID, type, title, summary, entity status, entity owner,
   aliases, facts, body text.
 - **Entity ID:** written `<type>/<slug>`, such as `machine/musashi`; stable.
@@ -892,8 +895,8 @@ person` (owner, [O-7][o]); the separate `awaiting deployment approval` flag
     and the person/agent rule. Reasons: they are the `workspace` repository's
     working practice; keeping identity in one place avoids two sources of
     truth; former members must stay describable.
-  - **Proposed** by Catalog: type schema documents, and schema changes as
-    gated changes. Reason: Shinan's own features rely on built-in keys, and a
+  - **Proposed** by Catalog: type schema documents, and schema changes
+    checked on push against every entity of the type. Reason: Shinan's own features rely on built-in keys, and a
     schema change affects every entity of the type.
 
 ### Fact
@@ -987,14 +990,17 @@ push`, authenticated by its agent token (supplied by a Git credential
   with every reason in `git push`'s output; warnings are shown and do not
   block. A **check-only push** runs the checks without changing `main`.
 - **"Not a secret" value:** one exact value a workspace owner allows past the
-  secret check, after a false positive; stored as its hash.
+  secret check, after a false positive; stored only as its fingerprint
+  (SHA-256).
 - **Push log:** Shinan's record of which agent and which person pushed what
   (refs, commits before and after, and the commits each push first brought).
   Commit authors are not trusted and carry no meaning; the push log is the
   attribution.
 - **Commit history:** `main`'s commits, newest first, each with the agent and
-  person of the push that first brought it to Shinan, from the push log; it is where people review catalog changes after the
-  fact (it replaces M2's recent changes feed).
+  person of the push that first brought it to Shinan, from the push log. The
+  catalog pages show it as **Recent changes**, and a page's own as its
+  **History**; it is where people review catalog changes after the fact (it
+  replaces M2's recent changes feed).
 - **Owner:** Catalog (rules for documents); Architecture and operations
   (serving Git, the checks' mechanism); Identity, agents and permissions
   (tokens at `/git/`, the push log's security records).
@@ -1010,8 +1016,9 @@ push`, authenticated by its agent token (supplied by a Git credential
     amended by [D-066](decisions/D-066-by-names-the-first-pusher.md)). The
     commit history is the review after the fact
     ([D-064](decisions/D-064-catalog-not-wiki.md)).
-  - **Proposed:** the checks' details, the push log's records and the limits
-    ([Git-based catalog plan §2.5, §2.6, §2.10](build-plan-git-catalog.md#25-checks-on-push)).
+  - **As built** (GC-3): the checks' details, the push log's records and the
+    limits are in [catalog §8](catalog.md#8-changing-the-catalog) and
+    [identity §11](identity.md#11-audit).
   - The plan's "agents propose and people approve where needed" (Catalog
     pillar) changed with D-060 ([plan, later changes](plan.md#later-changes-to-this-plans-text)).
   - **History:** M2 (v0.3.0) built catalog proposals, gated changes, catalog
@@ -1030,10 +1037,10 @@ push`, authenticated by its agent token (supplied by a Git credential
   shown to people as a file tree, rendered pages, full-text search and the
   commit history, including the start-here document's path for people. There
   is no editing in the browser for now.
-- **Index:** tables generated from `main` for search, the catalog pages and
-  the lists of discrepancies, facts due for recheck and known unknowns
-  (formerly "the agent index"). Agents read the documents in their clone, not
-  the index.
+- **Agent index** (the index): tables generated from `main` for search, the
+  catalog pages and the lists of discrepancies, facts due for recheck and
+  known unknowns. The name is M2's, when agents read it through MCP; now
+  agents read the documents in their clone, not the index.
 - **Owner:** Human experience (catalog pages); Catalog (index); Architecture
   and operations (how they stay in sync).
 - **Status:** **Decided** (D-006; "wiki" renamed "catalog", and the browsing
