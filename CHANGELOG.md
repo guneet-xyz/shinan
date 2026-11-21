@@ -1,5 +1,43 @@
 # Changelog
 
+## [0.4.0](https://github.com/guneet-xyz/shinan/compare/v0.3.0...v0.4.0) (2026-11-21)
+
+
+### ⚠ BREAKING CHANGES
+
+* **core:** build the agent index from main (GC-4) ([#186](https://github.com/guneet-xyz/shinan/issues/186))
+* **web:** remove M2's catalog write screens and their API client (GC-5b) ([#182](https://github.com/guneet-xyz/shinan/issues/182))
+* remove M2's catalog write path (GC-5a, core and server) ([#178](https://github.com/guneet-xyz/shinan/issues/178))
+
+### Features
+
+* **core:** build the agent index from main (GC-4) ([#186](https://github.com/guneet-xyz/shinan/issues/186)) ([eab2b52](https://github.com/guneet-xyz/shinan/commit/eab2b52d1adce05a7041710d7be97ce1c78b2afc))
+* Git in the image and packages/git (GC-1a) ([#177](https://github.com/guneet-xyz/shinan/issues/177)) ([61e994a](https://github.com/guneet-xyz/shinan/commit/61e994a71c86bbaad9fda56b84059458d76aca79))
+* migrate moves M2's catalog into Git, verified byte for byte, then drops M2's tables (GC-6) ([#198](https://github.com/guneet-xyz/shinan/issues/198)) ([b39754e](https://github.com/guneet-xyz/shinan/commit/b39754e3ee2afac399048169b12512005e7322c3))
+* purge as a history rewrite (GC-8) ([#197](https://github.com/guneet-xyz/shinan/issues/197)) ([1639fff](https://github.com/guneet-xyz/shinan/commit/1639fff7649a54ef1d5b75a444a8958ee99597bd))
+* push checks on every branch and the push log (GC-3a) ([#191](https://github.com/guneet-xyz/shinan/issues/191)) ([b4c1659](https://github.com/guneet-xyz/shinan/commit/b4c1659868fa7c9b53426404d3e2f395c3113dd1))
+* serving Git over HTTPS through web (GC-2) ([#189](https://github.com/guneet-xyz/shinan/issues/189)) ([ac7c59f](https://github.com/guneet-xyz/shinan/commit/ac7c59fa38ab20dbe2996cbac2a37a85f37f2bef))
+* **skill:** the skill and agent setup for the Git-based catalog ([#176](https://github.com/guneet-xyz/shinan/issues/176)) ([e4e0967](https://github.com/guneet-xyz/shinan/commit/e4e096764bb1581ef4a128614cdbafe8166a61a6))
+* the checks of main and the by rule; main opens (GC-3b) ([#193](https://github.com/guneet-xyz/shinan/issues/193)) ([95e8fc8](https://github.com/guneet-xyz/shinan/commit/95e8fc8763a9030f4d9392ddfff4f65f9440d951))
+* the Git container (GC-1b) ([#185](https://github.com/guneet-xyz/shinan/issues/185)) ([fdf18d9](https://github.com/guneet-xyz/shinan/commit/fdf18d944e9b6bb2d703a966691f0b848731ea72))
+* **web:** one left sidebar for the whole app, and the catalog's folders (GC-7, part 1) ([#190](https://github.com/guneet-xyz/shinan/issues/190)) ([a4689af](https://github.com/guneet-xyz/shinan/commit/a4689afce633d424dcf532d70cc8aca7882d7a86)), closes [#169](https://github.com/guneet-xyz/shinan/issues/169)
+* **web:** Recent changes, and Settings › Catalog (GC-7, part 3) ([#194](https://github.com/guneet-xyz/shinan/issues/194)) ([085edeb](https://github.com/guneet-xyz/shinan/commit/085edeb7fd60a29e316b24580ad4792cad83314d)), closes [#169](https://github.com/guneet-xyz/shinan/issues/169)
+* **web:** the readable page, Start here, History and View source (GC-7, part 2) ([#192](https://github.com/guneet-xyz/shinan/issues/192)) ([2933e7f](https://github.com/guneet-xyz/shinan/commit/2933e7fa824532971ccb6aa8aa0fe793f1c03e14)), closes [#169](https://github.com/guneet-xyz/shinan/issues/169)
+* **web:** who pushed each change, and the values that aren't secrets (GC-7 follow-up) ([#196](https://github.com/guneet-xyz/shinan/issues/196)) ([d0ed067](https://github.com/guneet-xyz/shinan/commit/d0ed06753c73ea7d012ce5ca3e7a19c44fb40a7f)), closes [#169](https://github.com/guneet-xyz/shinan/issues/169)
+
+
+### Bug Fixes
+
+* a catch-up no longer marks an index rebuilt meanwhile; tests that act on the whole installation get their own database ([#205](https://github.com/guneet-xyz/shinan/issues/205)) ([b42a05a](https://github.com/guneet-xyz/shinan/commit/b42a05a1ec2e6f41def1ba367603f6bf9b07b061))
+* **core:** give agent index failures a reason, and keep the daily check going ([#188](https://github.com/guneet-xyz/shinan/issues/188)) ([3e6860a](https://github.com/guneet-xyz/shinan/commit/3e6860abe39095bf27387444714a6fc12fc205ce))
+* **db:** the drop of M2's tables waits at most 15 seconds for their lock ([#199](https://github.com/guneet-xyz/shinan/issues/199)) ([490f5f9](https://github.com/guneet-xyz/shinan/commit/490f5f9aa8ad6d37d3243814cd93412baa9b292c))
+
+
+### Code Refactoring
+
+* remove M2's catalog write path (GC-5a, core and server) ([#178](https://github.com/guneet-xyz/shinan/issues/178)) ([8b3b95c](https://github.com/guneet-xyz/shinan/commit/8b3b95cb8ffc6ea53a23ae23c9919affc8cd63d5))
+* **web:** remove M2's catalog write screens and their API client (GC-5b) ([#182](https://github.com/guneet-xyz/shinan/issues/182)) ([df7edc6](https://github.com/guneet-xyz/shinan/commit/df7edc6a0c0d0f6ceba1ee5ed2dc7a77e5ed1273))
+
 ## [0.3.0](https://github.com/guneet-xyz/shinan/compare/v0.2.1...v0.3.0) (2026-11-19)
 
 
