@@ -23,7 +23,7 @@ services:
       retries: 15
 
   mailpit:
-    image: axllent/mailpit:v1.33
+    image: axllent/mailpit:v1.34
     ports:
       - 127.0.0.1:${SHINAN_SMTP_PORT:-1025}:1025
       - 127.0.0.1:${SHINAN_MAILPIT_PORT:-8025}:8025
