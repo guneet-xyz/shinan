@@ -15,7 +15,7 @@
     "worker": "tsx --conditions=@shinan/source src/cli.ts worker"
   },
   "dependencies": {
-    "@hono/node-server": "^2.1.8",
+    "@hono/node-server": "^2.1.11",
     "@modelcontextprotocol/server": "^2.4.0",
     "@shinan/api-client": "workspace:*",
     "@shinan/core": "workspace:*",
@@ -23,9 +23,9 @@
     "@shinan/email": "workspace:*",
     "@shinan/git": "workspace:*",
     "@shinan/skill": "workspace:*",
-    "better-auth": "1.7.25",
+    "better-auth": "1.7.27",
     "drizzle-orm": "^0.45.4",
-    "hono": "^4.13.18",
+    "hono": "^4.13.19",
     "pg-boss": "^12.38.2",
     "zod": "^4.6.7"
   },

@@ -18,7 +18,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@aws-sdk/client-sesv2": "^3.1169.0",
-    "nodemailer": "^10.5.0"
+    "@aws-sdk/client-sesv2": "^3.1175.0",
+    "nodemailer": "^10.6.1"
   }
 }
