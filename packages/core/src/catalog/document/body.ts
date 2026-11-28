@@ -51,8 +51,8 @@ export interface BodyLink {
    * The destination as written, with Markdown escapes and character
    * references decoded, and nothing else changed (no percent-encoding or
    * decoding). Every destination is listed, including `javascript:`,
-   * `file:` and `data:` ones, so validation sees them; the wiki's renderer
-   * never makes those clickable.
+   * `file:` and `data:` ones, so validation sees them; the catalog pages'
+   * renderer never makes those clickable.
    */
   url: string
   /**
@@ -73,7 +73,7 @@ export interface BodyLink {
 
 /**
  * The parser: Shinan's shared Markdown configuration (`@shinan/markdown`,
- * the same one the wiki renders with), plus rules that note where each link
+ * the same one the catalog pages render with), plus rules that note where each link
  * and definition is written, since markdown-it keeps source lines for
  * blocks but no positions for inline content.
  */
@@ -480,7 +480,7 @@ function withPositions(md: MarkdownIt): MarkdownIt {
   md.core.ruler.disable("strip_references")
   // Keep every destination as written, and list them all, including
   // `javascript:`, `file:` and `data:`, so validation sees them. Only this
-  // instance does so; the wiki renders with its own, which refuses them.
+  // instance does so; the catalog pages render with their own, which refuses them.
   md.normalizeLink = (url) => url
   md.validateLink = () => true
   // markdown-it stops reading, silently, where blocks nest deeper than

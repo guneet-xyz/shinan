@@ -33,8 +33,8 @@ import type { YamlNode } from "./yaml.js"
 
 /**
  * Validation of catalog documents (catalog §8.3). It runs on the Markdown a
- * proposal would produce, never on the operations that produced it
- * (catalog §2.1, rule 2).
+ * push would put on `main`, never on how that text was made (catalog §2.1,
+ * rule 2).
  */
 export interface ValidationContext {
   /** The time "not in the future" is judged against. */
@@ -55,26 +55,26 @@ export interface ValidationContext {
 
 export interface ValidationResult {
   problems: Problem[]
-  /** Any blocking problem: the proposal cannot apply. */
+  /** Any blocking problem: the push is refused. */
   blocked: boolean
-  /** Any warning: the proposal needs catalog approval, with the reasons shown (catalog §8.2, "Doubtful"). */
-  needsApproval: boolean
+  /** Any warning: the push is accepted, with the warnings shown (catalog §8.3). */
+  hasWarnings: boolean
 }
 
 export interface Change {
-  /** The catalog before the change; null for a first proposal into an empty catalog. */
+  /** The catalog before the change; null for a first change to an empty catalog. */
   before: Catalog | null
   /** The catalog the change would produce. */
   after: Catalog
   /** The documents in `after` the change writes. */
   changed: readonly CatalogDocument[]
-  /** Other text the change carries, such as the proposal's explanation, checked for secrets. */
+  /** Other text the change carries, checked for secrets. */
   texts?: readonly { label: string; text: string }[]
   /**
-   * A workspace owner's repair of a document that reads with problems
-   * (catalog §8.3): the documents it writes are charged only with problems
-   * they did not already have, so a repair may leave some of them and fix
-   * the rest. A secret-looking value is charged all the same.
+   * A change that may leave a document's existing problems (M2's repair,
+   * gone since GC-5a; nothing passes it now): the documents it writes are
+   * charged only with problems they did not already have. A
+   * secret-looking value is charged all the same.
    */
   repair?: boolean
 }
@@ -291,7 +291,7 @@ function result(problems: Problem[]): ValidationResult {
   return {
     problems,
     blocked: problems.some((p) => p.severity === "blocking"),
-    needsApproval: problems.some((p) => p.severity === "warning"),
+    hasWarnings: problems.some((p) => p.severity === "warning"),
   }
 }
 

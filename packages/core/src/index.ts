@@ -208,14 +208,14 @@ export {
   listCatalogTree,
   listCatalogTypeIndex,
   typeIndexLimit,
-} from "./catalog/wiki.js"
+} from "./catalog/browse.js"
 export type {
   CatalogTreeAnswer,
   CatalogTreeItemJson,
   FreshnessSummaryJson,
   TypeIndexAnswer,
   TypeIndexItemJson,
-} from "./catalog/wiki.js"
+} from "./catalog/browse.js"
 export {
   getCatalogDocument,
   getCatalogPageHistory,

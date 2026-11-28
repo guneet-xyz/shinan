@@ -6,9 +6,8 @@ import type { ScalarValue } from "./yaml.js"
 /**
  * The fact identity key: one line of text naming which written facts are
  * "the same fact" (catalog §4.2). It is derived from the document and the
- * type schema, never stored in the text. Operations (M2-2), the agent index
- * (M2-3), proposals (M2-4), MCP tools (M2-6) and the web editor (M2-8) name a
- * fact by it instead of rebuilding the identity rules.
+ * type schema, never stored in the text. The agent index and the push
+ * checks name a fact by it instead of rebuilding the identity rules.
  *
  * Form: the key, the fact state, then `name=value` parts, joined by `|`:
  *

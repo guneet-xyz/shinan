@@ -9,6 +9,7 @@ import {
   NotFoundError,
   UnavailableError,
 } from "../errors.js"
+import { idText } from "./browse.js"
 import type { CommitInfo } from "./git/api.js"
 import { GitServiceError } from "./git/client.js"
 import type { GitClient } from "./git/client.js"
@@ -17,7 +18,6 @@ import type { CatalogAnswer, SectionJson } from "./index/format.js"
 import { answerFor } from "./index/queries.js"
 import { readCommitPushes } from "./pushers.js"
 import type { CommitPushJson, PusherJson } from "./pushers.js"
-import { idText } from "./wiki.js"
 
 /**
  * What a catalog page reads besides its index rows (Git-based catalog plan
