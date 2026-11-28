@@ -1,0 +1,40 @@
+# seconds, then name current_MiB anon_MiB for each container
+0 git 587 365 web 138 133 postgres 511 19
+1 git 589 368 web 179 173 postgres 511 106
+2 git 589 368 web 207 200 postgres 510 90
+3 git 589 368 web 222 215 postgres 487 92
+4 git 589 368 web 223 216 postgres 505 103
+5 git 589 368 web 224 217 postgres 496 99
+6 git 589 368 web 223 216 postgres 511 108
+7 git 589 368 web 223 216 postgres 511 114
+8 git 590 368 web 224 217 postgres 502 115
+10 git 590 368 web 228 221 postgres 503 125
+11 git 590 368 web 224 217 postgres 506 112
+12 git 590 368 web 228 220 postgres 504 113
+13 git 590 368 web 203 196 postgres 511 118
+14 git 592 370 web 206 199 postgres 510 112
+15 git 592 370 web 205 196 postgres 490 117
+16 git 592 370 web 205 198 postgres 509 116
+17 git 592 370 web 206 199 postgres 509 128
+18 git 592 370 web 206 199 postgres 506 117
+20 git 592 370 web 209 202 postgres 498 112
+21 git 593 371 web 206 200 postgres 500 123
+22 git 593 371 web 210 203 postgres 511 136
+23 git 593 371 web 210 203 postgres 504 126
+24 git 593 371 web 211 204 postgres 499 125
+25 git 593 371 web 202 195 postgres 506 124
+26 git 593 371 web 202 196 postgres 510 119
+27 git 593 371 web 205 198 postgres 507 119
+28 git 593 371 web 217 209 postgres 511 123
+29 git 593 371 web 221 213 postgres 507 123
+31 git 592 371 web 202 196 postgres 492 118
+32 git 616 394 web 200 193 postgres 511 129
+33 git 616 394 web 202 195 postgres 506 120
+34 git 616 394 web 209 202 postgres 504 123
+35 git 617 394 web 214 207 postgres 489 115
+36 git 616 394 web 214 207 postgres 503 119
+37 git 616 394 web 194 187 postgres 511 115
+38 git 616 394 web 194 187 postgres 511 113
+peak git 617 MiB (anonymous 394 MiB); memory.events: low 0 high 0 max 0 oom 0 oom_kill 0 oom_group_kill 0 
+peak web 229 MiB (anonymous 222 MiB); memory.events: low 0 high 0 max 0 oom 0 oom_kill 0 oom_group_kill 0 
+peak postgres 512 MiB (anonymous 137 MiB); memory.events: low 0 high 0 max 10052 oom 0 oom_kill 0 oom_group_kill 0 

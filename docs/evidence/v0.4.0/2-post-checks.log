@@ -1,0 +1,38 @@
+
+== the git container
+user nonroot, read-only true, cap_drop [ALL], [no-new-privileges:true], memory 1073741824, ports {}
+networks: shinanop_git; internal: true
+members of shinanop_git: shinanop-git-1 shinanop-web-1 shinanop-worker-1 
+environment (names only):  HOST INTERNAL_HOST INTERNAL_PORT NODE_ENV PATH PORT SHINAN_CATALOG_DIR SHINAN_GIT_SERVICE_TOKEN_FILE SSL_CERT_FILE 
+
+== the service token
+from the git network, no token: 401
+from the git network, a wrong token: 401
+from the git network, the token: 404
+from Caddy's network (shinanop_proxy): 000
+
+== the Git endpoint through Caddy
+without a token: 401 Basic realm="Shinan", charset="UTF-8"
+a dumb path: 404
+fa5586bea3a4149d456114fc96295c59e5f86248	HEAD
+fa5586bea3a4149d456114fc96295c59e5f86248	refs/heads/main
+fa5586bea3a4149d456114fc96295c59e5f86248 Shinan <shinan@shinan.invalid> Bring the catalog over from Shinan 0.3 (revision 18)
+
+== the first commit against the dump's latest texts (by SHA-256)
+NOTICE:  database "dumpcheck" does not exist, skipping
+17 documents in the dump, 17 in the first commit
+identical, byte for byte
+
+== a push with secrets in it, to a branch
+remote: Shinan refused this push. Nothing was changed.        
+remote: 1 blocking problem:        
+remote:   machine/key.md:1  secret  a value here looks like a private key (value not shown; fingerprint sha256:03d104c669e3c7b6be7f989db8b12c8b910d3be8c1e2a73c9369d3cc0ba803b5)        
+remote: 2 warnings (does not block):        
+remote:   machine/key.md:3   secret-suspected  a value here may hold a long random-looking string: check it is not a secret (fingerprint sha256:e6b4d133b2898c1ba58ead516f9af9e76e01a36a3d1dab604952cf24917b03fa)        
+remote:   notes-secret.md:1  secret-suspected  a value here may hold a password or key written as a value: check it is not a secret (fingerprint sha256:78314b11be2e581549ac1c4f616563fad3fdf0c3b71678f6e2299182080e0598)        
+remote: These problems are in commits not yet in Shinan: rewrite them (git rebase -i origin/main), then push again. A new commit on top won't help. The shinan skill explains each code.        
+remote: If a value is not a secret, a workspace owner can allow its fingerprint in workspace settings (Catalog).        
+To https://localhost:18444/git/610d5273-74e3-4a7e-8a00-e96e141516a9.git
+ ! [remote rejected] HEAD -> secret-test (pre-receive hook declined)
+error: failed to push some refs to 'https://localhost:18444/git/610d5273-74e3-4a7e-8a00-e96e141516a9.git'
+the branch afterwards: '' (empty: nothing kept)

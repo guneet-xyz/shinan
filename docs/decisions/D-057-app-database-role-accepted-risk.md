@@ -95,3 +95,10 @@ None.
 - 2026-11-19: accepted by the owner in conversation, for the M2 release,
   and recorded on [issue #92](https://github.com/guneet-xyz/shinan/issues/92#issuecomment-6999453136) (M2-Q14). Recorded in the M2-12 pull request that completes the security
   checklist ([#155](https://github.com/guneet-xyz/shinan/pull/155)).
+- 2026-11-28: accepted again by the owner for v0.4.0, the Git-based
+  catalog, with the decision unchanged: the app's database role still owns
+  its tables, and #156 fixes it in M3. Asked in GC-11's security review
+  ([#173](https://github.com/guneet-xyz/shinan/issues/173)), recorded on
+  [#173](https://github.com/guneet-xyz/shinan/issues/173#issuecomment-7239872729),
+  and in the checklist's 6.7 by GC-11's pull request
+  ([#210](https://github.com/guneet-xyz/shinan/pull/210)).

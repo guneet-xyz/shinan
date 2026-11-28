@@ -1,0 +1,48 @@
+
+== v0.3.0's reference stack, with a dataset shaped like Musashi's
+ Network shinanop_git  Removed
+container shinanop-worker-1 has no healthcheck configured
+ Container shinanop-web-1  Stopped
+container shinanop-worker-1 has no healthcheck configured
+Empty | 0 |  | 
+Shapes | 6 | 7 | 
+Trial | 17 | 18 | 19,20
+
+== one more proposal through v0.3.0's MCP, left waiting
+{"outcome":"pending","label":{"author_kind":"shinan","author":"shinan","instruction":"no"},"proposal":{"id":"baab3c49-4d
+
+== 1. stop web and worker, then take a database dump (the guide's commands)
+ Container shinanop-web-1  Stopped
+-rw------- 179911 shinan-20261128T133508Z.dump
+
+== 2. what the git container needs: 0.4's Compose files and secrets/git_service_token
+
+== 3. SHINAN_IMAGE set to 0.4's image, then docker compose up -d
+ Container shinanop-web-1  Started
+up took 11 s
+
+== 4. docker compose logs migrate, and docker compose ps
+Applying database migrations
+Workspace "Trial" (610d5273-74e3-4a7e-8a00-e96e141516a9): moved 17 catalog documents at revision 18 into Git, verified file by file (first commit fa5586bea3a4149d456114fc96295c59e5f86248)
+Workspace "Trial" (610d5273-74e3-4a7e-8a00-e96e141516a9): catalog proposal #19 was waiting for approval and is not applied (it touched service/container-registry); redo it by pushing
+Workspace "Trial" (610d5273-74e3-4a7e-8a00-e96e141516a9): catalog proposal #20 was waiting for approval and is not applied (it touched start-here); redo it by pushing
+Workspace "Trial" (610d5273-74e3-4a7e-8a00-e96e141516a9): catalog proposal #21 was waiting for approval and is not applied (it touched machine/musashi); redo it by pushing
+Workspace "Shapes" (245ec4ac-8126-443d-9bc5-8002458371c8): moved 6 catalog documents at revision 7 into Git, verified file by file (first commit 0ed6130a2bb4a28d58d944f447274c61109bc84c)
+Workspace "Shapes" (245ec4ac-8126-443d-9bc5-8002458371c8): the moved catalog reads with 1 problem, kept as they were: start-here-invalid (blocking) in start-here
+Workspace "Empty" (07c49e48-b30a-46b0-898d-e094d4a6702b): no catalog documents; its repository starts with README.md (67f4697cc7d9fb08e20db056fb624acfb0d2d4d6)
+Database ready
+caddy Up 47 seconds
+git Up 19 seconds (healthy)
+mailpit Up 47 seconds (healthy)
+migrate Exited (0) 11 seconds ago
+postgres Up 47 seconds (healthy)
+web Up 10 seconds (healthy)
+worker Up 10 seconds
+Catalog index of workspace 07c49e48-b30a-46b0-898d-e094d4a6702b: rebuilt at 67f4697cc7d9fb08e20db056fb624acfb0d2d4d6 (0 documents)
+Catalog index of workspace 245ec4ac-8126-443d-9bc5-8002458371c8: rebuilt at 0ed6130a2bb4a28d58d944f447274c61109bc84c (6 documents)
+Catalog index of workspace 610d5273-74e3-4a7e-8a00-e96e141516a9: rebuilt at fa5586bea3a4149d456114fc96295c59e5f86248 (17 documents)
+
+== 5. the catalog in the browser: Recent changes, machine/musashi, the index
+signed in as guneet@example.com: 200
+{"workspace":"Shapes","index_behind":false,"first_change":{"subject":"Bring the catalog over from Shinan 0.3 (revision 7)","pushed_by":{"kind":"shinan"},"pages":7},"musashi":404}
+{"workspace":"Trial","index_behind":false,"first_change":{"subject":"Bring the catalog over from Shinan 0.3 (revision 18)","pushed_by":{"kind":"shinan"},"pages":18},"musashi":"A public-stacks machine for the dataset."}

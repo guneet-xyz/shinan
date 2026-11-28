@@ -1,0 +1,90 @@
+
+== realistic
+Auto-merging machine/anzen.md
+CONFLICT (content): Merge conflict in machine/anzen.md
+Auto-merging machine/musashi.md
+CONFLICT (content): Merge conflict in machine/musashi.md
+remote: Shinan: too many requests. Try again in 20 seconds.
+fatal: unable to access 'https://localhost:18444/git/610d5273-74e3-4a7e-8a00-e96e141516a9.git/': The requested URL returned error: 429
+remote: Shinan: too many requests. Try again in 20 seconds.
+fatal: unable to access 'https://localhost:18444/git/610d5273-74e3-4a7e-8a00-e96e141516a9.git/': The requested URL returned error: 429
+remote: Shinan: too many requests. Try again in 15 seconds.
+fatal: unable to access 'https://localhost:18444/git/610d5273-74e3-4a7e-8a00-e96e141516a9.git/': The requested URL returned error: 429
+remote: Shinan: too many requests. Try again in 15 seconds.
+fatal: unable to access 'https://localhost:18444/git/610d5273-74e3-4a7e-8a00-e96e141516a9.git/': The requested URL returned error: 429
+remote: Shinan: too many requests. Try again in 15 seconds.
+fatal: unable to access 'https://localhost:18444/git/610d5273-74e3-4a7e-8a00-e96e141516a9.git/': The requested URL returned error: 429
+remote: Shinan: too many requests. Try again in 15 seconds.
+fatal: unable to access 'https://localhost:18444/git/610d5273-74e3-4a7e-8a00-e96e141516a9.git/': The requested URL returned error: 429
+reader: 20 rounds
+peak git 187 MiB (anonymous 176 MiB); memory.events: low 0 high 0 max 0 oom 0 oom_kill 0 oom_group_kill 0 
+peak web 122 MiB (anonymous 115 MiB); memory.events: low 0 high 0 max 0 oom 0 oom_kill 0 oom_group_kill 0 
+peak postgres 150 MiB (anonymous 29 MiB); memory.events: low 0 high 0 max 0 oom 0 oom_kill 0 oom_group_kill 0 
+peak worker 81 MiB (anonymous 76 MiB); memory.events: low 0 high 0 max 0 oom 0 oom_kill 0 oom_group_kill 0 
+
+== bigpush
+workspace Big: 201
+bytes of text: 48026783
+remote: 20000 warnings (does not block):        
+remote:   … and 19950 more        
+To https://localhost:18444/git/247ed572-3de7-4aad-9dae-b7861f4d55c9.git
+   d143729..d4b625e  HEAD -> main
+push took 20 s
+Catalog index of workspace 610d5273-74e3-4a7e-8a00-e96e141516a9: updated at ba1bbe5560a0ea86d02bf64a89dc02933056be44 (2 documents)
+Catalog index of workspace 610d5273-74e3-4a7e-8a00-e96e141516a9: updated at 3871e5d6d5d1b0a5bf90075ace6512aaf7e39bb7 (1 documents)
+Catalog index of workspace 610d5273-74e3-4a7e-8a00-e96e141516a9: updated at 445575aeadc6d6b8113fd9923bb59418847ad2c9 (1 documents)
+Catalog index of workspace 247ed572-3de7-4aad-9dae-b7861f4d55c9: rebuilt at d143729a274bb06926893e4c2a41dd389d400970 (0 documents)
+Catalog index of workspace 247ed572-3de7-4aad-9dae-b7861f4d55c9: rebuilt at d4b625e102547f3875c7c0e88a570cbb3027440d (20000 documents)
+peak git 353 MiB (anonymous 308 MiB); memory.events: low 0 high 0 max 0 oom 0 oom_kill 0 oom_group_kill 0 
+peak web 98 MiB (anonymous 92 MiB); memory.events: low 0 high 0 max 0 oom 0 oom_kill 0 oom_group_kill 0 
+peak postgres 511 MiB (anonymous 36 MiB); memory.events: low 0 high 0 max 729 oom 0 oom_kill 0 oom_group_kill 0 
+peak worker 181 MiB (anonymous 174 MiB); memory.events: low 0 high 0 max 0 oom 0 oom_kill 0 oom_group_kill 0 
+
+== clones
+clone b2-2: refused, returned error: 429
+clone b4-3: refused, returned error: 429
+clone b4-2: refused, returned error: 429
+clone b3-2: refused, returned error: 429
+clone b1-3: refused, HTTP 429
+clone b3-3: refused, HTTP 429
+clone b2-3: refused, HTTP 429
+clone b2-1: refused, HTTP 429
+clone b1-1: refused, HTTP 429
+clone b1-2: ok
+clone b4-1: ok
+clone b3-1: ok
+answers by status {"200":165,"429":85} in 37662 ms
+peak git 288 MiB (anonymous 255 MiB); memory.events: low 0 high 0 max 0 oom 0 oom_kill 0 oom_group_kill 0 
+peak web 256 MiB (anonymous 247 MiB); memory.events: low 0 high 0 max 0 oom 0 oom_kill 0 oom_group_kill 0 
+
+== pushes
+a4: refused, HTTP 429
+a3: accepted
+a2: accepted
+a1: accepted
+peak git 724 MiB (anonymous 314 MiB); memory.events: low 0 high 0 max 0 oom 0 oom_kill 0 oom_group_kill 0 
+peak web 158 MiB (anonymous 144 MiB); memory.events: low 0 high 0 max 0 oom 0 oom_kill 0 oom_group_kill 0 
+a push of 70 MiB: HTTP 413
+
+== worst
+b1 -> main: accepted in 43 s
+s1 -> s1-big-13458: accepted in 51 s
+a1 -> a1-big-13458: accepted in 52 s
+s2 -> s2-big-13458: accepted in 54 s
+peak git 1008 MiB (anonymous 575 MiB); memory.events: low 0 high 0 max 0 oom 0 oom_kill 0 oom_group_kill 0 
+peak web 155 MiB (anonymous 149 MiB); memory.events: low 0 high 0 max 0 oom 0 oom_kill 0 oom_group_kill 0 
+peak postgres 512 MiB (anonymous 43 MiB); memory.events: low 0 high 0 max 5263 oom 0 oom_kill 0 oom_group_kill 0 
+peak worker 178 MiB (anonymous 171 MiB); memory.events: low 0 high 0 max 0 oom 0 oom_kill 0 oom_group_kill 0 
+
+== reads
+answers by status {"200":163,"429":87} in 38702 ms
+peak git 617 MiB (anonymous 394 MiB); memory.events: low 0 high 0 max 0 oom 0 oom_kill 0 oom_group_kill 0 
+peak web 229 MiB (anonymous 222 MiB); memory.events: low 0 high 0 max 0 oom 0 oom_kill 0 oom_group_kill 0 
+peak postgres 512 MiB (anonymous 137 MiB); memory.events: low 0 high 0 max 10052 oom 0 oom_kill 0 oom_group_kill 0 
+
+== slowclone
+clone at 50 KB/s: ok after 410 s
+
+== prune
+207 fetches of the refs in the 2 minutes after the deletion; the slowest took 246 ms
+(the git log has no line about pruning: it succeeded)

@@ -33,8 +33,8 @@ not apply to anyone else's installation.
   start. Limits are ceilings, not reservations: idle, the four use about
   350 MiB. Under load at the catalog's limits (a push of 20,000 pages to
   `main` beside three 62 MiB pushes, or 250 of the heaviest page reads 50
-  at a time), `web` stayed under 260 MiB, `worker` under 210 MiB and `git`
-  within its 1,024 MiB, most of it page cache. So `web` runs in 768 MiB
+  at a time), `web` stayed under 260 MiB, `worker` under 190 MiB and `git`
+  within its 1,024 MiB (page cache included). So `web` runs in 768 MiB
   too, if the host is short (`SHINAN_WEB_MEMORY=768m`); keep `git` at
   1,024 MiB.
 - Disk for two volumes you keep: PostgreSQL's (`postgres`) and the catalog's
@@ -163,16 +163,20 @@ reads the visitor's address from `X-Forwarded-For`, which your proxy must
 set (Caddy and nginx's usual settings do). Without it, every visitor shares
 one address and one set of limits.
 
-**Compression.** Shinan compresses the one large answer itself: the
-catalog's tree for the sidebar, which for a catalog of 20,000 pages is about
-2 MB of JSON and holds only paths, titles and statuses. Your proxy may
-compress the rest (Caddy's `encode zstd gzip`, nginx's `gzip on` with
-`gzip_types application/json`). The app's own files are small either way.
-Compressing is safe from guessing attacks on compressed answers (BREACH):
-such an attack needs another site to make a signed-in browser fetch an
-answer that holds a secret, such as a new agent token, many times with text
-it chose. Shinan's sign-in cookies are same-site and its state-changing
-requests need its own origin, so another site cannot.
+**Compression: leave it off at the proxy.** Shinan compresses the one large
+answer itself: the catalog's tree for the sidebar, which for a catalog of
+20,000 pages is about 2 MB of JSON. It holds only paths, titles and
+statuses, which every member reads anyway, and nothing from the request.
+Don't let your proxy compress the rest (no `encode` in Caddy; in nginx, no
+`gzip on` for Shinan's site). Compressed answers can leak what they hold
+to a page that makes a signed-in browser request them many times with text
+it chose, and measures their size (BREACH). Shinan's sign-in cookies are
+`SameSite=Lax`, so a page on another site under the same domain (another
+service on `example.com` for `shinan.example.com`) counts as the same
+site: its browser requests carry them. Shinan's origin check refuses such
+pages only for requests that change something, not for reads. So Shinan
+does not rule this out answer by answer, and the app's own files are small
+anyway.
 
 **Agents' requests at `/mcp`.** Don't buffer its answers, and don't time them
 out in under a few minutes. A request in the 2025-11-25 form, which OpenCode
@@ -502,95 +506,61 @@ risk for now ([D-038](decisions/D-038-no-built-in-backups.md),
 [architecture §14](architecture.md#14-backups-accepted-risk)); for yours, it is
 your decision. If you lose the `postgres` volume without a backup, you lose
 everything in it: workspaces, the push log, tasks, members and the security
-log. If you lose the `catalog` volume, you lose the catalog's repositories;
-agents' clones hold copies of `main` up to their last fetch. Git host data
-comes back through reconciliation, nothing else does.
+log. If you lose the `catalog` volume, you lose the catalog's repositories
+and their history. Git host data comes back through reconciliation, nothing
+else does.
 
 Back up:
 
-- **The database**, for example nightly, kept somewhere other than this host.
-  A dump holds everything, including email addresses and the security log,
-  so write it readable only by you:
-
-  ```sh
-  (umask 077 && docker compose exec -T postgres pg_dump -U shinan -Fc shinan > shinan-$(date -u +%Y%m%dT%H%M%SZ).dump)
-  ```
-
-  To restore, replace the database with an empty one, restore into it and
-  start again (`migrate` then brings it up to the running release). A dump
-  also holds the keys of the push log's branch-name fingerprints
-  ([Catalog purge](#catalog-purge)), so keep it as private as the database:
-
-  ```sh
-  docker compose stop web worker
-  docker compose exec -T postgres dropdb -U shinan --force shinan
-  docker compose exec -T postgres createdb -U shinan shinan
-  docker compose exec -T postgres pg_restore -U shinan -d shinan --exit-on-error < shinan-….dump
-  docker compose up -d
-  ```
-
-- **The `catalog` volume,** with the database, since the push log in the
-  database and the repositories on the volume describe each other. Stop
-  what writes to them, copy both, and start again; the archive holds the
-  whole catalog and its history, so write it readable only by you:
+- **The database and the `catalog` volume, together,** for example
+  nightly, kept somewhere other than this host. The push log in the
+  database and the repositories on the volume describe each other, so copy
+  both while nothing writes to either: stop `web`, `worker` and `git`, dump
+  the database, archive the volume, and start again. A dump holds
+  everything in the database, including email addresses, the security log
+  and the keys of the push log's branch-name fingerprints
+  ([Catalog purge](#catalog-purge)); the archive holds the whole catalog
+  and its history. Write both readable only by you:
 
   ```sh
   docker compose stop web worker git
   (umask 077 && docker compose exec -T postgres pg_dump -U shinan -Fc shinan > shinan-$(date -u +%Y%m%dT%H%M%SZ).dump)
-  docker run --rm -v <project>_catalog:/catalog:ro -v "$PWD:/backup" alpine \
+  docker run --rm -v <project>_catalog:/catalog:ro -v "$PWD:/backup" alpine:3.21@sha256:bc21487101ae47172509130ee1092cc273a831968d64b617776d1f69c81e42ab \
     sh -c 'umask 077 && tar -C /catalog -czf /backup/catalog-$(date -u +%Y%m%dT%H%M%SZ).tar.gz .'
   docker compose up -d
   ```
 
-  To restore both, restore the database as above, then, with `web`,
-  `worker` and `git` stopped, empty the volume and unpack the archive
-  into it (as root, which keeps the files' owner, 65532), then start again:
-
-  ```sh
-  docker run --rm -v <project>_catalog:/catalog alpine sh -c 'rm -rf /catalog/* /catalog/.[!.]*'
-  docker run --rm -v <project>_catalog:/catalog -v "$PWD:/backup:ro" alpine tar -C /catalog -xzpf /backup/catalog-….tar.gz
-  docker compose up -d
-  ```
-
-- **A lost repository** (the volume lost without a copy, or one
-  workspace's repository damaged) can be recreated from the freshest
-  agent clone. In that clone, on the agent's machine, bundle what it last
-  fetched of `main`:
-
-  ```sh
-  git bundle create catalog.bundle origin/main
-  ```
-
-  Copy `catalog.bundle` next to `compose.yml`, then, with the workspace's
-  ID, make the repository with the image's own Git as its user, and give it
-  Shinan's settings (the same for every repository):
+  To restore, restore both from the same backup, in this order, with
+  everything that writes to them stopped until the end. The database goes
+  into an empty one (`migrate` then brings it up to the running release);
+  the archive is unpacked as root into the emptied volume, which keeps its
+  files' owner (65532):
 
   ```sh
   docker compose stop web worker git
-  repo=/var/lib/shinan/catalog/<workspace ID>.git
-  git_() { docker compose run --rm --no-deps -v "$PWD/catalog.bundle:/in/catalog.bundle:ro" --entrypoint git git "$@"; }
-  git_ init --quiet --bare --template= --initial-branch=main "$repo"
-  git_ --git-dir="$repo" fetch --quiet /in/catalog.bundle refs/remotes/origin/main:refs/heads/main
-  for setting in core.hooksPath=/app/packages/git/hooks receive.fsckObjects=true \
-      transfer.fsckObjects=true receive.maxInputSize=67108864 receive.advertisePushOptions=true \
-      core.fsync=committed core.fsyncMethod=fsync uploadpack.allowAnySHA1InWant=false \
-      uploadpack.allowReachableSHA1InWant=false uploadpack.allowTipSHA1InWant=false \
-      receive.denyNonFastForwards=false receive.denyDeletes=false core.bigFileThreshold=1m \
-      pack.threads=1 pack.windowMemory=64m gc.autoDetach=false core.logAllRefUpdates=false; do
-    git_ --git-dir="$repo" config "${setting%%=*}" "${setting#*=}"
-  done
+  docker compose exec -T postgres dropdb -U shinan --force shinan
+  docker compose exec -T postgres createdb -U shinan shinan
+  docker compose exec -T postgres pg_restore -U shinan -d shinan --exit-on-error < shinan-….dump
+  docker run --rm -v <project>_catalog:/catalog alpine:3.21@sha256:bc21487101ae47172509130ee1092cc273a831968d64b617776d1f69c81e42ab sh -c 'rm -rf /catalog/* /catalog/.[!.]*'
+  docker run --rm -v <project>_catalog:/catalog -v "$PWD:/backup:ro" alpine:3.21@sha256:bc21487101ae47172509130ee1092cc273a831968d64b617776d1f69c81e42ab tar -C /catalog -xzpf /backup/catalog-….tar.gz
   docker compose up -d
   ```
 
-  If the old folder is still there, remove it first, after `stop` (the
-  `init` fails otherwise):
-  `docker run --rm -v <project>_catalog:/catalog alpine rm -rf /catalog/<workspace ID>.git`. The agent index catches up with the
-  recreated `main` on its own. What the clone had not fetched is lost from
-  Shinan: the push log (`Recent changes`) shows what was pushed after it,
-  and the agents that pushed it can push it again. The first pushers of
-  the recreated commits are lost with the repository, so History shows no
-  pusher for them. Every agent then fetches; one whose clone is ahead of
-  the recreated `main` pushes its own commits again.
+  A backup taken before a purge still holds the purged text, and restoring
+  it brings the text back with the purge's record gone: purge the same text
+  again afterwards, and delete such backups if the text was a secret
+  ([Catalog purge](#catalog-purge)). Restoring only one of the two leaves
+  the push log and the repositories out of step: the `git` role then records `catalog.unlogged-update` in the
+  security log for each branch they disagree on.
+
+- **There is no recovery from agents' clones yet.** Agents' clones hold
+  copies of `main` up to their last fetch, but they are not backups: a clone
+  fetched before a purge still holds the purged text, and Shinan cannot
+  check that a clone holds only what passed its push checks. Recreating a
+  repository from one could bring both back, so Shinan does not describe
+  it ([#216](https://github.com/guneet-xyz/shinan/issues/216)). If the
+  `catalog` volume is lost without a backup, the catalog's repositories are
+  lost: restore the volume from your last backup, with its database.
 
 - **The `secrets/` directory.** Git host credentials, once Shinan connects to
   git hosts, are to be encrypted with keys kept there

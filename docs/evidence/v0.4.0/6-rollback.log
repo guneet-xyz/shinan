@@ -1,0 +1,37 @@
+
+== the guide's commands
+ Network shinanop_egress  Removed
+ Container shinanop-postgres-1  Healthy
+restored shinan-20261128T133508Z.dump
+ Network shinanop_backend  Removed
+shinanop_catalog
+ Container shinanop-web-1  Started
+
+== v0.3.0 again
+caddy Up 22 seconds
+mailpit Up 22 seconds (healthy)
+migrate Exited (0) 15 seconds ago
+postgres Up 22 seconds (healthy)
+web Up 15 seconds (healthy)
+worker Up 15 seconds
+Applying database migrations
+Database ready
+Empty | 0 |  | 
+Shapes | 6 | 7 | 
+Trial | 17 | 18 | 19,20,21
+the v0.3.0 agent's token at /mcp: {"catalog_revision":18,"index_behind":false,"entity":{"id":"machine/musashi","type":"machi
+/git/ on v0.3.0: 200 text/html; charset=utf-8
+workspaces made after the upgrade: 0
+
+== the upgrade again, from an empty volume
+ Container shinanop-web-1  Stopped
+ Container shinanop-web-1  Started
+caddy Up 49 seconds
+git Up 24 seconds (healthy)
+mailpit Up 49 seconds (healthy)
+migrate Exited (0) 15 seconds ago
+postgres Up 49 seconds (healthy)
+web Up 15 seconds (healthy)
+worker Up 15 seconds
+2 workspaces moved again
+signed in as guneet@example.com: 200

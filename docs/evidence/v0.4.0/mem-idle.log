@@ -1,0 +1,34 @@
+# seconds, then name current_MiB anon_MiB for each container
+0 git 65 60 web 70 65 postgres 133 13 worker 82 77
+1 git 65 60 web 70 65 postgres 133 13 worker 82 77
+2 git 65 60 web 70 65 postgres 133 13 worker 82 77
+3 git 65 60 web 70 65 postgres 133 13 worker 82 77
+4 git 65 60 web 70 65 postgres 133 13 worker 78 73
+5 git 65 60 web 70 65 postgres 133 13 worker 78 73
+6 git 65 60 web 70 65 postgres 133 13 worker 78 73
+7 git 65 60 web 70 65 postgres 133 13 worker 78 73
+8 git 65 60 web 70 65 postgres 133 13 worker 78 73
+9 git 65 60 web 70 65 postgres 131 12 worker 78 73
+10 git 65 60 web 70 65 postgres 131 12 worker 78 73
+11 git 65 60 web 70 65 postgres 131 12 worker 78 73
+12 git 65 60 web 70 65 postgres 142 22 worker 78 73
+13 git 65 60 web 70 65 postgres 143 22 worker 78 73
+14 git 65 60 web 70 65 postgres 143 22 worker 79 73
+16 git 65 60 web 70 65 postgres 143 22 worker 79 73
+17 git 65 60 web 70 65 postgres 143 22 worker 79 74
+18 git 65 60 web 70 65 postgres 143 22 worker 79 74
+19 git 65 60 web 70 65 postgres 143 22 worker 79 74
+20 git 65 60 web 70 65 postgres 144 23 worker 79 74
+21 git 65 60 web 70 65 postgres 143 22 worker 79 74
+22 git 65 60 web 70 65 postgres 143 22 worker 79 74
+23 git 65 60 web 70 65 postgres 130 11 worker 79 74
+24 git 65 60 web 70 65 postgres 130 10 worker 79 74
+25 git 65 60 web 70 65 postgres 130 10 worker 79 74
+26 git 65 60 web 70 65 postgres 128 9 worker 78 73
+27 git 65 60 web 70 65 postgres 128 9 worker 78 73
+28 git 65 60 web 70 65 postgres 128 9 worker 78 73
+29 git 65 60 web 70 65 postgres 128 9 worker 78 73
+peak git 71 MiB (anonymous 62 MiB); memory.events: low 0 high 0 max 0 oom 0 oom_kill 0 oom_group_kill 0 
+peak web 76 MiB (anonymous 71 MiB); memory.events: low 0 high 0 max 0 oom 0 oom_kill 0 oom_group_kill 0 
+peak postgres 144 MiB (anonymous 23 MiB); memory.events: low 0 high 0 max 0 oom 0 oom_kill 0 oom_group_kill 0 
+peak worker 82 MiB (anonymous 77 MiB); memory.events: low 0 high 0 max 0 oom 0 oom_kill 0 oom_group_kill 0 

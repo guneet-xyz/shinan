@@ -804,10 +804,13 @@ in memory.
 **Confirmed in GC-11** ([#173](https://github.com/guneet-xyz/shinan/issues/173);
 [security checklist, v0.4.0 rerun](security-checklist.md#v040-rerun-2026-11-21)):
 every value of the table is the code's, and the real image held them
-behind Caddy in a rehearsal stack. Noted from the measurements:
+behind Caddy in a rehearsal stack, by the scripts of
+[`deploy/test/load/`](../deploy/test/load/README.md), whose output is in
+[`docs/evidence/v0.4.0/`](evidence/v0.4.0/README.md). Noted from the
+measurements:
 
 - **One check of `main` at a time, across all workspaces:** a push of
-  20,000 pages to `main` took 14 to 40 seconds end to end, and other
+  20,000 pages to `main` took 20 seconds alone and 43 beside three 62 MiB pushes, and other
   workspaces' pushes to `main` wait their turn meanwhile (refused as too
   slow if their 60 seconds run out). The operator guide says so.
 - **The per-address limit is shared:** a round of an agent's Git work
@@ -815,14 +818,17 @@ behind Caddy in a rehearsal stack. Noted from the measurements:
   12 requests, so the agents of one machine share 300 a minute.
 - **Very long histories:** at 1,000,000 commits on `main` a page's History
   (a path walk) took 16 seconds, and 12 at once took the Git container to
-  its memory limit (the Git processes, not the container, were stopped,
-  answering 500); a whole repack after a deleted branch needs more than
-  1,024 MiB. Building such a history takes one agent hours at the push
-  limits. Accepted for v0.4.0, with the pruner made safe when it fails
-  ([#208](https://github.com/guneet-xyz/shinan/pull/208)); a cap on a
-  repository's history is for the owner to decide later.
-- **The pruner after a deleted branch** held fetches 0.26 s on a 20,000-page
-  catalog and 0.37 s after dropping 120 MiB of unreachable blobs.
+  its memory limit (5 Git processes, not the container, were stopped; they
+  answered 500); a whole repack after a start or a deleted branch
+  needs more than 1,024 MiB. Building such a history takes one agent hours at the push
+  limits. **Decided (owner, 2026-11-28):** accepted for v0.4.0, relying on
+  [#208](https://github.com/guneet-xyz/shinan/pull/208), which makes the
+  pruner fail safely: **v0.4.0 must include #208** (without it, a failing
+  whole repack held about 850 MiB, was retried every minute and left a
+  400 MB file each time). A cap on a repository's history can come later
+  ([#173](https://github.com/guneet-xyz/shinan/issues/173#issuecomment-7239872729)).
+- **The pruner after a deleted branch** held fetches at most 246 ms on a
+  20,000-page catalog.
 - **Git's refusal on protocol v2:** a `429` to a fetch's `POST` shows only
   `error: RPC failed; HTTP 429` and `fatal: expected flush after ref
 listing`, not Shinan's words; the skill tells agents what a `429` means.
@@ -837,9 +843,12 @@ listing`, not Shinan's words; the skill tells agents what a `429` means.
 - **Clones are partial copies.** Every agent's clone holds `main` (and any
   branches it fetched) up to its last fetch. They are not backups: nothing
   checks them, they may be behind, and a purge leaves them holding the purged
-  text. But a lost repository can be recreated from the freshest clone
-  (`git clone --bare` into the volume), which the operator guide will
-  describe. The push log in PostgreSQL then shows what the clone missed.
+  text. **Not yet** (GC-11): recreating a lost repository from the freshest
+  clone could bring purged text back (the list of removed commits is only
+  on the volume) and history that never passed the push checks, so v0.4.0
+  has no recovery from clones; the volume comes back only from a backup
+  taken with the database (operator guide, "Backups"). A safe recovery is
+  [#216](https://github.com/guneet-xyz/shinan/issues/216).
 - **The pre-deployment step** copies the volume beside the database dump,
   as a rollback point for that deployment only (same disk, not a backup).
   For v0.4.0 the volume is new and empty, so only the dump matters
@@ -1222,8 +1231,8 @@ All need the owner's approval ([D-016](decisions/D-016-musashi-and-deployment-ap
   like the others (non-root, read-only root file system, `cap_drop: ALL`,
   `no-new-privileges`, a small `tmpfs` for `/tmp`), no published port, a
   health check of its own, and a memory limit of 1,024 MiB, for the
-  checker's heap and Git processes (measured in GC-11: at most 1,023 MiB,
-  534 MiB of it anonymous, in the worst case within the limits).
+  checker's heap and Git processes (measured in GC-11: at most 1,008 MiB,
+  575 MiB of it anonymous, in the worst case within the limits).
 - **A new stack-local folder** for the repositories (for example `./catalog`
   beside `./postgres`), owned by 65532 with mode `0700`, mounted read-write in
   `shinan-git` only, with `SHINAN_CATALOG_DIR` set there.
@@ -1241,8 +1250,9 @@ All need the owner's approval ([D-016](decisions/D-016-musashi-and-deployment-ap
 - **Start order:** `shinan-db` and `shinan-git`, then `shinan-migrate`, then
   `web` and `worker`.
 - **Memory:** with the checker moved to the Git container, `web` peaked at
-  257 MiB under GC-11's heaviest load; the request proposes 768 MiB instead
-  of 1,536 MiB, for the owner to decide.
+  256 MiB under GC-11's heaviest load. **Decided (owner, 2026-11-28):** `web`
+  keeps 1,536 MiB on Musashi; GC-11's proposal of 768 MiB was declined
+  ([#173](https://github.com/guneet-xyz/shinan/issues/173#issuecomment-7239872729)).
 - **No DNS or Caddy route change expected.** `/git/` is a path on the same
   host, served by `web`. The request confirms from the Caddyfile that request bodies
   of 64 MiB pass, that long requests are not cut off, that `Authorization`
