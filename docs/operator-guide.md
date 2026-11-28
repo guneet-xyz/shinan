@@ -675,8 +675,13 @@ whether anything is unreachable, and only then repacks the whole
 repository (9.4 s for a branch of 20,000 pages and 6,002 commits on
 Daedalus; otherwise it joins the packs pushes added, in milliseconds). If
 that fails, the `git` log says "Pruning the repository of workspace …
-failed", and it tries again an hour later; until then the unreachable
-objects stay. A history of hundreds of thousands of commits can need more
+failed:" and how Git ended (for example `ended by signal 9 (SIGKILL, often
+out of memory)` or `stopped at its time limit`), and it tries again an hour
+later, after a restart too (the time of the failure is kept in the
+repository's folder, `shinan-prune-failed`); until then the unreachable
+objects stay, readable by commit ID through the Git container's API (only
+`web` reaches it). Text you purged is not among them: a purge puts in a new
+repository. A history of hundreds of thousands of commits can need more
 memory for the whole repack than the `git` container has
 (`SHINAN_GIT_MEMORY`).
 

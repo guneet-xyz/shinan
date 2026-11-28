@@ -3,13 +3,14 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 
-import { createGit } from "@shinan/git"
+import { createGit, GitError } from "@shinan/git"
 import { commitFiles } from "@shinan/git/testing"
 
 import { openJournal } from "./journal.js"
 import {
   createPruner,
   createRepositoryGate,
+  pruneFailure,
   unreachableObjects,
 } from "./prune.js"
 import { createPushLocks } from "./push/lock.js"
@@ -189,7 +190,7 @@ describe("pruning repositories after pushes", () => {
     expect(packs()).not.toContain(whole)
   })
 
-  it("removes a failed repack's half-written pack, and tries again only after a wait, pushes or not", async () => {
+  it("removes a failed repack's half-written pack, and tries again only after a wait, pushes or restarts or not", async () => {
     const root = mkdtempSync(join(work, "catalog-"))
     const real = createGit()
     let failing = true
@@ -205,7 +206,13 @@ describe("pruning repositories after pushes", () => {
               join(options!.gitDir!, "objects", "pack", "tmp_pack_x"),
               "half a pack",
             )
-            throw new Error("pack-objects died of signal 9")
+            throw new GitError(
+              "exit",
+              "repack",
+              "git repack failed (exit code 128): error: pack-objects died of signal 9",
+              128,
+              "error: pack-objects died of signal 9\n",
+            )
           }
         }
         return real.run(args, options)
@@ -219,14 +226,16 @@ describe("pruning repositories after pushes", () => {
       locks: createPushLocks(),
     })
     const logged: string[] = []
-    const pruner = createPruner({
-      store,
-      push,
-      gate: createRepositoryGate(),
-      quietMs: 0,
-      failedWaitMs: 300,
-      log: (line) => logged.push(line),
-    })
+    const started = () =>
+      createPruner({
+        store,
+        push,
+        gate: createRepositoryGate(),
+        quietMs: 0,
+        failedWaitMs: 1000,
+        log: (line) => logged.push(line),
+      })
+    const pruner = started()
     await store.create(workspaceId, {
       files: [{ path: "README.md", content: new TextEncoder().encode("Hi\n") }],
       message: "First",
@@ -238,19 +247,76 @@ describe("pruning repositories after pushes", () => {
     expect(repacks).toBe(1)
     expect(readdirSync(packs).filter((f) => f.startsWith("tmp_"))).toEqual([])
     expect(logged).toHaveLength(1)
-    expect(logged[0]).toContain(
-      `Pruning the repository of workspace ${workspaceId} failed`,
+    // Why, without catalog text: how Git ended, and which process died of what.
+    expect(logged[0]).toBe(
+      `Pruning the repository of workspace ${workspaceId} failed: git repack exited with code 128: pack-objects ended by signal 9 (SIGKILL, often out of memory); tried again in 0 minutes`,
     )
 
     // Another push meanwhile: still not before the wait is over.
     pruner.soon(workspaceId)
     expect(await pruner.run()).toEqual([])
     expect(repacks).toBe(1)
+    // Nor after a restart: the failure's time is kept with the repository.
+    const restarted = started()
+    restarted.soon(workspaceId)
+    expect(await restarted.run()).toEqual([])
+    expect(repacks).toBe(1)
 
     failing = false
-    await new Promise((resolve) => setTimeout(resolve, 350))
-    expect(await pruner.run()).toEqual([workspaceId])
+    await new Promise((resolve) => setTimeout(resolve, 1050))
+    expect(await restarted.run()).toEqual([workspaceId])
     expect(repacks).toBe(2)
+    // Pruned: the record of the failure is gone, so the next restart waits for nothing.
+    const again = started()
+    again.soon(workspaceId)
+    expect(await again.run()).toEqual([workspaceId])
+    expect(repacks).toBe(3)
+  })
+
+  it("says why a pruning failed, in words that hold no catalog text", () => {
+    expect(
+      pruneFailure(
+        new GitError(
+          "timeout",
+          "repack",
+          "git repack took longer than 600000 ms and was stopped",
+        ),
+      ),
+    ).toBe("git repack stopped at its time limit")
+    expect(
+      pruneFailure(
+        new GitError(
+          "exit",
+          "repack",
+          "git repack failed (signal SIGKILL)",
+          -1,
+          "",
+        ),
+      ),
+    ).toBe("git repack ended by SIGKILL")
+    expect(
+      pruneFailure(
+        new GitError(
+          "exit",
+          "repack",
+          "git repack failed (exit code 128): fatal: Out of memory, malloc failed (tried to allocate 1048576 bytes)",
+          128,
+          "fatal: Out of memory, malloc failed (tried to allocate 1048576 bytes)\n",
+        ),
+      ),
+    ).toBe("git repack exited with code 128: out of memory")
+    // Git's own words are never repeated: a path in them could be a page's.
+    expect(
+      pruneFailure(
+        new GitError(
+          "exit",
+          "prune",
+          "git prune failed (exit code 1): error: machine/secret-host.md: bad",
+          1,
+          "error: machine/secret-host.md: bad\n",
+        ),
+      ),
+    ).toBe("git prune exited with code 1")
   })
 
   it("leaves a repository pushed to just now for later, unless it waited long enough", async () => {

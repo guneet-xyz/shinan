@@ -731,7 +731,9 @@ the Git container is never called inside a database transaction:
   The count reads one byte per object, never their names. A pruning that
   fails (a whole repack out of memory or past its time) has its
   half-written pack removed, and the repository waits an hour before it
-  is tried again, pushes or not (GC-11: on a 1,000,000-commit history the
+  is tried again, pushes or restarts or not (the time is kept in the
+  repository's folder), and the log says how Git ended without any catalog
+  text; meanwhile the unreachable objects stay, readable by ID (GC-11: on a 1,000,000-commit history the
   whole repack needs more than the container's 1,024 MiB; tried every
   minute, it held the repository for minutes each time and left a
   400 MB pack behind each time).

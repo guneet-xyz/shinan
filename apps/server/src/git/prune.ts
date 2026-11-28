@@ -1,8 +1,15 @@
-import { existsSync, readdirSync, rmSync } from "node:fs"
+import {
+  existsSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs"
 import { join } from "node:path"
 
 import { createLimitedLog, errorSummary } from "@shinan/db"
 import type { LimitedLog } from "@shinan/db"
+import { GitError } from "@shinan/git"
 
 import type { PushService } from "./push/service.js"
 import type { RepositoryStore } from "./store.js"
@@ -118,7 +125,8 @@ export function createRepositoryGate(): RepositoryGate {
  * busy is tried again the next time (review of #197: a whole repack of a
  * large repository after every push held fetches for seconds). One whose
  * pruning failed has the half-written pack removed and waits an hour
- * before it is tried again (GC-11: a whole repack of a 1,000,000-commit
+ * before it is tried again, a restart included (the time of the failure
+ * is kept in the repository's folder) (GC-11: a whole repack of a 1,000,000-commit
  * history ran out of memory, and tried every minute it held the
  * repository for minutes each time and left a pack's worth of disk).
  */
@@ -174,6 +182,11 @@ export function createPruner(options: {
     string,
     { since: number; last: number; notBefore?: number }
   >()
+  /** Not before when a repository whose pruning failed is tried again. */
+  const notBeforeOf = (workspaceId: string): number | undefined => {
+    const failed = lastFailure(store.pathOf(workspaceId))
+    return failed === undefined ? undefined : failed + failedWaitMs
+  }
   let round: Promise<string[]> | undefined
 
   const prune = async (workspaceId: string) => {
@@ -199,6 +212,7 @@ export function createPruner(options: {
           removeTemporaryPacks(gitDir)
           throw error
         }
+        clearFailure(gitDir)
         return true
       })
       return pruned === true
@@ -211,10 +225,12 @@ export function createPruner(options: {
     soon(workspaceId) {
       const now = Date.now()
       const earlier = due.get(workspaceId)
+      // A failure before a restart counts too.
+      const notBefore = earlier ? earlier.notBefore : notBeforeOf(workspaceId)
       due.set(workspaceId, {
         since: earlier?.since ?? now,
         last: now,
-        ...(earlier?.notBefore ? { notBefore: earlier.notBefore } : {}),
+        ...(notBefore !== undefined ? { notBefore } : {}),
       })
     },
     run() {
@@ -233,12 +249,14 @@ export function createPruner(options: {
             if (await prune(workspaceId)) pruned.push(workspaceId)
             else due.set(workspaceId, due.get(workspaceId) ?? when)
           } catch (error) {
+            const failed = Date.now()
+            recordFailure(store.pathOf(workspaceId), failed)
             due.set(workspaceId, {
               ...(due.get(workspaceId) ?? when),
-              notBefore: Date.now() + failedWaitMs,
+              notBefore: failed + failedWaitMs,
             })
             log(
-              `Pruning the repository of workspace ${workspaceId} failed: ${errorSummary(error)}`,
+              `Pruning the repository of workspace ${workspaceId} failed: ${pruneFailure(error)}; tried again in ${Math.round(failedWaitMs / 60_000)} minutes`,
             )
           }
         }
@@ -307,4 +325,53 @@ export function removeTemporaryPacks(gitDir: string): void {
     if (name.startsWith("tmp_") || name.startsWith(".tmp-"))
       rmSync(join(packs, name), { force: true })
   }
+}
+
+/** Where a repository keeps the time its last pruning failed. */
+const failureFile = (gitDir: string) => join(gitDir, "shinan-prune-failed")
+
+function lastFailure(gitDir: string): number | undefined {
+  try {
+    const at = Number(readFileSync(failureFile(gitDir), "utf8").trim())
+    return Number.isSafeInteger(at) && at > 0 ? at : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function recordFailure(gitDir: string, at: number): void {
+  try {
+    writeFileSync(failureFile(gitDir), `${at}\n`, { mode: 0o600 })
+  } catch {
+    // The repository's folder is gone or full: the wait holds until a restart.
+  }
+}
+
+function clearFailure(gitDir: string): void {
+  rmSync(failureFile(gitDir), { force: true })
+}
+
+/**
+ * Why a pruning failed, in words that hold no catalog text: the Git
+ * command and how it ended (its time limit, its output limit, a signal or
+ * an exit code), and, for a repack, which of its processes Git said died
+ * of which signal, so running out of memory (`SIGKILL`) can be told from
+ * running out of time.
+ */
+export function pruneFailure(error: unknown): string {
+  if (!(error instanceof GitError)) return errorSummary(error)
+  const command = /^[a-z-]{1,32}$/.test(error.command) ? error.command : "git"
+  if (error.kind === "timeout")
+    return `git ${command} stopped at its time limit`
+  if (error.kind === "output-limit")
+    return `git ${command} stopped at its output limit`
+  if (error.kind === "start") return `git ${command} could not start`
+  const signal = /\(signal (SIG[A-Z0-9]{1,10})\)/.exec(error.message)?.[1]
+  if (signal) return `git ${command} ended by ${signal}`
+  const died = /([a-z-]{1,32}) died of signal (\d{1,2})/.exec(error.stderr)
+  const ended = `git ${command} exited with code ${error.exitCode ?? "unknown"}`
+  if (died)
+    return `${ended}: ${died[1]} ended by signal ${died[2]}${died[2] === "9" ? " (SIGKILL, often out of memory)" : ""}`
+  if (/out of memory/i.test(error.stderr)) return `${ended}: out of memory`
+  return ended
 }
