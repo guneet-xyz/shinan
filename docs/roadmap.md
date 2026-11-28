@@ -602,9 +602,10 @@ backups, which are paused on Musashi. This is an accepted risk.
 
 **Clones are partial copies, not backups.** Every agent's clone holds `main`
 up to its last fetch. Nothing checks them, they may be behind, and a purge
-leaves them holding the purged text; but a lost catalog repository can be
-recreated from the freshest clone, and the push log shows what that clone
-missed ([Git-based catalog plan §2.11](build-plan-git-catalog.md#211-backups-and-recovery)).
+leaves them holding the purged text. There is no recovery from them yet: a
+lost catalog repository comes back only from a backup of the volume taken
+with the database ([Git-based catalog plan §2.11](build-plan-git-catalog.md#211-backups-and-recovery);
+a safe recovery from clones is [#216](https://github.com/guneet-xyz/shinan/issues/216)).
 
 **During the trial** the risk is limited but real. The `workspace` repository
 holds the catalog, and mon and easyshell keep their repository issues, so

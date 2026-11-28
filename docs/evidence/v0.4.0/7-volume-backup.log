@@ -1,0 +1,26 @@
+
+== the backup (the guide's commands)
+ Container shinanop-git-1  Stopped
+ Container shinanop-web-1  Started
+-rw------- 169482 backup.dump
+-rw------- 13923 catalog-backup.tar.gz
+Trial's main at the backup: ef2fc0e0646d197d0331a43f065c34ed5b8b7cd7
+
+== a change after the backup
+Trial's main now: f188a4146a4c3268dae7f61a959103cf5ea4b17e
+
+== the restore (the guide's commands, in its order)
+ Container shinanop-git-1  Stopped
+ Container shinanop-worker-1  Started
+
+== after the restore
+caddy Up 2 minutes
+git Up About a minute (healthy)
+mailpit Up 2 minutes (healthy)
+postgres Up 2 minutes (healthy)
+web Up About a minute (healthy)
+worker Up About a minute
+Trial's main: ef2fc0e0646d197d0331a43f065c34ed5b8b7cd7 (as at the backup)
+the volume's root: 65532 700
+catalog.unlogged-update since the restore: 0
+{"workspace":"Trial","index_behind":false,"first_change":{"subject":"Bring the catalog over from Shinan 0.3 (revision 18)","pushed_by":{"kind":"shinan"},"pages":18},"musashi":"A public-stacks machine for the dataset."}

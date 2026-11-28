@@ -1,0 +1,38 @@
+# seconds, then name current_MiB anon_MiB for each container
+0 git 259 233 web 74 69
+1 git 288 255 web 140 125
+2 git 281 254 web 163 157
+3 git 281 254 web 216 210
+5 git 281 254 web 246 238
+6 git 281 254 web 240 232
+7 git 281 254 web 240 232
+8 git 281 254 web 240 232
+9 git 281 254 web 256 247
+10 git 281 254 web 242 234
+11 git 281 254 web 241 234
+12 git 281 254 web 201 194
+14 git 281 254 web 211 204
+15 git 278 251 web 216 209
+16 git 278 251 web 213 206
+17 git 278 251 web 211 204
+18 git 278 251 web 215 208
+19 git 278 251 web 211 204
+20 git 278 251 web 213 206
+21 git 278 251 web 211 204
+22 git 278 251 web 214 207
+23 git 278 251 web 216 209
+24 git 278 251 web 206 199
+25 git 278 251 web 209 202
+26 git 278 251 web 207 200
+28 git 278 251 web 207 200
+29 git 261 234 web 205 198
+30 git 261 235 web 209 202
+31 git 261 235 web 205 197
+32 git 263 237 web 210 203
+33 git 263 237 web 209 202
+34 git 263 237 web 206 199
+35 git 263 237 web 207 200
+36 git 263 237 web 197 191
+37 git 263 237 web 197 191
+peak git 288 MiB (anonymous 255 MiB); memory.events: low 0 high 0 max 0 oom 0 oom_kill 0 oom_group_kill 0 
+peak web 256 MiB (anonymous 247 MiB); memory.events: low 0 high 0 max 0 oom 0 oom_kill 0 oom_group_kill 0 

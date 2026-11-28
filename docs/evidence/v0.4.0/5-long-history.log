@@ -1,0 +1,54 @@
+
+== a workspace whose main has 1000000 commits
+workspace Million2: 201
+commits: 1000000; packed: 518M
+ Container shinanop-git-1  Stopped
+
+== the start: the pruner looks at every repository once, and this one's whole repack runs out of memory
+ Container shinanop-git-1  Started
+peak git 1024 MiB (anonymous 1015 MiB); memory.events: low 0 high 0 max 1538 oom 1 oom_kill 1 oom_group_kill 0 
+Pruning the repository of workspace 3fad7362-5bbb-4996-9626-1c1287c8e569 failed: git repack exited with code 137: pack-objects ended by signal 9 (SIGKILL, often out of memory); tried again in 60 minutes
+Pruning the repository of workspace 89f1418c-4a75-43b6-8661-563b5f4d80f0 failed: git repack exited with code 137: pack-objects ended by signal 9 (SIGKILL, often out of memory); tried again in 60 minutes
+git restarts: 0
+pack folder:
+pack-381dd38caa93d6e91893d305218be663d32765b0.bitmap
+pack-381dd38caa93d6e91893d305218be663d32765b0.idx
+pack-381dd38caa93d6e91893d305218be663d32765b0.pack
+pack-381dd38caa93d6e91893d305218be663d32765b0.rev
+failure kept: shinan-prune-failed
+
+== history pages straight from the Git container, one at a time
+200 in 0.063373 s: limit=51
+200 in 0.062345 s: limit=51&skip=1000
+200 in 0.442118 s: limit=51&skip=100000
+200 in 1.147880 s: limit=51&skip=299900
+200 in 3.691291 s: limit=51&skip=999999
+200 in 15.939880 s: limit=11&path=machine/rare.md
+200 in 4.103414 s: limit=11&path=machine/m7.md&skip=2900
+
+== 12 History reads at once of machine/rare.md, changed only in the first commit
+      1 200 in 103.875141 s
+      1 200 in 103.921388 s
+      1 200 in 106.012575 s
+      1 200 in 37.100517 s
+      1 200 in 38.110557 s
+      1 200 in 69.770695 s
+      1 200 in 75.484770 s
+      1 500 in 26.014040 s
+      1 500 in 34.179474 s
+      1 500 in 60.154257 s
+      1 500 in 69.789599 s
+      1 500 in 94.738765 s
+peak git 1024 MiB (anonymous 1016 MiB); memory.events: low 0 high 0 max 3971 oom 139 oom_kill 6 oom_group_kill 0 
+git restarts: 0
+
+== a deleted branch meanwhile: no new attempt within the hour
+the branch: pushed
+the branch deleted: ''
+pruning lines in the 2 minutes since: 0
+
+== after a restart, the wait still holds: no new attempt in 3 minutes
+ Container shinanop-git-1  Started
+pruning lines since the restart: 0
+a fetch of its refs meanwhile: 75 ms
+exit 0

@@ -1,0 +1,11 @@
+
+== realistic
+a1: 10 of 10 changes pushed to main; 0 fetches refused (429)
+a2: 10 of 10 changes pushed to main; 0 fetches refused (429)
+a3: 10 of 10 changes pushed to main; 0 fetches refused (429)
+reader: 20 rounds
+peak git 185 MiB (anonymous 174 MiB); memory.events: low 0 high 0 max 0 oom 0 oom_kill 0 oom_group_kill 0 
+peak web 102 MiB (anonymous 96 MiB); memory.events: low 0 high 0 max 0 oom 0 oom_kill 0 oom_group_kill 0 
+peak postgres 97 MiB (anonymous 33 MiB); memory.events: low 0 high 0 max 0 oom 0 oom_kill 0 oom_group_kill 0 
+peak worker 80 MiB (anonymous 74 MiB); memory.events: low 0 high 0 max 0 oom 0 oom_kill 0 oom_group_kill 0 
+exit 0
