@@ -752,8 +752,12 @@ operator's to clean, and the secret is rotated.
   - **Unreachable objects after pushes (proposed):** each repository a
     push changed is looked at once pushes to it pause (20 seconds, 10
     minutes at most), with its push lock held, so objects no branch reaches
-    (which the Git API could read by ID) never linger (reviews of GC-1b and
-    GC-3a). Whether any is unreachable is counted first, by the
+    (which the Git API could read by ID) are removed (reviews of GC-1b and
+    GC-3a). If that pruning fails, they stay until it succeeds: it is tried
+    again an hour later, and on a history whose whole repack never fits in
+    the Git container's memory they stay for good (GC-11,
+    [#208](https://github.com/guneet-xyz/shinan/pull/208)). Purged text is
+    not among them: a purge puts in a new repository (2.9). Whether any is unreachable is counted first, by the
     reachability bitmap; only then is the whole repository repacked, with
     no Git process on it. Otherwise the packs pushes added are joined, in
     milliseconds (review of #197).

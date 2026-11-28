@@ -1,8 +1,15 @@
-import { existsSync, readdirSync } from "node:fs"
+import {
+  existsSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs"
 import { join } from "node:path"
 
 import { createLimitedLog, errorSummary } from "@shinan/db"
 import type { LimitedLog } from "@shinan/db"
+import { GitError } from "@shinan/git"
 
 import type { PushService } from "./push/service.js"
 import type { RepositoryStore } from "./store.js"
@@ -116,7 +123,12 @@ export function createRepositoryGate(): RepositoryGate {
  *
  * The repacking runs with no Git process on the repository; one that is
  * busy is tried again the next time (review of #197: a whole repack of a
- * large repository after every push held fetches for seconds).
+ * large repository after every push held fetches for seconds). One whose
+ * pruning failed has the half-written pack removed and waits an hour
+ * before it is tried again, a restart included (the time of the failure
+ * is kept in the repository's folder) (GC-11: a whole repack of a 1,000,000-commit
+ * history ran out of memory, and tried every minute it held the
+ * repository for minutes each time and left a pack's worth of disk).
  */
 export interface Pruner {
   /** Marks a repository to be pruned at the next round. */
@@ -129,6 +141,12 @@ export interface Pruner {
 
 /** How long one prune's Git process may run. */
 const pruneMs = 10 * 60 * 1000
+
+/**
+ * The most objects counted, one byte each: 64 MiB. A repository within its
+ * 1 GiB limit holds far fewer.
+ */
+const maxHeldObjects = 64 * 1024 * 1024
 
 export function createPruner(options: {
   store: RepositoryStore
@@ -144,14 +162,31 @@ export function createPruner(options: {
   quietMs?: number
   /** How long a busy repository waits at most: 10 minutes. */
   longestWaitMs?: number
+  /**
+   * How long a repository whose pruning failed waits before it is tried
+   * again, pushes or not: an hour.
+   */
+  failedWaitMs?: number
   log?: LimitedLog
 }): Pruner {
   const { store, push, gate } = options
   const log = options.log ?? createLimitedLog()
   const quietMs = options.quietMs ?? 20_000
   const longestWaitMs = options.longestWaitMs ?? 10 * 60_000
-  /** Repositories to look at: since when, and their last push. */
-  const due = new Map<string, { since: number; last: number }>()
+  const failedWaitMs = options.failedWaitMs ?? 60 * 60_000
+  /**
+   * Repositories to look at: since when, their last push, and, after a
+   * failed pruning, not before when.
+   */
+  const due = new Map<
+    string,
+    { since: number; last: number; notBefore?: number }
+  >()
+  /** Not before when a repository whose pruning failed is tried again. */
+  const notBeforeOf = (workspaceId: string): number | undefined => {
+    const failed = lastFailure(store.pathOf(workspaceId))
+    return failed === undefined ? undefined : failed + failedWaitMs
+  }
   let round: Promise<string[]> | undefined
 
   const prune = async (workspaceId: string) => {
@@ -162,16 +197,22 @@ export function createPruner(options: {
       const gitDir = store.pathOf(workspaceId)
       const whole = await unreachableObjects(store, gitDir)
       const pruned = await gate.whenIdle(workspaceId, async () => {
-        await store.git.run(
-          whole
-            ? ["repack", "-a", "-d", "-q"]
-            : ["repack", "-d", "-q", "--geometric=2"],
-          { gitDir, timeoutMs: pruneMs },
-        )
-        await store.git.run(["prune", "--expire=now"], {
-          gitDir,
-          timeoutMs: pruneMs,
-        })
+        try {
+          await store.git.run(
+            whole
+              ? ["repack", "-a", "-d", "-q"]
+              : ["repack", "-d", "-q", "--geometric=2"],
+            { gitDir, timeoutMs: pruneMs },
+          )
+          await store.git.run(["prune", "--expire=now"], {
+            gitDir,
+            timeoutMs: pruneMs,
+          })
+        } catch (error) {
+          removeTemporaryPacks(gitDir)
+          throw error
+        }
+        clearFailure(gitDir)
         return true
       })
       return pruned === true
@@ -183,9 +224,13 @@ export function createPruner(options: {
   const pruner: Pruner = {
     soon(workspaceId) {
       const now = Date.now()
+      const earlier = due.get(workspaceId)
+      // A failure before a restart counts too.
+      const notBefore = earlier ? earlier.notBefore : notBeforeOf(workspaceId)
       due.set(workspaceId, {
-        since: due.get(workspaceId)?.since ?? now,
+        since: earlier?.since ?? now,
         last: now,
+        ...(notBefore !== undefined ? { notBefore } : {}),
       })
     },
     run() {
@@ -193,6 +238,8 @@ export function createPruner(options: {
         const pruned: string[] = []
         for (const [workspaceId, when] of [...due]) {
           const now = Date.now()
+          // Failed not long ago: later, pushes or not.
+          if (when.notBefore !== undefined && now < when.notBefore) continue
           // Pushed to just now: later, unless it has waited long enough.
           if (now - when.last < quietMs && now - when.since < longestWaitMs)
             continue
@@ -202,9 +249,14 @@ export function createPruner(options: {
             if (await prune(workspaceId)) pruned.push(workspaceId)
             else due.set(workspaceId, due.get(workspaceId) ?? when)
           } catch (error) {
-            due.set(workspaceId, due.get(workspaceId) ?? when)
+            const failed = Date.now()
+            recordFailure(store.pathOf(workspaceId), failed)
+            due.set(workspaceId, {
+              ...(due.get(workspaceId) ?? when),
+              notBefore: failed + failedWaitMs,
+            })
             log(
-              `Pruning the repository of workspace ${workspaceId} failed: ${errorSummary(error)}`,
+              `Pruning the repository of workspace ${workspaceId} failed: ${pruneFailure(error)}; tried again in ${Math.round(failedWaitMs / 60_000)} minutes`,
             )
           }
         }
@@ -229,9 +281,14 @@ export function createPruner(options: {
  * reachability bitmap. Without a bitmap (a repository never repacked whole,
  * or one a purge just made), it counts as holding some, so the whole
  * repack that follows writes one.
+ *
+ * The objects held are counted as empty lines, one byte each, never read
+ * as names: a repository of millions of objects would otherwise hold
+ * hundreds of MiB of strings in this process, and leave the repack too
+ * little of the container's memory (GC-11, a 1,000,000-commit history).
  */
-async function unreachableObjects(
-  store: RepositoryStore,
+export async function unreachableObjects(
+  store: Pick<RepositoryStore, "git">,
   gitDir: string,
 ): Promise<boolean> {
   const packs = join(gitDir, "objects", "pack")
@@ -241,13 +298,80 @@ async function unreachableObjects(
   )
     return true
   const all = await store.git.run(
-    ["cat-file", "--batch-all-objects", "--batch-check=%(objectname)"],
-    { gitDir, timeoutMs: pruneMs, maxOutputBytes: 1024 * 1024 * 1024 },
+    ["cat-file", "--batch-all-objects", "--batch-check="],
+    { gitDir, timeoutMs: pruneMs, maxOutputBytes: maxHeldObjects },
   )
-  const held = all.stdout.toString("latin1").split("\n").filter(Boolean).length
+  let held = 0
+  for (const byte of all.stdout) if (byte === 0x0a) held++
   const reached = await store.git.run(
     ["rev-list", "--count", "--objects", "--all", "--use-bitmap-index"],
     { gitDir, timeoutMs: pruneMs },
   )
   return held !== Number(reached.stdout.toString("latin1").trim())
+}
+
+/**
+ * Removes what a repack that failed left in the repository's pack folder:
+ * Git writes a new pack as `tmp_pack_…` (and its index as `tmp_idx_…`)
+ * and renames it when done, so one stopped half-way (out of memory, at its
+ * time limit) leaves a file as large as the repository (GC-11). Run only
+ * while no Git process uses the repository; `git prune` removes the same
+ * files after a repack that succeeded.
+ */
+export function removeTemporaryPacks(gitDir: string): void {
+  const packs = join(gitDir, "objects", "pack")
+  if (!existsSync(packs)) return
+  for (const name of readdirSync(packs)) {
+    if (name.startsWith("tmp_") || name.startsWith(".tmp-"))
+      rmSync(join(packs, name), { force: true })
+  }
+}
+
+/** Where a repository keeps the time its last pruning failed. */
+const failureFile = (gitDir: string) => join(gitDir, "shinan-prune-failed")
+
+function lastFailure(gitDir: string): number | undefined {
+  try {
+    const at = Number(readFileSync(failureFile(gitDir), "utf8").trim())
+    return Number.isSafeInteger(at) && at > 0 ? at : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function recordFailure(gitDir: string, at: number): void {
+  try {
+    writeFileSync(failureFile(gitDir), `${at}\n`, { mode: 0o600 })
+  } catch {
+    // The repository's folder is gone or full: the wait holds until a restart.
+  }
+}
+
+function clearFailure(gitDir: string): void {
+  rmSync(failureFile(gitDir), { force: true })
+}
+
+/**
+ * Why a pruning failed, in words that hold no catalog text: the Git
+ * command and how it ended (its time limit, its output limit, a signal or
+ * an exit code), and, for a repack, which of its processes Git said died
+ * of which signal, so running out of memory (`SIGKILL`) can be told from
+ * running out of time.
+ */
+export function pruneFailure(error: unknown): string {
+  if (!(error instanceof GitError)) return errorSummary(error)
+  const command = /^[a-z-]{1,32}$/.test(error.command) ? error.command : "git"
+  if (error.kind === "timeout")
+    return `git ${command} stopped at its time limit`
+  if (error.kind === "output-limit")
+    return `git ${command} stopped at its output limit`
+  if (error.kind === "start") return `git ${command} could not start`
+  const signal = /\(signal (SIG[A-Z0-9]{1,10})\)/.exec(error.message)?.[1]
+  if (signal) return `git ${command} ended by ${signal}`
+  const died = /([a-z-]{1,32}) died of signal (\d{1,2})/.exec(error.stderr)
+  const ended = `git ${command} exited with code ${error.exitCode ?? "unknown"}`
+  if (died)
+    return `${ended}: ${died[1]} ended by signal ${died[2]}${died[2] === "9" ? " (SIGKILL, often out of memory)" : ""}`
+  if (/out of memory/i.test(error.stderr)) return `${ended}: out of memory`
+  return ended
 }
